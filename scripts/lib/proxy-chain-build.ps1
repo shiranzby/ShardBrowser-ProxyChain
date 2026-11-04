@@ -40,7 +40,7 @@ function New-ProxyChainPlaywrightConfig([string]$CandidatePath, [string]$OutputD
     $output = [IO.Path]::GetFullPath($OutputDirectory)
     $vite = Join-Path $candidate 'node_modules/vite/bin/vite.js'
     [ordered]@{
-        testDir=(Join-Path $candidate 'e2e'); fullyParallel=$true; forbidOnly=$true; reporter='list'
+        testDir=(Join-Path $candidate 'e2e'); fullyParallel=$false; workers=1; forbidOnly=$true; reporter='list'
         outputDir=(Join-Path $output 'playwright-results'); timeout=30000
         use=@{browserName='chromium';baseURL="http://127.0.0.1:$Port";viewport=@{width=1280;height=800};locale='en-US';timezoneId='UTC';reducedMotion='reduce'}
         projects=@(@{name='dev'})

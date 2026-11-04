@@ -198,6 +198,7 @@ try {
         Assert ($config.webServer.cwd -eq [IO.Path]::GetFullPath($candidate1)) 'Vite would start in the proof directory instead of the candidate.'
         Assert ($config.testDir -eq (Join-Path $candidate1 'e2e')) 'UI tests do not belong to the candidate source.'
         Assert ($config.outputDir -eq (Join-Path $root 'playwright-results')) 'Browser evidence was put inside candidate source.'
+        Assert ($config.workers -eq 1 -and $config.fullyParallel -eq $false) 'UI integration gates must not flood the candidate Vite server with parallel workers.'
     }
     $normalized = Join-Path $root 'normalized-source'
     New-Item -ItemType Directory -Path $normalized | Out-Null
