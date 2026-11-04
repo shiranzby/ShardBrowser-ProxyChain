@@ -5292,7 +5292,7 @@ index 425611d5de5c4036a8177132056f618c329fb6bd..f077dc4177ab4636be54fba781d09e14
          theme: default_theme(),
          geo_checker: Some("ip-api.com".into()),
 diff --git a/src-tauri/src/space/client.rs b/src-tauri/src/space/client.rs
-index 93b7a0779c308c227bbeff00b269c2d62ccb8d52..e6cea3f5322c7ff295739ca0eeec51abb4933eec 100644
+index 93b7a0779c308c227bbeff00b269c2d62ccb8d52..39d0ccbbc9c3ab5d21bb567a2c9a613b99784b06 100644
 --- a/src-tauri/src/space/client.rs
 +++ b/src-tauri/src/space/client.rs
 @@ -1486,7 +1486,7 @@ mod tests {
@@ -5300,21 +5300,22 @@ index 93b7a0779c308c227bbeff00b269c2d62ccb8d52..e6cea3f5322c7ff295739ca0eeec51ab
  
      /// Files that talk HTTP or open sockets for something other than a team.
 -    const OTHER_TRAFFIC: [(&str, &str); 10] = [
-+    const OTHER_TRAFFIC: [(&str, &str); 13] = [
++    const OTHER_TRAFFIC: [(&str, &str); 14] = [
          ("process/close.rs", "Stop's Browser.close on a launched browser's own devtools"),
          ("live_e2e.rs", "the live end-to-end harness, run by hand: a test site, a proxy, CDP, the server raw"),
          ("runtime.rs", "engine and launcher downloads"),
-@@ -1497,6 +1497,9 @@ mod tests {
+@@ -1497,6 +1497,10 @@ mod tests {
          ("requests.rs", "the automation runner's own requests"),
          ("space/local/proxy.rs", "proxy checks"),
          ("space/local/extensions.rs", "extension downloads"),
 +        ("proxy_chain/connector.rs", "the configured first-hop proxy TCP transport"),
 +        ("proxy_chain/tests.rs", "synthetic loopback proxy and tunnel tests"),
 +        ("proxy_chain/integration_tests.rs", "synthetic profile launch and lifecycle tests"),
++        ("proxy_chain/detection_tests.rs", "synthetic loopback Geo responders and proxy URL validation"),
      ];
  
      const TALKS: [&str; 6] = ["reqwest", "tungstenite", "wreq", "TcpStream::connect", "hyper", "rustls"];
-@@ -1552,6 +1555,7 @@ mod tests {
+@@ -1552,6 +1556,7 @@ mod tests {
          assert!(unused.is_empty(), "no longer talks HTTP, take it off the list: {unused:?}");
          // Inside it, one pool and one way to open a connection: the switch to TLS.
          let ours = std::fs::read_to_string(src.join("space/client.rs")).unwrap();
