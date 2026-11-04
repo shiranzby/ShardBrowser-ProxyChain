@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "result": "success",
+  "delivered_kind": "actions_artifact",
+  "completed_at_utc": "2026-11-04T11:52:09.656Z",
+  "upstream_tag": "v2.1.2",
+  "upstream_commit": "22fbd1c4b847750de00e3f5b5a8c8e0cceb98e91",
+  "patch_revision": "pc1",
+  "patch_sha256": "c15819969ef0fff2f316906d89967281f1cc9e95d553af429a6c710343fd32d6",
+  "candidate_commit": "9eda03be91b1e1ae1cf80ebaa529c68498824b3d",
+  "portable_sha256": "4435ddf9f5f7d064eed895e5b270f7f7a6b58737d6c5e778150be26a8d15d83f",
+  "artifact_id": "13318327415",
+  "artifact_digest": "bff8a5f0ab57a5f497e0de6452eab903d9f9b29808c26ff069fbc65311eb4705",
+  "run_url": "https://github.com/shiranzby/ShardBrowser-ProxyChain/actions/runs/41820397873"
+}
