@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { appModule, openApp, waitForIdle } from "./support/app";
+import { appModule, openApp, reloadApp, waitForIdle } from "./support/app";
 
 const tab = (page: Page, name: string) => page.getByRole("tablist", { name: "Settings sections" }).getByRole("tab", { name, exact: true });
 const bar = (page: Page) => page.locator("[data-save-bar]");
@@ -43,7 +43,7 @@ test("Proxy chain draft writes a secret once and never returns it", async ({ pag
   // settings state never keeps the plaintext value.
   expect(saveArgs?.value?.proxy_chain?.password).toBe("mock-only-password");
   expect((await mock(page)).state.settings.proxy_chain.password).toBeUndefined();
-  await page.reload();
+  await reloadApp(page);
   await expect(page.getByRole("textbox", { name: "Password (optional)" })).toHaveValue("");
   await expect(page.getByText("A password is saved securely.")).toBeVisible();
 });
@@ -108,7 +108,7 @@ test("password intents are not sent again and clearing is an explicit saved chan
   await save(page);
   await expect(bar(page)).toHaveCount(0);
   expect((await mock(page)).state.settings.proxy_chain.password_saved).toBe(false);
-  await page.reload();
+  await reloadApp(page);
   await expect(page.getByText("This password belongs to the system proxy.")).toBeVisible();
 });
 
