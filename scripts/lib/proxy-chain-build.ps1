@@ -22,3 +22,18 @@ function Invoke-ProxyChainLoggedCommand([string]$Name, [string]$Command, [string
     if ($code -ne 0) { throw "$Name failed with exit code $code. Publication is blocked." }
     [pscustomobject]@{ id=$Name; status='passed'; log=(Split-Path -Leaf $log); sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Hash.ToLowerInvariant() }
 }
+
+function New-ProxyChainPlaywrightConfig([string]$CandidatePath, [string]$OutputDirectory, [string]$NodeExecutable, [int]$Port) {
+    $candidate = [IO.Path]::GetFullPath($CandidatePath)
+    $output = [IO.Path]::GetFullPath($OutputDirectory)
+    $vite = Join-Path $candidate 'node_modules/vite/bin/vite.js'
+    [ordered]@{
+        testDir=(Join-Path $candidate 'e2e'); fullyParallel=$true; forbidOnly=$true; reporter='list'
+        outputDir=(Join-Path $output 'playwright-results'); timeout=30000
+        use=@{browserName='chromium';baseURL="http://127.0.0.1:$Port";viewport=@{width=1280;height=800};locale='en-US';timezoneId='UTC';reducedMotion='reduce'}
+        projects=@(@{name='dev'})
+        # The config lives with proofs, but Vite must resolve index.html and
+        # vite.config.ts from the candidate source directory.
+        webServer=@{cwd=$candidate;command=('"{0}" "{1}" --host 127.0.0.1 --port {2} --strictPort' -f $NodeExecutable,$vite,$Port);url="http://127.0.0.1:$Port";reuseExistingServer=$false;timeout=120000;env=@{VITE_MOCK='1'}}
+    }
+}

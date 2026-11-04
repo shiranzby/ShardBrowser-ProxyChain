@@ -55,16 +55,8 @@ try {
     # Upstream's package scripts use POSIX env syntax. This config uses Playwright's
     # env map, which works on native Windows without a shell-specific assignment.
     $node = (Get-Command node).Source
-    $vite = Join-Path $candidate 'node_modules/vite/bin/vite.js'
     $port = 43127
-    $config = [ordered]@{
-        testDir=(Join-Path $candidate 'e2e'); fullyParallel=$true; forbidOnly=$true; reporter='list'
-        outputDir=(Join-Path $output 'playwright-results')
-        timeout=30000
-        use=@{ browserName='chromium'; baseURL="http://127.0.0.1:$port"; viewport=@{width=1280;height=800}; locale='en-US'; timezoneId='UTC'; reducedMotion='reduce' }
-        projects=@(@{name='dev'})
-        webServer=@{command=('"{0}" "{1}" --host 127.0.0.1 --port {2} --strictPort' -f $node,$vite,$port);url="http://127.0.0.1:$port";reuseExistingServer=$false;timeout=120000;env=@{VITE_MOCK='1'}}
-    }
+    $config = New-ProxyChainPlaywrightConfig $candidate $output $node $port
     $configPath = Join-Path $output 'playwright-proxy-chain.config.mjs'
     ('export default ' + ($config | ConvertTo-Json -Depth 12) + ';') | Set-Content -LiteralPath $configPath -Encoding utf8
     Step 'ui-browser' 'npx' @('playwright','test','--config',$configPath,'proxy-chain-settings.spec.ts','settings-save.spec.ts','settings-secret.spec.ts','--project=dev')

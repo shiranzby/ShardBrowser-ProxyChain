@@ -32,7 +32,11 @@ if ($FixtureDirectory) {
     $releases = @()
     # Do not let a large prerelease history hide a stable release.
     for ($page = 1; $page -le 100; $page++) {
-        $batch = @(Api "repos/$($manifest.upstream_repository)/releases?per_page=100&page=$page")
+        # Invoke-RestMethod emits a JSON array as one pipeline object. Assign
+        # first, then expand it; wrapping the function call directly preserves
+        # a nested array and makes stable-release filtering reject every row.
+        $response = Api "repos/$($manifest.upstream_repository)/releases?per_page=100&page=$page"
+        $batch = @($response)
         $releases += $batch
         if ($batch.Count -lt 100) { break }
         if ($page -eq 100) { throw 'Release pagination exceeded its bound; no update decision was made.' }

@@ -73,6 +73,22 @@ try {
         Discover
         Assert (-not (Get-Content -Raw $discovery | ConvertFrom-Json).should_build) 'Same successful tuple was rebuilt.'
     }
+    Case 'rest-api-array-shape-is-expanded-before-stable-filtering' {
+        # PowerShell's real Invoke-RestMethod writes a JSON array as ONE object.
+        # Mock that command's output shape, but exercise the production Api and
+        # pagination path rather than the simpler JSON fixture-reader path.
+        function Invoke-RestMethod {
+            param([string]$Uri, $Headers, [int]$TimeoutSec)
+            if ($Uri -match '/releases\?') {
+                return ,@([pscustomobject]@{tag_name='v2.1.2';draft=$false;prerelease=$false},[pscustomobject]@{tag_name='v99.0.0-beta';draft=$false;prerelease=$true})
+            }
+            if ($Uri -match '/git/ref/tags/v2\.1\.2$') { return [pscustomobject]@{ref='refs/tags/v2.1.2';object=[pscustomobject]@{type='commit';sha=$base}} }
+            throw 'Unexpected request in the offline REST-shape regression.'
+        }
+        & (Join-Path $PSScriptRoot 'check-upstream.ps1') -ManifestPath $manifestPath -CompletedStatePath $state -OutputPath $discovery
+        $d=Get-Content -Raw $discovery | ConvertFrom-Json
+        Assert ($d.upstream_tag -eq 'v2.1.2' -and $d.upstream_commit -eq $base -and -not $d.should_build) 'REST response array shape broke stable-release detection.'
+    }
     Case 'annotated-tag-resolves-to-commit' {
         Fixtures 'v2.2.0' $base $true
         Discover
@@ -176,6 +192,12 @@ try {
     Case 'silent-failure-preserves-log-and-blocks-the-gate' {
         Refused { Invoke-ProxyChainLoggedCommand -Name 'silent-failure' -Command 'pwsh' -Arguments @('-NoProfile','-NonInteractive','-Command','exit 7') -OutputDirectory $root } 'failed with exit code 7'
         Assert (Test-Path -LiteralPath (Join-Path $root 'silent-failure.log') -PathType Leaf) 'Failure log was not preserved.'
+    }
+    Case 'external-playwright-config-starts-vite-in-candidate-directory' {
+        $config=New-ProxyChainPlaywrightConfig $candidate1 $root 'C:/synthetic/node.exe' 43127
+        Assert ($config.webServer.cwd -eq [IO.Path]::GetFullPath($candidate1)) 'Vite would start in the proof directory instead of the candidate.'
+        Assert ($config.testDir -eq (Join-Path $candidate1 'e2e')) 'UI tests do not belong to the candidate source.'
+        Assert ($config.outputDir -eq (Join-Path $root 'playwright-results')) 'Browser evidence was put inside candidate source.'
     }
 } finally {
     Json (Join-Path $root 'offline-test-results.json') @{schema=1;kind='proxy-chain-pipeline-offline-test';completed_at_utc=[DateTime]::UtcNow.ToString('o');fixture_only=$true;results=@($results.ToArray())}
