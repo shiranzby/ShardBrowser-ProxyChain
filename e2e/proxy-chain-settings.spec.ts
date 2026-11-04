@@ -37,6 +37,8 @@ test("Proxy chain draft writes a secret once and never returns it", async ({ pag
   await expect(bar(page)).toBeVisible();
   await bar(page).getByRole("button", { name: "Save", exact: true }).click();
   await expect.poll(async () => (await mock(page)).calls.settings_save).toBe(1);
+  await expect(bar(page)).toHaveCount(0);
+  await expect(page.getByText("A password is saved securely.")).toBeVisible();
   const saveArgs = (await mock(page)).log.filter((x: any) => x.cmd === "settings_save").at(-1)?.args as any;
   // A newly entered password is a write-only intent. The mock records the
   // request so this test can prove the backend consumed it, but its persisted
