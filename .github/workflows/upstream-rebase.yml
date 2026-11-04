@@ -1,0 +1,97 @@
+name: Proxy-chain apply and verify
+
+on:
+  workflow_call:
+    inputs:
+      upstream_tag: { required: true, type: string }
+      upstream_commit: { required: true, type: string }
+    outputs:
+      candidate_commit: { value: '${{ jobs.portable.outputs.candidate_commit }}' }
+      portable_sha256: { value: '${{ jobs.portable.outputs.portable_sha256 }}' }
+      artifact_id: { value: '${{ jobs.portable.outputs.artifact_id }}' }
+      artifact_digest: { value: '${{ jobs.portable.outputs.artifact_digest }}' }
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.repository == 'shiranzby/ShardBrowser-ProxyChain'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: maintenance
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Check native automation build dependencies
+        shell: pwsh
+        run: |
+          if (-not (Get-Command nasm -ErrorAction SilentlyContinue)) {
+            choco install nasm --yes --no-progress --limit-output
+            if ($LASTEXITCODE -ne 0) { throw 'NASM installation failed' }
+            $env:PATH = "C:\Program Files\NASM;$env:PATH"
+            'C:\Program Files\NASM' >> $env:GITHUB_PATH
+          }
+          foreach ($tool in @('cmake','nasm','go')) { if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "Required tool unavailable: $tool" } }
+          if (-not $env:LIBCLANG_PATH) {
+            $clang = @('C:/Program Files/LLVM/bin','C:/Program Files (x86)/LLVM/bin') | Where-Object { Test-Path (Join-Path $_ 'libclang.dll') } | Select-Object -First 1
+            if (-not $clang) { throw 'LLVM libclang.dll is unavailable; default features cannot be bypassed.' }
+            "LIBCLANG_PATH=$clang" >> $env:GITHUB_ENV
+          }
+      - name: Apply exact functional patch to exact upstream commit
+        shell: pwsh
+        env:
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+          UPSTREAM_COMMIT: ${{ inputs.upstream_commit }}
+        run: |
+          New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP 'proxy-chain-proofs') | Out-Null
+          ./maintenance/scripts/apply-patch.ps1 -UpstreamTag $env:UPSTREAM_TAG -UpstreamCommit $env:UPSTREAM_COMMIT -CandidatePath (Join-Path $env:RUNNER_TEMP 'proxy-chain-candidate') -OutputPath (Join-Path $env:RUNNER_TEMP 'proxy-chain-proofs/candidate-info.json')
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ runner.temp }}/proxy-chain-candidate/src-tauri
+          key: proxy-chain-default-features
+      - name: Rust, production UI, and browser gates
+        shell: pwsh
+        run: ./maintenance/scripts/verify-patch.ps1 -CandidatePath (Join-Path $env:RUNNER_TEMP 'proxy-chain-candidate') -MetadataPath (Join-Path $env:RUNNER_TEMP 'proxy-chain-proofs/candidate-info.json') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'proxy-chain-proofs')
+      - name: Preserve evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxy-chain-verification
+          path: ${{ runner.temp }}/proxy-chain-proofs/
+          if-no-files-found: warn
+
+  portable:
+    needs: verify
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-portable.yml
+    with:
+      upstream_tag: ${{ inputs.upstream_tag }}
+      upstream_commit: ${{ inputs.upstream_commit }}
+
+  report-failure:
+    needs: [verify, portable]
+    if: always() && (needs.verify.result == 'failure' || needs.portable.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+        with:
+          script: |
+            const title = `Proxy-chain update failed: ${process.env.UPSTREAM_TAG}`;
+            const body = `Patch application, tests, Portable build, or acceptance failed. Automatic conflict resolution and publication were stopped. Inspect the verification artifact and workflow logs.\n\nRun: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const {data: issues} = await github.rest.issues.listForRepo({...context.repo,state:'open',per_page:100});
+            if (!issues.some(x => !x.pull_request && x.title === title)) await github.rest.issues.create({...context.repo,title,body});

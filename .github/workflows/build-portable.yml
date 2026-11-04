@@ -1,0 +1,112 @@
+name: Proxy-chain Windows Portable
+
+on:
+  workflow_call:
+    inputs:
+      upstream_tag: { required: true, type: string }
+      upstream_commit: { required: true, type: string }
+    outputs:
+      candidate_commit: { value: '${{ jobs.build.outputs.candidate_commit }}' }
+      portable_sha256: { value: '${{ jobs.build.outputs.portable_sha256 }}' }
+      artifact_id: { value: '${{ jobs.build.outputs.artifact_id }}' }
+      artifact_digest: { value: '${{ jobs.build.outputs.artifact_digest }}' }
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository == 'shiranzby/ShardBrowser-ProxyChain'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      candidate_commit: ${{ steps.meta.outputs.candidate_commit }}
+      portable_sha256: ${{ steps.meta.outputs.portable_sha256 }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: maintenance
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            maintenance/package-lock.json
+            maintenance/ui-kit/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Ensure native build dependencies
+        shell: pwsh
+        run: |
+          if (-not (Get-Command nasm -ErrorAction SilentlyContinue)) {
+            choco install nasm --yes --no-progress --limit-output
+            if ($LASTEXITCODE -ne 0) { throw 'NASM installation failed' }
+            $env:PATH = "C:\Program Files\NASM;$env:PATH"
+            'C:\Program Files\NASM' >> $env:GITHUB_PATH
+          }
+          foreach ($tool in @('cmake','nasm','go')) { if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "Required tool unavailable: $tool" } }
+          if (-not $env:LIBCLANG_PATH) {
+            $clang = @('C:/Program Files/LLVM/bin','C:/Program Files (x86)/LLVM/bin') | Where-Object { Test-Path (Join-Path $_ 'libclang.dll') } | Select-Object -First 1
+            if (-not $clang) { throw 'LLVM libclang.dll is unavailable; default features cannot be bypassed.' }
+            "LIBCLANG_PATH=$clang" >> $env:GITHUB_ENV
+          }
+      - name: Apply exact patch again in the build job
+        shell: pwsh
+        env:
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+          UPSTREAM_COMMIT: ${{ inputs.upstream_commit }}
+        run: |
+          New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP 'proxy-chain-build') | Out-Null
+          ./maintenance/scripts/apply-patch.ps1 -UpstreamTag $env:UPSTREAM_TAG -UpstreamCommit $env:UPSTREAM_COMMIT -CandidatePath (Join-Path $env:RUNNER_TEMP 'proxy-chain-candidate') -OutputPath (Join-Path $env:RUNNER_TEMP 'proxy-chain-build/candidate-info.json')
+      - name: Download successful gate evidence from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: proxy-chain-verification
+          path: ${{ runner.temp }}/proxy-chain-build/verification
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ runner.temp }}/proxy-chain-candidate/src-tauri
+          key: proxy-chain-default-features
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          Push-Location (Join-Path $env:RUNNER_TEMP 'proxy-chain-candidate')
+          try { npm ci --no-audit --no-fund; if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' } } finally { Pop-Location }
+      - name: Build Portable candidate
+        shell: pwsh
+        run: ./maintenance/scripts/build-portable.ps1 -CandidatePath (Join-Path $env:RUNNER_TEMP 'proxy-chain-candidate') -MetadataPath (Join-Path $env:RUNNER_TEMP 'proxy-chain-build/candidate-info.json') -VerificationPath (Join-Path $env:RUNNER_TEMP 'proxy-chain-build/verification/verification.json') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'proxy-chain-build/artifact')
+      - name: Publish metadata outputs
+        id: meta
+        shell: pwsh
+        run: |
+          $r = Get-Content -Raw (Join-Path $env:RUNNER_TEMP 'proxy-chain-build/artifact/build-info.json') | ConvertFrom-Json
+          "candidate_commit=$($r.candidate_commit)" >> $env:GITHUB_OUTPUT
+          "portable_sha256=$($r.portable_sha256)" >> $env:GITHUB_OUTPUT
+          "patch_revision=$($r.patch_revision)" >> $env:GITHUB_OUTPUT
+          "candidate artifact only: acceptance=$($r.acceptance), publish_ready=$($r.publish_ready)" >> $env:GITHUB_STEP_SUMMARY
+      - name: Upload Portable candidate and proofs
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShardBrowser-${{ inputs.upstream_tag }}-${{ steps.meta.outputs.patch_revision }}-portable-win-x64-candidate
+          path: |
+            ${{ runner.temp }}/proxy-chain-build/artifact/*
+            ${{ runner.temp }}/proxy-chain-build/verification/verification.json
+            ${{ runner.temp }}/proxy-chain-build/verification/*.log
+          if-no-files-found: error
+      - name: Preserve build failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxy-chain-portable-failure
+          path: |
+            ${{ runner.temp }}/proxy-chain-build/artifact/*.log
+            ${{ runner.temp }}/proxy-chain-build/verification/*.log
+            ${{ runner.temp }}/proxy-chain-build/candidate-info.json
+          if-no-files-found: warn

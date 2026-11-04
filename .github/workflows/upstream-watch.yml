@@ -1,0 +1,115 @@
+name: Proxy-chain upstream watch
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: Rebuild the same upstream and patch (for expired artifacts or a retry)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proxy-chain-upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    if: github.repository == 'shiranzby/ShardBrowser-ProxyChain'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      should_build: ${{ steps.discover.outputs.should_build }}
+      upstream_tag: ${{ steps.discover.outputs.upstream_tag }}
+      upstream_commit: ${{ steps.discover.outputs.upstream_commit }}
+      patch_revision: ${{ steps.discover.outputs.patch_revision }}
+      patch_sha256: ${{ steps.discover.outputs.patch_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Discover latest formal stable release
+        id: discover
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'discovery.json'
+          ./scripts/check-upstream.ps1 -OutputPath $out -ForceBuild:($env:FORCE_REBUILD -eq 'true')
+          $r = Get-Content -Raw $out | ConvertFrom-Json
+          foreach ($key in @('upstream_tag','upstream_commit','patch_revision','patch_sha256')) { "$key=$($r.$key)" >> $env:GITHUB_OUTPUT }
+          "should_build=$($r.should_build.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "$($r.upstream_tag): $($r.reason)" >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proxy-chain-discovery
+          path: ${{ runner.temp }}/discovery.json
+          if-no-files-found: error
+
+  pipeline:
+    needs: discover
+    if: needs.discover.outputs.should_build == 'true'
+    # Only the isolated notification job can use issue writes.
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/upstream-rebase.yml
+    with:
+      upstream_tag: ${{ needs.discover.outputs.upstream_tag }}
+      upstream_commit: ${{ needs.discover.outputs.upstream_commit }}
+
+  record-success:
+    needs: [discover, pipeline]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Record only the completed build and uploaded artifact
+        uses: actions/github-script@v7
+        env:
+          UPSTREAM_TAG: ${{ needs.discover.outputs.upstream_tag }}
+          UPSTREAM_COMMIT: ${{ needs.discover.outputs.upstream_commit }}
+          PATCH_REVISION: ${{ needs.discover.outputs.patch_revision }}
+          PATCH_SHA256: ${{ needs.discover.outputs.patch_sha256 }}
+          CANDIDATE_COMMIT: ${{ needs.pipeline.outputs.candidate_commit }}
+          PORTABLE_SHA256: ${{ needs.pipeline.outputs.portable_sha256 }}
+          ARTIFACT_ID: ${{ needs.pipeline.outputs.artifact_id }}
+          ARTIFACT_DIGEST: ${{ needs.pipeline.outputs.artifact_digest }}
+        with:
+          script: |
+            if (context.repo.owner !== 'shiranzby' || context.repo.repo !== 'ShardBrowser-ProxyChain') throw new Error('Wrong repository');
+            for (const key of ['UPSTREAM_COMMIT','CANDIDATE_COMMIT']) if (!/^[0-9a-f]{40}$/.test(process.env[key])) throw new Error(`Invalid ${key}`);
+            for (const key of ['PATCH_SHA256','PORTABLE_SHA256']) if (!/^[0-9a-f]{64}$/.test(process.env[key])) throw new Error(`Invalid ${key}`);
+            if (!/^\d+$/.test(process.env.ARTIFACT_ID)) throw new Error('No successful artifact upload');
+            const {data: repo} = await github.rest.repos.get(context.repo);
+            const branch = repo.default_branch;
+            const {data: manifestFile} = await github.rest.repos.getContent({...context.repo,path:'patches/manifest.json',ref:branch});
+            const manifest = JSON.parse(Buffer.from(manifestFile.content,'base64').toString());
+            if (manifest.patch_sha256 !== process.env.PATCH_SHA256 || manifest.patch_revision !== process.env.PATCH_REVISION) throw new Error('Patch changed during the build; state not advanced');
+            const path = 'patches/last-success.json';
+            let sha;
+            try { sha = (await github.rest.repos.getContent({...context.repo,path,ref:branch})).data.sha; }
+            catch (e) { if (e.status !== 404) throw e; }
+            const record = {schema:1,result:'success',delivered_kind:'actions_artifact',completed_at_utc:new Date().toISOString(),upstream_tag:process.env.UPSTREAM_TAG,upstream_commit:process.env.UPSTREAM_COMMIT,patch_revision:process.env.PATCH_REVISION,patch_sha256:process.env.PATCH_SHA256,candidate_commit:process.env.CANDIDATE_COMMIT,portable_sha256:process.env.PORTABLE_SHA256,artifact_id:process.env.ARTIFACT_ID,artifact_digest:process.env.ARTIFACT_DIGEST,run_url:`https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`};
+            await github.rest.repos.createOrUpdateFileContents({...context.repo,path,branch,sha,message:`Record successful ${record.upstream_tag}-${record.patch_revision} build`,content:Buffer.from(JSON.stringify(record,null,2)+'\n').toString('base64')});
+
+  report-failure:
+    needs: [discover, pipeline, record-success]
+    if: always() && (needs.discover.result == 'failure' || needs.pipeline.result == 'failure' || needs.record-success.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'Proxy-chain upstream watch needs attention';
+            const body = `Upstream discovery or completion-state recording failed. No success was inferred from this failure.\n\nRun: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const {data: issues} = await github.rest.issues.listForRepo({...context.repo,state:'open',per_page:100});
+            if (!issues.some(x => !x.pull_request && x.title === title)) await github.rest.issues.create({...context.repo,title,body});

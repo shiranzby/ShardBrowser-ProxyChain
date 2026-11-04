@@ -1,0 +1,2 @@
+# A patch is a byte-for-byte build input. Preserve its hash on Windows too.
+patches/*.patch -text -whitespace
