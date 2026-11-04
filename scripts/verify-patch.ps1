@@ -59,7 +59,7 @@ try {
     $config = New-ProxyChainPlaywrightConfig $candidate $output $node $port
     $configPath = Join-Path $output 'playwright-proxy-chain.config.mjs'
     ('export default ' + ($config | ConvertTo-Json -Depth 12) + ';') | Set-Content -LiteralPath $configPath -Encoding utf8
-    Step 'ui-browser' 'npx' @('playwright','test','--config',$configPath,'proxy-chain-settings.spec.ts','settings-save.spec.ts','settings-secret.spec.ts','--project=dev')
+    Step 'ui-browser' 'npx' @('playwright','test','--config',$configPath,'proxy-chain-settings.spec.ts','proxy-chain-errors.spec.ts','settings-save.spec.ts','settings-secret.spec.ts','--project=dev')
     SourceIdentity
     $receipt = [ordered]@{
         schema=1; kind='proxy-chain-verification'; result='passed'; completed_at_utc=[DateTime]::UtcNow.ToString('o')
