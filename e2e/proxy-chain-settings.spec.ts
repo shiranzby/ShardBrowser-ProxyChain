@@ -44,6 +44,7 @@ test("Proxy chain draft writes a secret once and never returns it", async ({ pag
   expect(saveArgs?.value?.proxy_chain?.password).toBe("mock-only-password");
   expect((await mock(page)).state.settings.proxy_chain.password).toBeUndefined();
   await reloadApp(page);
+  await tab(page, "Proxy").click();
   await expect(page.getByRole("textbox", { name: "Password (optional)" })).toHaveValue("");
   await expect(page.getByText("A password is saved securely.")).toBeVisible();
 });
@@ -109,6 +110,7 @@ test("password intents are not sent again and clearing is an explicit saved chan
   await expect(bar(page)).toHaveCount(0);
   expect((await mock(page)).state.settings.proxy_chain.password_saved).toBe(false);
   await reloadApp(page);
+  await tab(page, "Proxy").click();
   await expect(page.getByText("This password belongs to the system proxy.")).toBeVisible();
 });
 
