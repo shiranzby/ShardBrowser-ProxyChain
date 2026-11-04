@@ -303,6 +303,9 @@ pub fn detach(profile_id: &str) {
 
 /// Sends a page-scoped command. Every automation action goes through here.
 pub async fn page_call(profile_id: &str, method: &str, params: Value) -> Result<Value> {
+    if method == "Traffic.setProxy" && crate::process::Tracker::shared().is_chained(profile_id) {
+        anyhow::bail!("Proxy changes are disabled for a running proxy-chain profile. Stop it and change the saved proxy instead.");
+    }
     let s = get(profile_id).ok_or_else(|| anyhow!("not attached"))?;
     let page = s.page().ok_or_else(|| anyhow!("no page attached"))?;
     s.call(method, params, Some(&page)).await

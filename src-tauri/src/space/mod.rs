@@ -562,9 +562,41 @@ pub mod proxy {
     use anyhow::Result;
 
     pub use local::{
-        can_send_udp_directly, country_to_locale, country_to_timezone, geo_check, geo_check_via,
-        parse_bulk, parse_single, probe, probe_udp, GeoInfo, ProxyEntry, ProxyKind, TestSnapshot,
+        can_send_udp_directly, country_to_locale, country_to_timezone,
+        parse_bulk, parse_single, GeoInfo, ProxyEntry, ProxyKind, TestSnapshot,
     };
+    pub(crate) use local::{probe as probe_on_route, geo_check_via as geo_check_on_route};
+
+    pub async fn probe(entry: &ProxyEntry) -> Result<u128> {
+        let settings = crate::proxy_chain::saved_settings()?;
+        let prepared = crate::proxy_chain::prepare(Some(entry), &settings.proxy_chain).await?;
+        let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
+        match local::probe(effective).await {
+            Err(e) if prepared.is_some() => Err(crate::proxy_chain::profile_failure(&prepared.as_ref().unwrap().tunnel, &e).into()),
+            result => result,
+        }
+    }
+
+    pub async fn probe_udp(entry: &ProxyEntry) -> Result<u128> {
+        if crate::proxy_chain::saved_settings()?.proxy_chain.enabled {
+            anyhow::bail!("Proxy-chain V1 does not support UDP. This is a transport limitation, not the profile proxy's capability.");
+        }
+        local::probe_udp(entry).await
+    }
+
+    pub async fn geo_check(entry: &ProxyEntry, provider: Option<String>) -> Result<GeoInfo> {
+        geo_check_via(Some(entry), provider).await
+    }
+
+    pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider: Option<String>) -> Result<GeoInfo> {
+        let Some(entry) = entry else { return local::geo_check_via(None, provider).await };
+        let settings = crate::proxy_chain::saved_settings()?;
+        let prepared = crate::proxy_chain::prepare(Some(entry), &settings.proxy_chain).await?;
+        let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
+        local::geo_check_via(Some(effective), provider).await.map_err(|e| if prepared.is_some() {
+            anyhow::anyhow!("The exit IP request through the profile proxy chain failed.")
+        } else { e })
+    }
 
     /// A team's proxies carry an address only where this member may use them.
     pub fn list() -> Result<Vec<ProxyEntry>> {
@@ -654,10 +686,8 @@ pub mod proxy {
     }
 
     pub fn latest_test(id: &str) -> Option<TestSnapshot> {
-        match team_now() {
-            Some(team) => cache::tests(&team, id).pop(),
-            None => local::latest_test(id),
-        }
+        let enabled = crate::proxy_chain::saved_settings().ok()?.proxy_chain.enabled;
+        history(id).ok()?.into_iter().rev().find(|s| (s.transport.as_deref() == Some("proxy_chain")) == enabled)
     }
 }
 

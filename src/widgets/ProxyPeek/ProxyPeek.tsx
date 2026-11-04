@@ -184,11 +184,14 @@ function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot })
       )}
       {snap.timezone && <Line icon={<ClockIcon className="size-3.5" />}>{snap.timezone}</Line>}
       {snap.isp && <Line icon={<BuildingIcon className="size-3.5" />}>{snap.isp}</Line>}
+      {snap.transport === "proxy_chain" && <p className="m-0 text-secondary text-text-sub-600">{t("proxyChain.viaSystem")}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <Badge color={status === "ok" ? "success" : "error"} size="small">
           {snap.tcp_ms != null ? t("proxyPeek.tcpOk", { ms: snap.tcp_ms }) : t("proxyPeek.tcpFailed")}
         </Badge>
-        {proxy.kind === "socks5" && (
+        {snap.udp_state === "unsupported_by_chain" ? (
+          <Badge color="gray" size="small" data-chain-udp-unsupported>{t("proxyChain.udpUnsupported")}</Badge>
+        ) : proxy.kind === "socks5" && (
           <Tooltip content={snap.udp_error ?? ""}>
             <Badge color={snap.udp_ms != null ? "success" : "error"} size="small">
               {snap.udp_ms != null ? t("proxyPeek.udpOk", { ms: snap.udp_ms }) : t("proxyPeek.udpFailed")}

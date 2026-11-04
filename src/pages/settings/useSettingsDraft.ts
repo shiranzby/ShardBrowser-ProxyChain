@@ -282,12 +282,25 @@ async function run(): Promise<boolean> {
         toast.fail({ title: t("settings.saveFailed"), detail: e });
         return false;
       }
-      // What was typed while it saved stays a change over what is now on disk.
-      useDraft.setState((cur) => ({
-        confirmed: body,
-        edits: diff(body, apply(base, cur.edits)),
-        saves: cur.saves + 1,
-      }));
+      // A password is a write intent, never a confirmed value. Consumed
+      // intents leave the form at once; a replacement typed during the save
+      // stays a draft, just as changes to the other fields do.
+      useDraft.setState((cur) => {
+        const confirmed = { ...body };
+        const desired = apply(base, cur.edits);
+        if (body.proxy_chain) {
+          const sent = body.proxy_chain;
+          const passwordSaved = sent.password === null ? false
+            : typeof sent.password === "string" && sent.password.length > 0 ? true : sent.password_saved;
+          confirmed.proxy_chain = { ...sent, password_saved: passwordSaved };
+          delete confirmed.proxy_chain.password;
+          if (desired.proxy_chain) {
+            desired.proxy_chain = { ...desired.proxy_chain, password_saved: passwordSaved };
+            if (desired.proxy_chain.password === sent.password) delete desired.proxy_chain.password;
+          }
+        }
+        return { confirmed, edits: diff(confirmed, desired), saves: cur.saves + 1 };
+      });
     }
 
     // The window's own preferences are stored with the settings.

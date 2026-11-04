@@ -121,6 +121,7 @@ libc = "0.2"
 aes-gcm = "0.10"
 getrandom = "0.2"
 windows-sys = { version = "0.59", features = [
+    "Win32_Networking_WinHttp",     # current-user system proxy configuration
     "Win32_Foundation",            # HLOCAL + LocalFree live here in 0.59
     "Win32_Security",              # CreateJobObjectW's attributes
     "Win32_Security_Cryptography", # CryptProtectData / CryptUnprotectData

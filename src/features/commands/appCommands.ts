@@ -64,6 +64,7 @@ export const SETTINGS_TABS: Record<SettingsTab, () => string> = {
   helper: () => t("settings.tabHelper"),
   storage: () => t("settings.tabStorage"),
   sync: () => t("settings.tabSync"),
+  proxy: () => t("settings.tabProxy"),
   other: () => t("settings.tabOther"),
   about: () => t("settings.tabAbout"),
 };

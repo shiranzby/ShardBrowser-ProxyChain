@@ -209,7 +209,9 @@ export function scanRules(root) {
   const walk = (dir) => {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name);
-      const rel = relative(root, p);
+      // Keep the allowlist portable: Git paths use `/` on every runner,
+      // while Node's Windows `relative()` returns `\`.
+      const rel = relative(root, p).replaceAll("\\", "/");
       if (SKIP.some((re) => re.test(rel))) continue;
       if (statSync(p).isDirectory()) walk(p);
       else if (/\.(tsx?|jsx?)$/.test(name)) {

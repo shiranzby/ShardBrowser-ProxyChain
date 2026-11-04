@@ -664,6 +664,7 @@ export function seed(): MockState {
       api_enabled: true,
       api_port: 40325,
       api_secret: "mock-signing-key-0000000000000000",
+      proxy_chain: { enabled: false, mode: "auto", host: "127.0.0.1", port: 7890, username: "", password_saved: false },
     },
     api: { enabled: true, port: 40325, base_url: "http://127.0.0.1:40325", token: "shx_mock_00000000000000000000000000" },
     psKey: "psk_test_mock_000000000000000000000000",

@@ -346,10 +346,17 @@ async fn a_silent_store_times_out_and_an_offline_one_changes_nothing() {
     assert_eq!(r.view(&id).state, State::Available);
     assert_eq!(r.item(&id).latest, known.latest);
 
-    // Nobody listens there.
-    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-    r.env.base = format!("http://127.0.0.1:{port}/service/update2/crx");
+    // Own the endpoint throughout the check: a dropped random port can be
+    // reassigned to another parallel test before the request reaches it.
+    let offline = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    r.env.base = format!("http://{}/service/update2/crx", offline.local_addr().unwrap());
+    let reset = tokio::spawn(async move {
+        while let Ok((stream, _)) = offline.accept().await {
+            drop(stream);
+        }
+    });
     let e = check(&r.env).await.unwrap_err();
+    reset.abort();
     assert!(e.contains("could not reach"), "{e}");
     let u = r.view(&id);
     assert_eq!((u.state, u.latest.as_deref()), (State::Available, Some("1.1")));

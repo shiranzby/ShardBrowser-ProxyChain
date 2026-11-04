@@ -6,6 +6,8 @@ use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {
+    #[serde(default, deserialize_with = "crate::proxy_chain::config::deserialize")]
+    pub proxy_chain: crate::proxy_chain::config::ProxyChainSettings,
     /// Absolute path to the ShardX executable.
     pub browser_path: Option<String>,
     /// Theme: "dark" (default) or "light".
@@ -85,6 +87,7 @@ static LOAD_ERROR: Mutex<Option<String>> = Mutex::new(None);
 /// The settings a fresh install starts with — the serde defaults, spelled out.
 fn defaults() -> Settings {
     Settings {
+        proxy_chain: Default::default(),
         browser_path: None,
         theme: default_theme(),
         geo_checker: Some("ip-api.com".into()),

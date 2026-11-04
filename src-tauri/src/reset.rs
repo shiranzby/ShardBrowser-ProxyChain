@@ -1649,7 +1649,7 @@ mod tests {
 
     /// Anything under a "Volumes/T7" folder counts as another disk.
     fn t7_is_another_disk(a: &Path, b: &Path) -> bool {
-        let on_t7 = |p: &Path| p.to_string_lossy().contains("/Volumes/T7");
+        let on_t7 = |p: &Path| p.to_string_lossy().replace('\\', "/").contains("/Volumes/T7");
         on_t7(a) == on_t7(b)
     }
 

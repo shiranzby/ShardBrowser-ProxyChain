@@ -56,6 +56,7 @@ struct ChildEntry {
     started_at: Instant,
     /// Library extensions it started with: their folders are not swapped under it.
     extensions: Vec<String>,
+    chain: Option<std::sync::Arc<crate::proxy_chain::tunnel::Tunnel>>,
 }
 
 /// What is done once a browser has closed for good.
@@ -108,11 +109,24 @@ impl Tracker {
     pub fn track(
         self: &'static Self,
         profile_id: String,
-        mut child: Child,
+        child: Child,
         udd: PathBuf,
         exit: ExitHook,
         extensions: Vec<String>,
     ) -> u32 {
+        self.track_with_chain(profile_id, child, udd, exit, extensions, None)
+    }
+
+    pub fn track_with_chain(
+        self: &'static Self,
+        profile_id: String,
+        mut child: Child,
+        udd: PathBuf,
+        exit: ExitHook,
+        extensions: Vec<String>,
+        chain: Option<crate::proxy_chain::tunnel::Tunnel>,
+    ) -> u32 {
+        let chain = chain.map(std::sync::Arc::new);
         static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let pid = child.id().unwrap_or(0);
         let gen = GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -122,7 +136,7 @@ impl Tracker {
             let mut g = self.inner.lock().unwrap();
             let previous = g.insert(
                 profile_id.clone(),
-                ChildEntry { pid, gen, killer: tx, cdp: None, started_at: Instant::now(), extensions },
+                ChildEntry { pid, gen, killer: tx, cdp: None, started_at: Instant::now(), extensions, chain: chain.clone() },
             );
             // Replacing the entry drops the old killer and orphans that browser.
             // `launch` refuses a second launch up front; this is the backstop.
@@ -162,6 +176,16 @@ impl Tracker {
             // stays honest; `after_exit` waits for the browser that is really
             // there rather than for the shell that launched it.
             watch_lock(&profile_id, &udd, &mut rx).await;
+            if let Some(chain) = &chain {
+                let mut reported = false;
+                while let Err(error) = chain.close_and_wait().await {
+                    if !reported {
+                        eprintln!("[tracker] proxy-chain cleanup: {}", error.code);
+                        reported = true;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
             if let Ok(mut g) = Self::shared().inner.lock() {
                 if g.get(&profile_id).is_some_and(|e| e.gen == gen) {
                     g.remove(&profile_id);
@@ -180,6 +204,16 @@ impl Tracker {
         });
 
         pid
+    }
+
+    pub fn is_chained(&self, profile_id: &str) -> bool {
+        self.inner.lock().map(|g| g.get(profile_id).is_some_and(|e| e.chain.is_some())).unwrap_or(true)
+    }
+
+    pub fn close_chains(&self) {
+        if let Ok(g) = self.inner.lock() {
+            for entry in g.values() { if let Some(chain) = &entry.chain { chain.close(); } }
+        }
     }
 
     /// Attach CDP to a tracked profile; no-op if the profile already exited.

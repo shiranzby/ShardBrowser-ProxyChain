@@ -83,7 +83,7 @@ test("the refusals of steps 5 to 10 are the backend's words, and the app says ea
 });
 
 test("a sync's stops are the backend's words, and the app says each in its own", () => {
-  const cycle = read("src-tauri/src/space/sync/cycle.rs").replace(/\\\n\s*/g, "");
+  const cycle = read("src-tauri/src/space/sync/cycle.rs").replace(/\\\r?\n\s*/g, "");
   const vanished = /const VANISHED: &str = "([^"]*)";/.exec(cycle);
   assert.equal(vanished?.[1], SYNC_STOPS.vanished);
   assert.ok(cycle.includes(`"${SYNC_STOPS.unread("{what}", "{e:#}")}"`), "the unread stop moved");

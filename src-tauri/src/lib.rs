@@ -8,6 +8,7 @@ mod launch;
 mod mcp_setup;
 mod migrate;
 mod process;
+mod proxy_chain;
 mod psapi;
 mod runtime;
 mod settings;
@@ -1965,7 +1966,17 @@ fn cookies_import(profile_id: String, cookies: Vec<space::cookies::Cookie>) -> R
 
 #[tauri::command]
 fn settings_get() -> Result<settings::Settings, String> {
-    settings::load().map_err(|e| e.to_string())
+    settings::load().map(|mut s| { s.proxy_chain = s.proxy_chain.public(); s }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn proxy_chain_detect() -> proxy_chain::detect_windows::Detection {
+    proxy_chain::detect_windows::detect()
+}
+
+#[tauri::command]
+async fn proxy_chain_test(kind: String, config: proxy_chain::config::ProxyChainSettings, profile_id: Option<String>) -> Result<proxy_chain::TestResult, String> {
+    proxy_chain::test(kind, config, profile_id).await.map_err(|e| e.to_string())
 }
 
 /// The primary monitor in CSS pixels, so the editor can offer resolutions and
@@ -2049,6 +2060,7 @@ fn settings_save(mut value: settings::Settings) -> Result<(), String> {
     // Owned by the migration, not the form — which round-trips the whole struct
     // and would reset it while the data sits on another disk.
     if let Ok(cur) = settings::load() {
+        value.proxy_chain.apply_update(&cur.proxy_chain).map_err(|e| e.to_string())?;
         value.data_root = cur.data_root;
         if value.api_secret.is_empty() {
             value.api_secret = cur.api_secret;
@@ -2720,6 +2732,8 @@ pub fn run() {
             proxy_bulk_save,
             launch,
             settings_get,
+            proxy_chain_detect,
+            proxy_chain_test,
             settings_save,
             settings_load_error,
             host_screen,
@@ -2917,6 +2931,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            if let tauri::RunEvent::Exit = event { process::Tracker::shared().close_chains(); }
             // Mid-reset nothing ends the app but its own restart.
             if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
                 if reset::active() && code != Some(tauri::RESTART_EXIT_CODE) {
@@ -2935,6 +2950,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
     use std::sync::atomic::Ordering::SeqCst;
     static CLOSING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if !space::open::any_open() {
+        process::Tracker::shared().close_chains();
         app.exit(code);
         return;
     }
@@ -2946,6 +2962,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
     tauri::async_runtime::spawn(async move {
         space::open::close_all(space::open::QUIT_WAIT).await;
         CLOSING.store(false, SeqCst);
+        process::Tracker::shared().close_chains();
         app.exit(code);
     });
 }

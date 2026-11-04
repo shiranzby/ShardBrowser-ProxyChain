@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Settings, ApiInfo, DataRootInfo } from "./types";
+import type { Settings, ApiInfo, DataRootInfo, ProxyChainDetection, ProxyChainSettings, ProxyChainTestKind, ProxyChainTestResult } from "./types";
 
 /** The settings file, minus the API signing key. The form must never hold
  *  it: a Save would write an old key back after Regenerate token, and a
@@ -7,8 +7,14 @@ import type { Settings, ApiInfo, DataRootInfo } from "./types";
 export const settingsGet = async (): Promise<Settings> => {
   const raw = await invoke<Settings & { api_secret?: string }>("settings_get");
   delete raw.api_secret;
+  // Credential writes never become values the form reads back.
+  if (raw.proxy_chain) delete raw.proxy_chain.password;
   return raw;
 };
+
+export const proxyChainDetect = () => invoke<ProxyChainDetection>("proxy_chain_detect");
+export const proxyChainTest = (kind: ProxyChainTestKind, config: ProxyChainSettings, profileId?: string) =>
+  invoke<ProxyChainTestResult>("proxy_chain_test", { kind, config, profileId });
 /** Set once a save from this window is on disk: a read after that may show
  *  the change, not what runs. A failed save changes nothing, so it does not
  *  count (Pair 34 ruling, M3); one still on its way makes a read unsure. */

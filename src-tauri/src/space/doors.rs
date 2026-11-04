@@ -349,6 +349,8 @@ const RULES: &[(&str, Need)] = &[
     ("profile_sync_set", Off),
     ("profile_sync_take", Off),
     ("mcp_download", Machine),
+    ("proxy_chain_detect", Machine),
+    ("proxy_chain_test", Machine), // profile test separately requires Start before reading its proxy
     ("runtime::runtime_status", Machine),
     ("runtime::runtime_install", Machine),
     ("runtime::launcher_update_check", Machine),

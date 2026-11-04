@@ -454,20 +454,53 @@ export const handlers: Record<string, Handler> = {
   },
 
   // ---- settings, api, data root ---------------------------------------------
-  settings_get: (_a, { state }) => state.settings,
+  settings_get: (_a, { state }) => {
+    const value = JSON.parse(JSON.stringify(state.settings));
+    if (value.proxy_chain) delete value.proxy_chain.password;
+    return value;
+  },
   settings_save: ({ value }, ctx) => {
     // Recorded for tests: what the settings page sent.
     ((window as { __shardxMockSettingsSaves?: unknown[] }).__shardxMockSettingsSaves ??= []).push(value);
     // As the backend (lib.rs:1804-1808): an incoming signing key wins; a
     // missing or empty one keeps the key on disk.
     const keep = ctx.state.settings.api_secret;
+    const chain = ctx.state.settings.proxy_chain;
     ctx.state.settings = { ...ctx.state.settings, ...value, api_secret: value.api_secret || keep };
+    if (value.proxy_chain) {
+      const current = chain ?? { enabled: false, mode: "auto", host: "127.0.0.1", port: 7890, username: "", password_saved: false };
+      const incoming = value.proxy_chain;
+      const next = { ...current, ...incoming, password_saved: current.password_saved };
+      if (Object.prototype.hasOwnProperty.call(incoming, "password")) {
+        if (incoming.password === null) { next.password_saved = false; delete next.password; }
+        else if (typeof incoming.password === "string" && incoming.password.length > 0) { next.password_saved = true; delete next.password; }
+      }
+      delete next.password;
+      ctx.state.settings.proxy_chain = next;
+    }
     ctx.state.api = { ...ctx.state.api, enabled: !!value.api_enabled, port: value.api_port ?? ctx.state.api.port, base_url: `http://127.0.0.1:${value.api_port ?? ctx.state.api.port}` };
     ctx.save();
     return null;
   },
   // A test sets `__shardxMockSettingsLoadError` to show the load-error card.
   settings_load_error: () => (window as { __shardxMockSettingsLoadError?: string }).__shardxMockSettingsLoadError ?? null,
+  proxy_chain_detect: () => (window as { __shardxMockChainDetection?: Record<string, unknown> }).__shardxMockChainDetection
+    ?? { state: "ok", kind: "http", host: "127.0.0.1", port: 7890, source: "mock Windows Internet Settings", has_bypass: false },
+  proxy_chain_test: ({ kind, profileId }, { state }) => {
+    const profile = profileId ? state.profiles[String(profileId)] : undefined;
+    const now = `@${Math.floor(Date.now() / 1000)}`;
+    const system = kind === "local" ? { state: "not_tested" } : { state: "ok", latency_ms: 12 };
+    const profileStage = kind === "profile" ? { state: profile ? "ok" : "failed", latency_ms: profile ? 88 : null, error_message: profile ? null : "profile not found" } : { state: "not_tested" };
+    return {
+      kind, proxy_kind: "http", proxy_address: "127.0.0.1:7890", source: "mock", profile_name: profile?.name ?? null,
+      local_network: kind === "local" ? { state: "ok", latency_ms: 8 } : null,
+      system_proxy: system, profile_proxy: profileStage,
+      exit_ip: kind === "profile" && profile ? "203.0.113.42" : null,
+      exit_error: kind === "profile" && !profile ? "profile proxy test failed" : null,
+      total_ms: kind === "profile" && profile ? 100 : null, tested_at: now,
+      ...((window as { __shardxMockChainResult?: Record<string, unknown> }).__shardxMockChainResult ?? {}),
+    };
+  },
   api_info: (_a, { state }) => state.api,
   api_regenerate_token: (_a, ctx) => {
     // As the backend: a new signing key on disk, and a token signed with it.

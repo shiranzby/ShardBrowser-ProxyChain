@@ -1060,6 +1060,10 @@ pub fn country_to_locale(cc: &str) -> &'static str {
 /// One observation of a proxy's exit state; same-IP consecutive entries collapse.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub udp_state: Option<String>,
     pub first_seen: String,
     pub last_seen: String,
     pub ip: String,
@@ -1162,7 +1166,7 @@ pub(in crate::space) fn keep_test(entries: &mut Vec<TestSnapshot>, mut snap: Tes
     // used to stay as they were first seen, so a proxy that had moved
     // went on claiming its old city.
     if let Some(last) = entries.last_mut() {
-        if !snap.ip.is_empty() && last.ip == snap.ip {
+        if !snap.ip.is_empty() && last.ip == snap.ip && last.transport == snap.transport {
             snap.first_seen = last.first_seen.clone();
             *last = snap.clone();
             return snap;
@@ -1226,10 +1230,27 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
 /// other: the reach test, the relay test and the address the world sees are
 /// three separate questions to the same proxy.
 pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+    let prepared = async {
+        let settings = crate::proxy_chain::saved_settings()?;
+        crate::proxy_chain::prepare(Some(entry), &settings.proxy_chain).await
+    }.await;
+    match prepared {
+        Ok(prepared) => {
+            let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
+            measure_on_route(effective, prepared.is_some()).await
+        }
+        Err(_) => TestSnapshot {
+            transport: Some("proxy_chain".into()), udp_state: Some("unsupported_by_chain".into()),
+            first_seen: String::new(), last_seen: unix_now(), ip: String::new(), country_code: String::new(), country: String::new(), region: String::new(), city: String::new(), isp: String::new(), timezone: String::new(), latitude: 0.0, longitude: 0.0, tcp_ms: None, udp_ms: None, udp_error: None, geo_error: Some("The proxy chain could not be established. No direct connection was attempted.".into()), provider: String::new(),
+        },
+    }
+}
+
+async fn measure_on_route(entry: &ProxyEntry, chained: bool) -> TestSnapshot {
     let now = unix_now();
 
     let udp_fut = async {
-        if matches!(entry.kind, ProxyKind::Socks5) {
+        if !chained && matches!(entry.kind, ProxyKind::Socks5) {
             Some(probe_udp(entry).await)
         } else {
             None
@@ -1268,6 +1289,8 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
     };
 
     TestSnapshot {
+        transport: if chained { Some("proxy_chain".into()) } else { None },
+        udp_state: if chained { Some("unsupported_by_chain".into()) } else { None },
         first_seen: String::new(),
         last_seen: now,
         ip,

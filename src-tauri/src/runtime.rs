@@ -31,7 +31,11 @@ const MANIFEST_URL: &str =
 /// Kept short on purpose: giving up early only costs this launch its update
 /// check, while waiting costs the operator a launcher that looks stuck.
 const MANIFEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
-const LAUNCHER_RELEASE_REPO: &str = "ProxyShard/ShardBrowser";
+const LAUNCHER_RELEASE_REPO: &str = "shiranzby/ShardBrowser-ProxyChain";
+pub const PATCH_REVISION: &str = match option_env!("SHARDBROWSER_PATCH_REVISION") {
+    Some(value) => value,
+    None => "pc1",
+};
 /// Chromium version baked into the current bundle (used for Mac Framework path).
 pub const CHROMIUM_VERSION: &str = "156.0.8078.48";
 
@@ -1421,26 +1425,22 @@ fn norm_ver(v: &str) -> &str {
 
 /// Best-effort SemVer compare, lex fallback per component.
 fn is_newer(latest: &str, current: &str) -> bool {
-    let a: Vec<_> = norm_ver(latest).split('.').collect();
-    let b: Vec<_> = norm_ver(current).split('.').collect();
-    for i in 0..a.len().max(b.len()) {
-        let x = a.get(i).copied().unwrap_or("0");
-        let y = b.get(i).copied().unwrap_or("0");
-        match (x.parse::<u64>(), y.parse::<u64>()) {
-            (Ok(xn), Ok(yn)) => {
-                if xn != yn { return xn > yn; }
-            }
-            _ => {
-                if x != y { return x > y; }
-            }
-        }
+    fn version(value: &str) -> Option<([u64; 3], u64)> {
+        let value = norm_ver(value);
+        let (base, patch) = match value.split_once("-pc") {
+            Some((base, patch)) => (base, patch.parse::<u64>().ok()?),
+            None => (value, 0),
+        };
+        let parts: Vec<_> = base.split('.').map(str::parse::<u64>).collect::<Result<_, _>>().ok()?;
+        let base: [u64; 3] = parts.try_into().ok()?;
+        Some((base, patch))
     }
-    false
+    match (version(latest), version(current)) { (Some(a), Some(b)) => a > b, _ => false }
 }
 
 #[tauri::command]
 pub async fn launcher_update_check(app: tauri::AppHandle) -> Result<LauncherVersionInfo, String> {
-    let current = app.package_info().version.to_string();
+    let current = format!("{}-{PATCH_REVISION}", app.package_info().version);
 
     let url = format!("https://api.github.com/repos/{LAUNCHER_RELEASE_REPO}/releases/latest");
     let client = match reqwest::Client::builder()
@@ -1482,4 +1482,16 @@ pub async fn launcher_update_check(app: tauri::AppHandle) -> Result<LauncherVers
         None => false,
     };
     Ok(LauncherVersionInfo { current, latest, update_available, release_url })
+}
+
+#[cfg(test)]
+mod proxy_chain_update_tests {
+    #[test]
+    fn patch_revisions_compare_numerically_and_upstream_remains_primary() {
+        assert!(super::is_newer("v2.1.2-pc10", "2.1.2-pc9"));
+        assert!(super::is_newer("v2.2.0-pc1", "2.1.2-pc99"));
+        assert!(!super::is_newer("v2.1.2", "2.1.2-pc1"));
+        assert!(!super::is_newer("v2.1.2-pc1", "2.1.2-pc1"));
+        assert!(!super::is_newer("v2.2.0-beta", "2.1.2-pc1"));
+    }
 }

@@ -10,7 +10,7 @@ import { TEAM_WARNINGS, UNNAMED_TEAM, warningRe } from "./backendWarnings.ts";
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 // A Rust string's line continuation (a backslash, the line break, the next line's indent) is nothing.
-const rust = (path: string) => read(join("src-tauri/src", path)).replace(/\\\n\s*/g, "");
+const rust = (path: string) => read(join("src-tauri/src", path)).replace(/\\\r?\n\s*/g, "");
 
 test("each warning is the backend's own format", () => {
   const src = ["space/open.rs", "space/live.rs", "space/admin.rs", "space/items.rs", "space/sync/cycle.rs", "space/sync/cycle/extension.rs", "lib.rs", "reset.rs"].map(rust).join("\n");

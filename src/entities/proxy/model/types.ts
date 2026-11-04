@@ -28,6 +28,9 @@ export type ProxyTestSnapshot = {
   /** Why this snapshot has no location. */
   geo_error: string | null;
   provider: string;
+  /** Missing in observations from before the proxy-chain patch. */
+  transport?: "direct" | "proxy_chain";
+  udp_state?: "unsupported_by_chain";
 };
 
 export type BulkRowState = {

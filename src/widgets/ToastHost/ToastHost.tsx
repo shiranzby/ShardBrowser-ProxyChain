@@ -80,7 +80,10 @@ function place(stack: HTMLElement | null): Spot {
     const main = document.querySelector("main");
     const column = main ? layoutRect(main) : null;
     left = column ? column.left + column.width / 2 : view.width / 2;
-    bottom = GAP + GAP;
+    const saveBar = document.querySelector<HTMLElement>("[data-save-bar]");
+    // A new draft can appear while the previous save's toast is still up.
+    // Keep its actions reachable just as we do for a list's bulk bar.
+    bottom = saveBar ? view.height - layoutRect(saveBar).top + GAP : GAP + GAP;
   }
   const { width: w, height } = stack ? layoutRect(stack) : { width: 0, height: 0 };
   // Measured at its place over the list: a dialog moves it only for a while.
@@ -158,6 +161,7 @@ function useAnchor(stack: React.RefObject<HTMLElement | null>, key: string) {
     mounts.observe(document.body, { childList: true });
     const column = document.querySelector("[data-list-column]");
     if (column) mounts.observe(column, { childList: true });
+    if (main) mounts.observe(main, { childList: true, subtree: true });
     window.addEventListener("resize", measure);
     measure();
     return () => { window.removeEventListener("resize", measure); sizes.disconnect(); mounts.disconnect(); moves.disconnect(); };

@@ -17,6 +17,60 @@ export type Settings = {
   extra_args?: string;
   /** Ask the Web Store about linked extensions every 5 h (on when absent). */
   ext_update_check?: boolean;
+  /** First hop used to connect a profile's existing proxy. Missing means off. */
+  proxy_chain?: ProxyChainSettings;
+};
+
+export type ProxyChainSettings = {
+  /** An unreadable saved chain must be explicitly repaired before use. */
+  invalid?: boolean;
+  enabled: boolean;
+  mode: "auto" | "http" | "socks5";
+  host: string;
+  port: number;
+  username: string;
+  /** A saved credential exists; its plaintext is never returned by settings_get. */
+  password_saved: boolean;
+  /** Write intent: absent keeps it, a nonempty value replaces it, null clears it. */
+  password?: string | null;
+};
+
+export const defaultProxyChain = (): ProxyChainSettings => ({
+  enabled: false, mode: "auto", host: "127.0.0.1", port: 7890, username: "", password_saved: false,
+});
+
+export type ProxyChainTestKind = "local" | "system" | "profile";
+export type ProxyChainStage = {
+  state: "not_tested" | "ok" | "failed";
+  latency_ms?: number | null;
+  error_code?: string | null;
+  error_message?: string | null;
+};
+
+export type ProxyChainTestResult = {
+  kind: ProxyChainTestKind;
+  proxy_kind?: "http" | "socks5" | null;
+  proxy_address?: string | null;
+  source?: string | null;
+  profile_name?: string | null;
+  local_network?: ProxyChainStage | null;
+  system_proxy: ProxyChainStage;
+  profile_proxy: ProxyChainStage;
+  exit_ip?: string | null;
+  exit_error?: string | null;
+  total_ms?: number | null;
+  tested_at: string;
+};
+
+export type ProxyChainDetection = {
+  state: "ok" | "manual_required" | "failed";
+  kind?: "http" | "socks5" | null;
+  host?: string | null;
+  port?: number | null;
+  source: string;
+  has_bypass?: boolean;
+  error_code?: string | null;
+  error_message?: string | null;
 };
 
 /** Where profiles, user-data, extensions and the trash live. */

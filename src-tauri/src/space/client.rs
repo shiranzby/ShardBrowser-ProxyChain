@@ -1486,7 +1486,7 @@ mod tests {
     }
 
     /// Files that talk HTTP or open sockets for something other than a team.
-    const OTHER_TRAFFIC: [(&str, &str); 10] = [
+    const OTHER_TRAFFIC: [(&str, &str); 13] = [
         ("process/close.rs", "Stop's Browser.close on a launched browser's own devtools"),
         ("live_e2e.rs", "the live end-to-end harness, run by hand: a test site, a proxy, CDP, the server raw"),
         ("runtime.rs", "engine and launcher downloads"),
@@ -1497,6 +1497,9 @@ mod tests {
         ("requests.rs", "the automation runner's own requests"),
         ("space/local/proxy.rs", "proxy checks"),
         ("space/local/extensions.rs", "extension downloads"),
+        ("proxy_chain/connector.rs", "the configured first-hop proxy TCP transport"),
+        ("proxy_chain/tests.rs", "synthetic loopback proxy and tunnel tests"),
+        ("proxy_chain/integration_tests.rs", "synthetic profile launch and lifecycle tests"),
     ];
 
     const TALKS: [&str; 6] = ["reqwest", "tungstenite", "wreq", "TcpStream::connect", "hyper", "rustls"];
@@ -1552,6 +1555,7 @@ mod tests {
         assert!(unused.is_empty(), "no longer talks HTTP, take it off the list: {unused:?}");
         // Inside it, one pool and one way to open a connection: the switch to TLS.
         let ours = std::fs::read_to_string(src.join("space/client.rs")).unwrap();
+        let ours = ours.replace("\r\n", "\n");
         let ours = ours.split("#[cfg(test)]\nmod tests").next().unwrap();
         let builders = code(ours).filter(|(_, l)| l.contains("Client::builder(")).count();
         assert_eq!(builders, 1, "one place makes team connections: link()");

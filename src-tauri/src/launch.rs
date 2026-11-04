@@ -366,6 +366,13 @@ fn bound_proxy(
     }
 }
 
+/// Test the saved binding under the same Start right, without launching or editing it.
+pub(crate) fn proxy_for_test(profile_id: &str) -> Result<proxy::ProxyEntry> {
+    let _pass = perm::start(profile_id)?;
+    let stored = profile::load_raw(profile_id)?;
+    bound_proxy(&stored, profile_id, proxy::get)?.ok_or_else(|| anyhow::anyhow!("This profile has no upstream proxy assigned."))
+}
+
 /// Machine switches a team's profile does not take: each would open a door
 /// the team keeps shut (debugging, the data folder, the proxy, extensions).
 fn team_extra_args(args: Vec<String>) -> Vec<String> {
@@ -542,6 +549,7 @@ pub(crate) async fn launch_with(engine: PathBuf, profile_id: &str, enable_cdp: b
 
 /// What the command line is made from once the slow steps are done.
 struct Ready<'a> {
+    effective_proxy: Option<&'a proxy::ProxyEntry>,
     fp_file: &'a Path,
     icon: Option<&'a Path>,
     /// The profile as the engine reads it: no `_meta`, "auto" resolved.
@@ -556,13 +564,27 @@ struct Ready<'a> {
 }
 
 async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) -> Result<LaunchOutcome> {
+    let s = crate::proxy_chain::saved_settings()?;
+    if s.proxy_chain.enabled {
+        crate::proxy_chain::validate_args(&s.extra_args)?;
+        // A raw DevTools client can change Traffic.setProxy inside the closed
+        // engine, bypassing Rust guards. Refuse that unsupported combination.
+        if input.cdp { anyhow::bail!("Proxy-chain V1 cannot expose raw DevTools or automation proxy controls. Start this profile from the normal profile list without debugging."); }
+    }
+    let chain = crate::proxy_chain::prepare(input.proxy.as_ref(), &s.proxy_chain).await?;
+    let chain_geo = if let Some(chain) = &chain {
+        proxy::probe_on_route(&chain.effective).await.map_err(|e| crate::proxy_chain::profile_failure(&chain.tunnel, &e))?;
+        Some(proxy::geo_check_on_route(Some(&chain.effective), None).await.map_err(|_| anyhow::anyhow!("The proxy chain connected, but its live exit IP could not be verified. No direct connection was attempted."))?)
+    } else { None };
     // Read off the engine binary while the proxy is probed; once per engine version.
     let ext_alone = (!input.extensions.is_empty() || input.library.is_some()).then(|| {
         let bin = bin.to_path_buf();
         tokio::task::spawn_blocking(move || crate::runtime::engine_loads_extensions_alone(&bin))
     });
     // Live UDP probe; QUIC/WebRTC gating uses current capability not stale cache.
-    let proxy_udp_ok = if let Some(p) = input.proxy.as_ref() {
+    let proxy_udp_ok = if chain.is_some() {
+        false // TCP-only transport; never run UDP_ASSOCIATE or direct STUN.
+    } else if let Some(p) = input.proxy.as_ref() {
         if matches!(p.kind, proxy::ProxyKind::Socks5) {
             match proxy::probe_udp(p).await {
                 Ok(ms) => {
@@ -613,13 +635,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
     // Win/Linux profile whose resolution the operator picked in the editor is
     // left out of it, or the switch would report the host's screen over exactly
     // the one they asked for.
-    let s = settings::load()?;
     let use_real_screen =
         s.screen_resolution_mode.as_deref() == Some("real") && !input.stored.meta.screen_custom;
 
     // Strip `_meta` wrapper and resolve "auto" sentinels before serialising.
     let mut raw = engine_config(&input.stored);
-    resolve_auto_fields(&mut raw, input.proxy.as_ref()).await;
+    resolve_auto_fields(&mut raw, input.proxy.as_ref(), chain_geo.as_ref()).await;
     // The proxy probe and the geo lookup are the slow part: a cancel made
     // while they ran stops here, before anything is written.
     check_cancel(&input.profile_id)?;
@@ -705,7 +726,9 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
     }
 
     // Live geo for ICE-candidate spoofing, cached snapshot as fallback.
-    let proxy_public_ip: Option<String> = if let Some(p) = input.proxy.as_ref() {
+    let proxy_public_ip: Option<String> = if let Some(geo) = &chain_geo {
+        Some(geo.ip.clone())
+    } else if let Some(p) = input.proxy.as_ref() {
         match proxy::geo_check(p, None).await {
             Ok(g) if !g.ip.is_empty() => Some(g.ip),
             _ => proxy::latest_test(&p.id)
@@ -723,6 +746,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
     let args = command_line(
         &input,
         &Ready {
+            effective_proxy: chain.as_ref().map(|c| &c.effective),
             fp_file: &fp_file,
             icon: icon.as_deref(),
             raw: &raw,
@@ -764,7 +788,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
         Some(_) => process::spawn_tied(cmd).await.context("start the ShardBrowser engine")?,
         None => (cmd.spawn().context("start the ShardBrowser engine")?, process::Tie::default()),
     };
-    let pid = Tracker::shared().track(profile_id.clone(), child, udd.clone(), exit, ext_ids);
+    let pid = Tracker::shared().track_with_chain(profile_id.clone(), child, udd.clone(), exit, ext_ids, chain.map(|c| c.tunnel));
 
     if let Some(s) = &remote {
         s.spawned(tie, pid);
@@ -865,8 +889,9 @@ fn command_line(
         args.push("--hide-crash-restore-bubble".into());
     }
 
-    if let Some(p) = input.proxy.as_ref() {
+    if let Some(p) = ready.effective_proxy.or(input.proxy.as_ref()) {
         args.push(format!("--proxy-server={}", p.to_proxy_server_arg()));
+        if s.proxy_chain.enabled { args.push("--proxy-bypass-list=<-loopback>".into()); }
 
         // QUIC: enable only when proxy UDP relay verified; rely on Alt-Svc upgrade path.
         if ready.proxy_udp_ok {
@@ -1010,6 +1035,7 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
 async fn resolve_auto_fields(
     cfg: &mut serde_json::Map<String, serde_json::Value>,
     proxy_opt: Option<&proxy::ProxyEntry>,
+    chain_geo: Option<&proxy::GeoInfo>,
 ) {
     let want_tz_auto = cfg.get("timezone").and_then(|v| v.as_str()) == Some("auto");
     let want_lang_auto = cfg
@@ -1036,7 +1062,10 @@ async fn resolve_auto_fields(
 
     // ---- geo source ----
     let mut source = "";
-    let geo: Option<proxy::GeoInfo> = match proxy_opt {
+    let geo: Option<proxy::GeoInfo> = if let Some(geo) = chain_geo {
+        source = "proxy-chain-live";
+        Some(geo.clone())
+    } else { match proxy_opt {
         Some(p) => {
             match proxy::geo_check_via(Some(p), None).await {
                 Ok(g) => { source = "proxy-live"; Some(g) }
@@ -1088,7 +1117,7 @@ async fn resolve_auto_fields(
                 }
             }
         }
-    };
+    }};
 
     let host_warn = || {
         if proxy_opt.is_some() {
@@ -1632,6 +1661,7 @@ mod tests {
         let fp = PathBuf::from(format!("{}/fingerprint.json", input.udd.display()));
         let icon = PathBuf::from(format!("/runtime/profile-icons/{}.png", input.profile_id));
         let ready = Ready {
+            effective_proxy: None,
             fp_file: &fp,
             icon: Some(&icon),
             raw: &raw,
