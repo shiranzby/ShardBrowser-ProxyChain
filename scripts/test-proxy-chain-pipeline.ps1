@@ -115,7 +115,7 @@ try {
     Case 'patch-applies-to-isolated-upstream' {
         & (Join-Path $PSScriptRoot 'apply-patch.ps1') -ManifestPath $manifestPath -UpstreamTag v2.1.2 -UpstreamCommit $base -CandidatePath $candidate1 -OutputPath $meta1 -SourceRepository $upstream
         Assert ((Get-Content -Raw (Join-Path $candidate1 'feature.txt')) -match '^patched') 'Patch content not applied.'
-        Assert (@(& git -C $candidate1 status --porcelain=v1).Count -eq 0) 'Applied candidate not clean.'
+        Assert-ProxyChainCleanSource $candidate1
         $receipt=Get-Content -Raw $meta1 | ConvertFrom-Json
         $branch=([string](& git -C $candidate1 branch --show-current)).Trim()
         Assert ($branch -eq 'pc-ci/v2.1.2-pc1' -and $receipt.candidate_branch -eq $branch) 'The isolated build did not create its deterministic temporary branch.'
@@ -152,11 +152,11 @@ try {
     }
     Case 'verification-output-cannot-equal-active-source-root' {
         Refused { & (Join-Path $PSScriptRoot 'verify-patch.ps1') -CandidatePath $candidate1 -MetadataPath $meta1 -OutputDirectory $candidate1 } 'outside the candidate source tree'
-        Assert (@(& git -C $candidate1 status --porcelain=v1).Count -eq 0) 'Verification wrote into active source.'
+        Assert-ProxyChainCleanSource $candidate1
     }
     Case 'portable-output-cannot-equal-active-source-root' {
         Refused { & (Join-Path $PSScriptRoot 'build-portable.ps1') -CandidatePath $candidate1 -MetadataPath $meta1 -VerificationPath (Join-Path $root 'incomplete-verification.json') -OutputDirectory $candidate1 } 'outside the candidate source tree'
-        Assert (@(& git -C $candidate1 status --porcelain=v1).Count -eq 0) 'Portable build wrote into active source.'
+        Assert-ProxyChainCleanSource $candidate1
     }
     Case 'patch-receipt-cannot-equal-source-root' {
         $target=Join-Path $root 'refused-receipt-source'
@@ -198,6 +198,38 @@ try {
         Assert ($config.webServer.cwd -eq [IO.Path]::GetFullPath($candidate1)) 'Vite would start in the proof directory instead of the candidate.'
         Assert ($config.testDir -eq (Join-Path $candidate1 'e2e')) 'UI tests do not belong to the candidate source.'
         Assert ($config.outputDir -eq (Join-Path $root 'playwright-results')) 'Browser evidence was put inside candidate source.'
+    }
+    $normalized = Join-Path $root 'normalized-source'
+    New-Item -ItemType Directory -Path $normalized | Out-Null
+    Invoke-Git init $normalized | Out-Null
+    Invoke-Git -C $normalized config user.name 'Synthetic test' | Out-Null
+    Invoke-Git -C $normalized config user.email 'synthetic@example.invalid' | Out-Null
+    Invoke-Git -C $normalized config core.autocrlf true | Out-Null
+    $normalFile=Join-Path $normalized 'generated.txt'
+    [IO.File]::WriteAllText($normalFile, "alpha`r`nbeta`r`n")
+    Invoke-Git -C $normalized add . | Out-Null
+    Invoke-Git -C $normalized -c commit.gpgsign=false commit -m normalized-baseline | Out-Null
+    Case 'lf-generator-with-identical-git-blob-remains-clean' {
+        [IO.File]::WriteAllText($normalFile, "alpha`nbeta`n")
+        $indexed=[string](Invoke-Git -C $normalized rev-parse HEAD:generated.txt)
+        $written=[string](Invoke-Git -C $normalized hash-object --path generated.txt generated.txt)
+        Assert ($indexed -eq $written) 'Line-ending fixture did not preserve the normalized Git blob.'
+        Assert-ProxyChainCleanSource $normalized
+    }
+    Case 'actual-unstaged-change-is-refused' {
+        [IO.File]::WriteAllText($normalFile, "changed`nbeta`n")
+        Refused { Assert-ProxyChainCleanSource $normalized } 'unstaged changes'
+        Invoke-Git -C $normalized restore --source HEAD --worktree -- generated.txt | Out-Null
+    }
+    Case 'actual-staged-change-is-refused' {
+        [IO.File]::WriteAllText($normalFile, "staged change`nbeta`n")
+        Invoke-Git -C $normalized add -- generated.txt | Out-Null
+        Refused { Assert-ProxyChainCleanSource $normalized } 'staged changes'
+        Invoke-Git -C $normalized restore --source HEAD --staged --worktree -- generated.txt | Out-Null
+    }
+    Case 'untracked-source-file-is-refused' {
+        [IO.File]::WriteAllText((Join-Path $normalized 'untracked.txt'), 'synthetic data')
+        Refused { Assert-ProxyChainCleanSource $normalized } 'untracked files'
     }
 } finally {
     Json (Join-Path $root 'offline-test-results.json') @{schema=1;kind='proxy-chain-pipeline-offline-test';completed_at_utc=[DateTime]::UtcNow.ToString('o');fixture_only=$true;results=@($results.ToArray())}

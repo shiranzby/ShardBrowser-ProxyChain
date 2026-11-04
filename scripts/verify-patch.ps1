@@ -18,7 +18,7 @@ function SourceIdentity {
     $tree = (& git -C $candidate rev-parse 'HEAD^{tree}').Trim()
     if ($LASTEXITCODE -ne 0) { throw 'Cannot read candidate tree.' }
     if ($meta.schema -ne 1 -or $meta.result -ne 'applied' -or $head -ne $meta.candidate_commit -or $tree -ne $meta.source_tree) { throw 'Candidate provenance does not match the patch application receipt.' }
-    if (@(& git -C $candidate status --porcelain=v1).Count -ne 0) { throw 'Candidate source tree is dirty.' }
+    Assert-ProxyChainCleanSource $candidate
 }
 function Step([string]$Name, [string]$Command, [string[]]$Arguments) {
     Write-Output "Running $Name"

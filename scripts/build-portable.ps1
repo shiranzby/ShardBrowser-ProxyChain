@@ -50,7 +50,8 @@ foreach ($name in $required) {
 $head = (& git -C $candidate rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $head -ne $meta.candidate_commit) { throw 'Candidate commit changed after verification.' }
 $tree = (& git -C $candidate rev-parse 'HEAD^{tree}').Trim()
-if ($LASTEXITCODE -ne 0 -or $tree -ne $meta.source_tree -or @(& git -C $candidate status --porcelain=v1).Count -ne 0) { throw 'Candidate source changed after verification.' }
+if ($LASTEXITCODE -ne 0 -or $tree -ne $meta.source_tree) { throw 'Candidate source changed after verification.' }
+Assert-ProxyChainCleanSource $candidate
 $filename = "ShardBrowser-$($meta.upstream_tag)-$($meta.patch_revision)-portable-win-x64.exe"
 $portable = Join-Path $output $filename
 $buildLog = Join-Path $output 'portable-build.log'
@@ -92,7 +93,8 @@ if (-not $ValidateExisting) {
     if (-not $raw) { throw 'No raw launcher binary produced; refusing to rename an installer.' }
     Copy-Item -LiteralPath $raw -Destination $portable
 }
-if ((& git -C $candidate rev-parse HEAD).Trim() -ne $head -or @(& git -C $candidate status --porcelain=v1).Count -ne 0) { throw 'Candidate source changed while building.' }
+if ((& git -C $candidate rev-parse HEAD).Trim() -ne $head -or $LASTEXITCODE -ne 0) { throw 'Candidate source changed while building.' }
+Assert-ProxyChainCleanSource $candidate
 if (-not (Test-Path -LiteralPath $portable -PathType Leaf)) { throw 'Portable binary is missing.' }
 $bytes = [IO.File]::OpenRead($portable)
 try { if ($bytes.ReadByte() -ne 0x4d -or $bytes.ReadByte() -ne 0x5a) { throw 'Portable artifact is not a Windows PE executable.' } } finally { $bytes.Dispose() }

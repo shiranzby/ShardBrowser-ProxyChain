@@ -1,5 +1,17 @@
 # The build script resolves relative overrides against CandidatePath, then passes
 # an absolute CARGO_TARGET_DIR to Tauri/Cargo so child working directories agree.
+function Assert-ProxyChainCleanSource([string]$CandidatePath) {
+    # Compare Git-normalized content, not stat/line-ending hints in porcelain.
+    # A generator may write LF on Windows while preserving the indexed blob.
+    & git -C $CandidatePath diff --quiet
+    if ($LASTEXITCODE -ne 0) { throw 'Candidate source has unstaged changes or could not be compared.' }
+    & git -C $CandidatePath diff --cached --quiet
+    if ($LASTEXITCODE -ne 0) { throw 'Candidate source has staged changes or could not be compared.' }
+    $untracked = @(& git -C $CandidatePath ls-files --others --exclude-standard)
+    if ($LASTEXITCODE -ne 0) { throw 'Candidate untracked files could not be checked.' }
+    if ($untracked.Count -ne 0) { throw 'Candidate source has untracked files.' }
+}
+
 function Get-ProxyChainReleaseDirectory([string]$CandidatePath, [string]$CargoTargetDirectory) {
     $candidate = [IO.Path]::GetFullPath($CandidatePath)
     $target = if ([string]::IsNullOrWhiteSpace($CargoTargetDirectory)) {
