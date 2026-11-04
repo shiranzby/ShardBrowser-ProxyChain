@@ -3173,10 +3173,10 @@ index 0000000..5362608
 +mod live_tests;
 diff --git a/src-tauri/src/proxy_chain/tests.rs b/src-tauri/src/proxy_chain/tests.rs
 new file mode 100644
-index 0000000..fa24c60
+index 0000000..1eac478
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tests.rs
-@@ -0,0 +1,701 @@
+@@ -0,0 +1,768 @@
 +//! Synthetic loopback services only. None of these tests reads settings,
 +//! credentials, the system proxy configuration or the user's profiles.
 +
@@ -3796,23 +3796,90 @@ index 0000000..fa24c60
 +
 +#[tokio::test]
 +async fn quota_counts_pending_handshakes_and_is_released_after_a_flow_ends() {
-+    let second = echo().await;
-+    let first = http_forward(second.addr).await;
-+    let tunnel =
-+        Tunnel::bind_with_limits(hop(first.addr, ProxyKind::Http), target(), SHORT, SHORT, 1)
++    async fn at<T>(stage: &str, future: impl Future<Output = T>) -> T {
++        tokio::time::timeout(SHORT, future)
 +            .await
-+            .unwrap();
-+    let mut a = TcpStream::connect(tunnel.addr()).await.unwrap();
-+    roundtrip(&mut a, b"one").await;
-+    let mut b = TcpStream::connect(tunnel.addr()).await.unwrap();
-+    closed(&mut b).await;
-+    assert_eq!(first.accepted.load(Ordering::SeqCst), 1);
-+    assert_eq!(tunnel.active_connections(), 1);
-+    drop(a);
-+    eventually(|| tunnel.active_connections() == 0).await;
-+    let mut c = TcpStream::connect(tunnel.addr()).await.unwrap();
-+    roundtrip(&mut c, b"three").await;
-+    assert_eq!(first.accepted.load(Ordering::SeqCst), 2);
++            .unwrap_or_else(|_| panic!("quota test deadline: {stage}"))
++    }
++
++    let first = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let tunnel = Tunnel::bind_with_limits(
++        hop(first.local_addr().unwrap(), ProxyKind::Http),
++        target(),
++        connector::CONNECT_TIMEOUT,
++        Duration::from_secs(300), // Product idle default; not part of this invariant.
++        1,
++    )
++    .await
++    .unwrap();
++    let mut a = at("connect pending A", TcpStream::connect(tunnel.addr()))
++        .await
++        .expect("connect pending A");
++    let (mut first_a, _) = at("accept pending A", first.accept())
++        .await
++        .expect("accept pending A");
++    at("read A CONNECT without replying", http_head(&mut first_a)).await;
++    // No 200 response: A is still in the system-proxy handshake and must
++    // already own the only reservation, before any relay task can run.
++    assert_eq!(tunnel.active_connections(), 1, "reserve pending A");
++    let mut b = at("connect excess B", TcpStream::connect(tunnel.addr()))
++        .await
++        .expect("connect excess B");
++    let rejected = at("reject excess B during A handshake", b.read(&mut [0; 1])).await;
++    assert!(
++        matches!(rejected, Ok(0)) || rejected.is_err(),
++        "excess B must close during A handshake"
++    );
++    assert_eq!(tunnel.active_connections(), 1, "B must not own a slot");
++
++    // Closing the owned first-hop socket gives the pending connector an
++    // explicit EOF. No multi-hop relay half-close or idle timer is involved.
++    drop(first_a);
++    let ended = at("close original A after first-hop EOF", a.read(&mut [0; 1])).await;
++    assert!(
++        matches!(ended, Ok(0)) || ended.is_err(),
++        "original A must close"
++    );
++    at("return A reservation", async {
++        while tunnel.active_connections() != 0 {
++            tokio::time::sleep(Duration::from_millis(10)).await;
++        }
++    })
++    .await;
++
++    let mut c = at("connect replacement C", TcpStream::connect(tunnel.addr()))
++        .await
++        .expect("connect replacement C");
++    let (mut first_c, _) = at("accept replacement C", first.accept())
++        .await
++        .expect("accept replacement C");
++    at("read C CONNECT", http_head(&mut first_c)).await;
++    at(
++        "finish C CONNECT",
++        first_c.write_all(b"HTTP/1.1 200 OK\r\n\r\n"),
++    )
++    .await
++    .expect("finish C CONNECT");
++    at("send C payload", c.write_all(b"three"))
++        .await
++        .expect("send C payload");
++    let mut payload = [0; 5];
++    at(
++        "receive C payload at first hop",
++        first_c.read_exact(&mut payload),
++    )
++    .await
++    .expect("receive C payload at first hop");
++    assert_eq!(&payload, b"three");
++    at("echo C payload", first_c.write_all(&payload))
++        .await
++        .expect("echo C payload");
++    let mut echoed = [0; 5];
++    at("receive C echo", c.read_exact(&mut echoed))
++        .await
++        .expect("receive C echo");
++    assert_eq!(&echoed, b"three");
++    assert_eq!(tunnel.active_connections(), 1, "C reused the reservation");
 +    tunnel.shutdown().await;
 +}
 +
