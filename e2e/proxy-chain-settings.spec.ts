@@ -316,6 +316,52 @@ test("proxy Peek labels TCP-chain UDP as unavailable rather than a failed relay"
 });
 
 for (const lang of ["en", "zh", "ru"]) {
+  for (const viewport of [{ width: 1600, height: 900 }, { width: 1024, height: 680 }]) {
+    test(`proxy connection tests spacing ${lang} at ${viewport.width}`, async ({ page }, info) => {
+      await page.setViewportSize(viewport);
+      await page.addInitScript((lang) => localStorage.setItem("shardx.lang", lang), lang);
+      await openApp(page, { section: "settings", theme: "light" });
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+      await page.getByRole("tab", { name: lang === "en" ? "Proxy" : lang === "zh" ? "代理" : "Прокси", exact: true }).click();
+      const card = page.locator("[data-setting='proxy-chain-profile']").locator("..");
+      await card.scrollIntoViewIfNeeded();
+      const geometry = await card.evaluate((el) => {
+        const help = el.querySelector<HTMLElement>(":scope > p")!;
+        const actions = help.nextElementSibling!;
+        const buttons = Array.from(actions.querySelectorAll("button"));
+        const profile = el.querySelector<HTMLElement>("[data-setting='proxy-chain-profile']")!;
+        const range = document.createRange();
+        range.selectNodeContents(help);
+        const text = range.getBoundingClientRect();
+        const cardRect = el.getBoundingClientRect();
+        const first = buttons[0].getBoundingClientRect();
+        const second = buttons[1].getBoundingClientRect();
+        const body = document.querySelector<HTMLElement>("[data-page-body]")!;
+        return {
+          topInset: text.top - cardRect.top,
+          helpToButtons: first.top - text.bottom,
+          buttonGap: Math.abs(first.top - second.top) < 1 ? second.left - first.right : second.top - first.bottom,
+          buttonsToProfile: profile.getBoundingClientRect().top - Math.max(first.bottom, second.bottom),
+          cardOverflow: el.scrollWidth - el.clientWidth,
+          bodyOverflow: body.scrollWidth - body.clientWidth,
+          pageOverflow: document.documentElement.scrollWidth - innerWidth,
+          buttonOverflow: Math.max(...buttons.map((button) => button.scrollWidth - button.clientWidth)),
+        };
+      });
+      await info.attach("connection-tests-geometry", { body: JSON.stringify({ lang, theme: "light", viewport, ...geometry }, null, 2), contentType: "application/json" });
+      await page.screenshot({ path: info.outputPath(`proxy-spacing-${lang}-${viewport.width}-page.png`) });
+      await card.screenshot({ path: info.outputPath(`proxy-spacing-${lang}-${viewport.width}-card.png`) });
+      expect(geometry.topInset).toBeGreaterThanOrEqual(12);
+      expect(geometry.helpToButtons).toBeGreaterThanOrEqual(12);
+      // Preserve the launcher's existing 7px gap-2 and 10px py-3 scale.
+      expect(geometry.buttonGap).toBeGreaterThanOrEqual(7);
+      expect(geometry.buttonsToProfile).toBeGreaterThanOrEqual(10);
+      expect(geometry.cardOverflow).toBeLessThanOrEqual(1);
+      expect(geometry.bodyOverflow).toBeLessThanOrEqual(1);
+      expect(geometry.pageOverflow).toBeLessThanOrEqual(1);
+      expect(geometry.buttonOverflow).toBeLessThanOrEqual(1);
+    });
+  }
   test(`proxy settings visual ${lang} at the minimum desktop size`, async ({ page }, info) => {
     await page.setViewportSize({ width: 1024, height: 680 });
     await page.addInitScript((lang) => localStorage.setItem("shardx.lang", lang), lang);

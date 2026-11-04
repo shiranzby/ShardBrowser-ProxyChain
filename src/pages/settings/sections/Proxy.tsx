@@ -174,7 +174,7 @@ export function ProxySection({ s, setS }: SettingsProps) {
       </SettingsGroup>
 
       <SettingsGroup title={t("proxyChain.testsTitle")} help={t("proxyChain.testsHelp")}>
-        <p className="m-0 text-help text-text-sub-600">{t("proxyChain.systemRoutingHelp")}</p>
+        <p className="m-0 pt-stack-md text-help text-text-sub-600">{t("proxyChain.systemRoutingHelp")}</p>
         <div className="flex flex-wrap items-center gap-2 py-3">
           <Button variant="neutral" mode="stroke" size="xsmall" disabled={!!pending} isLoading={pending === "local"} onClick={() => void test("local")}>{t("proxyChain.testLocal")}</Button>
           <Button variant="neutral" mode="stroke" size="xsmall" disabled={!!pending} isLoading={pending === "system"} onClick={() => void test("system")}>{t("proxyChain.testSystem")}</Button>
