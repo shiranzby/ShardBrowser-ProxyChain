@@ -64,10 +64,10 @@ index 0000000000000000000000000000000000000000..a02f550460912d1c782de76c86f888d2
 +});
 diff --git a/e2e/proxy-chain-settings.spec.ts b/e2e/proxy-chain-settings.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..f7239fdf19cffd0dafd8d422a31d590d9580a13c
+index 0000000000000000000000000000000000000000..0b962bb48bbac47b5990defe330dd41f2f76a6ca
 --- /dev/null
 +++ b/e2e/proxy-chain-settings.spec.ts
-@@ -0,0 +1,336 @@
+@@ -0,0 +1,382 @@
 +import { expect, test, type Page } from "@playwright/test";
 +import { appModule, openApp, reloadApp, waitForIdle } from "./support/app";
 +
@@ -386,6 +386,52 @@ index 0000000000000000000000000000000000000000..f7239fdf19cffd0dafd8d422a31d590d
 +});
 +
 +for (const lang of ["en", "zh", "ru"]) {
++  for (const viewport of [{ width: 1600, height: 900 }, { width: 1024, height: 680 }]) {
++    test(`proxy connection tests spacing ${lang} at ${viewport.width}`, async ({ page }, info) => {
++      await page.setViewportSize(viewport);
++      await page.addInitScript((lang) => localStorage.setItem("shardx.lang", lang), lang);
++      await openApp(page, { section: "settings", theme: "light" });
++      await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
++      await page.getByRole("tab", { name: lang === "en" ? "Proxy" : lang === "zh" ? "代理" : "Прокси", exact: true }).click();
++      const card = page.locator("[data-setting='proxy-chain-profile']").locator("..");
++      await card.scrollIntoViewIfNeeded();
++      const geometry = await card.evaluate((el) => {
++        const help = el.querySelector<HTMLElement>(":scope > p")!;
++        const actions = help.nextElementSibling!;
++        const buttons = Array.from(actions.querySelectorAll("button"));
++        const profile = el.querySelector<HTMLElement>("[data-setting='proxy-chain-profile']")!;
++        const range = document.createRange();
++        range.selectNodeContents(help);
++        const text = range.getBoundingClientRect();
++        const cardRect = el.getBoundingClientRect();
++        const first = buttons[0].getBoundingClientRect();
++        const second = buttons[1].getBoundingClientRect();
++        const body = document.querySelector<HTMLElement>("[data-page-body]")!;
++        return {
++          topInset: text.top - cardRect.top,
++          helpToButtons: first.top - text.bottom,
++          buttonGap: Math.abs(first.top - second.top) < 1 ? second.left - first.right : second.top - first.bottom,
++          buttonsToProfile: profile.getBoundingClientRect().top - Math.max(first.bottom, second.bottom),
++          cardOverflow: el.scrollWidth - el.clientWidth,
++          bodyOverflow: body.scrollWidth - body.clientWidth,
++          pageOverflow: document.documentElement.scrollWidth - innerWidth,
++          buttonOverflow: Math.max(...buttons.map((button) => button.scrollWidth - button.clientWidth)),
++        };
++      });
++      await info.attach("connection-tests-geometry", { body: JSON.stringify({ lang, theme: "light", viewport, ...geometry }, null, 2), contentType: "application/json" });
++      await page.screenshot({ path: info.outputPath(`proxy-spacing-${lang}-${viewport.width}-page.png`) });
++      await card.screenshot({ path: info.outputPath(`proxy-spacing-${lang}-${viewport.width}-card.png`) });
++      expect(geometry.topInset).toBeGreaterThanOrEqual(12);
++      expect(geometry.helpToButtons).toBeGreaterThanOrEqual(12);
++      // Preserve the launcher's existing 7px gap-2 and 10px py-3 scale.
++      expect(geometry.buttonGap).toBeGreaterThanOrEqual(7);
++      expect(geometry.buttonsToProfile).toBeGreaterThanOrEqual(10);
++      expect(geometry.cardOverflow).toBeLessThanOrEqual(1);
++      expect(geometry.bodyOverflow).toBeLessThanOrEqual(1);
++      expect(geometry.pageOverflow).toBeLessThanOrEqual(1);
++      expect(geometry.buttonOverflow).toBeLessThanOrEqual(1);
++    });
++  }
 +  test(`proxy settings visual ${lang} at the minimum desktop size`, async ({ page }, info) => {
 +    await page.setViewportSize({ width: 1024, height: 680 });
 +    await page.addInitScript((lang) => localStorage.setItem("shardx.lang", lang), lang);
@@ -6826,7 +6872,7 @@ index a7c8b9b5bebb80043bc0a2f9fa75db521f30f51d..7af37f196c646cfa8cd411b4e9adef5a
              ]}
 diff --git a/src/pages/settings/sections/Proxy.tsx b/src/pages/settings/sections/Proxy.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..4ad438e978fe5dae32731a3a7a3ecdf92ecd224c
+index 0000000000000000000000000000000000000000..a6457993956ea300970927c1e7aa77504e795ec0
 --- /dev/null
 +++ b/src/pages/settings/sections/Proxy.tsx
 @@ -0,0 +1,257 @@
@@ -7006,7 +7052,7 @@ index 0000000000000000000000000000000000000000..4ad438e978fe5dae32731a3a7a3ecdf9
 +      </SettingsGroup>
 +
 +      <SettingsGroup title={t("proxyChain.testsTitle")} help={t("proxyChain.testsHelp")}>
-+        <p className="m-0 text-help text-text-sub-600">{t("proxyChain.systemRoutingHelp")}</p>
++        <p className="m-0 pt-stack-md text-help text-text-sub-600">{t("proxyChain.systemRoutingHelp")}</p>
 +        <div className="flex flex-wrap items-center gap-2 py-3">
 +          <Button variant="neutral" mode="stroke" size="xsmall" disabled={!!pending} isLoading={pending === "local"} onClick={() => void test("local")}>{t("proxyChain.testLocal")}</Button>
 +          <Button variant="neutral" mode="stroke" size="xsmall" disabled={!!pending} isLoading={pending === "system"} onClick={() => void test("system")}>{t("proxyChain.testSystem")}</Button>
