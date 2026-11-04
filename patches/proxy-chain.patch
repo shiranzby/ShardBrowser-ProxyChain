@@ -1,9 +1,9 @@
 diff --git a/e2e/proxy-chain-settings.spec.ts b/e2e/proxy-chain-settings.spec.ts
 new file mode 100644
-index 0000000..71a1518
+index 0000000..9b5bb25
 --- /dev/null
 +++ b/e2e/proxy-chain-settings.spec.ts
-@@ -0,0 +1,218 @@
+@@ -0,0 +1,220 @@
 +import { expect, test, type Page } from "@playwright/test";
 +import { appModule, openApp, reloadApp, waitForIdle } from "./support/app";
 +
@@ -43,6 +43,8 @@ index 0000000..71a1518
 +  await expect(bar(page)).toBeVisible();
 +  await bar(page).getByRole("button", { name: "Save", exact: true }).click();
 +  await expect.poll(async () => (await mock(page)).calls.settings_save).toBe(1);
++  await expect(bar(page)).toHaveCount(0);
++  await expect(page.getByText("A password is saved securely.")).toBeVisible();
 +  const saveArgs = (await mock(page)).log.filter((x: any) => x.cmd === "settings_save").at(-1)?.args as any;
 +  // A newly entered password is a write-only intent. The mock records the
 +  // request so this test can prove the backend consumed it, but its persisted
