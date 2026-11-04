@@ -1,9 +1,9 @@
 diff --git a/e2e/proxy-chain-settings.spec.ts b/e2e/proxy-chain-settings.spec.ts
 new file mode 100644
-index 0000000..9b5bb25
+index 0000000000000000000000000000000000000000..316cfe8d3cf6ae5f40f07980ca7bc1e855138d77
 --- /dev/null
 +++ b/e2e/proxy-chain-settings.spec.ts
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,300 @@
 +import { expect, test, type Page } from "@playwright/test";
 +import { appModule, openApp, reloadApp, waitForIdle } from "./support/app";
 +
@@ -64,11 +64,68 @@ index 0000000..9b5bb25
 +  await expect(page.locator("[data-chain-result]")).toBeVisible();
 +  await expect(page.locator("[data-chain-stage='system']")).toContainText("Connected");
 +  await expect(page.locator("[data-chain-stage='profile']")).toContainText("Not tested");
++  await expect(page.locator("[data-chain-exit]")).toContainText("System proxy exit IP (first hop)");
++  await expect(page.locator("[data-chain-exit]")).toContainText("198.51.100.24");
++  await expect(page.locator("[data-chain-location]")).toContainText("Singapore");
++  await expect(page.locator("[data-chain-exit-scope]")).toContainText("not the profile’s final exit");
 +  await page.getByRole("combobox", { name: "Profile" }).click();
 +  await page.getByRole("option").first().click();
 +  await page.getByRole("button", { name: "Test profile proxy chain" }).click();
 +  await expect(page.locator("[data-chain-stage='profile']")).toContainText("Connected");
 +  await expect(page.locator("[data-chain-exit]")).toContainText("203.0.113.42");
++  await expect(page.locator("[data-chain-exit]")).toContainText("Final exit IP");
++  await expect(page.locator("[data-chain-exit]")).not.toContainText("198.51.100.24");
++  await expect(page.locator("[data-chain-location]")).toContainText("Singapore");
++  await expect(page.locator("[data-chain-geo-source]")).toContainText("mock-only.example");
++  await expect(page.locator("[data-chain-exit-scope]")).toHaveCount(0);
++});
++
++test("local network lookup identifies its own exit without claiming a proxy connection", async ({ page }) => {
++  await openProxy(page);
++  await page.getByRole("button", { name: "Test local network", exact: true }).click();
++  await expect(page.locator("[data-chain-exit]")).toContainText("Local network exit IP");
++  await expect(page.locator("[data-chain-exit]")).toContainText("192.0.2.18");
++  await expect(page.locator("[data-chain-location]")).toContainText("Singapore");
++  await expect(page.locator("[data-chain-stage='system']")).toContainText("Not tested");
++  await expect(page.locator("[data-chain-stage='profile']")).toContainText("Not tested");
++  expect((await mock(page)).calls.settings_save ?? 0).toBe(0);
++});
++
++test("a connected system proxy with failed Geo stays a partial result without invented IP or region", async ({ page }) => {
++  await openProxy(page);
++  await page.evaluate(() => {
++    (window as any).__shardxMockChainResult = {
++      exit_ip: null, exit_geo: null, exit_error_code: "proxy_chain_system_geo_failed",
++      exit_error: "The system proxy connected, but no live exit IP was returned.",
++    };
++  });
++  await page.getByRole("button", { name: "Test system proxy", exact: true }).click();
++  await expect(page.locator("[data-chain-stage='system']")).toContainText("Connected");
++  await expect(page.locator("[data-chain-exit]")).toContainText("Lookup failed");
++  await expect(page.locator("[data-chain-location]")).toContainText("Lookup failed");
++  await expect(page.locator("[data-chain-exit-error]")).toContainText("did not fall back to a direct lookup");
++  await expect(page.locator("[data-chain-geo-source]")).toHaveCount(0);
++});
++
++test("Geo never borrows a location from a different exit and absent fields stay unknown", async ({ page }) => {
++  await openProxy(page);
++  await page.evaluate(() => {
++    (window as any).__shardxMockChainResult = {
++      exit_geo: { ip: "203.0.113.99", country: "Borrowed country", country_code: "", region: "Borrowed region", city: "Borrowed city", provider: "wrong-route.example" },
++    };
++  });
++  await page.getByRole("button", { name: "Test system proxy", exact: true }).click();
++  await expect(page.locator("[data-chain-location]")).toContainText("returned no location");
++  await expect(page.locator("[data-chain-result]")).not.toContainText("Borrowed");
++  await expect(page.locator("[data-chain-geo-source]")).toHaveCount(0);
++  await page.evaluate(() => {
++    (window as any).__shardxMockChainResult = {
++      exit_geo: { ip: "198.51.100.24", country: "", country_code: "", region: "", city: "", provider: "mock-only.example" },
++    };
++  });
++  await page.getByRole("button", { name: "Test system proxy", exact: true }).click();
++  await expect(page.locator("[data-chain-exit]")).toContainText("198.51.100.24");
++  await expect(page.locator("[data-chain-location]")).toContainText("returned no location");
 +});
 +
 +test("discarding a proxy draft writes nothing and restores the fields", async ({ page }) => {
@@ -145,7 +202,7 @@ index 0000000..9b5bb25
 +  await page.evaluate(() => {
 +    (window as any).__shardxMockChainResult = {
 +      profile_proxy: { state: "failed", error_code: "profile_auth_failed", error_message: "Second proxy rejected the login" },
-+      exit_ip: null, exit_error: "Exit IP was not obtained",
++      exit_ip: null, exit_geo: null, exit_error: "Exit IP was not obtained",
 +    };
 +  });
 +  await page.getByRole("combobox", { name: "Profile", exact: true }).click();
@@ -154,7 +211,7 @@ index 0000000..9b5bb25
 +  await expect(page.locator("[data-chain-stage='system']")).toContainText("Connected");
 +  await expect(page.locator("[data-chain-stage='profile']")).toContainText("Failed");
 +  await expect(page.locator("[data-chain-stage='profile']")).toContainText("Second proxy rejected the login");
-+  await expect(page.locator("[data-chain-exit]")).toContainText("Not tested");
++  await expect(page.locator("[data-chain-exit]")).toContainText("Lookup failed");
 +  await expect(page.locator("[data-chain-exit-error]")).toContainText("Exit IP was not obtained");
 +});
 +
@@ -192,6 +249,29 @@ index 0000000..9b5bb25
 +  expect((await mock(page)).calls.proxy_chain_test ?? 0).toBe(0);
 +});
 +
++test("Chinese configuration errors use the same localized guidance in detection and connection results", async ({ page }) => {
++  await page.addInitScript(() => localStorage.setItem("shardx.lang", "zh"));
++  await openApp(page, { section: "settings" });
++  await page.getByRole("tab", { name: "代理", exact: true }).click();
++  await page.evaluate(() => {
++    const error = {
++      error_code: "proxy_chain_manual_required",
++      error_message: "Windows uses PAC/WPAD or an ambiguous proxy mapping. Select manual HTTP or SOCKS5 configuration.",
++    };
++    (window as any).__shardxMockChainDetection = { state: "manual_required", source: "mock Windows Internet Settings", ...error };
++    (window as any).__shardxMockChainResult = { system_proxy: { state: "failed", ...error }, exit_ip: null, exit_geo: null };
++  });
++  const guidance = "代理链 V1 无法自动解析，请选择手动配置 HTTP 或 SOCKS5。";
++  await page.getByRole("button", { name: "读取 Windows 设置" }).click();
++  await expect(page.locator("[data-chain-detection]")).toContainText(guidance);
++  await expect(page.locator("[data-chain-detection]")).not.toContainText("Windows uses PAC/WPAD");
++  await page.getByRole("button", { name: "检测系统代理", exact: true }).click();
++  await expect(page.locator("[data-chain-stage='system']")).toContainText(guidance);
++  await expect(page.locator("[data-chain-stage='system']")).not.toContainText("Windows uses PAC/WPAD");
++  await expect(page.locator("[data-chain-exit]")).toContainText("尚未检测");
++  await expect(page.locator("[data-chain-geo-source]")).toHaveCount(0);
++});
++
 +test("proxy Peek labels TCP-chain UDP as unavailable rather than a failed relay", async ({ page }) => {
 +  await openApp(page, { section: "proxies" });
 +  await appModule(page, "/src/entities/proxy/index.ts", "proxyStore");
@@ -225,7 +305,7 @@ index 0000000..9b5bb25
 +  });
 +}
 diff --git a/e2e/settings.spec.ts b/e2e/settings.spec.ts
-index 3d83a40..bc9a627 100644
+index 3d83a4011eae7ceef1bbb747526f3a6fb60325f2..bc9a6272ba9a4fb58fdc662ea08a88f710d29f25 100644
 --- a/e2e/settings.spec.ts
 +++ b/e2e/settings.spec.ts
 @@ -4,10 +4,10 @@ import { openApp } from "./support/app";
@@ -242,7 +322,7 @@ index 3d83a40..bc9a627 100644
  });
  
 diff --git a/scripts/lib/class-rules.mjs b/scripts/lib/class-rules.mjs
-index 2728094..a7a634b 100644
+index 2728094b5be739435166d6cd606210234d72a925..a7a634b22036c026601858c9a725145243df6785 100644
 --- a/scripts/lib/class-rules.mjs
 +++ b/scripts/lib/class-rules.mjs
 @@ -209,7 +209,9 @@ export function scanRules(root) {
@@ -257,7 +337,7 @@ index 2728094..a7a634b 100644
        if (statSync(p).isDirectory()) walk(p);
        else if (/\.(tsx?|jsx?)$/.test(name)) {
 diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
-index 327c407..57232bf 100644
+index 327c4074b8586e21ca6b481f9214a2cf8aa1cfac..57232bf331b75ce73da52efeb34f39edc6342df6 100644
 --- a/src-tauri/Cargo.toml
 +++ b/src-tauri/Cargo.toml
 @@ -121,6 +121,7 @@ libc = "0.2"
@@ -269,7 +349,7 @@ index 327c407..57232bf 100644
      "Win32_Security",              # CreateJobObjectW's attributes
      "Win32_Security_Cryptography", # CryptProtectData / CryptUnprotectData
 diff --git a/src-tauri/build.rs b/src-tauri/build.rs
-index d860e1e..5d36fdb 100644
+index d860e1e6a7cac333c3cc0bc9cb67faf286b07d69..5d36fdbd40e30008637c830f2015d4e558a1445a 100644
 --- a/src-tauri/build.rs
 +++ b/src-tauri/build.rs
 @@ -1,3 +1,21 @@
@@ -296,7 +376,7 @@ index d860e1e..5d36fdb 100644
 +    }
  }
 diff --git a/src-tauri/src/cdp.rs b/src-tauri/src/cdp.rs
-index a759d29..5a49bc0 100644
+index a759d290c6827d67db6b39fe0b146fd5124eac23..5a49bc028c5063133ca4b39cc30938d7f57759ca 100644
 --- a/src-tauri/src/cdp.rs
 +++ b/src-tauri/src/cdp.rs
 @@ -303,6 +303,9 @@ pub fn detach(profile_id: &str) {
@@ -310,7 +390,7 @@ index a759d29..5a49bc0 100644
      let page = s.page().ok_or_else(|| anyhow!("no page attached"))?;
      s.call(method, params, Some(&page)).await
 diff --git a/src-tauri/src/launch.rs b/src-tauri/src/launch.rs
-index 6998280..b8d43d0 100644
+index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff615e6a84a 100644
 --- a/src-tauri/src/launch.rs
 +++ b/src-tauri/src/launch.rs
 @@ -366,6 +366,13 @@ fn bound_proxy(
@@ -456,7 +536,7 @@ index 6998280..b8d43d0 100644
              icon: Some(&icon),
              raw: &raw,
 diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
-index 7b5f25a..aa4fe6d 100644
+index 7b5f25a19557e1c334698ac890709832cf1cc2b7..aa4fe6d423735fe97d9e5744d333c95a83bbfd9b 100644
 --- a/src-tauri/src/lib.rs
 +++ b/src-tauri/src/lib.rs
 @@ -8,6 +8,7 @@ mod launch;
@@ -528,7 +608,7 @@ index 7b5f25a..aa4fe6d 100644
      });
  }
 diff --git a/src-tauri/src/process.rs b/src-tauri/src/process.rs
-index 4a7d240..ea6017d 100644
+index 4a7d240802f2bda80da2058b5e097ede4fac375c..ea6017d725dc941a67cdb9cfcbc26d259af01ceb 100644
 --- a/src-tauri/src/process.rs
 +++ b/src-tauri/src/process.rs
 @@ -56,6 +56,7 @@ struct ChildEntry {
@@ -611,7 +691,7 @@ index 4a7d240..ea6017d 100644
          if let Ok(mut g) = self.inner.lock() {
 diff --git a/src-tauri/src/proxy_chain/config.rs b/src-tauri/src/proxy_chain/config.rs
 new file mode 100644
-index 0000000..77fef31
+index 0000000000000000000000000000000000000000..77fef31b8efbb8f032b8a2751c453fb6b51bbd3c
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/config.rs
 @@ -0,0 +1,216 @@
@@ -833,7 +913,7 @@ index 0000000..77fef31
 +}
 diff --git a/src-tauri/src/proxy_chain/connector.rs b/src-tauri/src/proxy_chain/connector.rs
 new file mode 100644
-index 0000000..592e755
+index 0000000000000000000000000000000000000000..592e755dedaa570de0036666fbe1d2d8e419a88f
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/connector.rs
 @@ -0,0 +1,380 @@
@@ -1219,7 +1299,7 @@ index 0000000..592e755
 +}
 diff --git a/src-tauri/src/proxy_chain/credentials.rs b/src-tauri/src/proxy_chain/credentials.rs
 new file mode 100644
-index 0000000..2619470
+index 0000000000000000000000000000000000000000..2619470c5c1259edf095f746eec47db5ea73ef4c
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/credentials.rs
 @@ -0,0 +1,81 @@
@@ -1306,7 +1386,7 @@ index 0000000..2619470
 +}
 diff --git a/src-tauri/src/proxy_chain/detect_windows.rs b/src-tauri/src/proxy_chain/detect_windows.rs
 new file mode 100644
-index 0000000..d1885d4
+index 0000000000000000000000000000000000000000..d1885d4126f3cf08bd36c99ecb827e52b96ff482
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detect_windows.rs
 @@ -0,0 +1,188 @@
@@ -1498,9 +1578,427 @@ index 0000000..d1885d4
 +        assert!(super::parse("http=one:80;https=two:80", false).is_err());
 +    }
 +}
+diff --git a/src-tauri/src/proxy_chain/detection_tests.rs b/src-tauri/src/proxy_chain/detection_tests.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..20dd3b04adbc91fb4ffb914c23794bf6b1902180
+--- /dev/null
++++ b/src-tauri/src/proxy_chain/detection_tests.rs
+@@ -0,0 +1,412 @@
++//! Detection uses real loopback proxy protocols. Fixtures answer Geo requests
++//! themselves; they never resolve or connect to any external destination.
++
++use super::config::{PasswordUpdate, ProxyChainSettings};
++use serde_json::json;
++use std::net::SocketAddr;
++use std::sync::{Arc, Mutex};
++use tokio::io::{AsyncReadExt, AsyncWriteExt};
++use tokio::net::{TcpListener, TcpStream};
++use tokio::task::{JoinHandle, JoinSet};
++
++const FIRST_USER: &str = "first+user@example.invalid";
++const FIRST_PASS: &str = "first synthetic +@/#secret";
++const SECOND_USER: &str = "second-user";
++const SECOND_PASS: &str = "second synthetic +@/#secret";
++
++struct Service {
++    addr: SocketAddr,
++    requests: Arc<Mutex<Vec<String>>>,
++    task: JoinHandle<()>,
++}
++
++impl Drop for Service {
++    fn drop(&mut self) {
++        self.task.abort();
++    }
++}
++
++async fn http_head(stream: &mut TcpStream) -> std::io::Result<String> {
++    let mut bytes = Vec::new();
++    while !bytes.ends_with(b"\r\n\r\n") && bytes.len() < 16 * 1024 {
++        bytes.push(stream.read_u8().await?);
++    }
++    Ok(String::from_utf8_lossy(&bytes).into_owned())
++}
++
++async fn geo_response(stream: &mut TcpStream, ip: &str) -> std::io::Result<()> {
++    let body = json!({
++        "status": "success", "query": ip,
++        "country": "Synthetic country", "countryCode": "ZZ",
++        "regionName": "Synthetic region", "city": "Synthetic city",
++        "isp": "Synthetic ISP", "timezone": "Etc/UTC", "lat": 1.25, "lon": 2.5
++    })
++    .to_string();
++    stream
++        .write_all(
++            format!(
++                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
++                body.len()
++            )
++            .as_bytes(),
++        )
++        .await
++}
++
++async fn http_proxy(destination: Option<SocketAddr>, geo_ok: bool) -> Service {
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = listener.local_addr().unwrap();
++    let requests = Arc::new(Mutex::new(Vec::new()));
++    let record = requests.clone();
++    let task = tokio::spawn(async move {
++        let mut clients = JoinSet::new();
++        loop {
++            tokio::select! {
++                _ = clients.join_next(), if !clients.is_empty() => {},
++                connection = listener.accept() => {
++                    let (mut stream, _) = connection.unwrap();
++                    let record = record.clone();
++                    clients.spawn(async move {
++                        let Ok(head) = http_head(&mut stream).await else { return };
++                        record.lock().unwrap().push(head.clone());
++                        if head.starts_with("CONNECT ") {
++                            if stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.is_err() { return; }
++                            if let Some(destination) = destination {
++                                let Ok(mut second) = TcpStream::connect(destination).await else { return };
++                                let _ = tokio::io::copy_bidirectional(&mut stream, &mut second).await;
++                            }
++                        } else if geo_ok {
++                            let _ = geo_response(&mut stream, "198.51.100.44").await;
++                        } else {
++                            let body = r#"{"status":"fail","message":"fixture-private-detail"}"#;
++                            let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
++                            let _ = stream.write_all(response.as_bytes()).await;
++                        }
++                    });
++                },
++            }
++        }
++    });
++    Service {
++        addr,
++        requests,
++        task,
++    }
++}
++
++async fn socks_exchange(
++    stream: &mut TcpStream,
++    requests: &Mutex<Vec<String>>,
++    username: &str,
++    password: &str,
++    ip: &str,
++) -> std::io::Result<()> {
++    if stream.read_u8().await? != 5 {
++        return Ok(());
++    }
++    let mut methods = vec![0; stream.read_u8().await? as usize];
++    stream.read_exact(&mut methods).await?;
++    if !methods.contains(&2) {
++        return Ok(());
++    }
++    stream.write_all(&[5, 2]).await?;
++    if stream.read_u8().await? != 1 {
++        return Ok(());
++    }
++    let mut user = vec![0; stream.read_u8().await? as usize];
++    stream.read_exact(&mut user).await?;
++    let mut pass = vec![0; stream.read_u8().await? as usize];
++    stream.read_exact(&mut pass).await?;
++    if user != username.as_bytes() || pass != password.as_bytes() {
++        requests
++            .lock()
++            .unwrap()
++            .push("AUTHENTICATION_MISMATCH".into());
++        stream.write_all(&[1, 1]).await?;
++        return Ok(());
++    }
++    stream.write_all(&[1, 0]).await?;
++    let mut header = [0; 4];
++    stream.read_exact(&mut header).await?;
++    if header[..3] != [5, 1, 0] || header[3] != 3 {
++        requests
++            .lock()
++            .unwrap()
++            .push("DESTINATION_WAS_NOT_REMOTE_DNS".into());
++        return Ok(());
++    }
++    let mut host = vec![0; stream.read_u8().await? as usize];
++    stream.read_exact(&mut host).await?;
++    let port = stream.read_u16().await?;
++    requests
++        .lock()
++        .unwrap()
++        .push(format!("SOCKS {}:{port}", String::from_utf8_lossy(&host)));
++    stream.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 0]).await?;
++    // Connectivity probes close after CONNECT; only the Geo request has HTTP.
++    let head = http_head(stream).await?;
++    requests.lock().unwrap().push(head);
++    geo_response(stream, ip).await
++}
++
++async fn socks_proxy(username: &'static str, password: &'static str, ip: &'static str) -> Service {
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = listener.local_addr().unwrap();
++    let requests = Arc::new(Mutex::new(Vec::new()));
++    let record = requests.clone();
++    let task = tokio::spawn(async move {
++        let mut clients = JoinSet::new();
++        loop {
++            tokio::select! {
++                _ = clients.join_next(), if !clients.is_empty() => {},
++                connection = listener.accept() => {
++                    let (mut stream, _) = connection.unwrap();
++                    let record = record.clone();
++                    clients.spawn(async move {
++                        let _ = socks_exchange(&mut stream, &record, username, password, ip).await;
++                    });
++                },
++            }
++        }
++    });
++    Service {
++        addr,
++        requests,
++        task,
++    }
++}
++
++fn config(addr: SocketAddr, mode: &str) -> ProxyChainSettings {
++    ProxyChainSettings {
++        enabled: true,
++        mode: mode.into(),
++        host: addr.ip().to_string(),
++        port: addr.port(),
++        username: FIRST_USER.into(),
++        password: PasswordUpdate::Replace(FIRST_PASS.into()),
++        ..Default::default()
++    }
++}
++
++#[tokio::test]
++async fn system_http_detection_returns_live_geo_through_the_same_authenticated_hop() {
++    let _root = crate::store::test_root("chain-system-http-geo");
++    // Saved enabled chaining must not wrap the first hop a second time.
++    let settings_path = crate::store::settings_path().unwrap();
++    std::fs::write(
++        &settings_path,
++        r#"{"proxy_chain":{"enabled":true,"mode":"http","host":"unused.invalid","port":1}}"#,
++    )
++    .unwrap();
++    let before_settings = std::fs::read(&settings_path).unwrap();
++    let proxies_path = crate::store::proxies_path().unwrap();
++    std::fs::write(&proxies_path, br#"{"proxies":[]}"#).unwrap();
++    let before_proxies = std::fs::read(&proxies_path).unwrap();
++    let service = http_proxy(None, true).await;
++    let result = super::test("system".into(), config(service.addr, "http"), None)
++        .await
++        .unwrap();
++    let dto = serde_json::to_value(result).unwrap();
++    assert_eq!(dto["system_proxy"]["state"], "ok");
++    assert_eq!(dto["exit_ip"], "198.51.100.44");
++    assert_eq!(dto["exit_geo"]["country"], "Synthetic country");
++    assert_eq!(dto["exit_geo"]["region"], "Synthetic region");
++    assert_eq!(dto["exit_geo"]["city"], "Synthetic city");
++    assert!(dto["exit_error"].is_null());
++    assert!(dto["exit_error_code"].is_null());
++    let requests = service.requests.lock().unwrap();
++    assert_eq!(requests.len(), 2);
++    assert!(requests[0].starts_with("CONNECT example.com:443 "));
++    assert!(requests[1].starts_with("GET http://ip-api.com/"));
++    use base64::{engine::general_purpose::STANDARD, Engine as _};
++    let auth = format!(
++        "proxy-authorization: basic {}",
++        STANDARD.encode(format!("{FIRST_USER}:{FIRST_PASS}"))
++    )
++    .to_ascii_lowercase();
++    for request in requests.iter() {
++        assert!(request.to_ascii_lowercase().contains(&auth));
++    }
++    assert_eq!(std::fs::read(settings_path).unwrap(), before_settings);
++    assert_eq!(std::fs::read(proxies_path).unwrap(), before_proxies);
++}
++
++#[tokio::test]
++async fn system_socks5_detection_uses_remote_dns_and_its_original_credentials() {
++    let _root = crate::store::test_root("chain-system-socks-geo");
++    let service = socks_proxy(FIRST_USER, FIRST_PASS, "198.51.100.44").await;
++    let result = super::test("system".into(), config(service.addr, "socks5"), None)
++        .await
++        .unwrap();
++    let dto = serde_json::to_value(result).unwrap();
++    assert_eq!(dto["system_proxy"]["state"], "ok");
++    assert_eq!(dto["exit_ip"], "198.51.100.44");
++    assert_eq!(dto["exit_geo"]["city"], "Synthetic city");
++    let requests = service.requests.lock().unwrap();
++    assert!(requests.iter().any(|r| r == "SOCKS example.com:443"));
++    assert!(requests.iter().any(|r| r == "SOCKS ip-api.com:80"));
++    assert!(!requests
++        .iter()
++        .any(|r| r.contains("MISMATCH") || r.contains("NOT_REMOTE_DNS")));
++}
++
++#[tokio::test]
++async fn system_geo_failure_preserves_connectivity_and_never_returns_provider_details() {
++    let _root = crate::store::test_root("chain-system-geo-fails");
++    let service = http_proxy(None, false).await;
++    let result = super::test("system".into(), config(service.addr, "http"), None)
++        .await
++        .unwrap();
++    let dto = serde_json::to_value(result).unwrap();
++    assert_eq!(dto["system_proxy"]["state"], "ok");
++    assert!(dto["exit_ip"].is_null());
++    assert!(dto["exit_geo"].is_null());
++    assert_eq!(dto["exit_error_code"], "proxy_chain_system_geo_failed");
++    assert!(!dto.to_string().contains("fixture-private-detail"));
++    let requests = service.requests.lock().unwrap();
++    assert!(requests
++        .iter()
++        .any(|r| r.starts_with("GET http://ip-api.com/")));
++    assert!(requests
++        .iter()
++        .any(|r| r.starts_with("CONNECT ipapi.co:443 ")));
++    assert!(requests
++        .iter()
++        .any(|r| r.starts_with("CONNECT ipwho.is:443 ")));
++}
++
++#[tokio::test]
++async fn profile_geo_is_the_second_hop_exit_and_original_binding_is_unchanged() {
++    let _root = crate::store::test_root("chain-profile-exit-geo");
++    let second = socks_proxy(SECOND_USER, SECOND_PASS, "203.0.113.81").await;
++    let first = http_proxy(Some(second.addr), true).await;
++    let saved = json!({"proxies": [{
++        "id": "geo-second-proxy", "name": "Synthetic second", "kind": "socks5",
++        "host": "second-proxy.invalid", "port": 1080,
++        "username": SECOND_USER, "password": SECOND_PASS
++    }]});
++    let proxies_path = crate::store::proxies_path().unwrap();
++    let original_proxies = serde_json::to_vec(&saved).unwrap();
++    std::fs::write(&proxies_path, &original_proxies).unwrap();
++    let profile_path = crate::store::profiles_dir()
++        .unwrap()
++        .join("geo-profile.json");
++    let original_profile = json!({
++        "_meta": {"id": "geo-profile", "proxy_id": "geo-second-proxy", "rev": 1, "created_at": "@1"},
++        "name": "Synthetic geo profile"
++    }).to_string();
++    std::fs::write(&profile_path, &original_profile).unwrap();
++    let result = super::test(
++        "profile".into(),
++        config(first.addr, "http"),
++        Some("geo-profile".into()),
++    )
++    .await
++    .unwrap();
++    let dto = serde_json::to_value(result).unwrap();
++    assert_eq!(dto["system_proxy"]["state"], "ok");
++    assert_eq!(dto["profile_proxy"]["state"], "ok");
++    assert_eq!(
++        dto["exit_ip"], "203.0.113.81",
++        "first-hop Geo cannot masquerade as the profile exit"
++    );
++    assert_eq!(dto["exit_geo"]["country_code"], "ZZ");
++    assert_eq!(dto["exit_geo"]["region"], "Synthetic region");
++    assert_eq!(dto["exit_geo"]["city"], "Synthetic city");
++    assert!(first
++        .requests
++        .lock()
++        .unwrap()
++        .iter()
++        .all(|r| r.starts_with("CONNECT second-proxy.invalid:1080 ")));
++    let requests = second.requests.lock().unwrap();
++    assert!(requests.iter().any(|r| r == "SOCKS example.com:443"));
++    assert!(requests.iter().any(|r| r == "SOCKS ip-api.com:80"));
++    assert!(!requests
++        .iter()
++        .any(|r| r.contains("MISMATCH") || r.contains("NOT_REMOTE_DNS")));
++    assert_eq!(std::fs::read(proxies_path).unwrap(), original_proxies);
++    assert_eq!(
++        std::fs::read_to_string(profile_path).unwrap(),
++        original_profile
++    );
++}
++
++fn pending(kind: &str) -> super::TestResult {
++    super::TestResult {
++        kind: kind.into(),
++        proxy_kind: None,
++        proxy_address: None,
++        source: None,
++        system_proxy: super::Stage::pending(),
++        profile_proxy: super::Stage::pending(),
++        local_network: None,
++        exit_ip: None,
++        exit_geo: None,
++        exit_error: None,
++        exit_error_code: None,
++        total_ms: 0,
++        tested_at: "@1".into(),
++    }
++}
++
++#[test]
++fn every_detection_kind_serializes_full_geo_and_safe_distinct_geo_errors() {
++    for kind in ["local", "system", "profile"] {
++        let geo = crate::space::proxy::GeoInfo {
++            ip: "192.0.2.9".into(),
++            country: "Country".into(),
++            country_code: "ZZ".into(),
++            region: "Region".into(),
++            city: "City".into(),
++            isp: "ISP".into(),
++            timezone: "Etc/UTC".into(),
++            latitude: 1.25,
++            longitude: 2.5,
++            provider: "Synthetic".into(),
++        };
++        let expected = serde_json::to_value(&geo).unwrap();
++        let mut result = pending(kind);
++        result.set_exit(Ok(geo));
++        let dto = serde_json::to_value(result).unwrap();
++        assert_eq!(dto["exit_ip"], "192.0.2.9");
++        assert_eq!(dto["exit_geo"], expected);
++        assert!(dto["exit_error_code"].is_null());
++        let mut failure = pending(kind);
++        failure.set_exit(Err(anyhow::anyhow!("private URL / credential detail")));
++        let dto = serde_json::to_value(failure).unwrap();
++        assert_eq!(
++            dto["exit_error_code"],
++            format!("proxy_chain_{kind}_geo_failed")
++        );
++        assert!(dto["exit_geo"].is_null());
++        assert!(dto["exit_ip"].is_null());
++        assert!(!dto.to_string().contains("private URL"));
++    }
++}
++
++#[test]
++fn system_entry_brackets_ipv6_for_geo_urls_and_keeps_credentials_in_memory() {
++    for kind in [
++        super::connector::ProxyKind::Http,
++        super::connector::ProxyKind::Socks5,
++    ] {
++        let hop = super::connector::ProxyHop {
++            kind,
++            host: "::1".into(),
++            port: 7890,
++            username: FIRST_USER.into(),
++            password: FIRST_PASS.into(),
++        };
++        let entry = super::system_entry(&hop);
++        assert_eq!(entry.host, "[::1]");
++        assert!(entry.id.is_empty());
++        assert_eq!(entry.username, FIRST_USER);
++        assert_eq!(entry.password, FIRST_PASS);
++        assert_eq!(
++            hop.host, "::1",
++            "the resolved immutable hop must not change"
++        );
++        assert!(reqwest::Proxy::all(entry.to_proxy_server_arg()).is_ok());
++    }
++}
 diff --git a/src-tauri/src/proxy_chain/error.rs b/src-tauri/src/proxy_chain/error.rs
 new file mode 100644
-index 0000000..52c72c4
+index 0000000000000000000000000000000000000000..52c72c4354aa3dd437289ba04359f1de4c9c8b7b
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/error.rs
 @@ -0,0 +1,29 @@
@@ -1535,7 +2033,7 @@ index 0000000..52c72c4
 +impl std::error::Error for ChainError {}
 diff --git a/src-tauri/src/proxy_chain/integration_tests.rs b/src-tauri/src/proxy_chain/integration_tests.rs
 new file mode 100644
-index 0000000..f9f35f0
+index 0000000000000000000000000000000000000000..f9f35f072074681bf9aa8d1188d11d723aab0035
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/integration_tests.rs
 @@ -0,0 +1,562 @@
@@ -2101,9 +2599,382 @@ index 0000000..f9f35f0
 +        closed(browser).await;
 +    }
 +}
+diff --git a/src-tauri/src/proxy_chain/live_geo_tests.rs b/src-tauri/src/proxy_chain/live_geo_tests.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce290370702e8a7d532811df5df98fbbb105223c
+--- /dev/null
++++ b/src-tauri/src/proxy_chain/live_geo_tests.rs
+@@ -0,0 +1,367 @@
++//! Opt-in acceptance of the public detection entry against real proxies.
++//! This is backend network evidence, not native UI or browser-engine evidence.
++//! Run this exact ignored test alone with SHARD_PROXY_CHAIN_RUN_LIVE_GEO=1.
++//! Credentials use the existing current-user DPAPI input format; overrides:
++//! SHARD_PROXY_CHAIN_LIVE_CREDENTIALS and SHARD_PROXY_CHAIN_LIVE_GEO_REPORT.
++
++use super::{config::ProxyChainSettings, credentials, TestResult};
++use base64::{engine::general_purpose::STANDARD, Engine as _};
++use serde::{Deserialize, Serialize};
++use serde_json::json;
++use std::net::IpAddr;
++use std::path::{Path, PathBuf};
++use std::time::Duration;
++
++type Result<T> = std::result::Result<T, &'static str>;
++
++#[derive(Deserialize)]
++struct LiveInput {
++    host: String,
++    port: u16,
++    username: String,
++    password: String,
++    system_host: String,
++    system_port: u16,
++}
++
++#[derive(Serialize)]
++struct Exit {
++    exit_ip: String,
++    exit_geo: Geo,
++    exit_ip_matches_geo_ip: bool,
++}
++
++#[derive(Serialize)]
++struct Geo {
++    ip: String,
++    country: String,
++    country_code: String,
++    region: String,
++    city: String,
++    provider: String,
++}
++
++#[derive(Serialize)]
++struct ModeReport {
++    first_hop: &'static str,
++    system_exit: Option<Exit>,
++    profile_exit: Option<Exit>,
++    system_and_profile_ips_differ: bool,
++}
++
++#[derive(Serialize)]
++struct Report {
++    kind: &'static str,
++    evidence_scope: &'static str,
++    state: &'static str,
++    stage: &'static str,
++    error_code: Option<&'static str>,
++    modes: Vec<ModeReport>,
++    original_synthetic_files_unchanged: bool,
++    isolated_store_removed: bool,
++}
++
++fn check(condition: bool, code: &'static str) -> Result<()> {
++    if condition {
++        Ok(())
++    } else {
++        Err(code)
++    }
++}
++
++fn workspace() -> Result<PathBuf> {
++    Path::new(env!("CARGO_MANIFEST_DIR"))
++        .parent()
++        .and_then(Path::parent)
++        .ok_or("live_geo_workspace_unknown")?
++        .canonicalize()
++        .map_err(|_| "live_geo_workspace_unknown")
++}
++
++fn input() -> Result<LiveInput> {
++    let local = std::env::var_os("LOCALAPPDATA")
++        .map(PathBuf::from)
++        .ok_or("live_geo_local_app_data_missing")?;
++    let path = std::env::var_os("SHARD_PROXY_CHAIN_LIVE_CREDENTIALS")
++        .map(PathBuf::from)
++        .unwrap_or_else(|| local.join("ShardBrowser-ProxyChain-Dev/live-test.credentials"))
++        .canonicalize()
++        .map_err(|_| "live_geo_protected_input_missing")?;
++    check(
++        !path.starts_with(workspace()?),
++        "live_geo_secret_input_must_be_outside_workspace",
++    )?;
++    let sealed = std::fs::read(path).map_err(|_| "live_geo_protected_input_unreadable")?;
++    let clear = credentials::unprotect(&STANDARD.encode(sealed))
++        .map_err(|_| "live_geo_dpapi_unavailable")?;
++    serde_json::from_str(&clear).map_err(|_| "live_geo_protected_json_invalid")
++}
++
++/// TestRoot owns one fresh directory; the only plaintext proxy file is wiped
++/// before its Drop removes that directory, including on panic or cancellation.
++struct Scope(crate::store::TestRoot);
++impl Drop for Scope {
++    fn drop(&mut self) {
++        let path = self.0.path.join("config/proxies.json");
++        let _ = std::fs::write(&path, b"{\"proxies\":[]}");
++        let _ = std::fs::remove_file(path);
++    }
++}
++
++fn public_ip(ip: IpAddr) -> bool {
++    match ip {
++        IpAddr::V4(ip) => {
++            let octets = ip.octets();
++            !ip.is_private()
++                && !ip.is_loopback()
++                && !ip.is_link_local()
++                && !ip.is_broadcast()
++                && !ip.is_documentation()
++                && octets[0] != 0
++                && octets[0] < 224
++                && !(octets[0] == 100 && (64..=127).contains(&octets[1]))
++                && !(octets[0] == 198 && (18..=19).contains(&octets[1]))
++        }
++        IpAddr::V6(ip) => {
++            let segments = ip.segments();
++            !ip.is_unspecified()
++                && !ip.is_loopback()
++                && !ip.is_multicast()
++                && segments[0] & 0xfe00 != 0xfc00
++                && segments[0] & 0xffc0 != 0xfe80
++                && !(segments[0] == 0x2001 && segments[1] == 0x0db8)
++                && ip
++                    .to_ipv4_mapped()
++                    .is_none_or(|v4| public_ip(IpAddr::V4(v4)))
++        }
++    }
++}
++
++/// Only an explicit allowlist reaches the report. Never serialize the full
++/// TestResult, proxy entry, credentials, provider response, or raw error.
++fn verified_exit(result: TestResult, cfg: &LiveInput, profile: bool) -> Result<Exit> {
++    check(
++        result.system_proxy.state == "ok",
++        "live_geo_system_stage_failed",
++    )?;
++    if profile {
++        check(
++            result.profile_proxy.state == "ok",
++            "live_geo_profile_stage_failed",
++        )?;
++    }
++    check(
++        result.exit_error.is_none() && result.exit_error_code.is_none(),
++        "live_geo_exit_failed",
++    )?;
++    let ip = result.exit_ip.ok_or("live_geo_exit_ip_missing")?;
++    let geo = result.exit_geo.ok_or("live_geo_exit_location_missing")?;
++    check(ip == geo.ip, "live_geo_exit_ip_mismatch")?;
++    check(
++        ip.parse::<IpAddr>().is_ok_and(public_ip),
++        "live_geo_exit_ip_not_public",
++    )?;
++    check(
++        !geo.country.trim().is_empty() && !geo.city.trim().is_empty(),
++        "live_geo_country_or_city_missing",
++    )?;
++    check(
++        matches!(
++            geo.provider.as_str(),
++            "ip-api.com" | "ipapi.co" | "ipwho.is"
++        ),
++        "live_geo_unexpected_provider",
++    )?;
++    for field in [
++        &ip,
++        &geo.country,
++        &geo.country_code,
++        &geo.region,
++        &geo.city,
++        &geo.provider,
++    ] {
++        check(
++            [&cfg.username, &cfg.password]
++                .iter()
++                .filter(|secret| !secret.is_empty())
++                .all(|secret| !field.contains(secret.as_str())),
++            "live_geo_result_contains_secret",
++        )?;
++    }
++    Ok(Exit {
++        exit_ip: ip,
++        exit_geo: Geo {
++            ip: geo.ip,
++            country: geo.country,
++            country_code: geo.country_code,
++            region: geo.region,
++            city: geo.city,
++            provider: geo.provider,
++        },
++        exit_ip_matches_geo_ip: true,
++    })
++}
++
++async fn exercise(scope: &Scope, cfg: &LiveInput, report: &mut Report) -> Result<()> {
++    report.stage = "create_one_synthetic_profile";
++    let profile_id = format!("live-geo-{}", uuid::Uuid::new_v4().simple());
++    let proxy_id = format!("{profile_id}-proxy");
++    let proxy_path = crate::store::proxies_path().map_err(|_| "live_geo_store_unavailable")?;
++    let profile_path = crate::store::profiles_dir()
++        .map_err(|_| "live_geo_store_unavailable")?
++        .join(format!("{profile_id}.json"));
++    check(
++        proxy_path.starts_with(&scope.0.path) && profile_path.starts_with(&scope.0.path),
++        "live_geo_store_isolation_failed",
++    )?;
++    let proxy_bytes = serde_json::to_vec(&json!({"proxies": [{
++        "id": proxy_id, "name": "Synthetic live Geo proxy", "kind": "socks5",
++        "host": cfg.host, "port": cfg.port,
++        "username": cfg.username, "password": cfg.password
++    }]}))
++    .map_err(|_| "live_geo_fixture_serialization_failed")?;
++    let profile_bytes = serde_json::to_vec(&json!({
++        "name": "Synthetic live Geo profile",
++        "_meta": {"id": profile_id, "proxy_id": proxy_id, "rev": 1, "created_at": "@1"}
++    }))
++    .map_err(|_| "live_geo_fixture_serialization_failed")?;
++    std::fs::write(&proxy_path, &proxy_bytes).map_err(|_| "live_geo_fixture_write_failed")?;
++    std::fs::write(&profile_path, &profile_bytes).map_err(|_| "live_geo_fixture_write_failed")?;
++
++    for mode in ["http", "socks5"] {
++        let config = ProxyChainSettings {
++            enabled: true,
++            mode: mode.into(),
++            host: cfg.system_host.clone(),
++            port: cfg.system_port,
++            ..Default::default()
++        };
++        crate::settings::save(&crate::settings::Settings {
++            proxy_chain: config.clone(),
++            ..Default::default()
++        })
++        .map_err(|_| "live_geo_settings_write_failed")?;
++        let settings_path =
++            crate::store::settings_path().map_err(|_| "live_geo_store_unavailable")?;
++        let settings_bytes =
++            std::fs::read(&settings_path).map_err(|_| "live_geo_settings_read_failed")?;
++        report.modes.push(ModeReport {
++            first_hop: mode,
++            system_exit: None,
++            profile_exit: None,
++            system_and_profile_ips_differ: false,
++        });
++        let record = report
++            .modes
++            .last_mut()
++            .ok_or("live_geo_report_state_invalid")?;
++        report.stage = if mode == "http" {
++            "http_system_public_test"
++        } else {
++            "socks5_system_public_test"
++        };
++        let result = super::test("system".into(), config.clone(), None)
++            .await
++            .map_err(|_| "live_geo_system_public_entry_failed")?;
++        record.system_exit = Some(verified_exit(result, cfg, false)?);
++
++        report.stage = if mode == "http" {
++            "http_profile_public_test"
++        } else {
++            "socks5_profile_public_test"
++        };
++        let result = super::test("profile".into(), config, Some(profile_id.clone()))
++            .await
++            .map_err(|_| "live_geo_profile_public_entry_failed")?;
++        record.profile_exit = Some(verified_exit(result, cfg, true)?);
++        record.system_and_profile_ips_differ = record
++            .system_exit
++            .as_ref()
++            .zip(record.profile_exit.as_ref())
++            .is_some_and(|(system, profile)| system.exit_ip != profile.exit_ip);
++        check(
++            record.system_and_profile_ips_differ,
++            "live_geo_first_and_second_exit_not_distinct",
++        )?;
++        check(
++            std::fs::read(settings_path).map_err(|_| "live_geo_settings_read_failed")?
++                == settings_bytes,
++            "live_geo_public_test_modified_settings",
++        )?;
++    }
++    report.stage = "verify_synthetic_store_unchanged";
++    report.original_synthetic_files_unchanged =
++        std::fs::read(proxy_path).map_err(|_| "live_geo_fixture_read_failed")? == proxy_bytes
++            && std::fs::read(profile_path).map_err(|_| "live_geo_fixture_read_failed")?
++                == profile_bytes;
++    check(
++        report.original_synthetic_files_unchanged,
++        "live_geo_public_test_modified_binding",
++    )
++}
++
++#[tokio::test(flavor = "current_thread")]
++#[ignore = "Requires explicitly authorized real proxies and current-user DPAPI input; run alone."]
++async fn real_network_public_detection_returns_distinct_system_and_profile_geo() {
++    assert!(
++        std::env::var("SHARD_PROXY_CHAIN_RUN_LIVE_GEO").as_deref() == Ok("1"),
++        "live_geo_requires_explicit_opt_in"
++    );
++    let _serial = crate::migrate::serial();
++    let scope = Scope(crate::store::test_root("chain-live-public-geo"));
++    let root_path = scope.0.path.clone();
++    let mut report = Report {
++        kind: "public-proxy-test-live-geo-acceptance",
++        evidence_scope: "backend_real_network_not_native_ui_or_browser_engine",
++        state: "failed",
++        stage: "read_protected_input",
++        error_code: None,
++        modes: Vec::new(),
++        original_synthetic_files_unchanged: false,
++        isolated_store_removed: false,
++    };
++    let result = match input() {
++        Ok(cfg) => match tokio::time::timeout(
++            Duration::from_secs(180),
++            exercise(&scope, &cfg, &mut report),
++        )
++        .await
++        {
++            Ok(result) => result,
++            Err(_) => Err("live_geo_total_timeout"),
++        },
++        Err(code) => Err(code),
++    };
++    drop(scope);
++    report.isolated_store_removed = !root_path.exists();
++    report.error_code = result.err().or(if report.isolated_store_removed {
++        None
++    } else {
++        Some("live_geo_cleanup_incomplete")
++    });
++    if report.error_code.is_none() {
++        report.state = "passed";
++        report.stage = "completed_and_cleaned";
++    }
++    let report_path = std::env::var_os("SHARD_PROXY_CHAIN_LIVE_GEO_REPORT")
++        .map(PathBuf::from)
++        .unwrap_or_else(|| {
++            workspace()
++                .expect("live_geo_workspace_unknown")
++                .join(".audit/live-public-detection-geo-acceptance.json")
++        });
++    if let Some(parent) = report_path
++        .parent()
++        .filter(|parent| !parent.as_os_str().is_empty())
++    {
++        std::fs::create_dir_all(parent).expect("safe_live_geo_report_directory_failed");
++    }
++    let body =
++        serde_json::to_string_pretty(&report).expect("safe_live_geo_report_serialization_failed");
++    std::fs::write(report_path, &body).expect("safe_live_geo_report_write_failed");
++    println!("{body}");
++    assert!(
++        report.error_code.is_none(),
++        "live_geo_acceptance_failed; see safe report error_code"
++    );
++}
 diff --git a/src-tauri/src/proxy_chain/live_tests.rs b/src-tauri/src/proxy_chain/live_tests.rs
 new file mode 100644
-index 0000000..b79e89f
+index 0000000000000000000000000000000000000000..b79e89fde7c099601f91972a08e05d39b3bd2ca1
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/live_tests.rs
 @@ -0,0 +1,755 @@
@@ -2864,10 +3735,10 @@ index 0000000..b79e89f
 +}
 diff --git a/src-tauri/src/proxy_chain/mod.rs b/src-tauri/src/proxy_chain/mod.rs
 new file mode 100644
-index 0000000..5362608
+index 0000000000000000000000000000000000000000..a1eda83792d5b4bb102ec8a8954bf7b1c367dfca
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/mod.rs
-@@ -0,0 +1,303 @@
+@@ -0,0 +1,365 @@
 +//! Windows system proxy -> original profile proxy. Never fall back to direct.
 +pub mod config;
 +pub mod connector;
@@ -3031,9 +3902,64 @@ index 0000000..5362608
 +    profile_proxy: Stage,
 +    local_network: Option<Stage>,
 +    exit_ip: Option<String>,
++    exit_geo: Option<proxy::GeoInfo>,
 +    exit_error: Option<String>,
++    exit_error_code: Option<&'static str>,
 +    total_ms: u128,
 +    tested_at: String,
++}
++
++impl TestResult {
++    fn set_exit(&mut self, geo: anyhow::Result<proxy::GeoInfo>) {
++        match geo {
++            Ok(geo) => {
++                self.exit_ip = Some(geo.ip.clone());
++                self.exit_geo = Some(geo);
++            }
++            Err(_) => {
++                let (code, message) = match self.kind.as_str() {
++                    "local" => (
++                        "proxy_chain_local_geo_failed",
++                        "The local network test returned no live exit location.",
++                    ),
++                    "system" => (
++                        "proxy_chain_system_geo_failed",
++                        "The system proxy connected, but no live exit location was returned through it.",
++                    ),
++                    _ => (
++                        "proxy_chain_profile_geo_failed",
++                        "The full chain connected, but no live exit IP was returned.",
++                    ),
++                };
++                self.exit_error_code = Some(code);
++                self.exit_error = Some(message.into());
++            }
++        }
++    }
++}
++
++/// The already resolved first hop is one explicit route, never a saved proxy
++/// or an input to the profile-chain wrapper. Preserve its own credentials.
++fn system_entry(hop: &ProxyHop) -> ProxyEntry {
++    let host = if hop.host.parse::<std::net::Ipv6Addr>().is_ok() {
++        format!("[{}]", hop.host)
++    } else {
++        hop.host.clone()
++    };
++    ProxyEntry {
++        id: String::new(),
++        name: String::new(),
++        kind: match hop.kind {
++            connector::ProxyKind::Http => ProxyKind::Http,
++            connector::ProxyKind::Socks5 => ProxyKind::Socks5,
++        },
++        host,
++        port: hop.port,
++        username: hop.username.clone(),
++        password: hop.password.clone(),
++        country: String::new(),
++        notes: String::new(),
++    }
 +}
 +
 +pub async fn test(
@@ -3054,7 +3980,9 @@ index 0000000..5362608
 +        profile_proxy: Stage::pending(),
 +        local_network: None,
 +        exit_ip: None,
++        exit_geo: None,
 +        exit_error: None,
++        exit_error_code: None,
 +        total_ms: 0,
 +        tested_at: format!(
 +            "@{}",
@@ -3067,14 +3995,15 @@ index 0000000..5362608
 +        match proxy::geo_check_on_route(None, None).await {
 +            Ok(geo) => {
 +                result.local_network = Some(Stage::ok(start));
-+                result.exit_ip = Some(geo.ip);
++                result.set_exit(Ok(geo));
 +            }
-+            Err(_) => {
++            Err(error) => {
 +                result.local_network = Some(Stage::failed(ChainError::new(
 +                    "proxy_chain_local_network_failed",
 +                    "local",
 +                    "The local network test did not complete.",
-+                )))
++                )));
++                result.set_exit(Err(error));
 +            }
 +        }
 +    } else {
@@ -3131,14 +4060,14 @@ index 0000000..5362608
 +                                        result.profile_proxy = Stage::failed(profile_failure(&prepared.tunnel, &error));
 +                                    } else {
 +                                        result.profile_proxy = Stage::ok(phase);
-+                                        match proxy::geo_check_on_route(Some(&prepared.effective), None).await {
-+                                            Ok(geo) => result.exit_ip = Some(geo.ip),
-+                                            Err(_) => result.exit_error = Some("The full chain connected, but no live exit IP was returned.".into()),
-+                                        }
++                                        result.set_exit(proxy::geo_check_on_route(Some(&prepared.effective), None).await);
 +                                    }
 +                                    prepared.tunnel.shutdown().await;
 +                                }
 +                            }
++                        } else {
++                            let entry = system_entry(&hop);
++                            result.set_exit(proxy::geo_check_on_route(Some(&entry), None).await);
 +                        }
 +                    }
 +                }
@@ -3169,11 +4098,15 @@ index 0000000..5362608
 +
 +#[cfg(test)]
 +mod integration_tests;
++#[cfg(test)]
++mod detection_tests;
 +#[cfg(all(test, windows))]
 +mod live_tests;
++#[cfg(all(test, windows))]
++mod live_geo_tests;
 diff --git a/src-tauri/src/proxy_chain/tests.rs b/src-tauri/src/proxy_chain/tests.rs
 new file mode 100644
-index 0000000..1eac478
+index 0000000000000000000000000000000000000000..1eac4784185e68adf5f7acc0b94470633733c0ca
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tests.rs
 @@ -0,0 +1,768 @@
@@ -3947,7 +4880,7 @@ index 0000000..1eac478
 +}
 diff --git a/src-tauri/src/proxy_chain/tunnel.rs b/src-tauri/src/proxy_chain/tunnel.rs
 new file mode 100644
-index 0000000..23eb1d7
+index 0000000000000000000000000000000000000000..23eb1d7e5b87712613972ce4c2624aff1a9e61ec
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tunnel.rs
 @@ -0,0 +1,302 @@
@@ -4254,7 +5187,7 @@ index 0000000..23eb1d7
 +    }
 +}
 diff --git a/src-tauri/src/reset.rs b/src-tauri/src/reset.rs
-index 1da3914..fa5e383 100644
+index 1da3914ad41124294eae495b8e77ca8c20d6e8f6..fa5e3839bc061e67dd44acf1b75a1127ef73bba4 100644
 --- a/src-tauri/src/reset.rs
 +++ b/src-tauri/src/reset.rs
 @@ -1649,7 +1649,7 @@ mod tests {
@@ -4267,7 +5200,7 @@ index 1da3914..fa5e383 100644
      }
  
 diff --git a/src-tauri/src/runtime.rs b/src-tauri/src/runtime.rs
-index a07c4fa..53e36c8 100644
+index a07c4fa262c4c56f4a1285804e28ee0495ceb260..4bd2efeeca728eaafe6f9dc77e94d3fcf4bc81a4 100644
 --- a/src-tauri/src/runtime.rs
 +++ b/src-tauri/src/runtime.rs
 @@ -31,7 +31,11 @@ const MANIFEST_URL: &str =
@@ -4278,7 +5211,7 @@ index a07c4fa..53e36c8 100644
 +const LAUNCHER_RELEASE_REPO: &str = "shiranzby/ShardBrowser-ProxyChain";
 +pub const PATCH_REVISION: &str = match option_env!("SHARDBROWSER_PATCH_REVISION") {
 +    Some(value) => value,
-+    None => "pc1",
++    None => "pc2",
 +};
  /// Chromium version baked into the current bundle (used for Mac Framework path).
  pub const CHROMIUM_VERSION: &str = "156.0.8078.48";
@@ -4338,7 +5271,7 @@ index a07c4fa..53e36c8 100644
 +    }
 +}
 diff --git a/src-tauri/src/settings.rs b/src-tauri/src/settings.rs
-index 425611d..f077dc4 100644
+index 425611d5de5c4036a8177132056f618c329fb6bd..f077dc4177ab4636be54fba781d09e14de9130a9 100644
 --- a/src-tauri/src/settings.rs
 +++ b/src-tauri/src/settings.rs
 @@ -6,6 +6,8 @@ use std::sync::Mutex;
@@ -4359,7 +5292,7 @@ index 425611d..f077dc4 100644
          theme: default_theme(),
          geo_checker: Some("ip-api.com".into()),
 diff --git a/src-tauri/src/space/client.rs b/src-tauri/src/space/client.rs
-index 93b7a07..e6cea3f 100644
+index 93b7a0779c308c227bbeff00b269c2d62ccb8d52..e6cea3f5322c7ff295739ca0eeec51abb4933eec 100644
 --- a/src-tauri/src/space/client.rs
 +++ b/src-tauri/src/space/client.rs
 @@ -1486,7 +1486,7 @@ mod tests {
@@ -4390,7 +5323,7 @@ index 93b7a07..e6cea3f 100644
          let builders = code(ours).filter(|(_, l)| l.contains("Client::builder(")).count();
          assert_eq!(builders, 1, "one place makes team connections: link()");
 diff --git a/src-tauri/src/space/doors.rs b/src-tauri/src/space/doors.rs
-index 45d0263..147d995 100644
+index 45d026319565d1652ac507e3c75ba65efd3cccad..147d995c4570fa7fa588ccea0a485a7a9f0444c2 100644
 --- a/src-tauri/src/space/doors.rs
 +++ b/src-tauri/src/space/doors.rs
 @@ -349,6 +349,8 @@ const RULES: &[(&str, Need)] = &[
@@ -4403,7 +5336,7 @@ index 45d0263..147d995 100644
      ("runtime::runtime_install", Machine),
      ("runtime::launcher_update_check", Machine),
 diff --git a/src-tauri/src/space/local/extensions/updates/tests.rs b/src-tauri/src/space/local/extensions/updates/tests.rs
-index cc0b266..07f3632 100644
+index cc0b266511e4134e1ec4d7db0e863d6b837a4481..07f3632b101b6793d0b6a68bb5cd7e507b7a4d86 100644
 --- a/src-tauri/src/space/local/extensions/updates/tests.rs
 +++ b/src-tauri/src/space/local/extensions/updates/tests.rs
 @@ -346,10 +346,17 @@ async fn a_silent_store_times_out_and_an_offline_one_changes_nothing() {
@@ -4428,7 +5361,7 @@ index cc0b266..07f3632 100644
      let u = r.view(&id);
      assert_eq!((u.state, u.latest.as_deref()), (State::Available, Some("1.1")));
 diff --git a/src-tauri/src/space/local/proxy.rs b/src-tauri/src/space/local/proxy.rs
-index 63d3972..988b977 100644
+index 63d3972b4adf061dbddbd0a79026b32912897e64..988b977f234d241d2832f27f6cdd6cb314e39381 100644
 --- a/src-tauri/src/space/local/proxy.rs
 +++ b/src-tauri/src/space/local/proxy.rs
 @@ -1060,6 +1060,10 @@ pub fn country_to_locale(cc: &str) -> &'static str {
@@ -4490,7 +5423,7 @@ index 63d3972..988b977 100644
          last_seen: now,
          ip,
 diff --git a/src-tauri/src/space/mod.rs b/src-tauri/src/space/mod.rs
-index 00d90e1..3bd502b 100644
+index 00d90e17f3869e100400cd0ceae4478808abf924..3bd502b490af4608cc48c3e5c383b10f954aef65 100644
 --- a/src-tauri/src/space/mod.rs
 +++ b/src-tauri/src/space/mod.rs
 @@ -562,9 +562,41 @@ pub mod proxy {
@@ -4551,7 +5484,7 @@ index 00d90e1..3bd502b 100644
  }
  
 diff --git a/src/dev/mock/fixtures.ts b/src/dev/mock/fixtures.ts
-index e5a46b6..3cb5436 100644
+index e5a46b6e64386b6cc95d06fe9a513df8b4f24a9d..3cb5436fc50deb1b1eea33602a6f7a4b0eb20f14 100644
 --- a/src/dev/mock/fixtures.ts
 +++ b/src/dev/mock/fixtures.ts
 @@ -664,6 +664,7 @@ export function seed(): MockState {
@@ -4563,10 +5496,10 @@ index e5a46b6..3cb5436 100644
      api: { enabled: true, port: 40325, base_url: "http://127.0.0.1:40325", token: "shx_mock_00000000000000000000000000" },
      psKey: "psk_test_mock_000000000000000000000000",
 diff --git a/src/dev/mock/handlers.ts b/src/dev/mock/handlers.ts
-index 75e7e9d..3af7609 100644
+index 75e7e9dfcb88c2f5c861b6b773f84af87b143eaf..2c34c6fb79540841effe83b08d2e2186308c9706 100644
 --- a/src/dev/mock/handlers.ts
 +++ b/src/dev/mock/handlers.ts
-@@ -454,20 +454,53 @@ export const handlers: Record<string, Handler> = {
+@@ -454,20 +454,56 @@ export const handlers: Record<string, Handler> = {
    },
  
    // ---- settings, api, data root ---------------------------------------------
@@ -4608,12 +5541,15 @@ index 75e7e9d..3af7609 100644
 +    const now = `@${Math.floor(Date.now() / 1000)}`;
 +    const system = kind === "local" ? { state: "not_tested" } : { state: "ok", latency_ms: 12 };
 +    const profileStage = kind === "profile" ? { state: profile ? "ok" : "failed", latency_ms: profile ? 88 : null, error_message: profile ? null : "profile not found" } : { state: "not_tested" };
++    const ip = kind === "profile" ? (profile ? "203.0.113.42" : null) : kind === "system" ? "198.51.100.24" : "192.0.2.18";
 +    return {
-+      kind, proxy_kind: "http", proxy_address: "127.0.0.1:7890", source: "mock", profile_name: profile?.name ?? null,
++      kind, proxy_kind: kind === "local" ? null : "http", proxy_address: kind === "local" ? null : "127.0.0.1:7890", source: "mock", profile_name: profile?.name ?? null,
 +      local_network: kind === "local" ? { state: "ok", latency_ms: 8 } : null,
 +      system_proxy: system, profile_proxy: profileStage,
-+      exit_ip: kind === "profile" && profile ? "203.0.113.42" : null,
++      exit_ip: ip,
++      exit_geo: ip ? { ip, country: "Singapore", country_code: "SG", region: "Singapore", city: "Singapore", isp: "Mock network", timezone: "Asia/Singapore", latitude: 1.29, longitude: 103.85, provider: "mock-only.example" } : null,
 +      exit_error: kind === "profile" && !profile ? "profile proxy test failed" : null,
++      exit_error_code: null,
 +      total_ms: kind === "profile" && profile ? 100 : null, tested_at: now,
 +      ...((window as { __shardxMockChainResult?: Record<string, unknown> }).__shardxMockChainResult ?? {}),
 +    };
@@ -4622,7 +5558,7 @@ index 75e7e9d..3af7609 100644
    api_regenerate_token: (_a, ctx) => {
      // As the backend: a new signing key on disk, and a token signed with it.
 diff --git a/src/entities/proxy/model/types.ts b/src/entities/proxy/model/types.ts
-index f974aad..fa800e2 100644
+index f974aadf7b17aad26835b5e71742e38dbf29d984..fa800e23526c9b5383ce6748d7f1c42cdfb603fa 100644
 --- a/src/entities/proxy/model/types.ts
 +++ b/src/entities/proxy/model/types.ts
 @@ -28,6 +28,9 @@ export type ProxyTestSnapshot = {
@@ -4636,7 +5572,7 @@ index f974aad..fa800e2 100644
  
  export type BulkRowState = {
 diff --git a/src/entities/settings/model/api.ts b/src/entities/settings/model/api.ts
-index 651361a..9e419c6 100644
+index 651361a79b54085fecea7373fa4bf9e9367aa9d9..9e419c6b8839d71211e270d6caa65c6df7f984cb 100644
 --- a/src/entities/settings/model/api.ts
 +++ b/src/entities/settings/model/api.ts
 @@ -1,5 +1,5 @@
@@ -4662,10 +5598,10 @@ index 651361a..9e419c6 100644
   *  the change, not what runs. A failed save changes nothing, so it does not
   *  count (Pair 34 ruling, M3); one still on its way makes a read unsure. */
 diff --git a/src/entities/settings/model/types.ts b/src/entities/settings/model/types.ts
-index 01cfe86..3ab8dad 100644
+index 01cfe868f170302f55a356ac45581e43eb281b47..4bf07e0ec73aec5eb7ceda0d90e5af3cb5bc27e4 100644
 --- a/src/entities/settings/model/types.ts
 +++ b/src/entities/settings/model/types.ts
-@@ -17,6 +17,60 @@ export type Settings = {
+@@ -17,6 +17,74 @@ export type Settings = {
    extra_args?: string;
    /** Ask the Web Store about linked extensions every 5 h (on when absent). */
    ext_update_check?: boolean;
@@ -4709,7 +5645,21 @@ index 01cfe86..3ab8dad 100644
 +  system_proxy: ProxyChainStage;
 +  profile_proxy: ProxyChainStage;
 +  exit_ip?: string | null;
++  /** Live lookup on this test's route, never a cached or first-hop substitute. */
++  exit_geo?: {
++    ip: string;
++    country: string;
++    country_code: string;
++    region: string;
++    city: string;
++    isp: string;
++    timezone: string;
++    latitude: number;
++    longitude: number;
++    provider: string;
++  } | null;
 +  exit_error?: string | null;
++  exit_error_code?: string | null;
 +  total_ms?: number | null;
 +  tested_at: string;
 +};
@@ -4727,7 +5677,7 @@ index 01cfe86..3ab8dad 100644
  
  /** Where profiles, user-data, extensions and the trash live. */
 diff --git a/src/features/commands/appCommands.ts b/src/features/commands/appCommands.ts
-index 8b2a63b..e9c782a 100644
+index 8b2a63b991ff6e1a249d418a11ee3c1ef8c82d3e..e9c782ae3035f8ecac5c8aef251cd6e179667358 100644
 --- a/src/features/commands/appCommands.ts
 +++ b/src/features/commands/appCommands.ts
 @@ -64,6 +64,7 @@ export const SETTINGS_TABS: Record<SettingsTab, () => string> = {
@@ -4739,7 +5689,7 @@ index 8b2a63b..e9c782a 100644
    about: () => t("settings.tabAbout"),
  };
 diff --git a/src/pages/settings/index.tsx b/src/pages/settings/index.tsx
-index a7c8b9b..7af37f1 100644
+index a7c8b9b5bebb80043bc0a2f9fa75db521f30f51d..7af37f196c646cfa8cd411b4e9adef5abeabe8ed 100644
 --- a/src/pages/settings/index.tsx
 +++ b/src/pages/settings/index.tsx
 @@ -20,6 +20,7 @@ import { ApiSection } from "./sections/Api";
@@ -4776,10 +5726,10 @@ index a7c8b9b..7af37f1 100644
              ]}
 diff --git a/src/pages/settings/sections/Proxy.tsx b/src/pages/settings/sections/Proxy.tsx
 new file mode 100644
-index 0000000..32a4ad0
+index 0000000000000000000000000000000000000000..431e88616a139e8fa4b6794a8a3db147a8eb9ace
 --- /dev/null
 +++ b/src/pages/settings/sections/Proxy.tsx
-@@ -0,0 +1,233 @@
+@@ -0,0 +1,262 @@
 +import { useEffect, useRef, useState } from "react";
 +import { Button, Input, Switch } from "@proxyshard/shardx-ui-kit";
 +import {
@@ -4789,9 +5739,10 @@ index 0000000..32a4ad0
 +} from "../../../entities/settings";
 +import { may, useProfile } from "../../../entities/profile";
 +import { useSpace } from "../../../entities/space";
-+import { useT, appLocale } from "../../../shared/i18n";
++import { useT, appLocale, type T } from "../../../shared/i18n";
 +import { explainError } from "../../../shared/lib/errors";
 +import { fmtTs } from "../../../shared/lib/utils";
++import { fmtCountry } from "../../../shared/lib/format";
 +import { NumField } from "../../../shared/ui/NumField";
 +import { SelectField } from "../../../shared/ui/SelectField";
 +import { SettingRow, SettingsGroup, type SettingsProps } from "../SettingRow";
@@ -4799,6 +5750,16 @@ index 0000000..32a4ad0
 +
 +const DEFAULT = defaultProxyChain();
 +type Busy = ProxyChainTestKind | "detect";
++
++function configurationError(t: T, error?: Pick<ProxyChainStage, "error_code" | "error_message"> | null) {
++  switch (error?.error_code) {
++    case "proxy_chain_manual_required": return t("proxyChain.errorManualRequired");
++    case "proxy_chain_system_not_configured": return t("proxyChain.errorSystemNotConfigured");
++    case "proxy_chain_system_detect_failed": return t("proxyChain.errorSystemDetectFailed");
++    case "proxy_chain_windows_required": return t("proxyChain.errorWindowsRequired");
++    default: return error?.error_message;
++  }
++}
 +
 +export function ProxySection({ s, setS }: SettingsProps) {
 +  const t = useT();
@@ -4818,6 +5779,7 @@ index 0000000..32a4ad0
 +  const pending = busy?.context === context ? busy.kind : null;
 +  const shown = result?.context === context ? result.value : null;
 +  const detected = detection?.context === context ? detection.value : null;
++  const detectionError = configurationError(t, detected);
 +  const failure = error?.context === context ? error.text : null;
 +  const patch = (value: Partial<ProxyChainSettings>) => {
 +    sequence.current++;
@@ -4901,7 +5863,7 @@ index 0000000..32a4ad0
 +                <span>{detected.state === "ok" ? t("proxyChain.detected") : detected.state === "manual_required" ? t("proxyChain.manualRequired") : t("proxyChain.detectionFailed")}</span>
 +                {detected.kind && detected.host && <span className="mono break-all">{detected.kind === "http" ? "HTTP" : "SOCKS5"} {detected.host}:{detected.port}</span>}
 +                <span>{t("proxyChain.source", { source: detected.source })}</span>
-+                {detected.error_message && <span>{detected.error_message}</span>}
++                {detectionError && <span>{detectionError}</span>}
 +                {detected.has_bypass && <span>{t("proxyChain.bypassIgnored")}</span>}
 +              </div>
 +            ) : undefined}
@@ -4979,6 +5941,17 @@ index 0000000..32a4ad0
 +
 +function ChainResult({ result }: { result: ProxyChainTestResult }) {
 +  const t = useT();
++  const exitLabel = result.kind === "system" ? t("proxyChain.systemExitIp") : result.kind === "local" ? t("proxyChain.localExitIp") : t("proxyChain.exitIp");
++  const exitError = result.exit_error_code === "proxy_chain_system_geo_failed" ? t("proxyChain.systemGeoFailed")
++    : result.exit_error_code === "proxy_chain_profile_geo_failed" ? t("proxyChain.profileGeoFailed")
++    : result.exit_error_code === "proxy_chain_local_geo_failed" ? t("proxyChain.localGeoFailed") : result.exit_error;
++  // A stale or mismatched Geo response must not lend a location to another IP.
++  const geo = result.exit_ip && !exitError && result.exit_geo?.ip === result.exit_ip ? result.exit_geo : null;
++  const location = geo ? [...new Set([
++    geo.country_code ? fmtCountry(geo.country_code) : geo.country,
++    geo.region, geo.city,
++  ].map((part) => part.trim()).filter(Boolean))].join(", ") : "";
++  const missingExit = exitError ? t("proxyChain.exitUnavailable") : t("proxyChain.stageUntested");
 +  const stage = (value?: ProxyChainStage | null) => value?.state === "ok"
 +    ? value.latency_ms != null ? t("proxyChain.stageLatency", { ms: value.latency_ms }) : t("proxyChain.stageOk")
 +    : value?.state === "failed" ? t("proxyChain.stageFailed") : t("proxyChain.stageUntested");
@@ -4995,18 +5968,24 @@ index 0000000..32a4ad0
 +        {result.proxy_address && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.proxyAddress")}</dt><dd className="mono m-0 break-all">{result.proxy_address}</dd></div>}
 +        {result.source && <div>{t("proxyChain.source", { source: result.source })}</div>}
 +        {result.profile_name && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.profile")}</dt><dd className="m-0 break-all">{result.profile_name}</dd></div>}
-+        {rows.map((row) => (
-+          <div key={row.id} data-chain-stage={row.id} className="flex flex-wrap gap-2">
-+            <dt>{row.label}</dt>
-+            <dd className={`m-0 min-w-0 ${row.detail?.state === "failed" ? "text-error-text" : "text-text-strong-950"}`}>
-+              {row.value}
-+              {row.detail?.error_message && <span className="block break-words">{row.detail.error_message}</span>}
-+              {row.detail?.error_code && <code className="block break-all">{row.detail.error_code}</code>}
-+            </dd>
-+          </div>
-+        ))}
-+        <div data-chain-exit className="flex flex-wrap gap-2"><dt>{t("proxyChain.exitIp")}</dt><dd className="mono m-0 break-all">{result.exit_ip || t("proxyChain.stageUntested")}</dd></div>
-+        {result.exit_error && <div className="text-error-text" data-chain-exit-error>{result.exit_error}</div>}
++        {rows.map((row) => {
++          const error = configurationError(t, row.detail);
++          return (
++            <div key={row.id} data-chain-stage={row.id} className="flex flex-wrap gap-2">
++              <dt>{row.label}</dt>
++              <dd className={`m-0 min-w-0 ${row.detail?.state === "failed" ? "text-error-text" : "text-text-strong-950"}`}>
++                {row.value}
++                {error && <span className="block break-words">{error}</span>}
++                {row.detail?.error_code && <code className="block break-all">{row.detail.error_code}</code>}
++              </dd>
++            </div>
++          );
++        })}
++        <div data-chain-exit className="flex flex-wrap gap-2"><dt>{exitLabel}</dt><dd className="mono m-0 break-all">{result.exit_ip || missingExit}</dd></div>
++        <div data-chain-location className="flex flex-wrap gap-2"><dt>{t("proxyChain.exitLocation")}</dt><dd className="m-0 break-words">{location || (result.exit_ip ? t("proxyChain.locationNotReturned") : missingExit)}</dd></div>
++        {geo?.provider && <div data-chain-geo-source className="flex flex-wrap gap-2"><dt>{t("proxyChain.geoProvider")}</dt><dd className="m-0 break-all">{geo.provider}</dd></div>}
++        {result.kind === "system" && <div data-chain-exit-scope>{t("proxyChain.systemExitHelp")}</div>}
++        {exitError && <div className="text-error-text" data-chain-exit-error>{exitError}</div>}
 +        {result.total_ms != null && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.totalLatency")}</dt><dd className="m-0">{t("proxyChain.milliseconds", { ms: result.total_ms })}</dd></div>}
 +        <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.testedAt")}</dt><dd className="m-0">{time}</dd></div>
 +      </dl>
@@ -5014,7 +5993,7 @@ index 0000000..32a4ad0
 +  );
 +}
 diff --git a/src/pages/settings/useSettingsDraft.ts b/src/pages/settings/useSettingsDraft.ts
-index 6813336..60a52b1 100644
+index 68133368ae2a4580ff3f52b2f436cb23412a3c76..60a52b108c5dddb318cbcdcfc4bc2fc533924d03 100644
 --- a/src/pages/settings/useSettingsDraft.ts
 +++ b/src/pages/settings/useSettingsDraft.ts
 @@ -282,12 +282,25 @@ async function run(): Promise<boolean> {
@@ -5050,7 +6029,7 @@ index 6813336..60a52b1 100644
  
      // The window's own preferences are stored with the settings.
 diff --git a/src/shared/api/backendWarnings.test.ts b/src/shared/api/backendWarnings.test.ts
-index b00b5ad..e1335cf 100644
+index b00b5adb3b0f80a9b5ad069280967eee68cb3f68..e1335cfedf46a4f0a6fed26ea0ced88b811d6ac6 100644
 --- a/src/shared/api/backendWarnings.test.ts
 +++ b/src/shared/api/backendWarnings.test.ts
 @@ -10,7 +10,7 @@ import { TEAM_WARNINGS, UNNAMED_TEAM, warningRe } from "./backendWarnings.ts";
@@ -5063,7 +6042,7 @@ index b00b5ad..e1335cf 100644
  test("each warning is the backend's own format", () => {
    const src = ["space/open.rs", "space/live.rs", "space/admin.rs", "space/items.rs", "space/sync/cycle.rs", "space/sync/cycle/extension.rs", "lib.rs", "reset.rs"].map(rust).join("\n");
 diff --git a/src/shared/api/teamRefusals.test.ts b/src/shared/api/teamRefusals.test.ts
-index a462841..000d8c7 100644
+index a462841a05c49f535322a49c372bbe5d85d9c554..000d8c7c642dedab45e8228b453feed7946f93c9 100644
 --- a/src/shared/api/teamRefusals.test.ts
 +++ b/src/shared/api/teamRefusals.test.ts
 @@ -83,7 +83,7 @@ test("the refusals of steps 5 to 10 are the backend's words, and the app says ea
@@ -5076,10 +6055,10 @@ index a462841..000d8c7 100644
    assert.equal(vanished?.[1], SYNC_STOPS.vanished);
    assert.ok(cycle.includes(`"${SYNC_STOPS.unread("{what}", "{e:#}")}"`), "the unread stop moved");
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index 8d0bf7f..42decd1 100644
+index 8d0bf7f068d47f3051c43e475b6af979dbd38fc7..933d9f9c3899fe5df26c658a20afcce0d83acdf4 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
-@@ -2330,6 +2330,58 @@
+@@ -2330,6 +2330,72 @@
    "settings.tabAbout": "About",
    "settings.tabApi": "API & MCP",
    "settings.tabAppearance": "Appearance",
@@ -5099,6 +6078,10 @@ index 8d0bf7f..42decd1 100644
 +  "proxyChain.detect": "Read Windows settings",
 +  "proxyChain.detected": "Static proxy detected",
 +  "proxyChain.manualRequired": "Manual configuration required",
++  "proxyChain.errorManualRequired": "Windows uses PAC/WPAD or an ambiguous proxy mapping. Proxy chain v1 cannot resolve it automatically. Choose manual HTTP or SOCKS5 configuration.",
++  "proxyChain.errorSystemNotConfigured": "No static Windows proxy is configured. Choose manual HTTP or SOCKS5 configuration.",
++  "proxyChain.errorSystemDetectFailed": "Couldn’t read Windows proxy settings. Choose manual HTTP or SOCKS5 configuration.",
++  "proxyChain.errorWindowsRequired": "System proxy chaining is available on Windows only.",
 +  "proxyChain.detectionFailed": "Couldn’t read system proxy settings",
 +  "proxyChain.source": "Source: {source}",
 +  "proxyChain.bypassIgnored": "The Windows bypass list does not allow the proxy chain to connect directly.",
@@ -5130,6 +6113,16 @@ index 8d0bf7f..42decd1 100644
 +  "proxyChain.proxyType": "Proxy type",
 +  "proxyChain.proxyAddress": "Proxy address",
 +  "proxyChain.exitIp": "Final exit IP",
++  "proxyChain.systemExitIp": "System proxy exit IP (first hop)",
++  "proxyChain.localExitIp": "Local network exit IP",
++  "proxyChain.exitLocation": "Exit country, region and city",
++  "proxyChain.geoProvider": "Lookup source",
++  "proxyChain.locationNotReturned": "The lookup service returned no location",
++  "proxyChain.exitUnavailable": "Lookup failed",
++  "proxyChain.systemExitHelp": "This is the first-hop exit, not the profile’s final exit. Choose a profile and test the full proxy chain to see its exit and location.",
++  "proxyChain.systemGeoFailed": "The system proxy connected, but the exit IP and location lookup failed. Retry the test; it did not fall back to a direct lookup.",
++  "proxyChain.profileGeoFailed": "The full proxy chain connected, but the final exit IP and location lookup failed. Retry the test; it did not fall back to a direct lookup.",
++  "proxyChain.localGeoFailed": "The local network exit IP and location lookup failed. Check the connection and retry.",
 +  "proxyChain.totalLatency": "Total latency",
 +  "proxyChain.milliseconds": "{ms} ms",
 +  "proxyChain.testedAt": "Tested at",
@@ -5139,10 +6132,10 @@ index 8d0bf7f..42decd1 100644
    "settings.tabHelper": "Helper",
    "settings.tabOther": "Other",
 diff --git a/src/shared/i18n/locales/ru.json b/src/shared/i18n/locales/ru.json
-index f0b98de..bd45323 100644
+index f0b98deb3c0a2024ef1ecb5daba76c80fd85c9dd..b1133e8b7526ba5bf4971c7989f31ce30bb9756f 100644
 --- a/src/shared/i18n/locales/ru.json
 +++ b/src/shared/i18n/locales/ru.json
-@@ -2330,6 +2330,58 @@
+@@ -2330,6 +2330,72 @@
    "settings.tabAbout": "О программе",
    "settings.tabApi": "API и MCP",
    "settings.tabAppearance": "Внешний вид",
@@ -5162,6 +6155,10 @@ index f0b98de..bd45323 100644
 +  "proxyChain.detect": "Прочитать настройки Windows",
 +  "proxyChain.detected": "Статический прокси найден",
 +  "proxyChain.manualRequired": "Требуется ручная настройка",
++  "proxyChain.errorManualRequired": "Windows использует PAC/WPAD или неоднозначные настройки прокси. Цепочка прокси v1 не может определить их автоматически. Выберите HTTP или SOCKS5 вручную.",
++  "proxyChain.errorSystemNotConfigured": "В Windows не настроен статический прокси. Выберите HTTP или SOCKS5 вручную.",
++  "proxyChain.errorSystemDetectFailed": "Не удалось прочитать настройки прокси Windows. Выберите HTTP или SOCKS5 вручную.",
++  "proxyChain.errorWindowsRequired": "Цепочка через системный прокси доступна только в Windows.",
 +  "proxyChain.detectionFailed": "Не удалось прочитать настройки системного прокси",
 +  "proxyChain.source": "Источник: {source}",
 +  "proxyChain.bypassIgnored": "Список исключений Windows не разрешает цепочке прокси подключаться напрямую.",
@@ -5193,6 +6190,16 @@ index f0b98de..bd45323 100644
 +  "proxyChain.proxyType": "Тип прокси",
 +  "proxyChain.proxyAddress": "Адрес прокси",
 +  "proxyChain.exitIp": "Конечный выходной IP",
++  "proxyChain.systemExitIp": "Выходной IP системного прокси (первый узел)",
++  "proxyChain.localExitIp": "Выходной IP локальной сети",
++  "proxyChain.exitLocation": "Страна, регион и город выхода",
++  "proxyChain.geoProvider": "Источник геоданных",
++  "proxyChain.locationNotReturned": "Сервис не вернул местоположение",
++  "proxyChain.exitUnavailable": "Не удалось получить данные",
++  "proxyChain.systemExitHelp": "Это выход первого узла, а не конечный выход профиля. Выберите профиль и проверьте всю цепочку, чтобы узнать его выходной IP и местоположение.",
++  "proxyChain.systemGeoFailed": "Системный прокси подключён, но выходной IP и местоположение не получены. Повторите проверку; прямое соединение не использовалось.",
++  "proxyChain.profileGeoFailed": "Цепочка прокси подключена, но конечный IP и местоположение не получены. Повторите проверку; прямое соединение не использовалось.",
++  "proxyChain.localGeoFailed": "Не удалось получить выходной IP и местоположение локальной сети. Проверьте соединение и повторите попытку.",
 +  "proxyChain.totalLatency": "Общая задержка",
 +  "proxyChain.milliseconds": "{ms} мс",
 +  "proxyChain.testedAt": "Время проверки",
@@ -5202,10 +6209,10 @@ index f0b98de..bd45323 100644
    "settings.tabHelper": "Shard Helper",
    "settings.tabOther": "Прочее",
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index ac20660..580f6a5 100644
+index ac20660402ea28eda21df123d5cb200aaf35861f..745aee15eb10988c063dcbf654059873cb1cf77d 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
-@@ -2330,6 +2330,58 @@
+@@ -2330,6 +2330,72 @@
    "settings.tabAbout": "关于",
    "settings.tabApi": "API 与 MCP",
    "settings.tabAppearance": "外观",
@@ -5225,6 +6232,10 @@ index ac20660..580f6a5 100644
 +  "proxyChain.detect": "读取 Windows 设置",
 +  "proxyChain.detected": "已检测到静态代理",
 +  "proxyChain.manualRequired": "需要手动配置",
++  "proxyChain.errorManualRequired": "Windows 使用了 PAC/WPAD，或代理映射无法明确判断。代理链 V1 无法自动解析，请选择手动配置 HTTP 或 SOCKS5。",
++  "proxyChain.errorSystemNotConfigured": "Windows 尚未配置静态代理。请选择手动配置 HTTP 或 SOCKS5。",
++  "proxyChain.errorSystemDetectFailed": "无法读取 Windows 代理设置。请选择手动配置 HTTP 或 SOCKS5。",
++  "proxyChain.errorWindowsRequired": "系统代理链仅适用于 Windows。",
 +  "proxyChain.detectionFailed": "无法读取系统代理设置",
 +  "proxyChain.source": "来源：{source}",
 +  "proxyChain.bypassIgnored": "Windows 绕过列表不会允许代理链改为直连。",
@@ -5256,6 +6267,16 @@ index ac20660..580f6a5 100644
 +  "proxyChain.proxyType": "代理类型",
 +  "proxyChain.proxyAddress": "代理地址",
 +  "proxyChain.exitIp": "最终出口 IP",
++  "proxyChain.systemExitIp": "系统代理出口 IP（第一层）",
++  "proxyChain.localExitIp": "本机网络出口 IP",
++  "proxyChain.exitLocation": "出口国家/地区与城市",
++  "proxyChain.geoProvider": "查询来源",
++  "proxyChain.locationNotReturned": "查询服务未返回地区",
++  "proxyChain.exitUnavailable": "查询失败",
++  "proxyChain.systemExitHelp": "这是第一层出口，不是配置的最终出口。选择配置并检测完整代理链，可查看第二层出口与地区。",
++  "proxyChain.systemGeoFailed": "系统代理已连接，但出口 IP 和地区查询失败。请重试；本次没有改为直连查询。",
++  "proxyChain.profileGeoFailed": "完整代理链已连接，但最终出口 IP 和地区查询失败。请重试；本次没有改为直连查询。",
++  "proxyChain.localGeoFailed": "本机网络的出口 IP 和地区查询失败，请检查网络后重试。",
 +  "proxyChain.totalLatency": "总延迟",
 +  "proxyChain.milliseconds": "{ms} 毫秒",
 +  "proxyChain.testedAt": "检测时间",
@@ -5265,7 +6286,7 @@ index ac20660..580f6a5 100644
    "settings.tabHelper": "助手",
    "settings.tabOther": "其他",
 diff --git a/src/shared/model/navigation.ts b/src/shared/model/navigation.ts
-index a67ced5..b5e04f3 100644
+index a67ced561886b0d1e186c0bb2ff3cbcf1ce0998c..b5e04f347cc38cb74396281436a46804d31df47b 100644
 --- a/src/shared/model/navigation.ts
 +++ b/src/shared/model/navigation.ts
 @@ -3,7 +3,7 @@ import { SECTIONS, type Section } from "../types";
@@ -5287,7 +6308,7 @@ index a67ced5..b5e04f3 100644
  
  function tabFromUrl(): SettingsTab {
 diff --git a/src/widgets/ProxyPeek/ProxyPeek.tsx b/src/widgets/ProxyPeek/ProxyPeek.tsx
-index 3014d47..cc56293 100644
+index 3014d476469aef5876e46ca7a20de8332154080e..cc562930cb22289869c0e097bca5a06217388e17 100644
 --- a/src/widgets/ProxyPeek/ProxyPeek.tsx
 +++ b/src/widgets/ProxyPeek/ProxyPeek.tsx
 @@ -184,11 +184,14 @@ function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot })
@@ -5307,7 +6328,7 @@ index 3014d47..cc56293 100644
              <Badge color={snap.udp_ms != null ? "success" : "error"} size="small">
                {snap.udp_ms != null ? t("proxyPeek.udpOk", { ms: snap.udp_ms }) : t("proxyPeek.udpFailed")}
 diff --git a/src/widgets/ToastHost/ToastHost.tsx b/src/widgets/ToastHost/ToastHost.tsx
-index 9972dea..92ee401 100644
+index 9972dea26d241515909439b2d297f9c87e76faa7..92ee4018ecf15251194fd47bb9247f0eb80ca0b0 100644
 --- a/src/widgets/ToastHost/ToastHost.tsx
 +++ b/src/widgets/ToastHost/ToastHost.tsx
 @@ -80,7 +80,10 @@ function place(stack: HTMLElement | null): Spot {
