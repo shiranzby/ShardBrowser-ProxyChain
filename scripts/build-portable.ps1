@@ -30,7 +30,7 @@ function EvidencePath([string]$Base, [string]$Relative) {
     $item = Get-Item -LiteralPath $p
     while ($item.FullName.Length -ge $basePath.TrimEnd([IO.Path]::DirectorySeparatorChar).Length) {
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Evidence symlinks are not accepted.' }
-        if (-not $item.PSIsContainer) { $item = $item.Directory } else { $item = $item.Parent }
+        if ($item -isnot [IO.DirectoryInfo]) { $item = $item.Directory } else { $item = $item.Parent }
         if ($null -eq $item) { break }
     }
     $p
