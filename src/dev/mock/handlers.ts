@@ -491,12 +491,15 @@ export const handlers: Record<string, Handler> = {
     const now = `@${Math.floor(Date.now() / 1000)}`;
     const system = kind === "local" ? { state: "not_tested" } : { state: "ok", latency_ms: 12 };
     const profileStage = kind === "profile" ? { state: profile ? "ok" : "failed", latency_ms: profile ? 88 : null, error_message: profile ? null : "profile not found" } : { state: "not_tested" };
+    const ip = kind === "profile" ? (profile ? "203.0.113.42" : null) : kind === "system" ? "198.51.100.24" : "192.0.2.18";
     return {
-      kind, proxy_kind: "http", proxy_address: "127.0.0.1:7890", source: "mock", profile_name: profile?.name ?? null,
+      kind, proxy_kind: kind === "local" ? null : "http", proxy_address: kind === "local" ? null : "127.0.0.1:7890", source: "mock", profile_name: profile?.name ?? null,
       local_network: kind === "local" ? { state: "ok", latency_ms: 8 } : null,
       system_proxy: system, profile_proxy: profileStage,
-      exit_ip: kind === "profile" && profile ? "203.0.113.42" : null,
+      exit_ip: ip,
+      exit_geo: ip ? { ip, country: "Singapore", country_code: "SG", region: "Singapore", city: "Singapore", isp: "Mock network", timezone: "Asia/Singapore", latitude: 1.29, longitude: 103.85, provider: "mock-only.example" } : null,
       exit_error: kind === "profile" && !profile ? "profile proxy test failed" : null,
+      exit_error_code: null,
       total_ms: kind === "profile" && profile ? 100 : null, tested_at: now,
       ...((window as { __shardxMockChainResult?: Record<string, unknown> }).__shardxMockChainResult ?? {}),
     };

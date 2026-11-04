@@ -58,11 +58,68 @@ test("System and profile test results keep their stages separate", async ({ page
   await expect(page.locator("[data-chain-result]")).toBeVisible();
   await expect(page.locator("[data-chain-stage='system']")).toContainText("Connected");
   await expect(page.locator("[data-chain-stage='profile']")).toContainText("Not tested");
+  await expect(page.locator("[data-chain-exit]")).toContainText("System proxy exit IP (first hop)");
+  await expect(page.locator("[data-chain-exit]")).toContainText("198.51.100.24");
+  await expect(page.locator("[data-chain-location]")).toContainText("Singapore");
+  await expect(page.locator("[data-chain-exit-scope]")).toContainText("not the profile’s final exit");
   await page.getByRole("combobox", { name: "Profile" }).click();
   await page.getByRole("option").first().click();
   await page.getByRole("button", { name: "Test profile proxy chain" }).click();
   await expect(page.locator("[data-chain-stage='profile']")).toContainText("Connected");
   await expect(page.locator("[data-chain-exit]")).toContainText("203.0.113.42");
+  await expect(page.locator("[data-chain-exit]")).toContainText("Final exit IP");
+  await expect(page.locator("[data-chain-exit]")).not.toContainText("198.51.100.24");
+  await expect(page.locator("[data-chain-location]")).toContainText("Singapore");
+  await expect(page.locator("[data-chain-geo-source]")).toContainText("mock-only.example");
+  await expect(page.locator("[data-chain-exit-scope]")).toHaveCount(0);
+});
+
+test("local network lookup identifies its own exit without claiming a proxy connection", async ({ page }) => {
+  await openProxy(page);
+  await page.getByRole("button", { name: "Test local network", exact: true }).click();
+  await expect(page.locator("[data-chain-exit]")).toContainText("Local network exit IP");
+  await expect(page.locator("[data-chain-exit]")).toContainText("192.0.2.18");
+  await expect(page.locator("[data-chain-location]")).toContainText("Singapore");
+  await expect(page.locator("[data-chain-stage='system']")).toContainText("Not tested");
+  await expect(page.locator("[data-chain-stage='profile']")).toContainText("Not tested");
+  expect((await mock(page)).calls.settings_save ?? 0).toBe(0);
+});
+
+test("a connected system proxy with failed Geo stays a partial result without invented IP or region", async ({ page }) => {
+  await openProxy(page);
+  await page.evaluate(() => {
+    (window as any).__shardxMockChainResult = {
+      exit_ip: null, exit_geo: null, exit_error_code: "proxy_chain_system_geo_failed",
+      exit_error: "The system proxy connected, but no live exit IP was returned.",
+    };
+  });
+  await page.getByRole("button", { name: "Test system proxy", exact: true }).click();
+  await expect(page.locator("[data-chain-stage='system']")).toContainText("Connected");
+  await expect(page.locator("[data-chain-exit]")).toContainText("Lookup failed");
+  await expect(page.locator("[data-chain-location]")).toContainText("Lookup failed");
+  await expect(page.locator("[data-chain-exit-error]")).toContainText("did not fall back to a direct lookup");
+  await expect(page.locator("[data-chain-geo-source]")).toHaveCount(0);
+});
+
+test("Geo never borrows a location from a different exit and absent fields stay unknown", async ({ page }) => {
+  await openProxy(page);
+  await page.evaluate(() => {
+    (window as any).__shardxMockChainResult = {
+      exit_geo: { ip: "203.0.113.99", country: "Borrowed country", country_code: "", region: "Borrowed region", city: "Borrowed city", provider: "wrong-route.example" },
+    };
+  });
+  await page.getByRole("button", { name: "Test system proxy", exact: true }).click();
+  await expect(page.locator("[data-chain-location]")).toContainText("returned no location");
+  await expect(page.locator("[data-chain-result]")).not.toContainText("Borrowed");
+  await expect(page.locator("[data-chain-geo-source]")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__shardxMockChainResult = {
+      exit_geo: { ip: "198.51.100.24", country: "", country_code: "", region: "", city: "", provider: "mock-only.example" },
+    };
+  });
+  await page.getByRole("button", { name: "Test system proxy", exact: true }).click();
+  await expect(page.locator("[data-chain-exit]")).toContainText("198.51.100.24");
+  await expect(page.locator("[data-chain-location]")).toContainText("returned no location");
 });
 
 test("discarding a proxy draft writes nothing and restores the fields", async ({ page }) => {
@@ -139,7 +196,7 @@ test("a working first hop cannot hide a failed second hop or invent an exit IP",
   await page.evaluate(() => {
     (window as any).__shardxMockChainResult = {
       profile_proxy: { state: "failed", error_code: "profile_auth_failed", error_message: "Second proxy rejected the login" },
-      exit_ip: null, exit_error: "Exit IP was not obtained",
+      exit_ip: null, exit_geo: null, exit_error: "Exit IP was not obtained",
     };
   });
   await page.getByRole("combobox", { name: "Profile", exact: true }).click();
@@ -148,7 +205,7 @@ test("a working first hop cannot hide a failed second hop or invent an exit IP",
   await expect(page.locator("[data-chain-stage='system']")).toContainText("Connected");
   await expect(page.locator("[data-chain-stage='profile']")).toContainText("Failed");
   await expect(page.locator("[data-chain-stage='profile']")).toContainText("Second proxy rejected the login");
-  await expect(page.locator("[data-chain-exit]")).toContainText("Not tested");
+  await expect(page.locator("[data-chain-exit]")).toContainText("Lookup failed");
   await expect(page.locator("[data-chain-exit-error]")).toContainText("Exit IP was not obtained");
 });
 
@@ -184,6 +241,29 @@ test("PAC auto detection requests manual configuration without reporting a conne
   await expect(page.locator("[data-chain-detection]")).toContainText("PAC requires manual configuration");
   await expect(page.locator("[data-chain-result]")).toHaveCount(0);
   expect((await mock(page)).calls.proxy_chain_test ?? 0).toBe(0);
+});
+
+test("Chinese configuration errors use the same localized guidance in detection and connection results", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("shardx.lang", "zh"));
+  await openApp(page, { section: "settings" });
+  await page.getByRole("tab", { name: "代理", exact: true }).click();
+  await page.evaluate(() => {
+    const error = {
+      error_code: "proxy_chain_manual_required",
+      error_message: "Windows uses PAC/WPAD or an ambiguous proxy mapping. Select manual HTTP or SOCKS5 configuration.",
+    };
+    (window as any).__shardxMockChainDetection = { state: "manual_required", source: "mock Windows Internet Settings", ...error };
+    (window as any).__shardxMockChainResult = { system_proxy: { state: "failed", ...error }, exit_ip: null, exit_geo: null };
+  });
+  const guidance = "代理链 V1 无法自动解析，请选择手动配置 HTTP 或 SOCKS5。";
+  await page.getByRole("button", { name: "读取 Windows 设置" }).click();
+  await expect(page.locator("[data-chain-detection]")).toContainText(guidance);
+  await expect(page.locator("[data-chain-detection]")).not.toContainText("Windows uses PAC/WPAD");
+  await page.getByRole("button", { name: "检测系统代理", exact: true }).click();
+  await expect(page.locator("[data-chain-stage='system']")).toContainText(guidance);
+  await expect(page.locator("[data-chain-stage='system']")).not.toContainText("Windows uses PAC/WPAD");
+  await expect(page.locator("[data-chain-exit]")).toContainText("尚未检测");
+  await expect(page.locator("[data-chain-geo-source]")).toHaveCount(0);
 });
 
 test("proxy Peek labels TCP-chain UDP as unavailable rather than a failed relay", async ({ page }) => {

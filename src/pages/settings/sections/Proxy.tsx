@@ -7,9 +7,10 @@ import {
 } from "../../../entities/settings";
 import { may, useProfile } from "../../../entities/profile";
 import { useSpace } from "../../../entities/space";
-import { useT, appLocale } from "../../../shared/i18n";
+import { useT, appLocale, type T } from "../../../shared/i18n";
 import { explainError } from "../../../shared/lib/errors";
 import { fmtTs } from "../../../shared/lib/utils";
+import { fmtCountry } from "../../../shared/lib/format";
 import { NumField } from "../../../shared/ui/NumField";
 import { SelectField } from "../../../shared/ui/SelectField";
 import { SettingRow, SettingsGroup, type SettingsProps } from "../SettingRow";
@@ -17,6 +18,16 @@ import { holdSave } from "../useSettingsDraft";
 
 const DEFAULT = defaultProxyChain();
 type Busy = ProxyChainTestKind | "detect";
+
+function configurationError(t: T, error?: Pick<ProxyChainStage, "error_code" | "error_message"> | null) {
+  switch (error?.error_code) {
+    case "proxy_chain_manual_required": return t("proxyChain.errorManualRequired");
+    case "proxy_chain_system_not_configured": return t("proxyChain.errorSystemNotConfigured");
+    case "proxy_chain_system_detect_failed": return t("proxyChain.errorSystemDetectFailed");
+    case "proxy_chain_windows_required": return t("proxyChain.errorWindowsRequired");
+    default: return error?.error_message;
+  }
+}
 
 export function ProxySection({ s, setS }: SettingsProps) {
   const t = useT();
@@ -36,6 +47,7 @@ export function ProxySection({ s, setS }: SettingsProps) {
   const pending = busy?.context === context ? busy.kind : null;
   const shown = result?.context === context ? result.value : null;
   const detected = detection?.context === context ? detection.value : null;
+  const detectionError = configurationError(t, detected);
   const failure = error?.context === context ? error.text : null;
   const patch = (value: Partial<ProxyChainSettings>) => {
     sequence.current++;
@@ -119,7 +131,7 @@ export function ProxySection({ s, setS }: SettingsProps) {
                 <span>{detected.state === "ok" ? t("proxyChain.detected") : detected.state === "manual_required" ? t("proxyChain.manualRequired") : t("proxyChain.detectionFailed")}</span>
                 {detected.kind && detected.host && <span className="mono break-all">{detected.kind === "http" ? "HTTP" : "SOCKS5"} {detected.host}:{detected.port}</span>}
                 <span>{t("proxyChain.source", { source: detected.source })}</span>
-                {detected.error_message && <span>{detected.error_message}</span>}
+                {detectionError && <span>{detectionError}</span>}
                 {detected.has_bypass && <span>{t("proxyChain.bypassIgnored")}</span>}
               </div>
             ) : undefined}
@@ -197,6 +209,17 @@ export function ProxySection({ s, setS }: SettingsProps) {
 
 function ChainResult({ result }: { result: ProxyChainTestResult }) {
   const t = useT();
+  const exitLabel = result.kind === "system" ? t("proxyChain.systemExitIp") : result.kind === "local" ? t("proxyChain.localExitIp") : t("proxyChain.exitIp");
+  const exitError = result.exit_error_code === "proxy_chain_system_geo_failed" ? t("proxyChain.systemGeoFailed")
+    : result.exit_error_code === "proxy_chain_profile_geo_failed" ? t("proxyChain.profileGeoFailed")
+    : result.exit_error_code === "proxy_chain_local_geo_failed" ? t("proxyChain.localGeoFailed") : result.exit_error;
+  // A stale or mismatched Geo response must not lend a location to another IP.
+  const geo = result.exit_ip && !exitError && result.exit_geo?.ip === result.exit_ip ? result.exit_geo : null;
+  const location = geo ? [...new Set([
+    geo.country_code ? fmtCountry(geo.country_code) : geo.country,
+    geo.region, geo.city,
+  ].map((part) => part.trim()).filter(Boolean))].join(", ") : "";
+  const missingExit = exitError ? t("proxyChain.exitUnavailable") : t("proxyChain.stageUntested");
   const stage = (value?: ProxyChainStage | null) => value?.state === "ok"
     ? value.latency_ms != null ? t("proxyChain.stageLatency", { ms: value.latency_ms }) : t("proxyChain.stageOk")
     : value?.state === "failed" ? t("proxyChain.stageFailed") : t("proxyChain.stageUntested");
@@ -213,18 +236,24 @@ function ChainResult({ result }: { result: ProxyChainTestResult }) {
         {result.proxy_address && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.proxyAddress")}</dt><dd className="mono m-0 break-all">{result.proxy_address}</dd></div>}
         {result.source && <div>{t("proxyChain.source", { source: result.source })}</div>}
         {result.profile_name && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.profile")}</dt><dd className="m-0 break-all">{result.profile_name}</dd></div>}
-        {rows.map((row) => (
-          <div key={row.id} data-chain-stage={row.id} className="flex flex-wrap gap-2">
-            <dt>{row.label}</dt>
-            <dd className={`m-0 min-w-0 ${row.detail?.state === "failed" ? "text-error-text" : "text-text-strong-950"}`}>
-              {row.value}
-              {row.detail?.error_message && <span className="block break-words">{row.detail.error_message}</span>}
-              {row.detail?.error_code && <code className="block break-all">{row.detail.error_code}</code>}
-            </dd>
-          </div>
-        ))}
-        <div data-chain-exit className="flex flex-wrap gap-2"><dt>{t("proxyChain.exitIp")}</dt><dd className="mono m-0 break-all">{result.exit_ip || t("proxyChain.stageUntested")}</dd></div>
-        {result.exit_error && <div className="text-error-text" data-chain-exit-error>{result.exit_error}</div>}
+        {rows.map((row) => {
+          const error = configurationError(t, row.detail);
+          return (
+            <div key={row.id} data-chain-stage={row.id} className="flex flex-wrap gap-2">
+              <dt>{row.label}</dt>
+              <dd className={`m-0 min-w-0 ${row.detail?.state === "failed" ? "text-error-text" : "text-text-strong-950"}`}>
+                {row.value}
+                {error && <span className="block break-words">{error}</span>}
+                {row.detail?.error_code && <code className="block break-all">{row.detail.error_code}</code>}
+              </dd>
+            </div>
+          );
+        })}
+        <div data-chain-exit className="flex flex-wrap gap-2"><dt>{exitLabel}</dt><dd className="mono m-0 break-all">{result.exit_ip || missingExit}</dd></div>
+        <div data-chain-location className="flex flex-wrap gap-2"><dt>{t("proxyChain.exitLocation")}</dt><dd className="m-0 break-words">{location || (result.exit_ip ? t("proxyChain.locationNotReturned") : missingExit)}</dd></div>
+        {geo?.provider && <div data-chain-geo-source className="flex flex-wrap gap-2"><dt>{t("proxyChain.geoProvider")}</dt><dd className="m-0 break-all">{geo.provider}</dd></div>}
+        {result.kind === "system" && <div data-chain-exit-scope>{t("proxyChain.systemExitHelp")}</div>}
+        {exitError && <div className="text-error-text" data-chain-exit-error>{exitError}</div>}
         {result.total_ms != null && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.totalLatency")}</dt><dd className="m-0">{t("proxyChain.milliseconds", { ms: result.total_ms })}</dd></div>}
         <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.testedAt")}</dt><dd className="m-0">{time}</dd></div>
       </dl>

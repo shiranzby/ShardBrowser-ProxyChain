@@ -57,7 +57,21 @@ export type ProxyChainTestResult = {
   system_proxy: ProxyChainStage;
   profile_proxy: ProxyChainStage;
   exit_ip?: string | null;
+  /** Live lookup on this test's route, never a cached or first-hop substitute. */
+  exit_geo?: {
+    ip: string;
+    country: string;
+    country_code: string;
+    region: string;
+    city: string;
+    isp: string;
+    timezone: string;
+    latitude: number;
+    longitude: number;
+    provider: string;
+  } | null;
   exit_error?: string | null;
+  exit_error_code?: string | null;
   total_ms?: number | null;
   tested_at: string;
 };

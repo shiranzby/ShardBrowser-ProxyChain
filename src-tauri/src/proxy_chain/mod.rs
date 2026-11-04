@@ -161,9 +161,64 @@ pub struct TestResult {
     profile_proxy: Stage,
     local_network: Option<Stage>,
     exit_ip: Option<String>,
+    exit_geo: Option<proxy::GeoInfo>,
     exit_error: Option<String>,
+    exit_error_code: Option<&'static str>,
     total_ms: u128,
     tested_at: String,
+}
+
+impl TestResult {
+    fn set_exit(&mut self, geo: anyhow::Result<proxy::GeoInfo>) {
+        match geo {
+            Ok(geo) => {
+                self.exit_ip = Some(geo.ip.clone());
+                self.exit_geo = Some(geo);
+            }
+            Err(_) => {
+                let (code, message) = match self.kind.as_str() {
+                    "local" => (
+                        "proxy_chain_local_geo_failed",
+                        "The local network test returned no live exit location.",
+                    ),
+                    "system" => (
+                        "proxy_chain_system_geo_failed",
+                        "The system proxy connected, but no live exit location was returned through it.",
+                    ),
+                    _ => (
+                        "proxy_chain_profile_geo_failed",
+                        "The full chain connected, but no live exit IP was returned.",
+                    ),
+                };
+                self.exit_error_code = Some(code);
+                self.exit_error = Some(message.into());
+            }
+        }
+    }
+}
+
+/// The already resolved first hop is one explicit route, never a saved proxy
+/// or an input to the profile-chain wrapper. Preserve its own credentials.
+fn system_entry(hop: &ProxyHop) -> ProxyEntry {
+    let host = if hop.host.parse::<std::net::Ipv6Addr>().is_ok() {
+        format!("[{}]", hop.host)
+    } else {
+        hop.host.clone()
+    };
+    ProxyEntry {
+        id: String::new(),
+        name: String::new(),
+        kind: match hop.kind {
+            connector::ProxyKind::Http => ProxyKind::Http,
+            connector::ProxyKind::Socks5 => ProxyKind::Socks5,
+        },
+        host,
+        port: hop.port,
+        username: hop.username.clone(),
+        password: hop.password.clone(),
+        country: String::new(),
+        notes: String::new(),
+    }
 }
 
 pub async fn test(
@@ -184,7 +239,9 @@ pub async fn test(
         profile_proxy: Stage::pending(),
         local_network: None,
         exit_ip: None,
+        exit_geo: None,
         exit_error: None,
+        exit_error_code: None,
         total_ms: 0,
         tested_at: format!(
             "@{}",
@@ -197,14 +254,15 @@ pub async fn test(
         match proxy::geo_check_on_route(None, None).await {
             Ok(geo) => {
                 result.local_network = Some(Stage::ok(start));
-                result.exit_ip = Some(geo.ip);
+                result.set_exit(Ok(geo));
             }
-            Err(_) => {
+            Err(error) => {
                 result.local_network = Some(Stage::failed(ChainError::new(
                     "proxy_chain_local_network_failed",
                     "local",
                     "The local network test did not complete.",
-                )))
+                )));
+                result.set_exit(Err(error));
             }
         }
     } else {
@@ -261,14 +319,14 @@ pub async fn test(
                                         result.profile_proxy = Stage::failed(profile_failure(&prepared.tunnel, &error));
                                     } else {
                                         result.profile_proxy = Stage::ok(phase);
-                                        match proxy::geo_check_on_route(Some(&prepared.effective), None).await {
-                                            Ok(geo) => result.exit_ip = Some(geo.ip),
-                                            Err(_) => result.exit_error = Some("The full chain connected, but no live exit IP was returned.".into()),
-                                        }
+                                        result.set_exit(proxy::geo_check_on_route(Some(&prepared.effective), None).await);
                                     }
                                     prepared.tunnel.shutdown().await;
                                 }
                             }
+                        } else {
+                            let entry = system_entry(&hop);
+                            result.set_exit(proxy::geo_check_on_route(Some(&entry), None).await);
                         }
                     }
                 }
@@ -299,5 +357,9 @@ mod arg_tests {
 
 #[cfg(test)]
 mod integration_tests;
+#[cfg(test)]
+mod detection_tests;
 #[cfg(all(test, windows))]
 mod live_tests;
+#[cfg(all(test, windows))]
+mod live_geo_tests;

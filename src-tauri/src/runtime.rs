@@ -34,7 +34,7 @@ const MANIFEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
 const LAUNCHER_RELEASE_REPO: &str = "shiranzby/ShardBrowser-ProxyChain";
 pub const PATCH_REVISION: &str = match option_env!("SHARDBROWSER_PATCH_REVISION") {
     Some(value) => value,
-    None => "pc1",
+    None => "pc2",
 };
 /// Chromium version baked into the current bundle (used for Mac Framework path).
 pub const CHROMIUM_VERSION: &str = "156.0.8078.48";
