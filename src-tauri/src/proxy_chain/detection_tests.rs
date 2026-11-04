@@ -338,6 +338,8 @@ fn pending(kind: &str) -> super::TestResult {
         proxy_kind: None,
         proxy_address: None,
         source: None,
+        resolved_for: None,
+        profile_proxy_address: None,
         system_proxy: super::Stage::pending(),
         profile_proxy: super::Stage::pending(),
         local_network: None,

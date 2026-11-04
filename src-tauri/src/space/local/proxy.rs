@@ -258,6 +258,25 @@ fn socks5_reply_text(rep: u8) -> String {
     }
 }
 
+/// A protocol response from this exact probe, not another tunnel connection.
+/// It is safe to classify without exposing credentials or provider text.
+#[derive(Debug)]
+pub(crate) enum Socks5ProbeError {
+    AuthenticationRejected(u8),
+    ConnectRejected(u8),
+}
+
+impl std::fmt::Display for Socks5ProbeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AuthenticationRejected(status) => write!(f, "the proxy rejected authentication (SOCKS5 status {status})"),
+            Self::ConnectRejected(reply) => write!(f, "{} (SOCKS5 code {reply})", socks5_reply_text(*reply)),
+        }
+    }
+}
+
+impl std::error::Error for Socks5ProbeError {}
+
 /// RFC 1928 §3 greeting and, if the proxy picks it, the RFC 1929 user/pass
 /// exchange. Leaves the stream right after the handshake.
 ///
@@ -304,8 +323,11 @@ where
             tokio::time::timeout(STEP_TIMEOUT, stream.read_exact(&mut auth_resp))
                 .await
                 .context("no answer to the username and password")??;
+            if auth_resp[0] != 0x01 {
+                anyhow::bail!("the proxy returned an invalid SOCKS5 authentication response version");
+            }
             if auth_resp[1] != 0x00 {
-                anyhow::bail!("the proxy rejected the username or password");
+                return Err(Socks5ProbeError::AuthenticationRejected(auth_resp[1]).into());
             }
         }
         0xFF => anyhow::bail!(if has_creds {
@@ -385,7 +407,7 @@ async fn probe_inner(entry: &ProxyEntry) -> Result<u128> {
                 anyhow::bail!("not SOCKS5");
             }
             if hdr[1] != 0x00 {
-                anyhow::bail!("{}", socks5_reply_text(hdr[1]));
+                return Err(Socks5ProbeError::ConnectRejected(hdr[1]).into());
             }
             // Read BND.ADDR/BND.PORT so the reply is consumed whole.
             let skip = match hdr[3] {
@@ -1057,6 +1079,20 @@ pub fn country_to_locale(cc: &str) -> &'static str {
 
 // ---- Test history ----
 
+/// Owned form of a safe chain error, so old and new history can be read back.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChainTestError {
+    pub code: String,
+    pub layer: String,
+    pub message: String,
+}
+
+impl From<crate::proxy_chain::error::ChainError> for ChainTestError {
+    fn from(error: crate::proxy_chain::error::ChainError) -> Self {
+        Self { code: error.code.into(), layer: error.layer.into(), message: error.message }
+    }
+}
+
 /// One observation of a proxy's exit state; same-IP consecutive entries collapse.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestSnapshot {
@@ -1064,6 +1100,8 @@ pub struct TestSnapshot {
     pub transport: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub udp_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain_error: Option<ChainTestError>,
     pub first_seen: String,
     pub last_seen: String,
     pub ip: String,
@@ -1237,17 +1275,25 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
     match prepared {
         Ok(prepared) => {
             let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
-            measure_on_route(effective, prepared.is_some()).await
+            let result = measure_on_route(effective, prepared.as_ref().map(|p| &p.tunnel)).await;
+            if let Some(prepared) = prepared { prepared.tunnel.shutdown().await; }
+            result
         }
-        Err(_) => TestSnapshot {
+        Err(error) => {
+            let error = error.downcast::<crate::proxy_chain::error::ChainError>().unwrap_or_else(|_| {
+                crate::proxy_chain::error::ChainError::new("proxy_chain_settings_unreadable", "configuration", "The proxy-chain settings could not be read. Repair the settings before testing or starting a profile.")
+            });
+            TestSnapshot {
             transport: Some("proxy_chain".into()), udp_state: Some("unsupported_by_chain".into()),
-            first_seen: String::new(), last_seen: unix_now(), ip: String::new(), country_code: String::new(), country: String::new(), region: String::new(), city: String::new(), isp: String::new(), timezone: String::new(), latitude: 0.0, longitude: 0.0, tcp_ms: None, udp_ms: None, udp_error: None, geo_error: Some("The proxy chain could not be established. No direct connection was attempted.".into()), provider: String::new(),
+            first_seen: String::new(), last_seen: unix_now(), ip: String::new(), country_code: String::new(), country: String::new(), region: String::new(), city: String::new(), isp: String::new(), timezone: String::new(), latitude: 0.0, longitude: 0.0, tcp_ms: None, udp_ms: None, udp_error: None, geo_error: Some(error.message.clone()), chain_error: Some(error.into()), provider: String::new(),
+            }
         },
     }
 }
 
-async fn measure_on_route(entry: &ProxyEntry, chained: bool) -> TestSnapshot {
+async fn measure_on_route(entry: &ProxyEntry, tunnel: Option<&crate::proxy_chain::tunnel::Tunnel>) -> TestSnapshot {
     let now = unix_now();
+    let chained = tunnel.is_some();
 
     let udp_fut = async {
         if !chained && matches!(entry.kind, ProxyKind::Socks5) {
@@ -1272,11 +1318,25 @@ async fn measure_on_route(entry: &ProxyEntry, chained: bool) -> TestSnapshot {
     // probe asks for and carry everything else. The other way round, a probe
     // that reached a host is proof too, and the test then says so with no
     // address rather than calling a working proxy dead.
-    let geo_error = match (&tcp_res, &geo_res) {
+    let chain_error = tunnel.and_then(|tunnel| {
+        if let Err(error) = &tcp_res {
+            Some(crate::proxy_chain::profile_failure(tunnel, error).into())
+        } else if geo_res.is_err() {
+            Some(crate::proxy_chain::error::ChainError::new(
+                "proxy_chain_profile_geo_failed", "exit",
+                "The full chain connected, but no live exit IP was returned.",
+            ).into())
+        } else { None }
+    });
+    let geo_error = if chained {
+        // Only fixed safe chain errors may enter history; provider failures
+        // can carry request details and must not hide the failed layer.
+        if geo_res.is_err() { chain_error.as_ref().map(|error: &ChainTestError| error.message.clone()) } else { None }
+    } else { match (&tcp_res, &geo_res) {
         (_, Ok(_)) => None,
         (Ok(_), Err(e)) => Some(e.to_string()),
         (Err(t), Err(e)) => Some(format!("proxy unreachable: {t} (no address either: {e})")),
-    };
+    }};
     let (ip, country_code, country, region, city, isp, tz, lat, lng, provider) = match &geo_res {
         Ok(g) => (
             g.ip.clone(), g.country_code.clone(), g.country.clone(),
@@ -1291,6 +1351,7 @@ async fn measure_on_route(entry: &ProxyEntry, chained: bool) -> TestSnapshot {
     TestSnapshot {
         transport: if chained { Some("proxy_chain".into()) } else { None },
         udp_state: if chained { Some("unsupported_by_chain".into()) } else { None },
+        chain_error,
         first_seen: String::new(),
         last_seen: now,
         ip,
@@ -1305,7 +1366,7 @@ async fn measure_on_route(entry: &ProxyEntry, chained: bool) -> TestSnapshot {
         // Set whenever the proxy carried something, so "reached" always comes
         // with a time: the probe's own round trip, or the geo request's when
         // only that one got through.
-        tcp_ms: tcp_res.ok().or(if geo_res.is_ok() { Some(geo_ms) } else { None }),
+        tcp_ms: tcp_res.ok().or(if !chained && geo_res.is_ok() { Some(geo_ms) } else { None }),
         udp_ms: udp_res
             .as_ref()
             .and_then(|r| r.as_ref().ok().copied()),
@@ -1369,6 +1430,138 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn chain_measure_keeps_a_safe_configuration_error_and_old_history_still_loads() {
+        let _root = crate::store::test_root("chain-error-history");
+        crate::settings::save(&crate::settings::Settings {
+            proxy_chain: crate::proxy_chain::config::ProxyChainSettings {
+                enabled: true, mode: "unsupported".into(), ..Default::default()
+            },
+            ..Default::default()
+        }).unwrap();
+        let result = measure(&entry("unused.invalid:1080:synthetic:synthetic")).await;
+        let failure = result.chain_error.as_ref().expect("configuration error is retained");
+        assert_eq!(failure.code, "proxy_chain_invalid_config");
+        assert_eq!(failure.layer, "configuration");
+        assert!(result.ip.is_empty() && result.tcp_ms.is_none());
+        let mut stored = serde_json::to_value(&result).unwrap();
+        assert!(!stored.to_string().contains("synthetic"));
+        let loaded: TestSnapshot = serde_json::from_value(stored.clone()).unwrap();
+        assert_eq!(loaded.chain_error.unwrap().code, failure.code);
+        stored.as_object_mut().unwrap().remove("chain_error");
+        assert!(serde_json::from_value::<TestSnapshot>(stored).unwrap().chain_error.is_none());
+    }
+
+    #[tokio::test]
+    async fn chain_measure_keeps_first_hop_refusal_without_saving_response_details() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let _root = crate::store::test_root("chain-error-first-hop");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            while !head.ends_with(b"\r\n\r\n") { head.push(stream.read_u8().await.unwrap()); }
+            stream.write_all(b"HTTP/1.1 403 private-fixture-detail\r\nX-Private: not-for-history\r\n\r\n").await.unwrap();
+        });
+        crate::settings::save(&crate::settings::Settings {
+            proxy_chain: crate::proxy_chain::config::ProxyChainSettings {
+                enabled: true, mode: "http".into(), host: addr.ip().to_string(), port: addr.port(), ..Default::default()
+            },
+            ..Default::default()
+        }).unwrap();
+        let result = measure(&entry("second.invalid:1080:synthetic:synthetic")).await;
+        server.await.unwrap();
+        let failure = result.chain_error.as_ref().unwrap();
+        assert_eq!(failure.code, "system_proxy_connect_refused");
+        assert_eq!(failure.layer, "system_proxy");
+        assert!(failure.message.contains("403"));
+        let stored = serde_json::to_string(&result).unwrap();
+        assert!(!stored.contains("private-fixture-detail") && !stored.contains("not-for-history") && !stored.contains("synthetic"));
+    }
+
+    /// The first HTTP server also acts as the remote SOCKS server after CONNECT.
+    /// It answers only fixtures and never opens a connection outside loopback.
+    async fn chain_measure_fixture(probe_ok: bool, geo_ok: bool) -> TestSnapshot {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut clients = tokio::task::JoinSet::new();
+            loop {
+                tokio::select! {
+                    _ = clients.join_next(), if !clients.is_empty() => {},
+                    accepted = listener.accept() => {
+                        let (mut stream, _) = accepted.unwrap();
+                        clients.spawn(async move {
+                            async fn head(stream: &mut tokio::net::TcpStream) -> std::io::Result<()> {
+                                let mut bytes = Vec::new();
+                                while !bytes.ends_with(b"\r\n\r\n") && bytes.len() < 16384 { bytes.push(stream.read_u8().await?); }
+                                Ok(())
+                            }
+                            let result: std::io::Result<()> = async {
+                                head(&mut stream).await?;
+                                stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await?;
+                                if stream.read_u8().await? != 5 { return Ok(()); }
+                                let mut methods = vec![0; stream.read_u8().await? as usize];
+                                stream.read_exact(&mut methods).await?;
+                                stream.write_all(&[5, 0]).await?;
+                                let mut header = [0; 4];
+                                stream.read_exact(&mut header).await?;
+                                if header != [5, 1, 0, 3] { return Ok(()); }
+                                let mut host = vec![0; stream.read_u8().await? as usize];
+                                stream.read_exact(&mut host).await?;
+                                let port = stream.read_u16().await?;
+                                let rep = if host == b"example.com" && !probe_ok { 2 } else { 0 };
+                                stream.write_all(&[5, rep, 0, 1, 127, 0, 0, 1, 0, 0]).await?;
+                                if port != 80 { return Ok(()); }
+                                head(&mut stream).await?;
+                                let body = if geo_ok { r#"{"status":"success","query":"203.0.113.55","country":"Synthetic","countryCode":"ZZ"}"# }
+                                    else { r#"{"status":"fail","message":"private-geo-response"}"# };
+                                stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await
+                            }.await;
+                            let _ = result;
+                        });
+                    },
+                }
+            }
+        });
+        crate::settings::save(&crate::settings::Settings {
+            proxy_chain: crate::proxy_chain::config::ProxyChainSettings {
+                enabled: true, mode: "http".into(), host: addr.ip().to_string(), port: addr.port(), ..Default::default()
+            },
+            ..Default::default()
+        }).unwrap();
+        let result = measure(&entry("second.invalid:1080")).await;
+        server.abort();
+        let _ = server.await;
+        result
+    }
+
+    #[tokio::test]
+    async fn chain_measure_geo_success_cannot_hide_a_refused_second_hop_probe() {
+        let _root = crate::store::test_root("chain-error-second-hop");
+        let result = chain_measure_fixture(false, true).await;
+        assert_eq!(result.ip, "203.0.113.55", "keep the genuine Geo response");
+        assert!(result.tcp_ms.is_none(), "Geo duration is not a successful TCP probe");
+        let failure = result.chain_error.unwrap();
+        assert_eq!(failure.code, "proxy_chain_profile_connect_failed");
+        assert_eq!(failure.layer, "profile");
+        assert!(result.geo_error.is_none());
+    }
+
+    #[tokio::test]
+    async fn chain_measure_geo_failure_keeps_tcp_success_and_a_safe_exit_error() {
+        let _root = crate::store::test_root("chain-error-exit");
+        let result = chain_measure_fixture(true, false).await;
+        assert!(result.tcp_ms.is_some(), "the successful probe remains visible");
+        assert!(result.ip.is_empty());
+        let failure = result.chain_error.as_ref().unwrap();
+        assert_eq!(failure.code, "proxy_chain_profile_geo_failed");
+        assert_eq!(failure.layer, "exit");
+        assert!(!serde_json::to_string(&result).unwrap().contains("private-geo-response"));
+    }
 
     fn entry(line: &str) -> ProxyEntry {
         parse_one(line, &ProxyKind::Socks5).expect("parses")

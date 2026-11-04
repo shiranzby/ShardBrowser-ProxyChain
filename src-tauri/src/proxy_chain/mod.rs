@@ -45,7 +45,8 @@ pub async fn prepare(
             "This profile has no upstream proxy. Assign a SOCKS5 proxy or disable proxy chaining.",
         )
     })?;
-    let hop = config.hop(config)?;
+    let target = Target::new(&entry.host, entry.port)?;
+    let hop = config.hop_for(config, &target).await?;
     Ok(Some(prepare_with_hop(entry, hop).await?))
 }
 
@@ -103,13 +104,29 @@ pub fn profile_error(tunnel: &Tunnel) -> ChainError {
 }
 
 pub fn profile_failure(tunnel: &Tunnel, cause: &anyhow::Error) -> ChainError {
-    if let Some(error) = tunnel.last_error() { return error; }
+    // A reply received on THIS probe is authoritative. Another concurrent
+    // Geo stream's close/reset must not overwrite a definite second-hop reply.
+    if let Some(error) = cause.downcast_ref::<proxy::Socks5ProbeError>() {
+        return match error {
+            proxy::Socks5ProbeError::AuthenticationRejected(status) => ChainError::new(
+                "proxy_chain_profile_auth_failed", "profile",
+                format!("The profile SOCKS5 proxy rejected authentication (status {status}). Check its credentials and allowed source IPs; system proxy credentials are separate."),
+            ),
+            proxy::Socks5ProbeError::ConnectRejected(status) => ChainError::new(
+                "proxy_chain_profile_connect_failed", "profile",
+                format!("The profile SOCKS5 proxy refused the destination CONNECT request (reply {status})."),
+            ),
+        };
+    }
     // Classify our own probe labels; never return its raw error/URL to the UI.
     let text = cause.to_string().to_ascii_lowercase();
-    if text.contains("username") || text.contains("password") || text.contains("login method") {
-        ChainError::new("proxy_chain_profile_auth_failed", "profile", "The profile SOCKS5 proxy rejected its username or password. System proxy credentials are separate.")
-    } else if text.contains("time") || text.contains("never answered") {
+    if !text.contains("rejected the username") && !text.contains("login method") {
+        if let Some(error) = tunnel.last_error() { return error; }
+    }
+    if text.contains("time") || text.contains("never answered") || text.contains("no answer") {
         ChainError::new("proxy_chain_profile_timeout", "profile", "The profile SOCKS5 proxy did not finish its handshake or CONNECT in time.")
+    } else if text.contains("username") || text.contains("password") || text.contains("login method") {
+        ChainError::new("proxy_chain_profile_auth_failed", "profile", "The profile SOCKS5 proxy rejected authentication. Check its credentials and allowed source IPs; system proxy credentials are separate.")
     } else {
         ChainError::new("proxy_chain_profile_connect_failed", "profile", "The profile SOCKS5 proxy refused or could not complete the destination CONNECT request.")
     }
@@ -157,6 +174,8 @@ pub struct TestResult {
     proxy_kind: Option<&'static str>,
     proxy_address: Option<String>,
     source: Option<&'static str>,
+    resolved_for: Option<String>,
+    profile_proxy_address: Option<String>,
     system_proxy: Stage,
     profile_proxy: Stage,
     local_network: Option<Stage>,
@@ -235,6 +254,8 @@ pub async fn test(
         proxy_kind: None,
         proxy_address: None,
         source: None,
+        resolved_for: None,
+        profile_proxy_address: None,
         system_proxy: Stage::pending(),
         profile_proxy: Stage::pending(),
         local_network: None,
@@ -267,40 +288,37 @@ pub async fn test(
         }
     } else {
         let saved = saved_settings()?;
-        match config.hop(&saved.proxy_chain) {
+        let entry = if kind == "profile" || profile_id.is_some() {
+            Some(crate::launch::proxy_for_test(
+                profile_id.as_deref().ok_or_else(|| anyhow::anyhow!("Select a profile to test."))?,
+            )?)
+        } else {
+            None
+        };
+        let target = if let Some(entry) = &entry {
+            result.profile_proxy_address = Some(format!("{}:{}", entry.host, entry.port));
+            Target::new(&entry.host, entry.port)?
+        } else {
+            Target::new("example.com", 443)?
+        };
+        match config.resolve_for(&saved.proxy_chain, &target).await {
             Err(e) => result.system_proxy = Stage::failed(e),
-            Ok(hop) => {
+            Ok(resolved) => {
+                result.source = Some(resolved.source);
+                result.resolved_for = resolved.resolved_for;
+                let hop = resolved.hop;
                 result.proxy_kind = Some(if hop.kind == connector::ProxyKind::Http {
                     "http"
                 } else {
                     "socks5"
                 });
                 result.proxy_address = Some(format!("{}:{}", hop.host, hop.port));
-                result.source = Some(if config.mode == "auto" {
-                    "windows_current_user_internet_settings"
-                } else {
-                    "manual"
-                });
-                let entry = if kind == "profile" {
-                    Some(crate::launch::proxy_for_test(
-                        profile_id
-                            .as_deref()
-                            .ok_or_else(|| anyhow::anyhow!("Select a profile to test."))?,
-                    )?)
-                } else {
-                    None
-                };
-                let target = if let Some(entry) = &entry {
-                    Target::new(&entry.host, entry.port)?
-                } else {
-                    Target::new("example.com", 443)?
-                };
                 match connector::connect(&hop, &target).await {
                     Err(e) => result.system_proxy = Stage::failed(e),
                     Ok(stream) => {
                         drop(stream);
                         result.system_proxy = Stage::ok(start);
-                        if let Some(entry) = entry {
+                        if let Some(entry) = entry.filter(|_| kind == "profile") {
                             match prepare_with_hop(&entry, hop).await {
                                 Err(e) => {
                                     result.profile_proxy = Stage::failed(

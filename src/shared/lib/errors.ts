@@ -3,6 +3,7 @@ import { SYNC_REFUSALS } from "../../entities/sync/model/types";
 import { refusal } from "../../entities/sync/lib/refusals";
 import { EXTENSION_TOO_BIG_RE, FORBIDDEN_RE, TEAM_REFUSALS } from "../api/teamRefusals";
 import { fmtBytes } from "./format";
+import { proxyChainErrorFromText, proxyChainErrorText } from "./proxyChainError";
 
 const LEASED = refusal(SYNC_REFUSALS.leased);
 /** A fixed refusal as a pattern, its dots taken literally. */
@@ -145,10 +146,15 @@ export function rawError(e: unknown): string | undefined {
 export function explainError(e: unknown): string | undefined {
   if (e && typeof e === "object" && !(e instanceof Error)) {
     const code = (e as { code?: unknown }).code;
+    if (typeof code === "string" && /^(?:proxy_chain_|system_proxy_)/.test(code)) {
+      return proxyChainErrorText(t, { code, message: rawError(e) });
+    }
     if (typeof code === "string" && CODES[code]) return t(CODES[code]);
   }
   const raw = rawError(e);
   if (!raw) return undefined;
+  const chainError = proxyChainErrorFromText(raw);
+  if (chainError) return proxyChainErrorText(t, chainError);
   // A synced profile's lease names the device that holds it.
   const lease = LEASED.exec(raw);
   if (lease) return t("errors.openElsewhere", { device: lease[1] });

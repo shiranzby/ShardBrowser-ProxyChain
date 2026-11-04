@@ -255,7 +255,7 @@ test("Chinese configuration errors use the same localized guidance in detection 
     (window as any).__shardxMockChainDetection = { state: "manual_required", source: "mock Windows Internet Settings", ...error };
     (window as any).__shardxMockChainResult = { system_proxy: { state: "failed", ...error }, exit_ip: null, exit_geo: null };
   });
-  const guidance = "代理链 V1 无法自动解析，请选择手动配置 HTTP 或 SOCKS5。";
+  const guidance = "Windows 静态代理映射无法明确判断，请选择手动配置 HTTP 或 SOCKS5。";
   await page.getByRole("button", { name: "读取 Windows 设置" }).click();
   await expect(page.locator("[data-chain-detection]")).toContainText(guidance);
   await expect(page.locator("[data-chain-detection]")).not.toContainText("Windows uses PAC/WPAD");
@@ -264,6 +264,42 @@ test("Chinese configuration errors use the same localized guidance in detection 
   await expect(page.locator("[data-chain-stage='system']")).not.toContainText("Windows uses PAC/WPAD");
   await expect(page.locator("[data-chain-exit]")).toContainText("尚未检测");
   await expect(page.locator("[data-chain-geo-source]")).toHaveCount(0);
+});
+
+test("automatic resolution uses the selected second-hop target and displays its resolved route", async ({ page }) => {
+  await openProxy(page);
+  await page.getByRole("combobox", { name: "Profile", exact: true }).click();
+  await page.getByRole("option").first().click();
+  await page.evaluate(() => {
+    (window as any).__shardxMockChainDetection = {
+      state: "ok", kind: "http", host: "127.0.0.1", port: 7890,
+      source: "windows_pac", resolved_for: "second.example:4104",
+    };
+  });
+  await page.getByRole("button", { name: "Read Windows settings", exact: true }).click();
+  await expect(page.locator("[data-chain-detection]")).toContainText("second.example:4104");
+  await expect(page.locator("[data-chain-detection]")).toContainText("127.0.0.1:7890");
+  const detectCall = (await mock(page)).log.filter((x: any) => x.cmd === "proxy_chain_detect").at(-1);
+  expect(detectCall.args.profileId).toBeTruthy();
+  await page.getByRole("button", { name: "Test system proxy", exact: true }).click();
+  const testCall = (await mock(page)).log.filter((x: any) => x.cmd === "proxy_chain_test").at(-1);
+  expect(testCall.args.profileId).toBe(detectCall.args.profileId);
+  expect((await mock(page)).calls.settings_save ?? 0).toBe(0);
+});
+
+test("automatic DIRECT is a visible refusal, never a green connection or an exit", async ({ page }) => {
+  await openProxy(page);
+  await page.evaluate(() => {
+    const error = { error_code: "proxy_chain_auto_direct_refused", error_message: "Windows automatic proxy configuration returned DIRECT." };
+    (window as any).__shardxMockChainDetection = { state: "failed", source: "windows_pac", resolved_for: "second.example:4104", ...error };
+    (window as any).__shardxMockChainResult = { system_proxy: { state: "failed", ...error }, exit_ip: null, exit_geo: null };
+  });
+  await page.getByRole("button", { name: "Read Windows settings", exact: true }).click();
+  await expect(page.locator("[data-chain-detection]")).toContainText("selected a direct route");
+  await page.getByRole("button", { name: "Test system proxy", exact: true }).click();
+  await expect(page.locator("[data-chain-stage='system']")).toContainText("Failed");
+  await expect(page.locator("[data-chain-stage='system']")).toContainText("selected a direct route");
+  await expect(page.locator("[data-chain-exit]")).toContainText("Not tested");
 });
 
 test("proxy Peek labels TCP-chain UDP as unavailable rather than a failed relay", async ({ page }) => {
@@ -276,7 +312,7 @@ test("proxy Peek labels TCP-chain UDP as unavailable rather than a failed relay"
   });
   await page.locator("[role='row'][data-proxy-id='px-jp-1'] [data-cell='name']").click();
   await expect(page.locator("[data-chain-udp-unsupported]")).toContainText("UDP unavailable in proxy chain");
-  await expect(page.locator("aside[data-peek='proxy']")).toContainText("Tested through the system proxy");
+  await expect(page.locator("aside[data-peek='proxy']")).toContainText("Test route: system proxy chain");
 });
 
 for (const lang of ["en", "zh", "ru"]) {

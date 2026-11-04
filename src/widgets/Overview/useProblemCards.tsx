@@ -8,6 +8,7 @@ import { tierLabel } from "../../features/proxyshard";
 import { AUTO_LANG, AUTO_TZ, LOCALES } from "../../shared/constants";
 import { intlLocale, translate, useLang, type Lang } from "../../shared/i18n";
 import { countryWord } from "../../shared/lib/geo";
+import { proxyChainErrorFromText, proxyChainErrorText } from "../../shared/lib/proxyChainError";
 import { useNav } from "../../shared/model/navigation";
 import { toast } from "../../shared/model/toast";
 
@@ -66,9 +67,11 @@ const day = (ms: number, lang: Lang) => new Intl.DateTimeFormat(intlLocale(lang)
 /** A backend's reason in plain words, where it is a known one. */
 function reasonOf(raw: string, t: T): string {
   if (!raw.trim()) return t("overview.whyUnknown");
-  if (/refused/i.test(raw)) return t("overview.whyRefused");
+  const chainError = proxyChainErrorFromText(raw);
+  if (chainError) return proxyChainErrorText(t, chainError) ?? raw;
   if (/timed?\s*out|timeout/i.test(raw)) return t("overview.whyTimeout");
   if (/\b407\b|auth|credential|password/i.test(raw)) return t("overview.whyLogin");
+  if (/refused/i.test(raw)) return t("overview.whyRefused");
   if (/port in use|address in use/i.test(raw)) return t("overview.whyPort");
   // The backend's own words, as the end of a sentence.
   const words = raw.replace(/^Error:\s*/, "").replace(/[.\s]+$/, "");

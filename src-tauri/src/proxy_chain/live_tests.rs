@@ -55,6 +55,7 @@ struct Report {
     saved_profiles: usize,
     http_public_launch: bool,
     socks5_public_launch: bool,
+    auto_public_launch: bool,
     three_independent_live_sessions: bool,
     stopping_one_preserves_two: bool,
     first_hop_failure_no_spawn: bool,
@@ -419,24 +420,26 @@ async fn exercise(
     )
     .map_err(|_| "live_test_cookie_import_failed")?;
 
-    for mode in ["http", "socks5"] {
+    for mode in ["http", "socks5", "auto"] {
         write_settings(engine, chain(cfg, mode))?;
-        report.stage = if mode == "http" {
-            "http_single_profile_start"
-        } else {
-            "socks5_single_profile_start"
+        report.stage = match mode {
+            "http" => "http_single_profile_start",
+            "socks5" => "socks5_single_profile_start",
+            _ => "auto_single_profile_start",
         };
         start(scope, &scope.ids[0]).await?;
-        report.stage = if mode == "http" {
-            "http_single_profile_stop"
-        } else {
-            "socks5_single_profile_stop"
+        report.stage = match mode {
+            "http" => "http_single_profile_stop",
+            "socks5" => "socks5_single_profile_stop",
+            _ => "auto_single_profile_stop",
         };
         stop(scope, &scope.ids[0]).await?;
         if mode == "http" {
             report.http_public_launch = true;
-        } else {
+        } else if mode == "socks5" {
             report.socks5_public_launch = true;
+        } else {
+            report.auto_public_launch = true;
         }
     }
 

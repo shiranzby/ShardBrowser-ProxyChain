@@ -31,6 +31,8 @@ export type ProxyTestSnapshot = {
   /** Missing in observations from before the proxy-chain patch. */
   transport?: "direct" | "proxy_chain";
   udp_state?: "unsupported_by_chain";
+  /** Safe failure details from the exact chain route; absent in old history. */
+  chain_error?: { code: string; layer: string; message: string } | null;
 };
 
 export type BulkRowState = {

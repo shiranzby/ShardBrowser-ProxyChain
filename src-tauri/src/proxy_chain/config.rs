@@ -143,6 +143,9 @@ impl ProxyChainSettings {
     }
     pub fn hop(&self, saved: &Self) -> Result<ProxyHop, ChainError> {
         self.validate()?;
+        if self.mode == "auto" {
+            return detect_windows::resolve();
+        }
         let password = match &self.password {
             PasswordUpdate::Replace(p) => p.clone(),
             PasswordUpdate::Clear => String::new(),
@@ -153,9 +156,6 @@ impl ProxyChainSettings {
                 .transpose()?
                 .unwrap_or_default(),
         };
-        if self.mode == "auto" {
-            return detect_windows::resolve();
-        }
         let hop = ProxyHop {
             kind: if self.mode == "http" {
                 ProxyKind::Http
@@ -169,6 +169,25 @@ impl ProxyChainSettings {
         };
         connector::validate(&hop, &Target::new("example.com", 443)?)?;
         Ok(hop)
+    }
+
+    pub async fn resolve_for(
+        &self,
+        saved: &Self,
+        target: &Target,
+    ) -> Result<detect_windows::ResolvedProxy, ChainError> {
+        self.validate()?;
+        if self.mode == "auto" {
+            detect_windows::resolve_for(target).await
+        } else {
+            Ok(detect_windows::ResolvedProxy::manual(self.hop(saved)?))
+        }
+    }
+
+    pub async fn hop_for(&self, saved: &Self, target: &Target) -> Result<ProxyHop, ChainError> {
+        self.resolve_for(saved, target)
+            .await
+            .map(|resolved| resolved.hop)
     }
 }
 

@@ -228,7 +228,7 @@ async fn exercise(scope: &Scope, cfg: &LiveInput, report: &mut Report) -> Result
     std::fs::write(&proxy_path, &proxy_bytes).map_err(|_| "live_geo_fixture_write_failed")?;
     std::fs::write(&profile_path, &profile_bytes).map_err(|_| "live_geo_fixture_write_failed")?;
 
-    for mode in ["http", "socks5"] {
+    for mode in ["http", "socks5", "auto"] {
         let config = ProxyChainSettings {
             enabled: true,
             mode: mode.into(),
@@ -255,20 +255,20 @@ async fn exercise(scope: &Scope, cfg: &LiveInput, report: &mut Report) -> Result
             .modes
             .last_mut()
             .ok_or("live_geo_report_state_invalid")?;
-        report.stage = if mode == "http" {
-            "http_system_public_test"
-        } else {
-            "socks5_system_public_test"
+        report.stage = match mode {
+            "http" => "http_system_public_test",
+            "socks5" => "socks5_system_public_test",
+            _ => "auto_system_public_test",
         };
         let result = super::test("system".into(), config.clone(), None)
             .await
             .map_err(|_| "live_geo_system_public_entry_failed")?;
         record.system_exit = Some(verified_exit(result, cfg, false)?);
 
-        report.stage = if mode == "http" {
-            "http_profile_public_test"
-        } else {
-            "socks5_profile_public_test"
+        report.stage = match mode {
+            "http" => "http_profile_public_test",
+            "socks5" => "socks5_profile_public_test",
+            _ => "auto_profile_public_test",
         };
         let result = super::test("profile".into(), config, Some(profile_id.clone()))
             .await

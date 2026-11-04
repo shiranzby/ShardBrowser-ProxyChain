@@ -52,6 +52,8 @@ export type ProxyChainTestResult = {
   proxy_kind?: "http" | "socks5" | null;
   proxy_address?: string | null;
   source?: string | null;
+  resolved_for?: string | null;
+  profile_proxy_address?: string | null;
   profile_name?: string | null;
   local_network?: ProxyChainStage | null;
   system_proxy: ProxyChainStage;
@@ -83,6 +85,7 @@ export type ProxyChainDetection = {
   port?: number | null;
   source: string;
   has_bypass?: boolean;
+  resolved_for?: string | null;
   error_code?: string | null;
   error_message?: string | null;
 };

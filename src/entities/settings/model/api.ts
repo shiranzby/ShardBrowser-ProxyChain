@@ -12,7 +12,7 @@ export const settingsGet = async (): Promise<Settings> => {
   return raw;
 };
 
-export const proxyChainDetect = () => invoke<ProxyChainDetection>("proxy_chain_detect");
+export const proxyChainDetect = (profileId?: string) => invoke<ProxyChainDetection>("proxy_chain_detect", { profileId });
 export const proxyChainTest = (kind: ProxyChainTestKind, config: ProxyChainSettings, profileId?: string) =>
   invoke<ProxyChainTestResult>("proxy_chain_test", { kind, config, profileId });
 /** Set once a save from this window is on disk: a read after that may show

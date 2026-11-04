@@ -1970,8 +1970,14 @@ fn settings_get() -> Result<settings::Settings, String> {
 }
 
 #[tauri::command]
-fn proxy_chain_detect() -> proxy_chain::detect_windows::Detection {
-    proxy_chain::detect_windows::detect()
+async fn proxy_chain_detect(profile_id: Option<String>) -> Result<proxy_chain::detect_windows::Detection, String> {
+    let target = if let Some(id) = profile_id {
+        let entry = launch::proxy_for_test(&id).map_err(|e| e.to_string())?;
+        proxy_chain::connector::Target::new(&entry.host, entry.port)
+    } else {
+        proxy_chain::connector::Target::new("example.com", 443)
+    }.map_err(|e| e.to_string())?;
+    Ok(proxy_chain::detect_windows::detect_for(&target).await)
 }
 
 #[tauri::command]

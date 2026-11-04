@@ -565,7 +565,7 @@ pub mod proxy {
         can_send_udp_directly, country_to_locale, country_to_timezone,
         parse_bulk, parse_single, GeoInfo, ProxyEntry, ProxyKind, TestSnapshot,
     };
-    pub(crate) use local::{probe as probe_on_route, geo_check_via as geo_check_on_route};
+    pub(crate) use local::{probe as probe_on_route, geo_check_via as geo_check_on_route, Socks5ProbeError};
 
     pub async fn probe(entry: &ProxyEntry) -> Result<u128> {
         let settings = crate::proxy_chain::saved_settings()?;

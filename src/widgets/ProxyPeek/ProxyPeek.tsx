@@ -5,6 +5,7 @@ import { CountryFlag } from "../../shared/ui/CountryFlag";
 import { ProxyTestPill } from "../../shared/ui/StatusPill";
 import { PeekBody, PeekHeader, PeekPanel, PeekSection } from "../../shared/ui/peek";
 import { explainError } from "../../shared/lib/errors";
+import { proxyChainErrorText } from "../../shared/lib/proxyChainError";
 import { fmtTs } from "../../shared/lib/utils";
 import { focusProxyRow } from "../../shared/lib/focusRow";
 import { useT } from "../../shared/i18n";
@@ -173,7 +174,6 @@ function TestSection({ proxy }: { proxy: ProxyEntry }) {
 
 function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot }) {
   const t = useT();
-  const status = proxyStatus(snap);
   const place = [snap.region, snap.city].filter(Boolean).join(", ") || snap.country;
   return (
     // The last test's facts, strong 13 px, 14 px apart (owner, "more air").
@@ -186,7 +186,7 @@ function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot })
       {snap.isp && <Line icon={<BuildingIcon className="size-3.5" />}>{snap.isp}</Line>}
       {snap.transport === "proxy_chain" && <p className="m-0 text-secondary text-text-sub-600">{t("proxyChain.viaSystem")}</p>}
       <div className="flex flex-wrap items-center gap-2">
-        <Badge color={status === "ok" ? "success" : "error"} size="small">
+        <Badge color={snap.tcp_ms != null ? "success" : "error"} size="small">
           {snap.tcp_ms != null ? t("proxyPeek.tcpOk", { ms: snap.tcp_ms }) : t("proxyPeek.tcpFailed")}
         </Badge>
         {snap.udp_state === "unsupported_by_chain" ? (
@@ -200,10 +200,11 @@ function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot })
         )}
         <span className="text-secondary text-text-soft-400">{fmtTs(snap.last_seen)}</span>
       </div>
-      {snap.geo_error && (
-        <p className="m-0 text-secondary text-error-text">
-          {t("proxyInfoPopover.geoError")}
-          <span className="block text-secondary text-text-soft-400" data-selectable>{explainError(snap.geo_error)}</span>
+      {(snap.geo_error || snap.chain_error) && (
+        <p className="m-0 text-secondary text-error-text" data-chain-test-error={snap.transport === "proxy_chain" ? "" : undefined}>
+          {snap.transport === "proxy_chain" ? t("proxyChain.startBlocked") : t("proxyInfoPopover.geoError")}
+          <span className="block text-secondary text-text-soft-400" data-selectable>{snap.chain_error ? proxyChainErrorText(t, snap.chain_error) : explainError(snap.geo_error)}</span>
+          {snap.chain_error && <code className="block break-all" data-selectable>{snap.chain_error.code}</code>}
         </p>
       )}
     </div>

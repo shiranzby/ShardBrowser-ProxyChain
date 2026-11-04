@@ -11,6 +11,8 @@ import type { ProxyTestSnapshot } from "../model/types";
 /// read as working.
 export function proxyStatus(snap: ProxyTestSnapshot | undefined): "ok" | "failed" | "untested" {
   if (!snap) return "untested";
+  // Chain launches require both checks. Keep legacy direct-route tolerance.
+  if (snap.transport === "proxy_chain" && (snap.chain_error || snap.geo_error || snap.tcp_ms == null || !snap.ip)) return "failed";
   return snap.tcp_ms != null || snap.ip !== "" ? "ok" : "failed";
 }
 

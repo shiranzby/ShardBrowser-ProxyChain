@@ -7,8 +7,9 @@ import {
 } from "../../../entities/settings";
 import { may, useProfile } from "../../../entities/profile";
 import { useSpace } from "../../../entities/space";
-import { useT, appLocale, type T } from "../../../shared/i18n";
+import { useT, appLocale } from "../../../shared/i18n";
 import { explainError } from "../../../shared/lib/errors";
+import { proxyChainErrorText } from "../../../shared/lib/proxyChainError";
 import { fmtTs } from "../../../shared/lib/utils";
 import { fmtCountry } from "../../../shared/lib/format";
 import { NumField } from "../../../shared/ui/NumField";
@@ -18,16 +19,6 @@ import { holdSave } from "../useSettingsDraft";
 
 const DEFAULT = defaultProxyChain();
 type Busy = ProxyChainTestKind | "detect";
-
-function configurationError(t: T, error?: Pick<ProxyChainStage, "error_code" | "error_message"> | null) {
-  switch (error?.error_code) {
-    case "proxy_chain_manual_required": return t("proxyChain.errorManualRequired");
-    case "proxy_chain_system_not_configured": return t("proxyChain.errorSystemNotConfigured");
-    case "proxy_chain_system_detect_failed": return t("proxyChain.errorSystemDetectFailed");
-    case "proxy_chain_windows_required": return t("proxyChain.errorWindowsRequired");
-    default: return error?.error_message;
-  }
-}
 
 export function ProxySection({ s, setS }: SettingsProps) {
   const t = useT();
@@ -47,7 +38,7 @@ export function ProxySection({ s, setS }: SettingsProps) {
   const pending = busy?.context === context ? busy.kind : null;
   const shown = result?.context === context ? result.value : null;
   const detected = detection?.context === context ? detection.value : null;
-  const detectionError = configurationError(t, detected);
+  const detectionError = proxyChainErrorText(t, detected);
   const failure = error?.context === context ? error.text : null;
   const patch = (value: Partial<ProxyChainSettings>) => {
     sequence.current++;
@@ -59,7 +50,7 @@ export function ProxySection({ s, setS }: SettingsProps) {
     setBusy({ kind: "detect", context });
     setError(null);
     try {
-      const value = await proxyChainDetect();
+      const value = await proxyChainDetect(selected?.id);
       if (sequence.current === request) setDetection({ value, context });
     } catch (e) {
       if (sequence.current === request) setError({ text: explainError(e) ?? String(e), context });
@@ -74,7 +65,7 @@ export function ProxySection({ s, setS }: SettingsProps) {
     setError(null);
     setResult(null);
     try {
-      const value = await proxyChainTest(kind, config, kind === "profile" ? selected?.id : undefined);
+      const value = await proxyChainTest(kind, config, kind === "local" ? undefined : selected?.id);
       if (sequence.current === request) setResult({ value, context });
     } catch (e) {
       if (sequence.current === request) setError({ text: explainError(e) ?? String(e), context });
@@ -130,6 +121,7 @@ export function ProxySection({ s, setS }: SettingsProps) {
               <div data-chain-detection role="status" className="flex flex-col gap-1 text-help text-text-sub-600">
                 <span>{detected.state === "ok" ? t("proxyChain.detected") : detected.state === "manual_required" ? t("proxyChain.manualRequired") : t("proxyChain.detectionFailed")}</span>
                 {detected.kind && detected.host && <span className="mono break-all">{detected.kind === "http" ? "HTTP" : "SOCKS5"} {detected.host}:{detected.port}</span>}
+                {detected.resolved_for && <span className="mono break-all">{t("proxyChain.resolvedFor")}: {detected.resolved_for}</span>}
                 <span>{t("proxyChain.source", { source: detected.source })}</span>
                 {detectionError && <span>{detectionError}</span>}
                 {detected.has_bypass && <span>{t("proxyChain.bypassIgnored")}</span>}
@@ -182,6 +174,7 @@ export function ProxySection({ s, setS }: SettingsProps) {
       </SettingsGroup>
 
       <SettingsGroup title={t("proxyChain.testsTitle")} help={t("proxyChain.testsHelp")}>
+        <p className="m-0 text-help text-text-sub-600">{t("proxyChain.systemRoutingHelp")}</p>
         <div className="flex flex-wrap items-center gap-2 py-3">
           <Button variant="neutral" mode="stroke" size="xsmall" disabled={!!pending} isLoading={pending === "local"} onClick={() => void test("local")}>{t("proxyChain.testLocal")}</Button>
           <Button variant="neutral" mode="stroke" size="xsmall" disabled={!!pending} isLoading={pending === "system"} onClick={() => void test("system")}>{t("proxyChain.testSystem")}</Button>
@@ -233,11 +226,13 @@ function ChainResult({ result }: { result: ProxyChainTestResult }) {
     <div data-chain-result role="status" aria-live="polite" className="pb-3 text-help text-text-sub-600">
       <dl className="m-0 flex flex-col gap-2">
         {result.proxy_kind && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.proxyType")}</dt><dd className="m-0">{result.proxy_kind === "http" ? "HTTP" : "SOCKS5"}</dd></div>}
-        {result.proxy_address && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.proxyAddress")}</dt><dd className="mono m-0 break-all">{result.proxy_address}</dd></div>}
+        {result.proxy_address && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.firstProxyAddress")}</dt><dd className="mono m-0 break-all">{result.proxy_address}</dd></div>}
+        {result.profile_proxy_address && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.profileProxyAddress")}</dt><dd className="mono m-0 break-all">{result.profile_proxy_address}</dd></div>}
+        {result.resolved_for && <div className="break-all">{t("proxyChain.resolvedFor")}: {result.resolved_for}</div>}
         {result.source && <div>{t("proxyChain.source", { source: result.source })}</div>}
         {result.profile_name && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.profile")}</dt><dd className="m-0 break-all">{result.profile_name}</dd></div>}
         {rows.map((row) => {
-          const error = configurationError(t, row.detail);
+          const error = proxyChainErrorText(t, row.detail);
           return (
             <div key={row.id} data-chain-stage={row.id} className="flex flex-wrap gap-2">
               <dt>{row.label}</dt>
