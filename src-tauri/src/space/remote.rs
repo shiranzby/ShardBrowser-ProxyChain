@@ -140,6 +140,7 @@ fn open_on(lease: &Lease, device_id: &str) -> OpenOn {
 /// A row as the profile list shows it; the settings fill in what only they know.
 pub fn meta(team: &str, row: &ProfileRow, detail: Option<&StoredProfile>, device_id: &str) -> ProfileMeta {
     ProfileMeta {
+        proxy_chain_policy: detail.map(|p| p.meta.proxy_chain_policy).unwrap_or_default(),
         id: row.id.clone(),
         name: row.name.clone(),
         notes: row.card.notes.clone(),
@@ -203,6 +204,7 @@ pub fn proxy(row: &ProxyRow, login: Option<&str>) -> ProxyEntry {
         serde_json::from_value(v).ok()
     });
     let mut e = read.unwrap_or_else(|| ProxyEntry {
+        proxy_chain_policy: Default::default(),
         id: String::new(),
         name: String::new(),
         kind: ProxyKind::Socks5,

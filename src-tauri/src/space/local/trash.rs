@@ -205,6 +205,7 @@ pub(in crate::space) fn restore(id: &str) -> Result<profile::ProfileMeta> {
     let _ = fs::remove_file(&meta_path);
 
     Ok(profile::ProfileMeta {
+        proxy_chain_policy: stored.meta.proxy_chain_policy,
         id: stored.meta.id.clone(),
         name: stored
             .config

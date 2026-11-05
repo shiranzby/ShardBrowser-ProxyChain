@@ -360,6 +360,8 @@ pub mod profile {
 
     /// Saves a profile built whole (the editor, the API); new when its id is empty.
     pub async fn save(door: Door, t: &Ticket, stored: StoredProfile, opts: SaveOpts) -> Result<ProfileMeta> {
+        stored.meta.proxy_chain_policy.validate()?;
+        if let Some(proxy) = &stored.meta.inline_proxy { proxy.proxy_chain_policy.validate()?; }
         match t.team() {
             Some(team) => Ok(write::save_profile(door, t, team, stored, opts).await?),
             None => {
@@ -403,6 +405,7 @@ pub mod profile {
     fn meta_of(stored: &StoredProfile) -> ProfileMeta {
         let text = |k: &str, or: &str| stored.config.get(k).and_then(|v| v.as_str()).unwrap_or(or).to_string();
         ProfileMeta {
+            proxy_chain_policy: stored.meta.proxy_chain_policy,
             id: stored.meta.id.clone(),
             name: text("name", "(unnamed)"),
             notes: text("notes", ""),
@@ -565,11 +568,12 @@ pub mod proxy {
         can_send_udp_directly, country_to_locale, country_to_timezone,
         parse_bulk, parse_single, GeoInfo, ProxyEntry, ProxyKind, TestSnapshot,
     };
-    pub(crate) use local::{probe as probe_on_route, geo_check_via as geo_check_on_route, Socks5ProbeError};
+    pub(crate) use local::{probe as probe_on_route, geo_check_via as geo_check_on_route, Socks5ProbeError, HttpProbeError};
 
     pub async fn probe(entry: &ProxyEntry) -> Result<u128> {
         let settings = crate::proxy_chain::saved_settings()?;
-        let prepared = crate::proxy_chain::prepare(Some(entry), &settings.proxy_chain).await?;
+        let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?;
+        let prepared = crate::proxy_chain::prepare(Some(entry), &config).await?;
         let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
         match local::probe(effective).await {
             Err(e) if prepared.is_some() => Err(crate::proxy_chain::profile_failure(&prepared.as_ref().unwrap().tunnel, &e).into()),
@@ -578,7 +582,8 @@ pub mod proxy {
     }
 
     pub async fn probe_udp(entry: &ProxyEntry) -> Result<u128> {
-        if crate::proxy_chain::saved_settings()?.proxy_chain.enabled {
+        let settings = crate::proxy_chain::saved_settings()?;
+        if crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?.enabled {
             anyhow::bail!("Proxy-chain V1 does not support UDP. This is a transport limitation, not the profile proxy's capability.");
         }
         local::probe_udp(entry).await
@@ -591,7 +596,8 @@ pub mod proxy {
     pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider: Option<String>) -> Result<GeoInfo> {
         let Some(entry) = entry else { return local::geo_check_via(None, provider).await };
         let settings = crate::proxy_chain::saved_settings()?;
-        let prepared = crate::proxy_chain::prepare(Some(entry), &settings.proxy_chain).await?;
+        let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?;
+        let prepared = crate::proxy_chain::prepare(Some(entry), &config).await?;
         let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
         local::geo_check_via(Some(effective), provider).await.map_err(|e| if prepared.is_some() {
             anyhow::anyhow!("The exit IP request through the profile proxy chain failed.")
@@ -615,6 +621,7 @@ pub mod proxy {
 
     /// Adds the proxy, or changes the one with its id.
     pub async fn upsert(door: Door, t: &Ticket, entry: ProxyEntry) -> Result<ProxyEntry> {
+        entry.proxy_chain_policy.validate()?;
         match t.team() {
             Some(team) => Ok(write::save_proxy(door, t, team, entry).await?),
             None => {
@@ -626,6 +633,7 @@ pub mod proxy {
 
     /// Adds the proxy unless an identical one is kept: that one is answered.
     pub async fn upsert_dedup(door: Door, t: &Ticket, entry: ProxyEntry) -> Result<ProxyEntry> {
+        entry.proxy_chain_policy.validate()?;
         match t.team() {
             Some(team) => Ok(write::save_proxy_dedup(door, t, team, entry).await?),
             None => {
@@ -637,6 +645,7 @@ pub mod proxy {
 
     /// As [`upsert_dedup`], but a new password for the profile's own proxy changes it.
     pub async fn upsert_for_binding(door: Door, t: &Ticket, entry: ProxyEntry, bound_id: Option<&str>) -> Result<ProxyEntry> {
+        entry.proxy_chain_policy.validate()?;
         match t.team() {
             Some(team) => Ok(write::save_proxy_for_binding(door, t, team, entry, bound_id).await?),
             None => {
@@ -648,6 +657,7 @@ pub mod proxy {
 
     /// Adds each proxy not kept yet; answers how many went in.
     pub async fn bulk_save(door: Door, t: &Ticket, entries: Vec<ProxyEntry>) -> Result<usize> {
+        for entry in &entries { entry.proxy_chain_policy.validate()?; }
         match t.team() {
             Some(team) => Ok(write::save_proxies(door, t, team, entries).await?),
             None => {

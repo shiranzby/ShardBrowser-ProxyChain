@@ -6,6 +6,7 @@ export type GeoMode = "auto" | "manual";
 export type UiLanguage = "system" | "profile";
 
 export type ProfileMeta = {
+  proxy_chain_policy?: "inherit" | "enabled" | "disabled";
   id: string;
   name: string;
   notes: string;
@@ -49,6 +50,7 @@ export type ProfileRight = keyof ProfileRights;
 export type OpenOn = { device_name: string; member_name: string; this_device: boolean; since: number; until: number };
 
 export type ProfileForm = {
+  proxy_chain_policy?: "inherit" | "enabled" | "disabled";
   id: string;
   /** The file's version when the editor opened it; a save carries it back. */
   rev: number;

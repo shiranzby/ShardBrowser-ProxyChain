@@ -4,9 +4,11 @@ pub mod connector;
 pub mod credentials;
 pub mod detect_windows;
 pub mod error;
+pub mod policy;
 #[cfg(test)]
 mod tests;
 pub mod tunnel;
+pub mod tls;
 
 use crate::space::proxy::{self, ProxyEntry, ProxyKind};
 use config::ProxyChainSettings;
@@ -42,7 +44,7 @@ pub async fn prepare(
         ChainError::new(
             "proxy_chain_profile_required",
             "profile",
-            "This profile has no upstream proxy. Assign a SOCKS5 proxy or disable proxy chaining.",
+            "This profile has no upstream proxy. Assign a proxy before starting the proxy chain.",
         )
     })?;
     let target = Target::new(&entry.host, entry.port)?;
@@ -51,15 +53,19 @@ pub async fn prepare(
 }
 
 async fn prepare_with_hop(entry: &ProxyEntry, hop: ProxyHop) -> anyhow::Result<PreparedProxy> {
-    if entry.kind != ProxyKind::Socks5 {
-        return Err(ChainError::new("proxy_chain_profile_kind_unsupported", "profile", "Proxy-chain V1 requires a SOCKS5 profile proxy. HTTP/HTTPS profile data is preserved; disable chaining to use its original connection.").into());
-    }
     let target = Target::new(&entry.host, entry.port)?;
     // Proves the first hop can reach the original upstream before binding.
     // It is not proof of second-hop authentication; callers also run probe.
-    drop(connector::connect(&hop, &target).await?);
-    let tunnel = Tunnel::bind(hop, target).await?;
+    let tunnel = if entry.kind == ProxyKind::Https {
+        let tls = tls::client()?;
+        drop(tls::connect(&hop, &target, tls.clone(), connector::CONNECT_TIMEOUT).await?);
+        Tunnel::bind_tls(hop, target, tls).await?
+    } else {
+        drop(connector::connect(&hop, &target).await?);
+        Tunnel::bind(hop, target).await?
+    };
     let mut effective = entry.clone();
+    if effective.kind == ProxyKind::Https { effective.kind = ProxyKind::Http; }
     effective.host = "127.0.0.1".into();
     effective.port = tunnel.addr().port();
     // Never persist an ephemeral loopback address or use direct-route history.
@@ -104,6 +110,9 @@ pub fn profile_error(tunnel: &Tunnel) -> ChainError {
 }
 
 pub fn profile_failure(tunnel: &Tunnel, cause: &anyhow::Error) -> ChainError {
+    if let Some(error) = cause.downcast_ref::<proxy::HttpProbeError>() {
+        return ChainError::new(if error.0 == 407 { "proxy_chain_profile_auth_failed" } else { "proxy_chain_profile_connect_failed" }, "profile", format!("The profile HTTP proxy refused CONNECT (status {}). Check its credentials and source restrictions.", error.0));
+    }
     // A reply received on THIS probe is authoritative. Another concurrent
     // Geo stream's close/reset must not overwrite a definite second-hop reply.
     if let Some(error) = cause.downcast_ref::<proxy::Socks5ProbeError>() {
@@ -225,6 +234,7 @@ fn system_entry(hop: &ProxyHop) -> ProxyEntry {
         hop.host.clone()
     };
     ProxyEntry {
+        proxy_chain_policy: Default::default(),
         id: String::new(),
         name: String::new(),
         kind: match hop.kind {
@@ -295,6 +305,22 @@ pub async fn test(
         } else {
             None
         };
+        if kind == "profile" {
+            let policy = entry.as_ref().map(|p| p.proxy_chain_policy).unwrap_or_default();
+            let effective = policy::effective(&config, Default::default(), policy)?;
+            if !effective.enabled {
+                let entry = entry.as_ref().expect("profile entry loaded");
+                result.profile_proxy_address = Some(format!("{}:{}", entry.host, entry.port));
+                result.source = Some("profile_proxy_without_first_hop");
+                let phase = Instant::now();
+                match proxy::probe_on_route(entry).await {
+                    Ok(_) => { result.profile_proxy = Stage::ok(phase); result.set_exit(proxy::geo_check_on_route(Some(entry), None).await); },
+                    Err(_) => result.profile_proxy = Stage::failed(ChainError::new("proxy_chain_profile_connect_failed", "profile", "The profile proxy failed on the explicitly selected route without the first hop.")),
+                }
+                result.total_ms = start.elapsed().as_millis();
+                return Ok(result);
+            }
+        }
         let target = if let Some(entry) = &entry {
             result.profile_proxy_address = Some(format!("{}:{}", entry.host, entry.port));
             Target::new(&entry.host, entry.port)?

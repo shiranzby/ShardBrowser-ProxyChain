@@ -370,7 +370,11 @@ fn bound_proxy(
 pub(crate) fn proxy_for_test(profile_id: &str) -> Result<proxy::ProxyEntry> {
     let _pass = perm::start(profile_id)?;
     let stored = profile::load_raw(profile_id)?;
-    bound_proxy(&stored, profile_id, proxy::get)?.ok_or_else(|| anyhow::anyhow!("This profile has no upstream proxy assigned."))
+    let mut entry = bound_proxy(&stored, profile_id, proxy::get)?.ok_or_else(|| anyhow::anyhow!("This profile has no upstream proxy assigned."))?;
+    stored.meta.proxy_chain_policy.validate()?;
+    entry.proxy_chain_policy.validate()?;
+    if !stored.meta.proxy_chain_policy.is_inherit() { entry.proxy_chain_policy = stored.meta.proxy_chain_policy; }
+    Ok(entry)
 }
 
 /// Machine switches a team's profile does not take: each would open a door
@@ -563,8 +567,14 @@ struct Ready<'a> {
     ext_alone: bool,
 }
 
-async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) -> Result<LaunchOutcome> {
-    let s = crate::proxy_chain::saved_settings()?;
+async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>) -> Result<LaunchOutcome> {
+    let mut s = crate::proxy_chain::saved_settings()?;
+    s.proxy_chain = crate::proxy_chain::policy::effective(&s.proxy_chain, input.stored.meta.proxy_chain_policy, input.proxy.as_ref().map(|p| p.proxy_chain_policy).unwrap_or_default())?;
+    // All later checks for this start use the same resolved choice, including
+    // the original route's UDP/Geo wrappers. Never persist this temporary copy.
+    if let Some(proxy) = &mut input.proxy {
+        proxy.proxy_chain_policy = if s.proxy_chain.enabled { crate::proxy_chain::policy::ChainPolicy::Enabled } else { crate::proxy_chain::policy::ChainPolicy::Disabled };
+    }
     if s.proxy_chain.enabled {
         crate::proxy_chain::validate_args(&s.extra_args)?;
         // A raw DevTools client can change Traffic.setProxy inside the closed

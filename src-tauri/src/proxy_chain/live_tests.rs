@@ -29,6 +29,8 @@ const SESSION_WAIT: Duration = Duration::from_secs(45);
 
 #[derive(Deserialize)]
 struct LiveInput {
+    #[serde(default = "default_kind")]
+    kind: String,
     host: String,
     port: u16,
     username: String,
@@ -36,6 +38,7 @@ struct LiveInput {
     system_host: String,
     system_port: u16,
 }
+fn default_kind() -> String { "socks5".into() }
 
 #[derive(Deserialize)]
 struct OwnedProcess {
@@ -313,7 +316,7 @@ async fn exercise(
     let mut preserved = Vec::new();
     for (n, id) in scope.ids.iter().enumerate() {
         let proxy_id = format!("live-synthetic-proxy-{n}");
-        proxies.push(json!({"id":proxy_id,"name":format!("Live test {n}"),"kind":"socks5","host":cfg.host,"port":cfg.port,"username":cfg.username,"password":cfg.password}));
+        proxies.push(json!({"id":proxy_id,"name":format!("Live test {n}"),"kind":cfg.kind,"host":cfg.host,"port":cfg.port,"username":cfg.username,"password":cfg.password}));
         let mut profile = original.clone();
         profile["name"] = json!(format!("Synthetic live test {n}"));
         profile["_meta"] =

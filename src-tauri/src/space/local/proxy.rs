@@ -32,6 +32,8 @@ pub struct ProxyEntry {
     /// Free-form note.
     #[serde(default)]
     pub notes: String,
+    #[serde(default, skip_serializing_if = "crate::proxy_chain::policy::ChainPolicy::is_inherit")]
+    pub proxy_chain_policy: crate::proxy_chain::policy::ChainPolicy,
 }
 
 impl ProxyEntry {
@@ -46,6 +48,7 @@ impl ProxyEntry {
             && self.port == other.port
             && self.username == other.username
             && self.password == other.password
+            && self.proxy_chain_policy == other.proxy_chain_policy
     }
 
     /// Build `--proxy-server=<scheme>://[user:pass@]host:port` for ShardX.
@@ -133,7 +136,7 @@ pub(in crate::space) fn load() -> Result<ProxyStore> {
         return Ok(ProxyStore::default());
     }
     let body = fs::read_to_string(&path)?;
-    Ok(serde_json::from_str(&body).unwrap_or_default())
+    Ok(serde_json::from_str(&body).context("read proxy store")?)
 }
 
 fn save(s: &ProxyStore) -> Result<()> {
@@ -147,6 +150,7 @@ pub(in crate::space) fn list() -> Result<Vec<ProxyEntry>> {
 }
 
 pub(in crate::space) fn upsert(mut entry: ProxyEntry) -> Result<ProxyEntry> {
+    entry.proxy_chain_policy.validate()?;
     if entry.id.is_empty() {
         entry.id = uuid::Uuid::new_v4().to_string();
     }
@@ -163,6 +167,7 @@ pub(in crate::space) fn upsert(mut entry: ProxyEntry) -> Result<ProxyEntry> {
 /// Upsert that reuses an identical entry (`same_proxy`): one with the same
 /// endpoint and user but another password is a proxy of its own.
 pub(in crate::space) fn upsert_dedup(mut entry: ProxyEntry) -> Result<ProxyEntry> {
+    entry.proxy_chain_policy.validate()?;
     let mut s = load()?;
     if let Some(existing) = s.proxies.iter().find(|p| p.same_proxy(&entry)) {
         return Ok(existing.clone());
@@ -187,6 +192,7 @@ pub(in crate::space) fn upsert_dedup(mut entry: ProxyEntry) -> Result<ProxyEntry
 /// separate door, opened only when the caller names the profile the proxy
 /// belongs to.
 pub(in crate::space) fn upsert_for_binding(mut entry: ProxyEntry, bound_id: Option<&str>) -> Result<ProxyEntry> {
+    entry.proxy_chain_policy.validate()?;
     let mut s = load()?;
     if let Some(existing) = s.proxies.iter().find(|p| p.same_proxy(&entry)) {
         return Ok(existing.clone());
@@ -198,6 +204,7 @@ pub(in crate::space) fn upsert_for_binding(mut entry: ProxyEntry, bound_id: Opti
                 && p.host == entry.host
                 && p.port == entry.port
                 && p.username == entry.username
+                && p.proxy_chain_policy == entry.proxy_chain_policy
         }) {
             slot.password = entry.password.clone();
             let out = slot.clone();
@@ -347,6 +354,13 @@ where
 /// and authenticates exactly like a working one, which is why this used to
 /// call such a proxy reachable. Every kind now ends with a real CONNECT to
 /// `PROBE_HOST`, and only the answer to that decides.
+#[derive(Debug)]
+pub struct HttpProbeError(pub u16);
+impl std::fmt::Display for HttpProbeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "HTTP proxy CONNECT refused (status {})", self.0) }
+}
+impl std::error::Error for HttpProbeError {}
+
 pub async fn probe(entry: &ProxyEntry) -> Result<u128> {
     // One deadline over the whole exchange as well as one per step. A proxy
     // that answers every read just inside the step timeout could otherwise
@@ -458,7 +472,8 @@ async fn probe_inner(entry: &ProxyEntry) -> Result<u128> {
             };
             let first_line = head.lines().next().unwrap_or("");
             if !first_line.starts_with("HTTP/1.1 200") && !first_line.starts_with("HTTP/1.0 200") {
-                anyhow::bail!("CONNECT failed: {first_line}");
+                let status = first_line.split_whitespace().nth(1).and_then(|v| v.parse::<u16>().ok()).unwrap_or(0);
+                return Err(HttpProbeError(status).into());
             }
         }
     }
@@ -553,6 +568,7 @@ fn parse_one(line: &str, default_kind: &ProxyKind) -> Option<ProxyEntry> {
     }
     let name = name_parts.join(" ");
     Some(ProxyEntry {
+        proxy_chain_policy: Default::default(),
         // ID assigned now so pre-save test snapshots key under the kept uuid.
         id: uuid::Uuid::new_v4().to_string(),
         name: if name.is_empty() { format!("{host}:{port}") } else { name },
@@ -570,6 +586,7 @@ fn parse_one(line: &str, default_kind: &ProxyKind) -> Option<ProxyEntry> {
 /// identical to one already stored, or to one earlier in `entries`, is
 /// skipped (`same_proxy`).
 pub(in crate::space) fn bulk_save(entries: Vec<ProxyEntry>) -> Result<usize> {
+    for entry in &entries { entry.proxy_chain_policy.validate()?; }
     let mut store_data = load()?;
     let added = add_new(&mut store_data.proxies, entries);
     save(&store_data)?;
@@ -1270,7 +1287,8 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
 pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
     let prepared = async {
         let settings = crate::proxy_chain::saved_settings()?;
-        crate::proxy_chain::prepare(Some(entry), &settings.proxy_chain).await
+        let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?;
+        crate::proxy_chain::prepare(Some(entry), &config).await
     }.await;
     match prepared {
         Ok(prepared) => {

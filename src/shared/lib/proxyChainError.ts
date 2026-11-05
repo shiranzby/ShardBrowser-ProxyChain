@@ -4,6 +4,9 @@ type ChainError = { code?: string | null; error_code?: string | null; message?: 
  * errors keep their own message rather than becoming an unrelated offline error. */
 export function proxyChainErrorText(t: (key: string) => string, error?: ChainError | null): string | undefined {
   switch (error?.code ?? error?.error_code) {
+    case "proxy_chain_policy_invalid": return t("proxyChain.errorPolicy");
+    case "proxy_chain_profile_tls_failed":
+    case "proxy_chain_profile_tls_timeout": return t("proxyChain.errorSecondTls");
     case "proxy_chain_manual_required": return t("proxyChain.errorManualRequired");
     case "proxy_chain_system_not_configured": return t("proxyChain.errorSystemNotConfigured");
     case "proxy_chain_system_detect_failed": return t("proxyChain.errorSystemDetectFailed");

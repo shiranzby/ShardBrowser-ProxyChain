@@ -62,6 +62,7 @@ export function fromStored(stored: any): ProfileForm {
   f.id = stored?._meta?.id ?? "";
   f.rev = stored?._meta?.rev ?? 0;
   f.proxy_id = stored?._meta?.proxy_id ?? null;
+  f.proxy_chain_policy = stored?._meta?.proxy_chain_policy ?? "inherit";
   f.name = stored?.name ?? "";
   f.notes = stored?.notes ?? "";
   f.color = stored?._meta?.color ?? "";
@@ -129,6 +130,7 @@ export function toStored(f: ProfileForm, lib: FingerprintEntry | null, prev?: an
     id: f.id,
     rev: f.rev,
     proxy_id: f.proxy_id,
+    proxy_chain_policy: f.proxy_chain_policy ?? "inherit",
     last_launched_at: null,
     gpu_preset_id: f.gpu_preset_id,
     ...(f.real_gpu ? { real_gpu: true } : {}),

@@ -19,6 +19,83 @@ use tokio::task::{JoinHandle, JoinSet};
 
 const WAIT: Duration = Duration::from_secs(15);
 
+#[tokio::test]
+async fn https_second_hop_verifies_original_name_and_carries_http_inside_tls() {
+    use rustls::pki_types::PrivatePkcs8KeyDer;
+    let certified = rcgen::generate_simple_self_signed(vec!["second.test".into()]).unwrap();
+    let cert = certified.cert.der().clone();
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let server = rustls::ServerConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().unwrap()
+        .with_no_client_auth().with_single_cert(vec![cert.clone()], PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der()).into()).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let second = tokio::spawn(async move {
+        let mut clients = JoinSet::new();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server));
+        loop {
+            tokio::select! {
+                _ = clients.join_next(), if !clients.is_empty() => {},
+                raw = listener.accept() => {
+                    let (raw, _) = raw.unwrap();
+                    let acceptor = acceptor.clone();
+                    clients.spawn(async move {
+                        let Ok(mut stream) = acceptor.accept(raw).await else { return; };
+                        let mut head = Vec::new();
+                        while !head.ends_with(b"\r\n\r\n") && head.len() < 4096 {
+                            let Ok(byte) = stream.read_u8().await else { return; };
+                            head.push(byte);
+                        }
+                        assert!(head.starts_with(b"CONNECT example.com:443 HTTP/1.1"));
+                        assert!(String::from_utf8_lossy(&head).contains("Proxy-Authorization: Basic c2Vjb25kOnNlY3JldA=="));
+                        stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
+                        let _ = stream.shutdown().await;
+                    });
+                }
+            }
+        }
+    });
+    let first = first_hop(addr).await;
+    let hop = chain(first.addr).hop(&Default::default()).unwrap();
+    let target = Target::new("second.test", addr.port()).unwrap();
+    // Default trust must reject our self-signed fixture, not silently downgrade.
+    assert_eq!(super::tls::connect(&hop, &target, super::tls::client().unwrap(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
+    let mut roots = rustls::RootCertStore::empty(); roots.add(cert).unwrap();
+    let client = Arc::new(rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth());
+    let wrong = Target::new("wrong.test", addr.port()).unwrap();
+    assert_eq!(super::tls::connect(&hop, &wrong, client.clone(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
+    let tunnel = Tunnel::bind_tls(hop, target, client).await.unwrap();
+    let mut local = TcpStream::connect(tunnel.addr()).await.unwrap();
+    local.write_all(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Basic c2Vjb25kOnNlY3JldA==\r\n\r\n").await.unwrap();
+    let head = tokio::time::timeout(WAIT, http_head(&mut local)).await.unwrap().unwrap();
+    assert!(head.starts_with(b"HTTP/1.1 200"));
+    tunnel.shutdown().await;
+    assert!(first.accepted.load(Ordering::SeqCst) >= 3);
+    second.abort();
+    let _ = second.await;
+}
+
+#[tokio::test]
+async fn http_second_hop_refusal_is_typed_and_does_not_change_saved_proxy() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let task = tokio::spawn(async move {
+        for _ in 0..2 {
+            let (mut s, _) = listener.accept().await.unwrap();
+            if http_head(&mut s).await.is_ok() { let _ = s.write_all(b"HTTP/1.1 407 Authentication Required\r\n\r\n").await; }
+        }
+    });
+    let first = first_hop(addr).await;
+    let mut proxy = entry("http-fixture", addr);
+    proxy.kind = crate::space::proxy::ProxyKind::Http;
+    let before = serde_json::to_value(&proxy).unwrap();
+    let prepared = super::prepare(Some(&proxy), &chain(first.addr)).await.unwrap().unwrap();
+    let refusal = crate::space::proxy::probe_on_route(&prepared.effective).await.unwrap_err();
+    assert_eq!(super::profile_failure(&prepared.tunnel, &refusal).code, "proxy_chain_profile_auth_failed");
+    assert_eq!(serde_json::to_value(&proxy).unwrap(), before);
+    prepared.tunnel.shutdown().await;
+    task.abort();
+}
+
 struct Service {
     addr: SocketAddr,
     accepted: Arc<AtomicUsize>,
@@ -264,6 +341,30 @@ fn missing_chain_settings_preserve_old_settings_and_invalid_enabled_settings_ref
     );
     std::fs::write(&path, b"{}").unwrap();
     assert!(!super::saved_settings().unwrap().proxy_chain.enabled);
+}
+
+#[test]
+fn profile_policy_survives_disk_and_export_without_changing_fingerprint() {
+    use crate::space::profile::{save_here, load_raw, SaveOpts, StoredProfile};
+    use super::policy::ChainPolicy;
+    let _root = crate::store::test_root("chain-profile-policy-disk");
+    let mut stored: StoredProfile = serde_json::from_value(json!({"name":"Synthetic policy", "navigator":{"platform":"Win32"},"_meta":{"proxy_id":"kept-proxy","proxy_chain_policy":"disabled"}})).unwrap();
+    let row = save_here(stored, SaveOpts::default()).unwrap();
+    assert_eq!(row.proxy_chain_policy, ChainPolicy::Disabled);
+    stored = load_raw(&row.id).unwrap();
+    let fingerprint = stored.config.clone();
+    stored.meta.proxy_chain_policy = ChainPolicy::Enabled;
+    save_here(stored, SaveOpts::default()).unwrap();
+    let saved = load_raw(&row.id).unwrap();
+    assert_eq!(saved.meta.proxy_chain_policy, ChainPolicy::Enabled);
+    assert_eq!(saved.meta.proxy_id.as_deref(), Some("kept-proxy"));
+    assert_eq!(saved.config, fingerprint);
+    let roundtrip: StoredProfile = serde_json::from_value(serde_json::to_value(&saved).unwrap()).unwrap();
+    assert_eq!(roundtrip.meta.proxy_chain_policy, ChainPolicy::Enabled);
+    let mut bad = roundtrip;
+    bad.meta.proxy_chain_policy = ChainPolicy::Invalid;
+    assert!(save_here(bad, SaveOpts::default()).is_err());
+    assert_eq!(load_raw(&row.id).unwrap().meta.proxy_chain_policy, ChainPolicy::Enabled);
 }
 
 #[tokio::test]

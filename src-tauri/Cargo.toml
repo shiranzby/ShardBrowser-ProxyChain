@@ -21,6 +21,7 @@ default = ["automation"]
 automation = ["dep:wasmtime", "dep:wreq", "dep:wreq-util", "dep:postgres", "dep:mysql", "dep:mongodb"]
 
 [dev-dependencies]
+rcgen = "0.13"
 # `oneshot` on the router, so the API can be exercised without binding a port.
 tower = { version = "0.5", features = ["util"] }
 # A real team server in-process, for the team client's tests.

@@ -2,6 +2,7 @@ import { PropertySheet } from "../../../shared/ui/peek";
 import { useT } from "../../../shared/i18n";
 import { patchDraft, patchForm, type ProfileFormDraft } from "../model/useProfileForm";
 import { ProxyRow } from "./fields";
+import { ChainPolicyField } from "../../../shared/ui/ChainPolicyField";
 
 /// Proxy: the picker ("No proxy", every proxy, a search), and a new proxy
 /// from a pasted line, added only when the form is saved. The walk through
@@ -19,6 +20,7 @@ export function ProxyTab({ draft }: { draft: ProfileFormDraft }) {
           onNewLine={(newProxyLine) => patchDraft({ newProxyLine })}
         />
       </PropertySheet>
+      <ChainPolicyField profile value={draft.form.proxy_chain_policy} onChange={(proxy_chain_policy) => patchForm({ proxy_chain_policy })} />
       <p className="m-0 text-secondary text-text-soft-400">{t("profileForm.proxyHelp")}</p>
     </div>
   );

@@ -16,6 +16,8 @@ type Result<T> = std::result::Result<T, &'static str>;
 
 #[derive(Deserialize)]
 struct LiveInput {
+    #[serde(default = "default_kind")]
+    kind: String,
     host: String,
     port: u16,
     username: String,
@@ -23,6 +25,7 @@ struct LiveInput {
     system_host: String,
     system_port: u16,
 }
+fn default_kind() -> String { "socks5".into() }
 
 #[derive(Serialize)]
 struct Exit {
@@ -215,7 +218,7 @@ async fn exercise(scope: &Scope, cfg: &LiveInput, report: &mut Report) -> Result
         "live_geo_store_isolation_failed",
     )?;
     let proxy_bytes = serde_json::to_vec(&json!({"proxies": [{
-        "id": proxy_id, "name": "Synthetic live Geo proxy", "kind": "socks5",
+        "id": proxy_id, "name": "Synthetic live Geo proxy", "kind": cfg.kind,
         "host": cfg.host, "port": cfg.port,
         "username": cfg.username, "password": cfg.password
     }]}))

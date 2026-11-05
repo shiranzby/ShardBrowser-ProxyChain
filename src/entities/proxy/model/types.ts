@@ -1,4 +1,5 @@
 export type ProxyEntry = {
+  proxy_chain_policy?: "inherit" | "enabled" | "disabled";
   id: string;
   name: string;
   kind: "socks5" | "http" | "https";

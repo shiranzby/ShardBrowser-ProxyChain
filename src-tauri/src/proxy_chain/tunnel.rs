@@ -44,6 +44,14 @@ impl Tunnel {
         idle_timeout: Duration,
         max_connections: usize,
     ) -> Result<Self, ChainError> {
+        Self::bind_transport(hop, target, connect_timeout, idle_timeout, max_connections, None).await
+    }
+
+    pub(crate) async fn bind_tls(hop: ProxyHop, target: Target, tls: Arc<rustls::ClientConfig>) -> Result<Self, ChainError> {
+        Self::bind_transport(hop, target, connector::CONNECT_TIMEOUT, IDLE_TIMEOUT, MAX_CONNECTIONS, Some(tls)).await
+    }
+
+    async fn bind_transport(hop: ProxyHop, target: Target, connect_timeout: Duration, idle_timeout: Duration, max_connections: usize, tls: Option<Arc<rustls::ClientConfig>>) -> Result<Self, ChainError> {
         connector::validate(&hop, &target)?;
         if max_connections == 0 || connect_timeout.is_zero() || idle_timeout.is_zero() {
             return Err(ChainError::new(
@@ -101,11 +109,17 @@ impl Tunnel {
                             let hop = hop.clone();
                             let target = target.clone();
                             let error = error.clone();
+                            let tls = tls.clone();
                             flows.spawn(async move {
                                 let _slot = slot;
                                 let result = async {
-                                    let remote = connector::connect_with_timeout(&hop, &target, connect_timeout).await?;
-                                    relay(local, remote, idle_timeout).await
+                                    if let Some(tls) = tls {
+                                        let remote = super::tls::connect(&hop, &target, tls, connect_timeout).await?;
+                                        relay(local, remote, idle_timeout).await
+                                    } else {
+                                        let remote = connector::connect_with_timeout(&hop, &target, connect_timeout).await?;
+                                        relay(local, remote, idle_timeout).await
+                                    }
                                 }.await;
                                 if let Err(e) = result {
                                     *error.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
@@ -248,10 +262,10 @@ impl Drop for FlowSlot {
     }
 }
 
-async fn relay(local: TcpStream, remote: TcpStream, idle: Duration) -> Result<(), ChainError> {
+async fn relay<S: AsyncRead + AsyncWrite + Unpin>(local: TcpStream, remote: S, idle: Duration) -> Result<(), ChainError> {
     let last = Arc::new(Mutex::new(Instant::now()));
     let (lr, lw) = local.into_split();
-    let (rr, rw) = remote.into_split();
+    let (rr, rw) = tokio::io::split(remote);
     let transfer = async {
         tokio::try_join!(pump(lr, rw, last.clone()), pump(rr, lw, last.clone()))?;
         Ok(())

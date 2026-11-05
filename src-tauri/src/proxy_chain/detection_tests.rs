@@ -189,6 +189,32 @@ fn config(addr: SocketAddr, mode: &str) -> ProxyChainSettings {
 }
 
 #[tokio::test]
+async fn profile_choice_controls_detection_and_overrides_proxy_then_global() {
+    let _root = crate::store::test_root("chain-policy-detection");
+    let second = http_proxy(None, true).await;
+    let first = http_proxy(Some(second.addr), true).await;
+    let proxies = crate::store::proxies_path().unwrap();
+    let profile = crate::store::profiles_dir().unwrap().join("policy-profile.json");
+    for (global, proxy_policy, profile_policy, chained) in [
+        (true, "enabled", "disabled", false),
+        (true, "disabled", "inherit", false),
+        (false, "disabled", "enabled", true),
+        (false, "enabled", "inherit", true),
+        (false, "inherit", "inherit", false),
+    ] {
+        std::fs::write(&proxies, json!({"proxies":[{"id":"policy-proxy","name":"Synthetic","kind":"http","host":"127.0.0.1","port":second.addr.port(),"proxy_chain_policy":proxy_policy}]}).to_string()).unwrap();
+        std::fs::write(&profile, json!({"name":"Synthetic policy","_meta":{"id":"policy-profile","proxy_id":"policy-proxy","proxy_chain_policy":profile_policy}}).to_string()).unwrap();
+        let before = first.requests.lock().unwrap().len();
+        let mut draft = config(first.addr, "http"); draft.enabled = global;
+        let dto = serde_json::to_value(super::test("profile".into(), draft, Some("policy-profile".into())).await.unwrap()).unwrap();
+        assert_eq!(dto["profile_proxy"]["state"], "ok", "{dto}");
+        assert_eq!(dto["exit_ip"], "198.51.100.44");
+        assert_eq!(first.requests.lock().unwrap().len() > before, chained);
+        assert_eq!(dto["system_proxy"]["state"], if chained { "ok" } else { "not_tested" });
+    }
+}
+
+#[tokio::test]
 async fn system_http_detection_returns_live_geo_through_the_same_authenticated_hop() {
     let _root = crate::store::test_root("chain-system-http-geo");
     // Saved enabled chaining must not wrap the first hop a second time.

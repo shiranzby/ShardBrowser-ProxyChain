@@ -208,6 +208,7 @@ async fn list_profiles() -> ApiResult {
                 "name": m.name,
                 "notes": m.notes,
                 "proxy_id": m.proxy_id,
+                "proxy_chain_policy": m.proxy_chain_policy,
                 "last_launched_at": m.last_launched_at,
                 "created_at": m.created_at,
                 "pinned": m.pinned,
@@ -260,6 +261,7 @@ async fn new_fingerprint_impl(platform: Option<String>) -> ApiResult {
 
 #[derive(Deserialize)]
 struct CreateReq {
+    proxy_chain_policy: Option<crate::proxy_chain::policy::ChainPolicy>,
     name: Option<String>,
     notes: Option<String>,
     proxy_id: Option<String>,
@@ -306,6 +308,7 @@ async fn persist_created(door: Door, t: &Ticket, folder_override: Option<String>
         validate_extension_ids(ids)?;
         meta["extensions"] = json!(ids);
     }
+    if let Some(choice) = body.proxy_chain_policy { choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?; meta["proxy_chain_policy"] = json!(choice); }
     let mut inline_proxy = false;
     if let Some(pid) = body.proxy_id.as_ref() {
         meta["proxy_id"] = json!(pid);
@@ -483,6 +486,7 @@ async fn delete_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>)
 
 #[derive(Deserialize)]
 struct EditReq {
+    proxy_chain_policy: Option<crate::proxy_chain::policy::ChainPolicy>,
     name: Option<String>,
     notes: Option<String>,
     /// "" unfiles.
@@ -545,6 +549,7 @@ async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, J
     if let Some(n) = body.notes.as_ref() {
         stored.config.insert("notes".into(), json!(n));
     }
+    if let Some(choice) = body.proxy_chain_policy { choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?; stored.meta.proxy_chain_policy = choice; }
     if let Some(pid) = body.proxy_id.as_ref() {
         stored.meta.proxy_id = if pid.is_empty() { None } else { Some(pid.clone()) };
         stored.meta.inline_proxy = None;
@@ -716,6 +721,7 @@ async fn list_fingerprints() -> ApiResult {
 
 #[derive(Deserialize)]
 struct AddProxyReq {
+    proxy_chain_policy: Option<crate::proxy_chain::policy::ChainPolicy>,
     /// "scheme://user:pass@host:port" or "host:port:user:pass"; wins over fields.
     proxy: Option<String>,
     /// socks5 | http | https (default socks5).
@@ -748,6 +754,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
             _ => crate::space::proxy::ProxyKind::Socks5,
         };
         crate::space::proxy::ProxyEntry {
+            proxy_chain_policy: Default::default(),
             id: String::new(),
             name: String::new(),
             kind,
@@ -760,6 +767,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
         }
     };
     // metadata overrides (applied to parsed entries too).
+    if let Some(choice) = body.proxy_chain_policy { choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?; entry.proxy_chain_policy = choice; }
     if let Some(n) = body.name.filter(|s| !s.is_empty()) {
         entry.name = n;
     }
@@ -1371,6 +1379,25 @@ mod tests {
         assert_eq!(router().oneshot(req).await.unwrap().status(), StatusCode::CONFLICT);
         let (_, _, all) = authed("GET", "/profiles", None).await;
         assert_eq!(all, json!([]));
+    }
+
+    #[tokio::test]
+    async fn api_proxy_chain_choice_roundtrips_and_rejects_unknown_without_writes() {
+        let _serial = crate::migrate::serial();
+        let _root = crate::store::test_root("api-chain-policy").with_config();
+        let (status, _, made) = authed("POST", "/profiles", Some(json!({"name":"Policy", "fingerprint":{}, "proxy_chain_policy":"disabled"}))).await;
+        assert_eq!(status, StatusCode::OK, "{made}");
+        let path = format!("/profiles/{}", made["id"].as_str().unwrap());
+        let (_, _, loaded) = authed("GET", &path, None).await;
+        assert_eq!(loaded["_meta"]["proxy_chain_policy"], "disabled");
+        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"enabled"}))).await;
+        assert_eq!(status, StatusCode::OK);
+        let (_, _, before) = authed("GET", &path, None).await;
+        assert_eq!(before["_meta"]["proxy_chain_policy"], "enabled");
+        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"future", "name":"Must not write"}))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let (_, _, after) = authed("GET", &path, None).await;
+        assert_eq!(after, before);
     }
 
     /// The local API in a team's space, against a real team server in-process.

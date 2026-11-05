@@ -52,6 +52,8 @@ fn write_atomic(path: &Path, body: &[u8]) -> Result<()> {
 /// Launcher-side view of a profile (wraps raw FingerprintConfig JSON).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileMeta {
+    #[serde(default)]
+    pub proxy_chain_policy: crate::proxy_chain::policy::ChainPolicy,
     pub id: String,
     pub name: String,
     pub notes: String,
@@ -132,6 +134,8 @@ pub struct StoredMeta {
     pub id: String,
     #[serde(default)]
     pub proxy_id: Option<String>,
+    #[serde(default, skip_serializing_if = "crate::proxy_chain::policy::ChainPolicy::is_inherit")]
+    pub proxy_chain_policy: crate::proxy_chain::policy::ChainPolicy,
     #[serde(default)]
     pub last_launched_at: Option<String>,
     /// "@<unix_secs>" creation marker.
@@ -280,6 +284,7 @@ pub(in crate::space) fn list_all() -> Result<Vec<ProfileMeta>> {
             .unwrap_or("")
             .to_string();
         out.push(ProfileMeta {
+            proxy_chain_policy: stored.meta.proxy_chain_policy,
             id: stored.meta.id,
             name,
             notes,
@@ -446,6 +451,8 @@ pub(in crate::space) fn fill_missing_window(id: &str, window: serde_json::Value)
 }
 
 pub(in crate::space) fn save_raw(stored: &mut StoredProfile) -> Result<()> {
+    stored.meta.proxy_chain_policy.validate()?;
+    if let Some(proxy) = &stored.meta.inline_proxy { proxy.proxy_chain_policy.validate()?; }
     let _guard = file_lock();
     save_raw_locked(stored)
 }
@@ -462,6 +469,7 @@ fn save_raw_new_locked(stored: &mut StoredProfile, id: String) -> Result<()> {
 /// Body of `save_raw` for callers already holding the lock. It reloads the file
 /// itself, so a caller that loaded first must hold the lock across both halves.
 fn save_raw_locked(stored: &mut StoredProfile) -> Result<()> {
+    stored.meta.proxy_chain_policy.validate()?;
     let is_new = stored.meta.id.is_empty();
     if is_new {
         stored.meta.id = uuid::Uuid::new_v4().to_string();
@@ -592,6 +600,7 @@ pub(in crate::space) fn clone_profile(id: &str) -> Result<ProfileMeta> {
     let new_id = std::mem::take(&mut src.meta.id);
     save_raw_new_locked(&mut src, new_id)?;
     Ok(ProfileMeta {
+        proxy_chain_policy: src.meta.proxy_chain_policy,
         id: src.meta.id,
         name,
         notes: src
