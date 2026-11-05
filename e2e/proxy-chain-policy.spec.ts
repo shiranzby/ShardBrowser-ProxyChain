@@ -29,6 +29,7 @@ test("proxy choice is editable without touching credentials and cancel writes no
   await page.getByRole("option", { name: "Use first hop for this proxy", exact: true }).click();
   await d.getByRole("button", { name: "Save", exact: true }).click();
   await expect(d).toBeHidden();
+  await expect(page.locator("aside[data-peek='proxy'] [data-property='chain-policy']")).toContainText("Use first hop for this proxy");
   const after = await page.evaluate(() => (window as any).__shardxMock.state.proxies.find((p: any) => p.id === "px-jp-1"));
   expect(after).toEqual({ ...before, proxy_chain_policy: "enabled" });
   d = await edit();
@@ -40,6 +41,8 @@ test("proxy choice is editable without touching credentials and cancel writes no
   const discard = page.getByRole("button", { name: /Discard|Don’t save|Don't save/i });
   if (await discard.count()) await discard.last().click();
   expect(await page.evaluate(() => (window as any).__shardxMock.state.proxies.find((p: any) => p.id === "px-jp-1").proxy_chain_policy)).toBe("enabled");
+  await expect(page.locator("[data-chain-choice-note]")).toContainText("profile choice overrides");
+  await page.locator("aside[data-peek='proxy']").screenshot({ path: info.outputPath("proxy-choice-summary.png"), animations: "disabled" });
 });
 
 for (const language of ["zh", "ru"]) {

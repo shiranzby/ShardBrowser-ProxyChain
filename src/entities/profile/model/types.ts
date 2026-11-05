@@ -9,7 +9,9 @@ export type ProfileMeta = {
   proxy_chain_policy?: "inherit" | "enabled" | "disabled";
   id: string;
   name: string;
-  notes: string;
+  /** Null while a password locks it (`protected`). */
+  notes: string | null;
+  /** Null for no proxy, and while a password locks it: unknown then. */
   proxy_id: string | null;
   last_launched_at: string | null;
   created_at: string | null;
@@ -40,6 +42,9 @@ export type ProfileMeta = {
   open_on?: OpenOn;
   /** A team row's tag ids, from its card; personal rows take theirs from tag_list. */
   tags?: string[];
+  /** Sealed by its own password (#127): notes and proxy are null, `mobile` false and
+   *  `extensions` empty until it is unlocked. Absent from builds before it. */
+  protected?: boolean;
 };
 
 /** What this member may do with one team profile (perm.rs `Rights`). */

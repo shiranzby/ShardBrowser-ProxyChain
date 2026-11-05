@@ -33,6 +33,12 @@ export function Details({ proxy: p }: { proxy: ProxyEntry }) {
       {/* 2 px between 32 px rows, as the profile panel's. */}
       <div className="flex flex-col gap-[2px]">
         {row("type", t("proxyEditor.typeLabel"), KIND[p.kind])}
+        {row("chain-policy", t("proxyChain.policyLabel"), t(
+          p.proxy_chain_policy === "enabled" ? "proxyChain.policyEnabled"
+            : p.proxy_chain_policy === "disabled" ? "proxyChain.policyDisabled"
+              : !p.proxy_chain_policy || p.proxy_chain_policy === "inherit" ? "proxyChain.policyInherit"
+                : "proxyChain.errorPolicy"
+        ), { wrap: true })}
         {row("host", t("proxyEditor.hostLabel"), p.host, { mono: true, selectable: true })}
         {row("port", t("proxyEditor.portLabel"), p.port, { mono: true, selectable: true })}
         {row("username", t("proxyEditor.usernameLabel"), p.username || none, { empty: !p.username, selectable: !!p.username })}
@@ -71,6 +77,7 @@ export function Details({ proxy: p }: { proxy: ProxyEntry }) {
         </PropertyRow>
         {row("notes", t("proxyPeek.notes"), p.notes || t("peek.noNotes"), { empty: !p.notes, wrap: true, selectable: !!p.notes })}
       </div>
+      <p data-chain-choice-note className="m-0 text-help text-text-sub-600">{t("proxyChain.policyHelp")}</p>
       <Signature proxy={p} />
     </PropertySheet>
   );
