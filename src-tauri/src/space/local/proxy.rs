@@ -1455,6 +1455,45 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
 mod tests {
     use super::*;
 
+    #[test]
+    fn proxy_chain_cached_test_uses_saved_proxy_or_frozen_profile_policy_not_only_global() {
+        use crate::proxy_chain::policy::ChainPolicy;
+        use serde_json::json;
+        use crate::space::proxy;
+        let _root = crate::store::test_root("chain-policy-history");
+        let id = format!("history-{}", uuid::Uuid::new_v4());
+        // Reproduce another test/UI reader having loaded the process-wide cache.
+        assert!(proxy::history(&id).unwrap().is_empty());
+        std::fs::write(crate::store::settings_path().unwrap(), r#"{"proxy_chain":{"enabled":true}}"#).unwrap();
+        std::fs::write(crate::store::proxies_path().unwrap(), json!({"proxies":[{
+            "id":&id, "name":"Synthetic history", "kind":"http", "host":"127.0.0.1", "port":1,
+            "proxy_chain_policy":"disabled"
+        }]}).to_string()).unwrap();
+        let direct = json!({
+            "first_seen":"@1", "last_seen":"@1", "ip":"192.0.2.1", "country_code":"JP", "country":"Japan",
+            "region":"", "city":"", "isp":"", "timezone":"Asia/Tokyo", "latitude":0.0, "longitude":0.0,
+            "tcp_ms":1, "udp_ms":2, "udp_error":null, "provider":"synthetic"
+        });
+        let mut chained = direct.clone();
+        chained["transport"] = json!("proxy_chain");
+        chained["ip"] = json!("192.0.2.2");
+        chained["udp_ms"] = json!(null);
+        record_test(&id, serde_json::from_value(direct).unwrap()).unwrap();
+        record_test(&id, serde_json::from_value(chained).unwrap()).unwrap();
+        // The list follows the stored proxy's explicit off despite global on.
+        assert_eq!(proxy::latest_test(&id).unwrap().ip, "192.0.2.1");
+        let mut runtime = proxy::get(&id).unwrap().unwrap();
+        runtime.proxy_chain_policy = ChainPolicy::Enabled;
+        assert_eq!(proxy::latest_test_for(&runtime).unwrap().ip, "192.0.2.2");
+        runtime.proxy_chain_policy = ChainPolicy::Disabled;
+        assert_eq!(proxy::latest_test_for(&runtime).unwrap().udp_ms, Some(2));
+        runtime.proxy_chain_policy = ChainPolicy::Invalid;
+        assert!(proxy::latest_test_for(&runtime).is_none());
+        assert_eq!(proxy::get(&id).unwrap().unwrap().proxy_chain_policy, ChainPolicy::Disabled);
+        delete(&id).unwrap();
+        assert!(history(&id).unwrap().is_empty());
+    }
+
     #[tokio::test]
     async fn chain_measure_keeps_a_safe_configuration_error_and_old_history_still_loads() {
         let _root = crate::store::test_root("chain-error-history");
