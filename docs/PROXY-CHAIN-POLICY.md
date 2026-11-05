@@ -18,7 +18,11 @@ this is not a separate first-hop server per profile.
 
 Local API `POST /profiles` and `PATCH /profiles/{id}` accept
 `proxy_chain_policy`. `GET /profiles/{id}` keeps it inside `_meta`; the list also
-returns the policy. `POST /proxies` accepts the same field. Profile JSON
+returns the policy. `POST /proxies` accepts the same field; its response and
+`GET /proxies` also return it without credentials. Proxy history used as an
+unchained launch fallback is filtered by the resolved profile policy, not only
+the global switch. Team and local proxy deduplication both include the policy.
+Profile JSON
 export/import, clone and the opaque team/sync payload retain the choice. Older
 unpatched clients may discard fields they do not understand: use the patched
 version on every machine that edits these records. No claim is made that an old

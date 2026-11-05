@@ -443,6 +443,7 @@ pub async fn save_proxy_for_binding(
     let own = bound_id.filter(|b| !b.is_empty()).and_then(|b| {
         held.into_iter().find(|p| {
             p.id == b && p.kind == entry.kind && p.host == entry.host && p.port == entry.port && p.username == entry.username
+                && p.proxy_chain_policy == entry.proxy_chain_policy
         })
     });
     match own {

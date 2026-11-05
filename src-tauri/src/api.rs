@@ -788,6 +788,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
         "host": stored.host,
         "port": stored.port,
         "country": stored.country,
+        "proxy_chain_policy": stored.proxy_chain_policy,
     })))
 }
 
@@ -813,6 +814,7 @@ async fn list_proxies() -> ApiResult {
                 "host": p.host,
                 "port": p.port,
                 "country": p.country,
+                "proxy_chain_policy": p.proxy_chain_policy,
             })
         })
         .collect();
@@ -1400,6 +1402,31 @@ mod tests {
         assert_eq!(after, before);
     }
 
+    #[tokio::test]
+    async fn api_proxy_chain_defaults_are_returned_without_credentials() {
+        let _serial = crate::migrate::serial();
+        let _root = crate::store::test_root("api-proxy-chain-defaults").with_config();
+        for policy in ["inherit", "enabled", "disabled"] {
+            let mut body = json!({ "proxy": "203.0.113.8:1080:synthetic-user:synthetic-password" });
+            if policy != "inherit" { body["proxy_chain_policy"] = json!(policy); }
+            let (status, _, made) = authed("POST", "/proxies", Some(body)).await;
+            assert_eq!(status, StatusCode::OK, "{made}");
+            assert_eq!(made["proxy_chain_policy"], policy);
+            assert!(made.get("username").is_none() && made.get("password").is_none());
+        }
+        let (status, _, listed) = authed("GET", "/proxies", None).await;
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        let rows = listed.as_array().unwrap();
+        assert_eq!(rows.len(), 3, "different route choices must not be deduplicated");
+        for policy in ["inherit", "enabled", "disabled"] {
+            assert!(rows.iter().any(|p| p["proxy_chain_policy"] == policy));
+        }
+        assert!(!listed.to_string().contains("synthetic-"), "proxy responses must not expose credentials");
+        let (status, _, _) = authed("POST", "/proxies", Some(json!({ "proxy": "203.0.113.9:1080", "proxy_chain_policy": "future" }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(authed("GET", "/proxies", None).await.2, listed);
+    }
+
     /// The local API in a team's space, against a real team server in-process.
     mod in_a_team {
         use super::*;
@@ -1743,6 +1770,38 @@ mod tests {
             let (status, got) = t.call("PATCH", "/profiles/p-1", Some(json!({ "folder": "Shops" }))).await;
             assert_eq!(status, StatusCode::OK, "{got}");
             assert_eq!(t.on_server("p-1").await["folder"], "Shops");
+            drop(t.srv);
+        }
+
+        #[tokio::test]
+        async fn team_bound_proxy_password_update_keeps_route_choices_separate() {
+            use crate::proxy_chain::policy::ChainPolicy;
+            let t = Team::as_admin().await;
+            t.enter().await;
+            let tk = Ticket::now();
+            let mut entry = crate::space::proxy::parse_single("203.0.113.5:1080:synthetic-user:synthetic-old").unwrap();
+            entry.proxy_chain_policy = ChainPolicy::Enabled;
+            let original = crate::space::proxy::upsert(Door("proxy_save"), &tk, entry.clone()).await.unwrap();
+
+            entry.proxy_chain_policy = ChainPolicy::Disabled;
+            entry.password = "synthetic-new".into();
+            let separate = crate::space::proxy::upsert_for_binding(Door("proxy_save"), &tk, entry.clone(), Some(&original.id)).await.unwrap();
+            assert_ne!(separate.id, original.id, "a changed route choice must not mutate the bound proxy");
+            assert_eq!(separate.proxy_chain_policy, ChainPolicy::Disabled);
+            assert_eq!(serde_json::to_value(crate::space::proxy::get(&original.id).unwrap().unwrap()).unwrap(), serde_json::to_value(&original).unwrap());
+
+            entry.password = "synthetic-rotated".into();
+            let rotated = crate::space::proxy::upsert_for_binding(Door("proxy_save"), &tk, entry, Some(&separate.id)).await.unwrap();
+            assert_eq!(rotated.id, separate.id, "the same route still supports a password-only update");
+            assert_eq!(rotated.proxy_chain_policy, ChainPolicy::Disabled);
+            assert_eq!(rotated.password, "synthetic-rotated");
+            let (status, listed) = t.call("GET", "/proxies", None).await;
+            assert_eq!(status, StatusCode::OK, "{listed}");
+            let rows = listed.as_array().unwrap();
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows.iter().find(|p| p["id"] == original.id).unwrap()["proxy_chain_policy"], "enabled");
+            assert_eq!(rows.iter().find(|p| p["id"] == rotated.id).unwrap()["proxy_chain_policy"], "disabled");
+            assert!(!listed.to_string().contains("synthetic-"));
             drop(t.srv);
         }
 

@@ -624,7 +624,7 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
                         );
                         true
                     } else {
-                        let cached = proxy::latest_test(&p.id).and_then(|s| s.udp_ms).is_some();
+                        let cached = proxy::latest_test_for(p).and_then(|s| s.udp_ms).is_some();
                         eprintln!(
                             "[launcher] UDP probe failed for proxy {} ({e}) while this \
                              process CAN send UDP, so the proxy has no relay; cached={cached}",
@@ -741,7 +741,7 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
     } else if let Some(p) = input.proxy.as_ref() {
         match proxy::geo_check(p, None).await {
             Ok(g) if !g.ip.is_empty() => Some(g.ip),
-            _ => proxy::latest_test(&p.id)
+            _ => proxy::latest_test_for(p)
                 .map(|s| s.ip)
                 .filter(|ip| !ip.is_empty()),
         }
@@ -1081,7 +1081,7 @@ async fn resolve_auto_fields(
                 Ok(g) => { source = "proxy-live"; Some(g) }
                 Err(e) => {
                     eprintln!("[launcher] proxy geo failed: {e} — falling back to cached snapshot");
-                    if let Some(snap) = proxy::latest_test(&p.id) {
+                    if let Some(snap) = proxy::latest_test_for(p) {
                         if !snap.country_code.is_empty() || !snap.timezone.is_empty() {
                             source = "cached-snapshot";
                             Some(proxy::GeoInfo {

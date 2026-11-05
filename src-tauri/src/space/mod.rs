@@ -696,8 +696,15 @@ pub mod proxy {
     }
 
     pub fn latest_test(id: &str) -> Option<TestSnapshot> {
-        let enabled = crate::proxy_chain::saved_settings().ok()?.proxy_chain.enabled;
-        history(id).ok()?.into_iter().rev().find(|s| (s.transport.as_deref() == Some("proxy_chain")) == enabled)
+        latest_test_for(&get(id).ok()??)
+    }
+
+    /// Launch passes its in-memory proxy with the resolved profile policy.
+    /// The proxy list instead uses the saved proxy's policy via latest_test.
+    pub fn latest_test_for(entry: &ProxyEntry) -> Option<TestSnapshot> {
+        let settings = crate::proxy_chain::saved_settings().ok()?;
+        let enabled = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy).ok()?.enabled;
+        history(&entry.id).ok()?.into_iter().rev().find(|s| (s.transport.as_deref() == Some("proxy_chain")) == enabled)
     }
 }
 

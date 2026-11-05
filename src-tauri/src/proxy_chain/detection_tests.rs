@@ -214,6 +214,40 @@ async fn profile_choice_controls_detection_and_overrides_proxy_then_global() {
     }
 }
 
+#[test]
+fn cached_test_uses_saved_proxy_or_frozen_profile_policy_not_only_global() {
+    use super::policy::ChainPolicy;
+    use crate::space::proxy;
+    let _root = crate::store::test_root("chain-policy-history");
+    std::fs::write(crate::store::settings_path().unwrap(), r#"{"proxy_chain":{"enabled":true}}"#).unwrap();
+    std::fs::write(crate::store::proxies_path().unwrap(), json!({"proxies":[{
+        "id":"history-proxy", "name":"Synthetic history", "kind":"http", "host":"127.0.0.1", "port":1,
+        "proxy_chain_policy":"disabled"
+    }]}).to_string()).unwrap();
+    let direct = json!({
+        "first_seen":"@1", "last_seen":"@1", "ip":"192.0.2.1", "country_code":"JP", "country":"Japan",
+        "region":"", "city":"", "isp":"", "timezone":"Asia/Tokyo", "latitude":0.0, "longitude":0.0,
+        "tcp_ms":1, "udp_ms":2, "udp_error":null, "provider":"synthetic"
+    });
+    let mut chained = direct.clone();
+    chained["transport"] = json!("proxy_chain");
+    chained["ip"] = json!("192.0.2.2");
+    chained["udp_ms"] = json!(null);
+    std::fs::write(crate::store::config_root().unwrap().join("proxies-history.json"), json!({
+        "by_proxy":{"history-proxy":[direct, chained]}
+    }).to_string()).unwrap();
+    // The list follows the stored proxy's explicit off despite global on.
+    assert_eq!(proxy::latest_test("history-proxy").unwrap().ip, "192.0.2.1");
+    let mut runtime = proxy::get("history-proxy").unwrap().unwrap();
+    runtime.proxy_chain_policy = ChainPolicy::Enabled;
+    assert_eq!(proxy::latest_test_for(&runtime).unwrap().ip, "192.0.2.2");
+    runtime.proxy_chain_policy = ChainPolicy::Disabled;
+    assert_eq!(proxy::latest_test_for(&runtime).unwrap().udp_ms, Some(2));
+    runtime.proxy_chain_policy = ChainPolicy::Invalid;
+    assert!(proxy::latest_test_for(&runtime).is_none());
+    assert_eq!(proxy::get("history-proxy").unwrap().unwrap().proxy_chain_policy, ChainPolicy::Disabled);
+}
+
 #[tokio::test]
 async fn system_http_detection_returns_live_geo_through_the_same_authenticated_hop() {
     let _root = crate::store::test_root("chain-system-http-geo");
