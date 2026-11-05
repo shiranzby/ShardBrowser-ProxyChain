@@ -1,4 +1,8 @@
 {
+  "settings.simpleNavigation": "简洁导航",
+  "settings.simpleNavigationHelp": "保存后，扩展、书签、项目和 ProxyShard 收进“更多”。全部功能和快捷键仍然可用。",
+  "sidebar.morePages": "更多",
+  "sidebar.fewerPages": "收起更多页面",
   "proxyChain.policyLabel": "代理链使用方式",
   "proxyChain.policyInherit": "跟随全局设置",
   "proxyChain.policyInheritProfile": "跟随代理与全局设置",

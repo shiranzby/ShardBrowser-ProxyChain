@@ -172,7 +172,7 @@ export function SettingsPage() {
             <h2 className="m-0 text-panel-title text-text-strong-950">{t(TAB_LABEL[tab])}</h2>
             {draft.s && draft.saved
               // Keyed by the discards, so a field that holds text of its own starts over.
-              ? <Section key={draft.epoch} s={draft.s} saved={draft.saved} setS={draft.set} p={draft.p} setP={draft.setP} api={api} setApi={setApi} apiError={apiError} retryApi={refreshApi} />
+              ? <Section key={draft.epoch} s={draft.s} saved={draft.saved} setS={draft.set} p={draft.p} setP={draft.setP} saving={draft.state === "saving"} api={api} setApi={setApi} apiError={apiError} retryApi={refreshApi} />
               : !draft.getError && <LoadingRows rows={4} rowHeight={56} />}
           </TabPanel>
         </div>

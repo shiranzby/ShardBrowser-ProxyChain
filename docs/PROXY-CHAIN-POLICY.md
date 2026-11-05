@@ -1,4 +1,4 @@
-# Per-profile route choice and HTTP/HTTPS second hops (pc5)
+# Per-profile route choice and HTTP/HTTPS second hops (pc6)
 
 Each saved profile `_meta.proxy_chain_policy` and saved proxy
 `proxy_chain_policy` accepts `inherit`, `enabled`, or `disabled`. Missing fields
@@ -42,6 +42,19 @@ HTTPS websites. Select `http` only after verifying the actual endpoint; never
 silently downgrade a saved `https` entry. An IP HTTPS endpoint must have a matching
 IP certificate. HTTP Basic credentials are not protected by proxy TLS in HTTP mode.
 
-pc5 still has TCP-only chains, no QUIC/UDP and no raw-CDP/automation launch in a
+pc6 still has TCP-only chains, no QUIC/UDP and no raw-CDP/automation launch in a
 chained Session. First-hop HTTP/SOCKS5 routes may be automatic Windows settings or
 manual remote endpoints; encrypted subscription protocols are not implemented.
+
+On upstream v2.1.3, password-protected profiles keep the route choice in their
+sealed content, not in the readable stub. Reading a locked stub does not disclose
+its route; editing the choice (even to inherit) through the API requires the
+profile password. Changing that choice updates the profile revision. The saved
+profile-chain test does not unlock a protected profile and reports that a password
+is required; a normal password-authorized start uses the decrypted policy.
+
+The proxy Peek shows its saved default, not a claim about a running profile's
+route. Simple navigation under Settings / Appearance is a separate local UI
+preference: saved manually, complete navigation by default, and no proxy or profile
+data changes. More keeps all secondary destinations available; the current one
+remains visible when the group is folded, and extension update notices remain visible.

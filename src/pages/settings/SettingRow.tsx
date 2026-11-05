@@ -12,6 +12,7 @@ export type SettingsProps = {
   setS: (next: Settings) => void;
   p: LocalPrefs;
   setP: <K extends PrefKey>(key: K, value: LocalPrefs[K]) => void;
+  saving?: boolean;
 };
 
 /// One setting (LAYOUT-16): its name and at most one line of help leading,

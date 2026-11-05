@@ -6,7 +6,7 @@ import { SettingRow, SettingsGroup, type SettingsProps } from "../SettingRow";
 
 // Each shows at once, as a preview, and lives in this window's storage, not in
 // settings.json: it is stored on Save, and Don't save puts the old one back.
-export function AppearanceSection({ p, setP }: SettingsProps) {
+export function AppearanceSection({ p, setP, saving }: SettingsProps) {
   const t = useT();
   const auto = useInterfaceSize((s) => s.auto);
   return (
@@ -54,6 +54,12 @@ export function AppearanceSection({ p, setP }: SettingsProps) {
         title={t("settings.reduceMotion")}
         help={t("settings.motionHelp")}
         control={({ labelId, helpId }) => <Switch aria-labelledby={labelId} aria-describedby={helpId} checked={p.reduceMotion} onChange={(on) => setP("reduceMotion", on)} />}
+      />
+      <SettingRow
+        id="simple-navigation"
+        title={t("settings.simpleNavigation")}
+        help={t("settings.simpleNavigationHelp")}
+        control={({ labelId, helpId }) => <Switch aria-labelledby={labelId} aria-describedby={helpId} disabled={saving} checked={p.simpleNavigation} onChange={(on) => setP("simpleNavigation", on)} />}
       />
     </SettingsGroup>
   );

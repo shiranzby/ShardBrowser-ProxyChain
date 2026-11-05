@@ -30,6 +30,7 @@ import { useNarrowWindow } from "../../shared/hooks/useNarrowWindow";
 import type { RtUpdate, Section } from "../../shared/types";
 import { useNav } from "../../shared/model/navigation";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
+import { useSimpleNavigation } from "../../shared/model/simpleNavigation";
 import { useWhatsNew } from "../../shared/model/whatsNew";
 import { useLang, useT } from "../../shared/i18n";
 import {
@@ -238,6 +239,40 @@ function ExtensionsItem({ compact }: { compact: boolean }) {
       badgeLabel={n > 0 ? (n === 1 ? t("sidebar.extensionUpdatesOne", { n }) : t("sidebar.extensionUpdatesMany", { n })) : undefined}
     />
   );
+}
+
+/// Simple mode folds destinations, not capabilities. The current destination
+/// stays visible even after a deep link or command opens it while folded.
+function SecondaryPages({ compact }: { compact: boolean }) {
+  const t = useT();
+  const simple = useSimpleNavigation((s) => s.enabled);
+  const current = useNav((s) => s.section);
+  const updates = useExtensionUpdates((s) => updatableCount(s.byId));
+  const [open, setOpen] = useState(false);
+  const controls = useId();
+  useEffect(() => { setOpen(false); }, [simple]);
+  const shown = (id: Section) => !simple || open || current === id;
+  const showUpdates = !open && current !== "extensions" && updates > 0;
+  const label = open ? t("sidebar.fewerPages") : t("sidebar.morePages");
+  const updateLabel = t(updates === 1 ? "sidebar.extensionUpdatesOne" : "sidebar.extensionUpdatesMany", { n: updates });
+  return <>
+    {simple && <NavItem
+      size="small" data-nav="more" icon={compact && showUpdates ? <span className="relative flex">
+        <MoreIcon className="size-3.5" />
+        <Badge data-update-count aria-hidden="true" color="warning" size="small" shape="pill" className="absolute -top-2 left-2 min-w-[14px] px-[3px]! leading-none">{updates}</Badge>
+      </span> : <MoreIcon className="size-3.5" />}
+      label={compact && showUpdates ? `${label}: ${updateLabel}` : label} collapsed={compact}
+      aria-expanded={open} aria-controls={controls} onClick={() => setOpen((value) => !value)}
+      badge={showUpdates ? <Badge data-update-count color="warning" size="small">{updates}</Badge> : undefined}
+      badgeLabel={showUpdates ? updateLabel : undefined}
+    />}
+    <div id={controls} data-secondary-pages className="flex flex-col gap-0.5">
+      {shown("extensions") && <ExtensionsItem compact={compact} />}
+      {shown("bookmarks") && <PageItem id="bookmarks" label={t("sidebar.navBookmarks")} icon={<NavBookmarksIcon className="size-3.5" />} compact={compact} />}
+      {shown("automation") && <PageItem id="automation" label={t("sidebar.navProjects")} icon={<NavAutomationIcon className="size-3.5" />} compact={compact} />}
+      {shown("proxyshard") && <PageItem id="proxyshard" label={t("sidebar.navAccountShop")} icon={<NavShopIcon className="size-3.5" />} compact={compact} />}
+    </div>
+  </>;
 }
 
 /// All Profiles: a fixed destination above the user's own lists, so neither
@@ -1053,10 +1088,7 @@ export function Sidebar() {
           <AllProfilesItem compact={compact} />
           <PageItem id="proxies" label={t("sidebar.navProxies")} icon={<RouteIcon className="size-3.5" />} compact={compact} />
           <PageItem id="fingerprints" label={t("sidebar.navFingerprints")} icon={<NavFingerprintsIcon className="size-3.5" />} compact={compact} />
-          <ExtensionsItem compact={compact} />
-          <PageItem id="bookmarks" label={t("sidebar.navBookmarks")} icon={<NavBookmarksIcon className="size-3.5" />} compact={compact} />
-          <PageItem id="automation" label={t("sidebar.navProjects")} icon={<NavAutomationIcon className="size-3.5" />} compact={compact} />
-          <PageItem id="proxyshard" label={t("sidebar.navAccountShop")} icon={<NavShopIcon className="size-3.5" />} compact={compact} />
+          <SecondaryPages compact={compact} />
         </div>
         {/* The lists that grow with the user's data scroll on their own. */}
         <ScrollArea>

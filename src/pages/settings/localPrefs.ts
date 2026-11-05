@@ -5,6 +5,7 @@ import { savedInterfaceSize, useInterfaceSize, type InterfaceSizeChoice } from "
 import { useDirectStart } from "../../shared/model/directStart";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
 import { savedMotion, useMotion } from "../../shared/model/motion";
+import { useSimpleNavigation } from "../../shared/model/simpleNavigation";
 import { currentTheme, previewThemeFromSettings, setThemeFromCommand } from "../../shared/model/theme";
 
 /// The preferences this window keeps in its own storage rather than in
@@ -17,6 +18,7 @@ export type LocalPrefs = {
   theme: Theme;
   size: InterfaceSizeChoice;
   reduceMotion: boolean;
+  simpleNavigation: boolean;
   singleKeys: boolean;
   analytics: boolean;
   askDirect: boolean;
@@ -62,6 +64,10 @@ const PREFS: { [K in PrefKey]: Pref<LocalPrefs[K]> } = {
   singleKeys: {
     stored: () => useKeyPrefs.getState().singleKeys,
     commit: (v) => useKeyPrefs.getState().setSingleKeys(v),
+  },
+  simpleNavigation: {
+    stored: () => useSimpleNavigation.getState().enabled,
+    commit: (v) => useSimpleNavigation.getState().setEnabled(v),
   },
   analytics: { stored: analyticsEnabled, commit: setAnalyticsEnabled },
   askDirect: {

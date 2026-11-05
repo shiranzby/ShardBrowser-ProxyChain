@@ -1,4 +1,8 @@
 {
+  "settings.simpleNavigation": "Simple navigation",
+  "settings.simpleNavigationHelp": "After you save, extensions, bookmarks, projects and ProxyShard move under more. All features and shortcuts remain available.",
+  "sidebar.morePages": "More",
+  "sidebar.fewerPages": "Fewer pages",
   "proxyChain.policyLabel": "Proxy chain choice",
   "proxyChain.policyInherit": "Follow global settings",
   "proxyChain.policyInheritProfile": "Follow proxy and global settings",

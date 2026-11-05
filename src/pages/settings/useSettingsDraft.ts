@@ -14,6 +14,7 @@ import { useDirectStart } from "../../shared/model/directStart";
 import { useInterfaceSize } from "../../shared/model/interfaceSize";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
 import { useMotion } from "../../shared/model/motion";
+import { useSimpleNavigation } from "../../shared/model/simpleNavigation";
 import { PREF_KEYS, prefOf, type LocalPrefs, type PrefKey } from "./localPrefs";
 
 export type { LocalPrefs } from "./localPrefs";
@@ -438,6 +439,7 @@ export function useSettingsDraft() {
   const size = useInterfaceSize((st) => st.choice);
   const reduceMotion = useMotion((st) => st.reduce);
   const singleKeys = useKeyPrefs((st) => st.singleKeys);
+  const simpleNavigation = useSimpleNavigation((st) => st.enabled);
   const askDirect = useDirectStart((st) => st.ask);
   const p: LocalPrefs = {
     lang,
@@ -445,6 +447,7 @@ export function useSettingsDraft() {
     size,
     reduceMotion,
     singleKeys: prefs.singleKeys ?? singleKeys,
+    simpleNavigation: prefs.simpleNavigation ?? simpleNavigation,
     analytics: prefs.analytics ?? analyticsEnabled(),
     askDirect: prefs.askDirect ?? askDirect,
   };

@@ -1,4 +1,8 @@
 {
+  "settings.simpleNavigation": "Упрощённая навигация",
+  "settings.simpleNavigationHelp": "После сохранения расширения, закладки, проекты и ProxyShard будут в разделе «Ещё». Все функции и сочетания клавиш останутся доступны.",
+  "sidebar.morePages": "Ещё",
+  "sidebar.fewerPages": "Свернуть страницы",
   "proxyChain.policyLabel": "Режим цепочки прокси",
   "proxyChain.policyInherit": "По общим настройкам",
   "proxyChain.policyInheritProfile": "По настройкам прокси и общим",
