@@ -126,6 +126,32 @@ try {
         Assert ($a.candidate_commit -eq $b.candidate_commit -and $a.source_tree -eq $b.source_tree) 'Replayed candidate identity changed.'
         Assert ($a.candidate_branch -eq $b.candidate_branch) 'Replayed candidate branch identity changed.'
     }
+    Case 'later-stable-with-unrelated-change-replays-cleanly' {
+        Invoke-Git -C $upstream checkout --detach $base | Out-Null
+        'A later upstream feature, outside the patch.' | Set-Content (Join-Path $upstream 'unrelated.txt') -Encoding utf8
+        Invoke-Git -C $upstream add -- unrelated.txt | Out-Null
+        Invoke-Git -C $upstream -c commit.gpgsign=false commit -m unrelated-upstream-change | Out-Null
+        Invoke-Git -C $upstream tag v2.1.3 | Out-Null
+        $next = [string](Invoke-Git -C $upstream rev-parse HEAD)
+        Fixtures 'v2.1.3' $next
+        Discover
+        $d = Get-Content -Raw $discovery | ConvertFrom-Json
+        Assert ($d.should_build -and $d.upstream_tag -eq 'v2.1.3' -and $d.upstream_commit -eq $next) 'A later stable release was not selected.'
+        $receipts = @()
+        foreach ($suffix in @('a', 'b')) {
+            $target = Join-Path $root "later-candidate-$suffix"
+            $proof = Join-Path $root "later-candidate-$suffix.json"
+            & (Join-Path $PSScriptRoot 'apply-patch.ps1') -ManifestPath $manifestPath -UpstreamTag v2.1.3 -UpstreamCommit $next -CandidatePath $target -OutputPath $proof -SourceRepository $upstream
+            Assert ((Get-Content -Raw (Join-Path $target 'feature.txt')) -match '^patched') 'The patch was lost during the upgrade.'
+            Assert ((Get-Content -Raw (Join-Path $target 'unrelated.txt')) -match '^A later upstream feature') 'The new upstream content was lost.'
+            Assert (([string](Invoke-Git -C $target rev-parse 'HEAD^')) -eq $next) 'The candidate is not based on the new stable commit.'
+            Assert-ProxyChainCleanSource $target
+            $receipt = Get-Content -Raw $proof | ConvertFrom-Json
+            Assert ($receipt.candidate_branch -eq 'pc-ci/v2.1.3-pc1' -and $receipt.upstream_commit -eq $next -and $receipt.patch_sha256 -eq $hash) 'The upgraded candidate provenance is wrong.'
+            $receipts += $receipt
+        }
+        Assert ($receipts[0].candidate_commit -eq $receipts[1].candidate_commit -and $receipts[0].source_tree -eq $receipts[1].source_tree) 'The upgraded candidate is not reproducible.'
+    }
     Case 'patch-conflict-stops-with-conflict-evidence' {
         Invoke-Git -C $upstream checkout --detach $base | Out-Null
         "upstream changed the same line`nsecond line" | Set-Content (Join-Path $upstream 'feature.txt') -Encoding utf8
@@ -169,6 +195,20 @@ try {
         $workflow=Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../.github/workflows/build-portable.yml')
         Assert ($workflow.Contains('name: ShardBrowser-${{ inputs.upstream_tag }}-${{ steps.meta.outputs.patch_revision }}-portable-win-x64-candidate')) 'Artifact name does not use the built patch revision.'
         Assert ($workflow.Contains('"patch_revision=$($r.patch_revision)" >> $env:GITHUB_OUTPUT')) 'Artifact revision is not emitted from build-info.'
+    }
+    Case 'canonical-ui-gate-covers-chain-password-and-navigation' {
+        $verify = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'verify-patch.ps1')
+        $tokens = $null; $parseErrors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($verify, [ref]$tokens, [ref]$parseErrors)
+        Assert ($parseErrors.Count -eq 0) 'The verifier could not be parsed.'
+        $definitions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$uiTests' }, $true))
+        Assert ($definitions.Count -eq 1) 'The UI gate must have one canonical test list.'
+        $listed = @($definitions[0].Right.FindAll({ param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true) | ForEach-Object { $_.Value })
+        $required = @('proxy-chain-settings.spec.ts','proxy-chain-errors.spec.ts','proxy-chain-policy.spec.ts','settings-save.spec.ts','settings-secret.spec.ts','profile-password.spec.ts','sidebar-simple.spec.ts','sidebar.spec.ts')
+        foreach ($name in $required) { Assert ($name -in $listed) "The canonical UI gate omits $name" }
+        Assert (($listed | Sort-Object -Unique).Count -eq $listed.Count) 'The canonical UI test list has duplicates.'
+        Assert ($verify.Contains('foreach ($uiTest in $uiTests)') -and $verify.Contains('Test-Path -LiteralPath (Join-Path $candidate "e2e/$uiTest") -PathType Leaf')) 'Every required UI test must be checked before running.'
+        Assert ($verify.Contains("Step 'ui-browser' 'npx' (@('playwright','test','--config',`$configPath) + `$uiTests + @('--project=dev'))")) 'Playwright must consume the checked canonical UI test list.'
     }
     Case 'portable-build-never-enters-an-installer-bundler' {
         $script=Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'build-portable.ps1')

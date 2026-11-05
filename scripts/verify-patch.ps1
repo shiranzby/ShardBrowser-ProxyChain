@@ -35,8 +35,14 @@ foreach ($tool in @('git','node','npm','cargo','rustc','cmake','nasm','go')) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "Required native build tool is missing from PATH: $tool. Default automation features must not be disabled to bypass this dependency." }
 }
 if (-not (Test-Path -LiteralPath (Join-Path $candidate 'src-tauri/src/proxy_chain/mod.rs'))) { throw 'Proxy-chain Rust module is missing.' }
-$uiTest = Join-Path $candidate 'e2e/proxy-chain-settings.spec.ts'
-if (-not (Test-Path -LiteralPath $uiTest)) { throw 'Proxy-chain settings browser test is missing.' }
+$uiTests = @(
+    'proxy-chain-settings.spec.ts', 'proxy-chain-errors.spec.ts', 'proxy-chain-policy.spec.ts',
+    'settings-save.spec.ts', 'settings-secret.spec.ts', 'profile-password.spec.ts',
+    'sidebar-simple.spec.ts', 'sidebar.spec.ts'
+)
+foreach ($uiTest in $uiTests) {
+    if (-not (Test-Path -LiteralPath (Join-Path $candidate "e2e/$uiTest") -PathType Leaf)) { throw "Required browser test is missing: $uiTest" }
+}
 Push-Location -LiteralPath $candidate
 try {
     Step 'pipeline-offline' 'pwsh' @('-NoProfile','-File',(Join-Path $PSScriptRoot 'test-proxy-chain-pipeline.ps1'),'-OutputDirectory',(Join-Path $output 'pipeline-offline'))
@@ -59,7 +65,7 @@ try {
     $config = New-ProxyChainPlaywrightConfig $candidate $output $node $port
     $configPath = Join-Path $output 'playwright-proxy-chain.config.mjs'
     ('export default ' + ($config | ConvertTo-Json -Depth 12) + ';') | Set-Content -LiteralPath $configPath -Encoding utf8
-    Step 'ui-browser' 'npx' @('playwright','test','--config',$configPath,'proxy-chain-settings.spec.ts','proxy-chain-errors.spec.ts','proxy-chain-policy.spec.ts','settings-save.spec.ts','settings-secret.spec.ts','--project=dev')
+    Step 'ui-browser' 'npx' (@('playwright','test','--config',$configPath) + $uiTests + @('--project=dev'))
     SourceIdentity
     $receipt = [ordered]@{
         schema=1; kind='proxy-chain-verification'; result='passed'; completed_at_utc=[DateTime]::UtcNow.ToString('o')

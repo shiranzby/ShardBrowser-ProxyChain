@@ -1,10 +1,10 @@
 diff --git a/docs/PROXY-CHAIN-POLICY.md b/docs/PROXY-CHAIN-POLICY.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..99e6de32b6798a065ac2493998c61f1b30fd087a
+index 0000000000000000000000000000000000000000..04279282c888baa490808bbe90b9186d9c52ae58
 --- /dev/null
 +++ b/docs/PROXY-CHAIN-POLICY.md
-@@ -0,0 +1,47 @@
-+# Per-profile route choice and HTTP/HTTPS second hops (pc5)
+@@ -0,0 +1,60 @@
++# Per-profile route choice and HTTP/HTTPS second hops (pc6)
 +
 +Each saved profile `_meta.proxy_chain_policy` and saved proxy
 +`proxy_chain_policy` accepts `inherit`, `enabled`, or `disabled`. Missing fields
@@ -48,9 +48,22 @@ index 0000000000000000000000000000000000000000..99e6de32b6798a065ac2493998c61f1b
 +silently downgrade a saved `https` entry. An IP HTTPS endpoint must have a matching
 +IP certificate. HTTP Basic credentials are not protected by proxy TLS in HTTP mode.
 +
-+pc5 still has TCP-only chains, no QUIC/UDP and no raw-CDP/automation launch in a
++pc6 still has TCP-only chains, no QUIC/UDP and no raw-CDP/automation launch in a
 +chained Session. First-hop HTTP/SOCKS5 routes may be automatic Windows settings or
 +manual remote endpoints; encrypted subscription protocols are not implemented.
++
++On upstream v2.1.3, password-protected profiles keep the route choice in their
++sealed content, not in the readable stub. Reading a locked stub does not disclose
++its route; editing the choice (even to inherit) through the API requires the
++profile password. Changing that choice updates the profile revision. The saved
++profile-chain test does not unlock a protected profile and reports that a password
++is required; a normal password-authorized start uses the decrypted policy.
++
++The proxy Peek shows its saved default, not a claim about a running profile's
++route. Simple navigation under Settings / Appearance is a separate local UI
++preference: saved manually, complete navigation by default, and no proxy or profile
++data changes. More keeps all secondary destinations available; the current one
++remains visible when the group is folded, and extension update notices remain visible.
 diff --git a/e2e/proxy-chain-errors.spec.ts b/e2e/proxy-chain-errors.spec.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..a02f550460912d1c782de76c86f888d2439d2638
@@ -117,10 +130,10 @@ index 0000000000000000000000000000000000000000..a02f550460912d1c782de76c86f888d2
 +});
 diff --git a/e2e/proxy-chain-policy.spec.ts b/e2e/proxy-chain-policy.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..f5fb3be499e5e1296842d2455548cfdb0ed01517
+index 0000000000000000000000000000000000000000..c41887710421c414abc74ecae9955e43c37385c5
 --- /dev/null
 +++ b/e2e/proxy-chain-policy.spec.ts
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,64 @@
 +import { expect, test } from "@playwright/test";
 +import { openApp, openEditForm, reloadApp } from "./support/app";
 +
@@ -152,6 +165,7 @@ index 0000000000000000000000000000000000000000..f5fb3be499e5e1296842d2455548cfdb
 +  await page.getByRole("option", { name: "Use first hop for this proxy", exact: true }).click();
 +  await d.getByRole("button", { name: "Save", exact: true }).click();
 +  await expect(d).toBeHidden();
++  await expect(page.locator("aside[data-peek='proxy'] [data-property='chain-policy']")).toContainText("Use first hop for this proxy");
 +  const after = await page.evaluate(() => (window as any).__shardxMock.state.proxies.find((p: any) => p.id === "px-jp-1"));
 +  expect(after).toEqual({ ...before, proxy_chain_policy: "enabled" });
 +  d = await edit();
@@ -163,6 +177,8 @@ index 0000000000000000000000000000000000000000..f5fb3be499e5e1296842d2455548cfdb
 +  const discard = page.getByRole("button", { name: /Discard|Don’t save|Don't save/i });
 +  if (await discard.count()) await discard.last().click();
 +  expect(await page.evaluate(() => (window as any).__shardxMock.state.proxies.find((p: any) => p.id === "px-jp-1").proxy_chain_policy)).toBe("enabled");
++  await expect(page.locator("[data-chain-choice-note]")).toContainText("profile choice overrides");
++  await page.locator("aside[data-peek='proxy']").screenshot({ path: info.outputPath("proxy-choice-summary.png"), animations: "disabled" });
 +});
 +
 +for (const language of ["zh", "ru"]) {
@@ -587,6 +603,169 @@ index 3d83a4011eae7ceef1bbb747526f3a6fb60325f2..bc9a6272ba9a4fb58fdc662ea08a88f7
    await expect(tab(page, "General")).toHaveAttribute("aria-selected", "true");
  });
  
+diff --git a/e2e/sidebar-simple.spec.ts b/e2e/sidebar-simple.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e2cbce0de8bc83c3ee8c53b207cab6dd197c7a51
+--- /dev/null
++++ b/e2e/sidebar-simple.spec.ts
+@@ -0,0 +1,157 @@
++import { expect, test } from "@playwright/test";
++import { openApp, reloadApp } from "./support/app";
++
++const KEY = "shardx.simpleNavigation";
++const advanced = ["extensions", "bookmarks", "automation", "proxyshard"];
++
++test("simple navigation waits out an in-flight save before accepting the next choice", async ({ page }) => {
++  await page.addInitScript(() => Object.assign(window, { __shardxMockSlow: { settings_save: 2500 } }));
++  await openApp(page, { section: "settings" });
++  await page.getByRole("switch", { name: /tray/i }).click();
++  await page.getByRole("tab", { name: "Appearance", exact: true }).click();
++  const choice = page.getByRole("switch", { name: "Simple navigation", exact: true });
++  await choice.check();
++  const bar = page.locator("[data-save-bar]");
++  await bar.getByRole("button", { name: "Save", exact: true }).click();
++  await expect(choice).toBeDisabled();
++  await page.locator("[data-setting='simple-navigation'] [data-setting-help]").click();
++  await expect(choice).toBeChecked();
++  await expect(bar).toHaveCount(0);
++  await expect(choice).toBeEnabled();
++  await choice.uncheck();
++  await expect(bar).toBeVisible();
++  await bar.getByRole("button", { name: "Save", exact: true }).click();
++  await expect(bar).toHaveCount(0);
++  expect(await page.evaluate(key => localStorage.getItem(key), KEY)).toBe("false");
++  await expect(page.locator("[data-nav='more']")).toHaveCount(0);
++});
++
++test("a combined failed save keeps simple navigation unchanged until retry succeeds", async ({ page }) => {
++  await page.addInitScript(() => Object.assign(window, { __shardxMockFail: { settings_save: 1 } }));
++  await openApp(page, { section: "settings" });
++  const tray = page.getByRole("switch", { name: /tray/i });
++  await tray.click();
++  await page.getByRole("tab", { name: "Appearance", exact: true }).click();
++  await page.getByRole("switch", { name: "Simple navigation", exact: true }).check();
++  const bar = page.locator("[data-save-bar]");
++  await bar.getByRole("button", { name: "Save", exact: true }).click();
++  await expect(bar.locator("[data-save-bar-note]")).toBeVisible();
++  await expect(page.locator("[data-nav='more']")).toHaveCount(0);
++  expect(await page.evaluate(key => localStorage.getItem(key), KEY)).toBeNull();
++  await expect(page.getByRole("switch", { name: "Simple navigation", exact: true })).toBeChecked();
++  await bar.getByRole("button", { name: "Save", exact: true }).click();
++  await expect(bar).toHaveCount(0);
++  await expect(page.locator("[data-nav='more']")).toBeVisible();
++  expect(await page.evaluate(key => localStorage.getItem(key), KEY)).toBe("true");
++});
++
++test("simple navigation waits for Save, cancels without writes and survives reload", async ({ page }) => {
++  await openApp(page, { section: "settings", theme: "light" });
++  const data = () => page.evaluate(() => {
++    const s = (window as any).__shardxMock.state;
++    return JSON.stringify({ profiles: s.profiles, proxies: s.proxies, settings: s.settings });
++  });
++  const before = await data();
++  await page.getByRole("tab", { name: "Appearance", exact: true }).click();
++  const choice = page.getByRole("switch", { name: "Simple navigation", exact: true });
++  await choice.check();
++  await expect(page.locator("[data-nav='more']")).toHaveCount(0);
++  await page.locator("[data-save-bar]").getByRole("button", { name: "Don’t save", exact: true }).click();
++  await expect(choice).not.toBeChecked();
++  expect(await page.evaluate(key => localStorage.getItem(key), KEY)).toBeNull();
++  expect(await data()).toBe(before);
++  await choice.check();
++  await page.locator("[data-save-bar]").getByRole("button", { name: "Save", exact: true }).click();
++  await expect(page.locator("[data-save-bar]")).toHaveCount(0);
++  await expect(page.locator("[data-nav='more']")).toHaveAttribute("aria-expanded", "false");
++  for (const id of advanced) await expect(page.locator(`[data-nav='${id}']`)).toHaveCount(0);
++  expect(await data()).toBe(before);
++  await reloadApp(page);
++  await expect(page.locator("[data-nav='more']")).toBeVisible();
++  await page.getByRole("tab", { name: "Appearance", exact: true }).click();
++  await expect(choice).toBeChecked();
++  await choice.uncheck();
++  await page.locator("[data-save-bar]").getByRole("button", { name: "Save", exact: true }).click();
++  await expect(page.locator("[data-nav='more']")).toHaveCount(0);
++  for (const id of advanced) await expect(page.locator(`[data-nav='${id}']`)).toBeVisible();
++});
++
++test("More works by keyboard, retains the selected page and preserves extension update notices", async ({ page }) => {
++  await page.addInitScript(key => localStorage.setItem(key, "true"), KEY);
++  await page.addInitScript(() => Object.assign(window, { __shardxMockExtUpdates: {
++    "cookie-editor": { state: "available", latest: "1.14.0", size: 700000, first_seen: 1 },
++    ublock: { state: "current" },
++  } }));
++  await openApp(page, { theme: "light" });
++  const more = page.locator("[data-nav='more']");
++  await expect(more.locator("[data-update-count]")).toHaveText("1");
++  await expect(more).toHaveAccessibleName("More 1 update available");
++  await page.keyboard.press("ControlOrMeta+\\");
++  await expect(page.locator("[data-region='sidebar']")).toHaveAttribute("data-rail", "true");
++  await expect(more.locator("[data-update-count]")).toHaveText("1");
++  await expect(more).toHaveAccessibleName("More: 1 update available");
++  await page.keyboard.press("ControlOrMeta+\\");
++  await more.focus();
++  await page.keyboard.press("Enter");
++  await expect(more).toHaveAttribute("aria-expanded", "true");
++  for (const id of advanced) await expect(page.locator(`[data-nav='${id}']`)).toBeVisible();
++  await page.locator("[data-nav='bookmarks']").click();
++  await expect(page.locator("main")).toHaveAttribute("data-section", "bookmarks");
++  await more.focus();
++  await page.keyboard.press("Space");
++  await expect(more).toHaveAttribute("aria-expanded", "false");
++  await expect(more).toBeFocused();
++  await expect(page.locator("[data-nav='bookmarks']")).toHaveAttribute("aria-current", "page");
++  await expect(page.locator("[data-nav='extensions']")).toHaveCount(0);
++  // The existing update count moves to More while its destination is folded.
++  await more.click();
++  await expect(page.locator("[data-nav='extensions'] [data-update-count]")).toHaveText("1");
++  await more.click();
++  await expect(more.locator("[data-update-count]")).toHaveText("1");
++  await page.locator("[data-nav='proxies']").click();
++  await expect(page.locator("[data-nav='bookmarks']")).toHaveCount(0);
++  // Command navigation is still offered even though the destination is folded.
++  await page.keyboard.press("ControlOrMeta+k");
++  await page.getByRole("combobox", { name: "Search commands" }).fill("bookmarks");
++  await page.getByRole("option", { name: /^Bookmarks/ }).click();
++  await expect(page.locator("main")).toHaveAttribute("data-section", "bookmarks");
++  await expect(page.locator("[data-nav='bookmarks']")).toHaveAttribute("aria-current", "page");
++});
++
++for (const section of advanced) {
++  test(`simple navigation keeps the ${section} deep link visible`, async ({ page }) => {
++    await page.addInitScript(key => localStorage.setItem(key, "true"), KEY);
++    await openApp(page, { section });
++    await expect(page.locator("main")).toHaveAttribute("data-section", section);
++    await expect(page.locator(`[data-nav='${section}']`)).toHaveAttribute("aria-current", "page");
++    await expect(page.locator("[data-nav='more']")).toHaveAttribute("aria-expanded", "false");
++  });
++}
++
++for (const language of ["zh", "ru"]) {
++  test(`simple navigation and rail remain readable in ${language} at minimum window`, async ({ page }, info) => {
++    await page.setViewportSize({ width: 1024, height: 680 });
++    await page.addInitScript(({ key, lang }) => {
++      localStorage.setItem(key, "true"); localStorage.setItem("shardx.lang", lang);
++    }, { key: KEY, lang: language });
++    await openApp(page, { section: "proxies", theme: "light" });
++    await expect(page.locator("[data-nav='more']")).toBeVisible();
++    await page.screenshot({ path: info.outputPath(`simple-${language}.png`), animations: "disabled" });
++    await page.locator("[data-nav='more']").click();
++    for (const id of advanced) await expect(page.locator(`[data-nav='${id}']`)).toBeInViewport();
++    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
++    await page.keyboard.press("ControlOrMeta+\\");
++    await expect(page.locator("[data-region='sidebar']")).toHaveAttribute("data-rail", "true");
++    await expect(page.locator("[data-nav='more']")).toBeVisible();
++    await page.locator("[data-nav='more']").click();
++    for (const id of advanced) await expect(page.locator(`[data-nav='${id}']`)).toHaveCount(0);
++    await page.screenshot({ path: info.outputPath(`simple-rail-${language}.png`), animations: "disabled" });
++  });
++}
++
++test("unknown stored simple navigation value keeps the complete navigation", async ({ page }) => {
++  await page.addInitScript(key => localStorage.setItem(key, "future"), KEY);
++  await openApp(page);
++  await expect(page.locator("[data-nav='more']")).toHaveCount(0);
++  for (const id of advanced) await expect(page.locator(`[data-nav='${id}']`)).toBeVisible();
++});
 diff --git a/scripts/lib/class-rules.mjs b/scripts/lib/class-rules.mjs
 index 2728094b5be739435166d6cd606210234d72a925..a7a634b22036c026601858c9a725145243df6785 100644
 --- a/scripts/lib/class-rules.mjs
@@ -603,10 +782,10 @@ index 2728094b5be739435166d6cd606210234d72a925..a7a634b22036c026601858c9a7251452
        if (statSync(p).isDirectory()) walk(p);
        else if (/\.(tsx?|jsx?)$/.test(name)) {
 diff --git a/src-tauri/Cargo.lock b/src-tauri/Cargo.lock
-index fec16f012028c3da192b53980473cd9c1f5e5f82..ef7752168ede1fceb8c76b21bab7b1c61dc33ff7 100644
+index 625e8905ea875d4d1f0eac9dc3fd08a6c157ea95..c5012c70b99564c172dcf35df8affc30af3c076d 100644
 --- a/src-tauri/Cargo.lock
 +++ b/src-tauri/Cargo.lock
-@@ -4834,6 +4834,19 @@ dependencies = [
+@@ -4866,6 +4866,19 @@ dependencies = [
   "crossbeam-utils",
  ]
  
@@ -626,7 +805,7 @@ index fec16f012028c3da192b53980473cd9c1f5e5f82..ef7752168ede1fceb8c76b21bab7b1c6
  [[package]]
  name = "redox_syscall"
  version = "0.5.18"
-@@ -5529,6 +5542,7 @@ dependencies = [
+@@ -5562,6 +5575,7 @@ dependencies = [
   "postgres",
   "quick-xml",
   "rand 0.8.8",
@@ -634,7 +813,7 @@ index fec16f012028c3da192b53980473cd9c1f5e5f82..ef7752168ede1fceb8c76b21bab7b1c6
   "reqwest 0.12.28",
   "ring",
   "rusqlite",
-@@ -8824,6 +8838,15 @@ dependencies = [
+@@ -8858,6 +8872,15 @@ dependencies = [
   "rustix",
  ]
  
@@ -651,7 +830,7 @@ index fec16f012028c3da192b53980473cd9c1f5e5f82..ef7752168ede1fceb8c76b21bab7b1c6
  name = "yoke"
  version = "0.8.2"
 diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
-index 327c4074b8586e21ca6b481f9214a2cf8aa1cfac..7ec64f9cfd91942d4e3790a7857636bc6bf27ba6 100644
+index 5581a0210a8f91273bca66cb3b2dee1cdc523332..b6db01358b7b4d731fd77d5597fc632860499afa 100644
 --- a/src-tauri/Cargo.toml
 +++ b/src-tauri/Cargo.toml
 @@ -21,6 +21,7 @@ default = ["automation"]
@@ -662,7 +841,7 @@ index 327c4074b8586e21ca6b481f9214a2cf8aa1cfac..7ec64f9cfd91942d4e3790a7857636bc
  # `oneshot` on the router, so the API can be exercised without binding a port.
  tower = { version = "0.5", features = ["util"] }
  # A real team server in-process, for the team client's tests.
-@@ -121,6 +122,7 @@ libc = "0.2"
+@@ -124,6 +125,7 @@ libc = "0.2"
  aes-gcm = "0.10"
  getrandom = "0.2"
  windows-sys = { version = "0.59", features = [
@@ -698,7 +877,7 @@ index d860e1e6a7cac333c3cc0bc9cb67faf286b07d69..5d36fdbd40e30008637c830f2015d4e5
 +    }
  }
 diff --git a/src-tauri/src/api.rs b/src-tauri/src/api.rs
-index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b480934913 100644
+index c01de7742665846fc43398a4353766e8b10bbb8d..532e5573f29aa4fddfa97ce250f38a02359e880f 100644
 --- a/src-tauri/src/api.rs
 +++ b/src-tauri/src/api.rs
 @@ -208,6 +208,7 @@ async fn list_profiles() -> ApiResult {
@@ -709,7 +888,7 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
                  "last_launched_at": m.last_launched_at,
                  "created_at": m.created_at,
                  "pinned": m.pinned,
-@@ -260,6 +261,7 @@ async fn new_fingerprint_impl(platform: Option<String>) -> ApiResult {
+@@ -261,6 +262,7 @@ async fn new_fingerprint_impl(platform: Option<String>) -> ApiResult {
  
  #[derive(Deserialize)]
  struct CreateReq {
@@ -717,7 +896,7 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
      name: Option<String>,
      notes: Option<String>,
      proxy_id: Option<String>,
-@@ -306,6 +308,7 @@ async fn persist_created(door: Door, t: &Ticket, folder_override: Option<String>
+@@ -307,6 +309,7 @@ async fn persist_created(door: Door, t: &Ticket, folder_override: Option<String>
          validate_extension_ids(ids)?;
          meta["extensions"] = json!(ids);
      }
@@ -725,7 +904,7 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
      let mut inline_proxy = false;
      if let Some(pid) = body.proxy_id.as_ref() {
          meta["proxy_id"] = json!(pid);
-@@ -483,6 +486,7 @@ async fn delete_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>)
+@@ -484,6 +487,7 @@ async fn delete_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>)
  
  #[derive(Deserialize)]
  struct EditReq {
@@ -733,7 +912,17 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
      name: Option<String>,
      notes: Option<String>,
      /// "" unfiles.
-@@ -545,6 +549,7 @@ async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, J
+@@ -532,6 +536,9 @@ fn validate_extension_ids(ids: &[String]) -> Result<(), ApiError> {
+ /// Edit profile; only provided fields change. Returns the updated profile.
+ async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, Json(body): Json<EditReq>) -> ApiResult {
+     let door = Door("PATCH /profiles/:id");
++    if body.proxy_chain_policy.is_some() && body.password.is_none() && space::profile::is_protected(&id) {
++        return Err(err(StatusCode::UNAUTHORIZED, space::profile::PASSWORD_REQUIRED));
++    }
+     let mut stored = match body.password.as_deref() {
+         // Edited whole and sealed again: the file's readable part has nothing to edit.
+         Some(pw) if space::profile::is_protected(&id) => {
+@@ -555,6 +562,7 @@ async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, J
      if let Some(n) = body.notes.as_ref() {
          stored.config.insert("notes".into(), json!(n));
      }
@@ -741,7 +930,7 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
      if let Some(pid) = body.proxy_id.as_ref() {
          stored.meta.proxy_id = if pid.is_empty() { None } else { Some(pid.clone()) };
          stored.meta.inline_proxy = None;
-@@ -716,6 +721,7 @@ async fn list_fingerprints() -> ApiResult {
+@@ -742,6 +750,7 @@ async fn list_fingerprints() -> ApiResult {
  
  #[derive(Deserialize)]
  struct AddProxyReq {
@@ -749,7 +938,7 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
      /// "scheme://user:pass@host:port" or "host:port:user:pass"; wins over fields.
      proxy: Option<String>,
      /// socks5 | http | https (default socks5).
-@@ -748,6 +754,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
+@@ -774,6 +783,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
              _ => crate::space::proxy::ProxyKind::Socks5,
          };
          crate::space::proxy::ProxyEntry {
@@ -757,7 +946,7 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
              id: String::new(),
              name: String::new(),
              kind,
-@@ -760,6 +767,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
+@@ -786,6 +796,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
          }
      };
      // metadata overrides (applied to parsed entries too).
@@ -765,7 +954,7 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
      if let Some(n) = body.name.filter(|s| !s.is_empty()) {
          entry.name = n;
      }
-@@ -780,6 +788,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
+@@ -806,6 +817,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
          "host": stored.host,
          "port": stored.port,
          "country": stored.country,
@@ -773,7 +962,7 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
      })))
  }
  
-@@ -805,6 +814,7 @@ async fn list_proxies() -> ApiResult {
+@@ -831,6 +843,7 @@ async fn list_proxies() -> ApiResult {
                  "host": p.host,
                  "port": p.port,
                  "country": p.country,
@@ -781,7 +970,7 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
              })
          })
          .collect();
-@@ -1373,6 +1383,50 @@ mod tests {
+@@ -1411,6 +1424,74 @@ mod tests {
          assert_eq!(all, json!([]));
      }
  
@@ -829,10 +1018,34 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
 +        assert_eq!(authed("GET", "/proxies", None).await.2, listed);
 +    }
 +
++    #[tokio::test]
++    async fn protected_proxy_chain_choice_requires_password_even_for_inherit() {
++        use crate::proxy_chain::policy::ChainPolicy;
++        let _serial = crate::migrate::serial();
++        let _root = crate::store::test_root("api-protected-chain-choice").with_config();
++        let (status, _, made) = authed("POST", "/profiles", Some(json!({"name":"Protected route", "fingerprint":{}, "proxy_chain_policy":"enabled"}))).await;
++        assert_eq!(status, StatusCode::OK);
++        let id = made["id"].as_str().unwrap();
++        crate::space::profile::protect(id, "synthetic password").unwrap();
++        let path = format!("/profiles/{id}");
++        for choice in ["inherit", "disabled", "enabled"] {
++            let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":choice}))).await;
++            assert_eq!(status, StatusCode::UNAUTHORIZED);
++        }
++        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"disabled", "password":"wrong password"}))).await;
++        assert_eq!(status, StatusCode::UNAUTHORIZED);
++        assert_eq!(crate::space::profile::unlock(id,"synthetic password").unwrap().meta.proxy_chain_policy, ChainPolicy::Enabled);
++        assert_eq!(crate::launch::proxy_for_test(id).unwrap_err().to_string(), crate::space::profile::PASSWORD_REQUIRED);
++        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"disabled", "password":"synthetic password"}))).await;
++        assert_eq!(status, StatusCode::OK);
++        assert_eq!(crate::space::profile::unlock(id,"synthetic password").unwrap().meta.proxy_chain_policy, ChainPolicy::Disabled);
++        assert_eq!(crate::space::profile::load_raw(id).unwrap().meta.proxy_chain_policy, ChainPolicy::Inherit);
++    }
++
      /// The local API in a team's space, against a real team server in-process.
      mod in_a_team {
          use super::*;
-@@ -1719,6 +1773,38 @@ mod tests {
+@@ -1757,6 +1838,38 @@ mod tests {
              drop(t.srv);
          }
  
@@ -872,10 +1085,10 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b4
          async fn a_member_with_the_rights_writes_each_kind_of_change_to_the_team() {
              let all = [Action::See, Action::Start, Action::Edit, Action::Create, Action::Delete];
 diff --git a/src-tauri/src/cdp.rs b/src-tauri/src/cdp.rs
-index a759d290c6827d67db6b39fe0b146fd5124eac23..5a49bc028c5063133ca4b39cc30938d7f57759ca 100644
+index 10be256ee963d34d5dd952626b4e67dcbe73fdb8..c0af4c720b0ce2eb0994008bf25077f1e8c9c98d 100644
 --- a/src-tauri/src/cdp.rs
 +++ b/src-tauri/src/cdp.rs
-@@ -303,6 +303,9 @@ pub fn detach(profile_id: &str) {
+@@ -320,6 +320,9 @@ pub fn detach(profile_id: &str) {
  
  /// Sends a page-scoped command. Every automation action goes through here.
  pub async fn page_call(profile_id: &str, method: &str, params: Value) -> Result<Value> {
@@ -886,16 +1099,19 @@ index a759d290c6827d67db6b39fe0b146fd5124eac23..5a49bc028c5063133ca4b39cc30938d7
      let page = s.page().ok_or_else(|| anyhow!("no page attached"))?;
      s.call(method, params, Some(&page)).await
 diff --git a/src-tauri/src/launch.rs b/src-tauri/src/launch.rs
-index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b323696826171df6 100644
+index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..599cdcaa40d08c923f3d82a2a0c5490e2217e3b6 100644
 --- a/src-tauri/src/launch.rs
 +++ b/src-tauri/src/launch.rs
-@@ -366,6 +366,17 @@ fn bound_proxy(
+@@ -384,6 +384,20 @@ fn bound_proxy(
      }
  }
  
 +/// Test the saved binding under the same Start right, without launching or editing it.
 +pub(crate) fn proxy_for_test(profile_id: &str) -> Result<proxy::ProxyEntry> {
 +    let _pass = perm::start(profile_id)?;
++    if profile::is_protected(profile_id) {
++        anyhow::bail!(profile::PASSWORD_REQUIRED);
++    }
 +    let stored = profile::load_raw(profile_id)?;
 +    let mut entry = bound_proxy(&stored, profile_id, proxy::get)?.ok_or_else(|| anyhow::anyhow!("This profile has no upstream proxy assigned."))?;
 +    stored.meta.proxy_chain_policy.validate()?;
@@ -907,7 +1123,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
  /// Machine switches a team's profile does not take: each would open a door
  /// the team keeps shut (debugging, the data folder, the proxy, extensions).
  fn team_extra_args(args: Vec<String>) -> Vec<String> {
-@@ -542,6 +553,7 @@ pub(crate) async fn launch_with(engine: PathBuf, profile_id: &str, enable_cdp: b
+@@ -576,6 +590,7 @@ pub(crate) async fn launch_with(engine: PathBuf, profile_id: &str, enable_cdp: b
  
  /// What the command line is made from once the slow steps are done.
  struct Ready<'a> {
@@ -915,7 +1131,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
      fp_file: &'a Path,
      icon: Option<&'a Path>,
      /// The profile as the engine reads it: no `_meta`, "auto" resolved.
-@@ -555,14 +567,34 @@ struct Ready<'a> {
+@@ -589,14 +604,34 @@ struct Ready<'a> {
      ext_alone: bool,
  }
  
@@ -952,7 +1168,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
          if matches!(p.kind, proxy::ProxyKind::Socks5) {
              match proxy::probe_udp(p).await {
                  Ok(ms) => {
-@@ -592,7 +624,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -626,7 +661,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
                          );
                          true
                      } else {
@@ -961,7 +1177,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
                          eprintln!(
                              "[launcher] UDP probe failed for proxy {} ({e}) while this \
                               process CAN send UDP, so the proxy has no relay; cached={cached}",
-@@ -613,13 +645,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -647,13 +682,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      // Win/Linux profile whose resolution the operator picked in the editor is
      // left out of it, or the switch would report the host's screen over exactly
      // the one they asked for.
@@ -976,7 +1192,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
      // The proxy probe and the geo lookup are the slow part: a cancel made
      // while they ran stops here, before anything is written.
      check_cancel(&input.profile_id)?;
-@@ -705,10 +736,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -739,10 +773,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      }
  
      // Live geo for ICE-candidate spoofing, cached snapshot as fallback.
@@ -991,7 +1207,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
                  .map(|s| s.ip)
                  .filter(|ip| !ip.is_empty()),
          }
-@@ -723,6 +756,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -757,6 +793,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      let args = command_line(
          &input,
          &Ready {
@@ -999,7 +1215,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
              fp_file: &fp_file,
              icon: icon.as_deref(),
              raw: &raw,
-@@ -764,7 +798,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -798,7 +835,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
          Some(_) => process::spawn_tied(cmd).await.context("start the ShardBrowser engine")?,
          None => (cmd.spawn().context("start the ShardBrowser engine")?, process::Tie::default()),
      };
@@ -1008,7 +1224,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
  
      if let Some(s) = &remote {
          s.spawned(tie, pid);
-@@ -865,8 +899,9 @@ fn command_line(
+@@ -900,8 +937,9 @@ fn command_line(
          args.push("--hide-crash-restore-bubble".into());
      }
  
@@ -1019,7 +1235,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
  
          // QUIC: enable only when proxy UDP relay verified; rely on Alt-Svc upgrade path.
          if ready.proxy_udp_ok {
-@@ -1010,6 +1045,7 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
+@@ -1045,6 +1083,7 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
  async fn resolve_auto_fields(
      cfg: &mut serde_json::Map<String, serde_json::Value>,
      proxy_opt: Option<&proxy::ProxyEntry>,
@@ -1027,7 +1243,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
  ) {
      let want_tz_auto = cfg.get("timezone").and_then(|v| v.as_str()) == Some("auto");
      let want_lang_auto = cfg
-@@ -1036,13 +1072,16 @@ async fn resolve_auto_fields(
+@@ -1071,13 +1110,16 @@ async fn resolve_auto_fields(
  
      // ---- geo source ----
      let mut source = "";
@@ -1046,7 +1262,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
                          if !snap.country_code.is_empty() || !snap.timezone.is_empty() {
                              source = "cached-snapshot";
                              Some(proxy::GeoInfo {
-@@ -1088,7 +1127,7 @@ async fn resolve_auto_fields(
+@@ -1123,7 +1165,7 @@ async fn resolve_auto_fields(
                  }
              }
          }
@@ -1055,7 +1271,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
  
      let host_warn = || {
          if proxy_opt.is_some() {
-@@ -1632,6 +1671,7 @@ mod tests {
+@@ -1667,6 +1709,7 @@ mod tests {
          let fp = PathBuf::from(format!("{}/fingerprint.json", input.udd.display()));
          let icon = PathBuf::from(format!("/runtime/profile-icons/{}.png", input.profile_id));
          let ready = Ready {
@@ -1064,7 +1280,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b3236968
              icon: Some(&icon),
              raw: &raw,
 diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
-index 7b5f25a19557e1c334698ac890709832cf1cc2b7..e3c3a941713a0f550608ba28ffd47ca4b25d3046 100644
+index d1f2216cbc0bc3a4bcbf3289fffe7fbd5e7c5403..4be43f58031561c26ccf25d9b4f0fc3dfab32a65 100644
 --- a/src-tauri/src/lib.rs
 +++ b/src-tauri/src/lib.rs
 @@ -8,6 +8,7 @@ mod launch;
@@ -1075,7 +1291,7 @@ index 7b5f25a19557e1c334698ac890709832cf1cc2b7..e3c3a941713a0f550608ba28ffd47ca4
  mod psapi;
  mod runtime;
  mod settings;
-@@ -1965,7 +1966,23 @@ fn cookies_import(profile_id: String, cookies: Vec<space::cookies::Cookie>) -> R
+@@ -2065,7 +2066,23 @@ fn cookies_import(profile_id: String, cookies: Vec<space::cookies::Cookie>) -> R
  
  #[tauri::command]
  fn settings_get() -> Result<settings::Settings, String> {
@@ -1100,7 +1316,7 @@ index 7b5f25a19557e1c334698ac890709832cf1cc2b7..e3c3a941713a0f550608ba28ffd47ca4
  }
  
  /// The primary monitor in CSS pixels, so the editor can offer resolutions and
-@@ -2049,6 +2066,7 @@ fn settings_save(mut value: settings::Settings) -> Result<(), String> {
+@@ -2149,6 +2166,7 @@ fn settings_save(mut value: settings::Settings) -> Result<(), String> {
      // Owned by the migration, not the form — which round-trips the whole struct
      // and would reset it while the data sits on another disk.
      if let Ok(cur) = settings::load() {
@@ -1108,7 +1324,7 @@ index 7b5f25a19557e1c334698ac890709832cf1cc2b7..e3c3a941713a0f550608ba28ffd47ca4
          value.data_root = cur.data_root;
          if value.api_secret.is_empty() {
              value.api_secret = cur.api_secret;
-@@ -2720,6 +2738,8 @@ pub fn run() {
+@@ -2825,6 +2843,8 @@ pub fn run() {
              proxy_bulk_save,
              launch,
              settings_get,
@@ -1117,7 +1333,7 @@ index 7b5f25a19557e1c334698ac890709832cf1cc2b7..e3c3a941713a0f550608ba28ffd47ca4
              settings_save,
              settings_load_error,
              host_screen,
-@@ -2917,6 +2937,7 @@ pub fn run() {
+@@ -3030,6 +3050,7 @@ pub fn run() {
          .build(tauri::generate_context!())
          .expect("error while building tauri application")
          .run(|app, event| {
@@ -1125,24 +1341,24 @@ index 7b5f25a19557e1c334698ac890709832cf1cc2b7..e3c3a941713a0f550608ba28ffd47ca4
              // Mid-reset nothing ends the app but its own restart.
              if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
                  if reset::active() && code != Some(tauri::RESTART_EXIT_CODE) {
-@@ -2935,6 +2956,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
+@@ -3048,6 +3069,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
      use std::sync::atomic::Ordering::SeqCst;
      static CLOSING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-     if !space::open::any_open() {
+     if !space::open::any_open() && !space::profile::any_unsealed() {
 +        process::Tracker::shared().close_chains();
          app.exit(code);
          return;
      }
-@@ -2946,6 +2968,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
-     tauri::async_runtime::spawn(async move {
+@@ -3060,6 +3082,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
          space::open::close_all(space::open::QUIT_WAIT).await;
+         space::profile::close_unsealed(space::open::QUIT_WAIT).await;
          CLOSING.store(false, SeqCst);
 +        process::Tracker::shared().close_chains();
          app.exit(code);
      });
  }
 diff --git a/src-tauri/src/process.rs b/src-tauri/src/process.rs
-index 4a7d240802f2bda80da2058b5e097ede4fac375c..ea6017d725dc941a67cdb9cfcbc26d259af01ceb 100644
+index 2d25d08b51fede46ec1e7ef905c6fd11eb7e9006..01621d6c2d41e4ef0bf30e7ca73b16f0690b4276 100644
 --- a/src-tauri/src/process.rs
 +++ b/src-tauri/src/process.rs
 @@ -56,6 +56,7 @@ struct ChildEntry {
@@ -1153,7 +1369,7 @@ index 4a7d240802f2bda80da2058b5e097ede4fac375c..ea6017d725dc941a67cdb9cfcbc26d25
  }
  
  /// What is done once a browser has closed for good.
-@@ -106,13 +107,26 @@ impl Tracker {
+@@ -108,13 +109,26 @@ impl Tracker {
      /// the folder the browser was started on, watched as given after the child
      /// exits; `extensions` the library ids it was started with.
      pub fn track(
@@ -1180,7 +1396,7 @@ index 4a7d240802f2bda80da2058b5e097ede4fac375c..ea6017d725dc941a67cdb9cfcbc26d25
          static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
          let pid = child.id().unwrap_or(0);
          let gen = GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-@@ -122,7 +136,7 @@ impl Tracker {
+@@ -124,7 +138,7 @@ impl Tracker {
              let mut g = self.inner.lock().unwrap();
              let previous = g.insert(
                  profile_id.clone(),
@@ -1189,7 +1405,7 @@ index 4a7d240802f2bda80da2058b5e097ede4fac375c..ea6017d725dc941a67cdb9cfcbc26d25
              );
              // Replacing the entry drops the old killer and orphans that browser.
              // `launch` refuses a second launch up front; this is the backstop.
-@@ -162,6 +176,16 @@ impl Tracker {
+@@ -164,6 +178,16 @@ impl Tracker {
              // stays honest; `after_exit` waits for the browser that is really
              // there rather than for the shell that launched it.
              watch_lock(&profile_id, &udd, &mut rx).await;
@@ -1206,7 +1422,7 @@ index 4a7d240802f2bda80da2058b5e097ede4fac375c..ea6017d725dc941a67cdb9cfcbc26d25
              if let Ok(mut g) = Self::shared().inner.lock() {
                  if g.get(&profile_id).is_some_and(|e| e.gen == gen) {
                      g.remove(&profile_id);
-@@ -182,6 +206,16 @@ impl Tracker {
+@@ -193,6 +217,16 @@ impl Tracker {
          pid
      }
  
@@ -6836,10 +7052,10 @@ index 6136aa2085847cd6c40295766bfbf04c99c9cc3c..578867050e78651e5a688b81e5d06886
          name: format!("resi {plan}"),
          kind,
 diff --git a/src-tauri/src/reset.rs b/src-tauri/src/reset.rs
-index 1da3914ad41124294eae495b8e77ca8c20d6e8f6..fa5e3839bc061e67dd44acf1b75a1127ef73bba4 100644
+index 4d2811b1a45ffeffd633a7d1fcb59422696adce5..9b376ea2b0da98bd5716eb16c6a8a154199747ba 100644
 --- a/src-tauri/src/reset.rs
 +++ b/src-tauri/src/reset.rs
-@@ -1649,7 +1649,7 @@ mod tests {
+@@ -1650,7 +1650,7 @@ mod tests {
  
      /// Anything under a "Volumes/T7" folder counts as another disk.
      fn t7_is_another_disk(a: &Path, b: &Path) -> bool {
@@ -6849,7 +7065,7 @@ index 1da3914ad41124294eae495b8e77ca8c20d6e8f6..fa5e3839bc061e67dd44acf1b75a1127
      }
  
 diff --git a/src-tauri/src/runtime.rs b/src-tauri/src/runtime.rs
-index a07c4fa262c4c56f4a1285804e28ee0495ceb260..eb96870d046ef0f6cad589fb2b770140b85ba52a 100644
+index 9b64bf8f1268fa4577c3685ce47463aad4e73f20..fa314676ba06157188876ee9c773cef0a4ef528c 100644
 --- a/src-tauri/src/runtime.rs
 +++ b/src-tauri/src/runtime.rs
 @@ -31,7 +31,11 @@ const MANIFEST_URL: &str =
@@ -6863,9 +7079,9 @@ index a07c4fa262c4c56f4a1285804e28ee0495ceb260..eb96870d046ef0f6cad589fb2b770140
 +    None => "pc3",
 +};
  /// Chromium version baked into the current bundle (used for Mac Framework path).
- pub const CHROMIUM_VERSION: &str = "156.0.8078.48";
+ pub const CHROMIUM_VERSION: &str = "157.0.8103.39";
  
-@@ -1421,26 +1425,22 @@ fn norm_ver(v: &str) -> &str {
+@@ -1589,26 +1593,22 @@ fn norm_ver(v: &str) -> &str {
  
  /// Best-effort SemVer compare, lex fallback per component.
  fn is_newer(latest: &str, current: &str) -> bool {
@@ -6903,7 +7119,7 @@ index a07c4fa262c4c56f4a1285804e28ee0495ceb260..eb96870d046ef0f6cad589fb2b770140
  
      let url = format!("https://api.github.com/repos/{LAUNCHER_RELEASE_REPO}/releases/latest");
      let client = match reqwest::Client::builder()
-@@ -1483,3 +1483,15 @@ pub async fn launcher_update_check(app: tauri::AppHandle) -> Result<LauncherVers
+@@ -1651,3 +1651,15 @@ pub async fn launcher_update_check(app: tauri::AppHandle) -> Result<LauncherVers
      };
      Ok(LauncherVersionInfo { current, latest, update_available, release_url })
  }
@@ -6920,7 +7136,7 @@ index a07c4fa262c4c56f4a1285804e28ee0495ceb260..eb96870d046ef0f6cad589fb2b770140
 +    }
 +}
 diff --git a/src-tauri/src/settings.rs b/src-tauri/src/settings.rs
-index 425611d5de5c4036a8177132056f618c329fb6bd..f077dc4177ab4636be54fba781d09e14de9130a9 100644
+index 90b201e8372b1f23c15160cd93979c4e8353fa6f..ab22230511070c7917e42be376579ae1ac6ecaba 100644
 --- a/src-tauri/src/settings.rs
 +++ b/src-tauri/src/settings.rs
 @@ -6,6 +6,8 @@ use std::sync::Mutex;
@@ -6932,7 +7148,7 @@ index 425611d5de5c4036a8177132056f618c329fb6bd..f077dc4177ab4636be54fba781d09e14
      /// Absolute path to the ShardX executable.
      pub browser_path: Option<String>,
      /// Theme: "dark" (default) or "light".
-@@ -85,6 +87,7 @@ static LOAD_ERROR: Mutex<Option<String>> = Mutex::new(None);
+@@ -91,6 +93,7 @@ static LOAD_ERROR: Mutex<Option<String>> = Mutex::new(None);
  /// The settings a fresh install starts with — the serde defaults, spelled out.
  fn defaults() -> Settings {
      Settings {
@@ -6975,10 +7191,10 @@ index 93b7a0779c308c227bbeff00b269c2d62ccb8d52..da90fc5ca6bd296ce015ce17d1bb05cc
          let builders = code(ours).filter(|(_, l)| l.contains("Client::builder(")).count();
          assert_eq!(builders, 1, "one place makes team connections: link()");
 diff --git a/src-tauri/src/space/doors.rs b/src-tauri/src/space/doors.rs
-index 45d026319565d1652ac507e3c75ba65efd3cccad..147d995c4570fa7fa588ccea0a485a7a9f0444c2 100644
+index 00da4438f57eccbe7cab82567e841e9c8f899bf1..8403d30469d2e1731db6e1864e4acda6654b742b 100644
 --- a/src-tauri/src/space/doors.rs
 +++ b/src-tauri/src/space/doors.rs
-@@ -349,6 +349,8 @@ const RULES: &[(&str, Need)] = &[
+@@ -355,6 +355,8 @@ const RULES: &[(&str, Need)] = &[
      ("profile_sync_set", Off),
      ("profile_sync_take", Off),
      ("mcp_download", Machine),
@@ -7013,7 +7229,7 @@ index cc0b266511e4134e1ec4d7db0e863d6b837a4481..07f3632b101b6793d0b6a68bb5cd7e50
      let u = r.view(&id);
      assert_eq!((u.state, u.latest.as_deref()), (State::Available, Some("1.1")));
 diff --git a/src-tauri/src/space/local/profile.rs b/src-tauri/src/space/local/profile.rs
-index 176606ee3402a8b368cad2ad1058fe0cec11819e..b1973743ed8b0e6aa4282b27eec937a58c283af4 100644
+index 991e4aa4ffc4e3d4ea65bb4945d5b957581e156d..45f89bd44a1c07feb4b5e400dc9a37af03b6c500 100644
 --- a/src-tauri/src/space/local/profile.rs
 +++ b/src-tauri/src/space/local/profile.rs
 @@ -52,6 +52,8 @@ fn write_atomic(path: &Path, body: &[u8]) -> Result<()> {
@@ -7025,7 +7241,7 @@ index 176606ee3402a8b368cad2ad1058fe0cec11819e..b1973743ed8b0e6aa4282b27eec937a5
      pub id: String,
      pub name: String,
      pub notes: String,
-@@ -132,6 +134,8 @@ pub struct StoredMeta {
+@@ -135,6 +137,8 @@ pub struct StoredMeta {
      pub id: String,
      #[serde(default)]
      pub proxy_id: Option<String>,
@@ -7034,7 +7250,7 @@ index 176606ee3402a8b368cad2ad1058fe0cec11819e..b1973743ed8b0e6aa4282b27eec937a5
      #[serde(default)]
      pub last_launched_at: Option<String>,
      /// "@<unix_secs>" creation marker.
-@@ -280,6 +284,7 @@ pub(in crate::space) fn list_all() -> Result<Vec<ProfileMeta>> {
+@@ -292,6 +296,7 @@ pub(in crate::space) fn list_all() -> Result<Vec<ProfileMeta>> {
              .unwrap_or("")
              .to_string();
          out.push(ProfileMeta {
@@ -7042,7 +7258,7 @@ index 176606ee3402a8b368cad2ad1058fe0cec11819e..b1973743ed8b0e6aa4282b27eec937a5
              id: stored.meta.id,
              name,
              notes,
-@@ -446,6 +451,8 @@ pub(in crate::space) fn fill_missing_window(id: &str, window: serde_json::Value)
+@@ -459,6 +464,8 @@ pub(in crate::space) fn fill_missing_window(id: &str, window: serde_json::Value)
  }
  
  pub(in crate::space) fn save_raw(stored: &mut StoredProfile) -> Result<()> {
@@ -7051,7 +7267,7 @@ index 176606ee3402a8b368cad2ad1058fe0cec11819e..b1973743ed8b0e6aa4282b27eec937a5
      let _guard = file_lock();
      save_raw_locked(stored)
  }
-@@ -462,6 +469,7 @@ fn save_raw_new_locked(stored: &mut StoredProfile, id: String) -> Result<()> {
+@@ -475,6 +482,7 @@ fn save_raw_new_locked(stored: &mut StoredProfile, id: String) -> Result<()> {
  /// Body of `save_raw` for callers already holding the lock. It reloads the file
  /// itself, so a caller that loaded first must hold the lock across both halves.
  fn save_raw_locked(stored: &mut StoredProfile) -> Result<()> {
@@ -7059,7 +7275,7 @@ index 176606ee3402a8b368cad2ad1058fe0cec11819e..b1973743ed8b0e6aa4282b27eec937a5
      let is_new = stored.meta.id.is_empty();
      if is_new {
          stored.meta.id = uuid::Uuid::new_v4().to_string();
-@@ -592,6 +600,7 @@ pub(in crate::space) fn clone_profile(id: &str) -> Result<ProfileMeta> {
+@@ -622,6 +630,7 @@ pub(in crate::space) fn clone_profile(id: &str) -> Result<ProfileMeta> {
      let new_id = std::mem::take(&mut src.meta.id);
      save_raw_new_locked(&mut src, new_id)?;
      Ok(ProfileMeta {
@@ -7067,6 +7283,96 @@ index 176606ee3402a8b368cad2ad1058fe0cec11819e..b1973743ed8b0e6aa4282b27eec937a5
          id: src.meta.id,
          name,
          notes: src
+diff --git a/src-tauri/src/space/local/protect.rs b/src-tauri/src/space/local/protect.rs
+index 0b822fb2e3f1c6aa20d8e6881e8daa295bb210b9..2ee2e5c995d2631ef6b696c6ea26f30dcb7600ad 100644
+--- a/src-tauri/src/space/local/protect.rs
++++ b/src-tauri/src/space/local/protect.rs
+@@ -26,6 +26,8 @@ struct Secret {
+     config: serde_json::Map<String, serde_json::Value>,
+     proxy_id: Option<String>,
+     inline_proxy: Option<super::proxy::ProxyEntry>,
++    #[serde(default)]
++    proxy_chain_policy: crate::proxy_chain::policy::ChainPolicy,
+     gpu_preset_id: Option<String>,
+     extensions: Vec<String>,
+     screen_custom: bool,
+@@ -42,6 +44,7 @@ pub(in crate::space) fn shows_secrets(stored: &StoredProfile) -> bool {
+     stored.config.keys().any(|k| k != "name" && k != SEALED)
+         || m.proxy_id.is_some()
+         || m.inline_proxy.is_some()
++        || !m.proxy_chain_policy.is_inherit()
+         || m.gpu_preset_id.is_some()
+         || !m.extensions.is_empty()
+         || m.screen_custom
+@@ -79,6 +82,7 @@ fn stub_of(full: &StoredProfile, key: &DataKey, lock: &seal::Lock) -> Result<Sto
+         config,
+         proxy_id: full.meta.proxy_id.clone(),
+         inline_proxy: full.meta.inline_proxy.clone(),
++        proxy_chain_policy: full.meta.proxy_chain_policy,
+         gpu_preset_id: full.meta.gpu_preset_id.clone(),
+         extensions: full.meta.extensions.clone(),
+         screen_custom: full.meta.screen_custom,
+@@ -88,6 +92,7 @@ fn stub_of(full: &StoredProfile, key: &DataKey, lock: &seal::Lock) -> Result<Sto
+     let meta = StoredMeta {
+         proxy_id: None,
+         inline_proxy: None,
++        proxy_chain_policy: Default::default(),
+         gpu_preset_id: None,
+         extensions: Vec::new(),
+         screen_custom: false,
+@@ -114,6 +119,7 @@ fn full_of(stub: &StoredProfile, key: &DataKey) -> Result<StoredProfile> {
+     let meta = StoredMeta {
+         proxy_id: secret.proxy_id,
+         inline_proxy: secret.inline_proxy,
++        proxy_chain_policy: secret.proxy_chain_policy,
+         gpu_preset_id: secret.gpu_preset_id,
+         extensions: secret.extensions,
+         screen_custom: secret.screen_custom,
+@@ -187,7 +193,8 @@ pub(in crate::space) fn save_full(full: &StoredProfile, key: &DataKey) -> Result
+     next.meta.last_launched_at = existing.meta.last_launched_at.clone();
+     next.meta.total_runtime_ms = existing.meta.total_runtime_ms;
+     let before = full_of(&existing, key)?;
+-    next.meta.rev = if before.config == next.config && before.meta.proxy_id == next.meta.proxy_id {
++    next.meta.rev = if before.config == next.config && before.meta.proxy_id == next.meta.proxy_id
++        && before.meta.proxy_chain_policy == next.meta.proxy_chain_policy {
+         existing.meta.rev
+     } else {
+         existing.meta.rev.wrapping_add(1)
+@@ -326,4 +333,34 @@ mod tests {
+         let (again, _) = unlock("a3", "long enough").unwrap();
+         assert_eq!(again.config.get("notes").unwrap(), "edited");
+     }
++
++    #[test]
++    fn protected_chain_policy_is_secret_and_changes_require_unlocking() {
++        use crate::proxy_chain::policy::ChainPolicy;
++        let _root = store::test_root("protected-chain-policy");
++        let mut p = plain("policy-lock");
++        p.meta.proxy_chain_policy = ChainPolicy::Enabled;
++        profile::write_raw(&p).unwrap();
++        protect("policy-lock", "long enough").unwrap();
++        let mut stub = profile::load_raw("policy-lock").unwrap();
++        assert_eq!(stub.meta.proxy_chain_policy, ChainPolicy::Inherit);
++        assert!(!shows_secrets(&stub));
++        let before = fs::read(store::profiles_dir().unwrap().join("policy-lock.json")).unwrap();
++        stub.meta.proxy_chain_policy = ChainPolicy::Disabled;
++        assert!(shows_secrets(&stub));
++        assert_eq!(profile::save_raw(&mut stub).unwrap_err().to_string(), PASSWORD_REQUIRED);
++        assert!(unlock("policy-lock", "wrong password").is_err());
++        assert_eq!(fs::read(store::profiles_dir().unwrap().join("policy-lock.json")).unwrap(), before);
++        let (mut full, key) = unlock("policy-lock", "long enough").unwrap();
++        assert_eq!(full.meta.proxy_chain_policy, ChainPolicy::Enabled);
++        let rev = full.meta.rev;
++        full.meta.proxy_chain_policy = ChainPolicy::Disabled;
++        save_full(&full, &key).unwrap();
++        let (again, _) = unlock("policy-lock", "long enough").unwrap();
++        assert_eq!(again.meta.proxy_chain_policy, ChainPolicy::Disabled);
++        assert_eq!(again.meta.rev, rev.wrapping_add(1));
++        assert_eq!(again.meta.proxy_id, p.meta.proxy_id);
++        unprotect("policy-lock", "long enough").unwrap();
++        assert_eq!(profile::load_raw("policy-lock").unwrap().meta.proxy_chain_policy, ChainPolicy::Disabled);
++    }
+ }
 diff --git a/src-tauri/src/space/local/proxy.rs b/src-tauri/src/space/local/proxy.rs
 index 63d3972b4adf061dbddbd0a79026b32912897e64..223a4d45eab374d2f22796b1bf010202858daa00 100644
 --- a/src-tauri/src/space/local/proxy.rs
@@ -7489,10 +7795,10 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..223a4d45eab374d2f22796b1bf010202
          parse_one(line, &ProxyKind::Socks5).expect("parses")
      }
 diff --git a/src-tauri/src/space/local/trash.rs b/src-tauri/src/space/local/trash.rs
-index e650ebdb78ecbd7cf4fbd1e43095ef95f209d9ea..56dea346ae658f94d5bd1803c4370408b2c199fe 100644
+index f926201a97976a34dfb2bcf43653330890ab42a6..84fde52618f10de0841113ef4992d5be3e1d7ab8 100644
 --- a/src-tauri/src/space/local/trash.rs
 +++ b/src-tauri/src/space/local/trash.rs
-@@ -205,6 +205,7 @@ pub(in crate::space) fn restore(id: &str) -> Result<profile::ProfileMeta> {
+@@ -217,6 +217,7 @@ pub(in crate::space) fn restore(id: &str) -> Result<profile::ProfileMeta> {
      let _ = fs::remove_file(&meta_path);
  
      Ok(profile::ProfileMeta {
@@ -7501,10 +7807,10 @@ index e650ebdb78ecbd7cf4fbd1e43095ef95f209d9ea..56dea346ae658f94d5bd1803c4370408
          name: stored
              .config
 diff --git a/src-tauri/src/space/mod.rs b/src-tauri/src/space/mod.rs
-index 00d90e17f3869e100400cd0ceae4478808abf924..dafeb9624d4a8e825b6bce969a82192e775df3b3 100644
+index 6bdf53c930d31f5a23d1c54dc90fa578bac7a719..d3c300da25983f359676ba72ca4b9dea03df32e4 100644
 --- a/src-tauri/src/space/mod.rs
 +++ b/src-tauri/src/space/mod.rs
-@@ -360,6 +360,8 @@ pub mod profile {
+@@ -421,6 +421,8 @@ pub mod profile {
  
      /// Saves a profile built whole (the editor, the API); new when its id is empty.
      pub async fn save(door: Door, t: &Ticket, stored: StoredProfile, opts: SaveOpts) -> Result<ProfileMeta> {
@@ -7513,7 +7819,7 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..dafeb9624d4a8e825b6bce969a82192e
          match t.team() {
              Some(team) => Ok(write::save_profile(door, t, team, stored, opts).await?),
              None => {
-@@ -403,6 +405,7 @@ pub mod profile {
+@@ -476,6 +478,7 @@ pub mod profile {
      fn meta_of(stored: &StoredProfile) -> ProfileMeta {
          let text = |k: &str, or: &str| stored.config.get(k).and_then(|v| v.as_str()).unwrap_or(or).to_string();
          ProfileMeta {
@@ -7521,7 +7827,7 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..dafeb9624d4a8e825b6bce969a82192e
              id: stored.meta.id.clone(),
              name: text("name", "(unnamed)"),
              notes: text("notes", ""),
-@@ -562,9 +565,44 @@ pub mod proxy {
+@@ -683,9 +686,44 @@ pub mod proxy {
      use anyhow::Result;
  
      pub use local::{
@@ -7568,7 +7874,7 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..dafeb9624d4a8e825b6bce969a82192e
  
      /// A team's proxies carry an address only where this member may use them.
      pub fn list() -> Result<Vec<ProxyEntry>> {
-@@ -583,6 +621,7 @@ pub mod proxy {
+@@ -704,6 +742,7 @@ pub mod proxy {
  
      /// Adds the proxy, or changes the one with its id.
      pub async fn upsert(door: Door, t: &Ticket, entry: ProxyEntry) -> Result<ProxyEntry> {
@@ -7576,7 +7882,7 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..dafeb9624d4a8e825b6bce969a82192e
          match t.team() {
              Some(team) => Ok(write::save_proxy(door, t, team, entry).await?),
              None => {
-@@ -594,6 +633,7 @@ pub mod proxy {
+@@ -715,6 +754,7 @@ pub mod proxy {
  
      /// Adds the proxy unless an identical one is kept: that one is answered.
      pub async fn upsert_dedup(door: Door, t: &Ticket, entry: ProxyEntry) -> Result<ProxyEntry> {
@@ -7584,7 +7890,7 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..dafeb9624d4a8e825b6bce969a82192e
          match t.team() {
              Some(team) => Ok(write::save_proxy_dedup(door, t, team, entry).await?),
              None => {
-@@ -605,6 +645,7 @@ pub mod proxy {
+@@ -726,6 +766,7 @@ pub mod proxy {
  
      /// As [`upsert_dedup`], but a new password for the profile's own proxy changes it.
      pub async fn upsert_for_binding(door: Door, t: &Ticket, entry: ProxyEntry, bound_id: Option<&str>) -> Result<ProxyEntry> {
@@ -7592,7 +7898,7 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..dafeb9624d4a8e825b6bce969a82192e
          match t.team() {
              Some(team) => Ok(write::save_proxy_for_binding(door, t, team, entry, bound_id).await?),
              None => {
-@@ -616,6 +657,7 @@ pub mod proxy {
+@@ -737,6 +778,7 @@ pub mod proxy {
  
      /// Adds each proxy not kept yet; answers how many went in.
      pub async fn bulk_save(door: Door, t: &Ticket, entries: Vec<ProxyEntry>) -> Result<usize> {
@@ -7600,7 +7906,7 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..dafeb9624d4a8e825b6bce969a82192e
          match t.team() {
              Some(team) => Ok(write::save_proxies(door, t, team, entries).await?),
              None => {
-@@ -654,10 +696,15 @@ pub mod proxy {
+@@ -775,10 +817,15 @@ pub mod proxy {
      }
  
      pub fn latest_test(id: &str) -> Option<TestSnapshot> {
@@ -7621,7 +7927,7 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..dafeb9624d4a8e825b6bce969a82192e
  }
  
 diff --git a/src-tauri/src/space/remote.rs b/src-tauri/src/space/remote.rs
-index 7000d07a4589cd40e9d5c9156328875e480b4bb7..d11b24062c570fa9f58fe28bb464dd587e0730e1 100644
+index 12701b57337bcc339e4f76413928707b6f0b84bb..42e3fb277f1ed0ad6617b0bd0b44dcab012a890f 100644
 --- a/src-tauri/src/space/remote.rs
 +++ b/src-tauri/src/space/remote.rs
 @@ -140,6 +140,7 @@ fn open_on(lease: &Lease, device_id: &str) -> OpenOn {
@@ -7632,7 +7938,7 @@ index 7000d07a4589cd40e9d5c9156328875e480b4bb7..d11b24062c570fa9f58fe28bb464dd58
          id: row.id.clone(),
          name: row.name.clone(),
          notes: row.card.notes.clone(),
-@@ -203,6 +204,7 @@ pub fn proxy(row: &ProxyRow, login: Option<&str>) -> ProxyEntry {
+@@ -204,6 +205,7 @@ pub fn proxy(row: &ProxyRow, login: Option<&str>) -> ProxyEntry {
          serde_json::from_value(v).ok()
      });
      let mut e = read.unwrap_or_else(|| ProxyEntry {
@@ -7641,10 +7947,10 @@ index 7000d07a4589cd40e9d5c9156328875e480b4bb7..d11b24062c570fa9f58fe28bb464dd58
          name: String::new(),
          kind: ProxyKind::Socks5,
 diff --git a/src-tauri/src/space/write.rs b/src-tauri/src/space/write.rs
-index 85047f9559dacb309fa3a6f7282751ad347876bb..96427c04f80029c7df36b247e0b347f060e943cb 100644
+index 86b7a20e4008789cec129d39d7a701f36e0f41d5..a65dafa3afba2e6a1653dad075db4d6a64e355a2 100644
 --- a/src-tauri/src/space/write.rs
 +++ b/src-tauri/src/space/write.rs
-@@ -443,6 +443,7 @@ pub async fn save_proxy_for_binding(
+@@ -445,6 +445,7 @@ pub async fn save_proxy_for_binding(
      let own = bound_id.filter(|b| !b.is_empty()).and_then(|b| {
          held.into_iter().find(|p| {
              p.id == b && p.kind == entry.kind && p.host == entry.host && p.port == entry.port && p.username == entry.username
@@ -7653,10 +7959,10 @@ index 85047f9559dacb309fa3a6f7282751ad347876bb..96427c04f80029c7df36b247e0b347f0
      });
      match own {
 diff --git a/src/dev/mock/fixtures.ts b/src/dev/mock/fixtures.ts
-index e5a46b6e64386b6cc95d06fe9a513df8b4f24a9d..3cb5436fc50deb1b1eea33602a6f7a4b0eb20f14 100644
+index 0e893bba2a463cd51ff2f3a5f746f41cab47ddfa..9d62137948e0f81337b195602e5c1403b97257e5 100644
 --- a/src/dev/mock/fixtures.ts
 +++ b/src/dev/mock/fixtures.ts
-@@ -664,6 +664,7 @@ export function seed(): MockState {
+@@ -708,6 +708,7 @@ export function seed(): MockState {
        api_enabled: true,
        api_port: 40325,
        api_secret: "mock-signing-key-0000000000000000",
@@ -7665,10 +7971,10 @@ index e5a46b6e64386b6cc95d06fe9a513df8b4f24a9d..3cb5436fc50deb1b1eea33602a6f7a4b
      api: { enabled: true, port: 40325, base_url: "http://127.0.0.1:40325", token: "shx_mock_00000000000000000000000000" },
      psKey: "psk_test_mock_000000000000000000000000",
 diff --git a/src/dev/mock/handlers.ts b/src/dev/mock/handlers.ts
-index 75e7e9dfcb88c2f5c861b6b773f84af87b143eaf..2c34c6fb79540841effe83b08d2e2186308c9706 100644
+index f47b880294bd4e7fbf764409d5d85c968862f278..06ec13ff91ad112db1f799b4d0beadff59d316a3 100644
 --- a/src/dev/mock/handlers.ts
 +++ b/src/dev/mock/handlers.ts
-@@ -454,20 +454,56 @@ export const handlers: Record<string, Handler> = {
+@@ -462,20 +462,56 @@ export const handlers: Record<string, Handler> = {
    },
  
    // ---- settings, api, data root ---------------------------------------------
@@ -7759,7 +8065,7 @@ index 8163b29d6559c9bc2d9d3242d0f91beabc33b4e6..67aef26feabdf303c2583f01060c33ff
      gpu_preset_id: f.gpu_preset_id,
      ...(f.real_gpu ? { real_gpu: true } : {}),
 diff --git a/src/entities/profile/model/types.ts b/src/entities/profile/model/types.ts
-index c90819d572b30d12241931c712f6f88d4b6a1ffc..51a96f38eb7292bd2bbac89cce1e3c91271c937f 100644
+index 7d3b995930239456fb28ef150773ec258f4eb348..e12734c271bf0af96b3092141d394c6a9d9adf62 100644
 --- a/src/entities/profile/model/types.ts
 +++ b/src/entities/profile/model/types.ts
 @@ -6,6 +6,7 @@ export type GeoMode = "auto" | "manual";
@@ -7769,8 +8075,8 @@ index c90819d572b30d12241931c712f6f88d4b6a1ffc..51a96f38eb7292bd2bbac89cce1e3c91
 +  proxy_chain_policy?: "inherit" | "enabled" | "disabled";
    id: string;
    name: string;
-   notes: string;
-@@ -49,6 +50,7 @@ export type ProfileRight = keyof ProfileRights;
+   /** Null while a password locks it (`protected`). */
+@@ -54,6 +55,7 @@ export type ProfileRight = keyof ProfileRights;
  export type OpenOn = { device_name: string; member_name: string; this_device: boolean; since: number; until: number };
  
  export type ProfileForm = {
@@ -7844,17 +8150,17 @@ index f974aadf7b17aad26835b5e71742e38dbf29d984..da361b2a2923260ab71c1a163e436936
  
  export type BulkRowState = {
 diff --git a/src/entities/settings/model/api.ts b/src/entities/settings/model/api.ts
-index 651361a79b54085fecea7373fa4bf9e9367aa9d9..543ab5baddfca219bdfe87e42b1b1c900e5ba5c8 100644
+index 21cd2afa3542896c92ceb89852819af943113846..4fd1ea48cecfbecce2baad3870b2a48424b028dd 100644
 --- a/src/entities/settings/model/api.ts
 +++ b/src/entities/settings/model/api.ts
 @@ -1,5 +1,5 @@
  import { invoke } from "@tauri-apps/api/core";
 -import type { Settings, ApiInfo, DataRootInfo } from "./types";
 +import type { Settings, ApiInfo, DataRootInfo, ProxyChainDetection, ProxyChainSettings, ProxyChainTestKind, ProxyChainTestResult } from "./types";
+ import { useProfilePasswords } from "./profilePasswords";
  
  /** The settings file, minus the API signing key. The form must never hold
-  *  it: a Save would write an old key back after Regenerate token, and a
-@@ -7,8 +7,14 @@ import type { Settings, ApiInfo, DataRootInfo } from "./types";
+@@ -8,8 +8,14 @@ import { useProfilePasswords } from "./profilePasswords";
  export const settingsGet = async (): Promise<Settings> => {
    const raw = await invoke<Settings & { api_secret?: string }>("settings_get");
    delete raw.api_secret;
@@ -7870,10 +8176,10 @@ index 651361a79b54085fecea7373fa4bf9e9367aa9d9..543ab5baddfca219bdfe87e42b1b1c90
   *  the change, not what runs. A failed save changes nothing, so it does not
   *  count (Pair 34 ruling, M3); one still on its way makes a read unsure. */
 diff --git a/src/entities/settings/model/types.ts b/src/entities/settings/model/types.ts
-index 01cfe868f170302f55a356ac45581e43eb281b47..6b1d3171211517047ac4dccf172011e27418199b 100644
+index 8f97bc0f390b920d84c69c8bb3b9c1a7e79df135..3c74ed99cdbaec1c8635fdbe71acdcbd1bbe1ac0 100644
 --- a/src/entities/settings/model/types.ts
 +++ b/src/entities/settings/model/types.ts
-@@ -17,6 +17,77 @@ export type Settings = {
+@@ -21,6 +21,77 @@ export type Settings = {
    extra_args?: string;
    /** Ask the Web Store about linked extensions every 5 h (on when absent). */
    ext_update_check?: boolean;
@@ -8006,8 +8312,20 @@ index ad42268f83a576ac9e16f54147183dfdb5e92c63..0663d5be621c029a8ca57f24ee081872
        <p className="m-0 text-secondary text-text-soft-400">{t("profileForm.proxyHelp")}</p>
      </div>
    );
+diff --git a/src/pages/settings/SettingRow.tsx b/src/pages/settings/SettingRow.tsx
+index 0e39a2403d5612ed8ce5fd5a82cb7517b95e3a59..c5087216ee876a29da786fc4b09621a4c166ba9c 100644
+--- a/src/pages/settings/SettingRow.tsx
++++ b/src/pages/settings/SettingRow.tsx
+@@ -12,6 +12,7 @@ export type SettingsProps = {
+   setS: (next: Settings) => void;
+   p: LocalPrefs;
+   setP: <K extends PrefKey>(key: K, value: LocalPrefs[K]) => void;
++  saving?: boolean;
+ };
+ 
+ /// One setting (LAYOUT-16): its name and at most one line of help leading,
 diff --git a/src/pages/settings/index.tsx b/src/pages/settings/index.tsx
-index a7c8b9b5bebb80043bc0a2f9fa75db521f30f51d..7af37f196c646cfa8cd411b4e9adef5abeabe8ed 100644
+index a7c8b9b5bebb80043bc0a2f9fa75db521f30f51d..69d39919e2dbd63e0c42c1e46db4dded5235934e 100644
 --- a/src/pages/settings/index.tsx
 +++ b/src/pages/settings/index.tsx
 @@ -20,6 +20,7 @@ import { ApiSection } from "./sections/Api";
@@ -8042,6 +8360,72 @@ index a7c8b9b5bebb80043bc0a2f9fa75db521f30f51d..7af37f196c646cfa8cd411b4e9adef5a
                { value: "other", label: t("settings.tabOther") },
                { value: "about", label: t("settings.tabAbout") },
              ]}
+@@ -168,7 +172,7 @@ export function SettingsPage() {
+             <h2 className="m-0 text-panel-title text-text-strong-950">{t(TAB_LABEL[tab])}</h2>
+             {draft.s && draft.saved
+               // Keyed by the discards, so a field that holds text of its own starts over.
+-              ? <Section key={draft.epoch} s={draft.s} saved={draft.saved} setS={draft.set} p={draft.p} setP={draft.setP} api={api} setApi={setApi} apiError={apiError} retryApi={refreshApi} />
++              ? <Section key={draft.epoch} s={draft.s} saved={draft.saved} setS={draft.set} p={draft.p} setP={draft.setP} saving={draft.state === "saving"} api={api} setApi={setApi} apiError={apiError} retryApi={refreshApi} />
+               : !draft.getError && <LoadingRows rows={4} rowHeight={56} />}
+           </TabPanel>
+         </div>
+diff --git a/src/pages/settings/localPrefs.ts b/src/pages/settings/localPrefs.ts
+index f3823150fa1eac8f6698d00912d9682888139db7..c34d882ce2ded4dcca844f85462fe61f1311475f 100644
+--- a/src/pages/settings/localPrefs.ts
++++ b/src/pages/settings/localPrefs.ts
+@@ -5,6 +5,7 @@ import { savedInterfaceSize, useInterfaceSize, type InterfaceSizeChoice } from "
+ import { useDirectStart } from "../../shared/model/directStart";
+ import { useKeyPrefs } from "../../shared/model/keyPrefs";
+ import { savedMotion, useMotion } from "../../shared/model/motion";
++import { useSimpleNavigation } from "../../shared/model/simpleNavigation";
+ import { currentTheme, previewThemeFromSettings, setThemeFromCommand } from "../../shared/model/theme";
+ 
+ /// The preferences this window keeps in its own storage rather than in
+@@ -17,6 +18,7 @@ export type LocalPrefs = {
+   theme: Theme;
+   size: InterfaceSizeChoice;
+   reduceMotion: boolean;
++  simpleNavigation: boolean;
+   singleKeys: boolean;
+   analytics: boolean;
+   askDirect: boolean;
+@@ -63,6 +65,10 @@ const PREFS: { [K in PrefKey]: Pref<LocalPrefs[K]> } = {
+     stored: () => useKeyPrefs.getState().singleKeys,
+     commit: (v) => useKeyPrefs.getState().setSingleKeys(v),
+   },
++  simpleNavigation: {
++    stored: () => useSimpleNavigation.getState().enabled,
++    commit: (v) => useSimpleNavigation.getState().setEnabled(v),
++  },
+   analytics: { stored: analyticsEnabled, commit: setAnalyticsEnabled },
+   askDirect: {
+     stored: () => useDirectStart.getState().ask,
+diff --git a/src/pages/settings/sections/Appearance.tsx b/src/pages/settings/sections/Appearance.tsx
+index af6397cdcb17e645cd0d85e7bb5aca7902032814..0f85aa36fc3ab8821b7baf5a978e51acf41afc67 100644
+--- a/src/pages/settings/sections/Appearance.tsx
++++ b/src/pages/settings/sections/Appearance.tsx
+@@ -6,7 +6,7 @@ import { SettingRow, SettingsGroup, type SettingsProps } from "../SettingRow";
+ 
+ // Each shows at once, as a preview, and lives in this window's storage, not in
+ // settings.json: it is stored on Save, and Don't save puts the old one back.
+-export function AppearanceSection({ p, setP }: SettingsProps) {
++export function AppearanceSection({ p, setP, saving }: SettingsProps) {
+   const t = useT();
+   const auto = useInterfaceSize((s) => s.auto);
+   return (
+@@ -55,6 +55,12 @@ export function AppearanceSection({ p, setP }: SettingsProps) {
+         help={t("settings.motionHelp")}
+         control={({ labelId, helpId }) => <Switch aria-labelledby={labelId} aria-describedby={helpId} checked={p.reduceMotion} onChange={(on) => setP("reduceMotion", on)} />}
+       />
++      <SettingRow
++        id="simple-navigation"
++        title={t("settings.simpleNavigation")}
++        help={t("settings.simpleNavigationHelp")}
++        control={({ labelId, helpId }) => <Switch aria-labelledby={labelId} aria-describedby={helpId} disabled={saving} checked={p.simpleNavigation} onChange={(on) => setP("simpleNavigation", on)} />}
++      />
+     </SettingsGroup>
+   );
+ }
 diff --git a/src/pages/settings/sections/Proxy.tsx b/src/pages/settings/sections/Proxy.tsx
 new file mode 100644
 index 0000000000000000000000000000000000000000..a6457993956ea300970927c1e7aa77504e795ec0
@@ -8306,10 +8690,18 @@ index 0000000000000000000000000000000000000000..a6457993956ea300970927c1e7aa7750
 +  );
 +}
 diff --git a/src/pages/settings/useSettingsDraft.ts b/src/pages/settings/useSettingsDraft.ts
-index 68133368ae2a4580ff3f52b2f436cb23412a3c76..60a52b108c5dddb318cbcdcfc4bc2fc533924d03 100644
+index 68133368ae2a4580ff3f52b2f436cb23412a3c76..947d01b0b607363eee0f2625c0453aa8fae07891 100644
 --- a/src/pages/settings/useSettingsDraft.ts
 +++ b/src/pages/settings/useSettingsDraft.ts
-@@ -282,12 +282,25 @@ async function run(): Promise<boolean> {
+@@ -14,6 +14,7 @@ import { useDirectStart } from "../../shared/model/directStart";
+ import { useInterfaceSize } from "../../shared/model/interfaceSize";
+ import { useKeyPrefs } from "../../shared/model/keyPrefs";
+ import { useMotion } from "../../shared/model/motion";
++import { useSimpleNavigation } from "../../shared/model/simpleNavigation";
+ import { PREF_KEYS, prefOf, type LocalPrefs, type PrefKey } from "./localPrefs";
+ 
+ export type { LocalPrefs } from "./localPrefs";
+@@ -282,12 +283,25 @@ async function run(): Promise<boolean> {
          toast.fail({ title: t("settings.saveFailed"), detail: e });
          return false;
        }
@@ -8341,6 +8733,22 @@ index 68133368ae2a4580ff3f52b2f436cb23412a3c76..60a52b108c5dddb318cbcdcfc4bc2fc5
      }
  
      // The window's own preferences are stored with the settings.
+@@ -425,6 +439,7 @@ export function useSettingsDraft() {
+   const size = useInterfaceSize((st) => st.choice);
+   const reduceMotion = useMotion((st) => st.reduce);
+   const singleKeys = useKeyPrefs((st) => st.singleKeys);
++  const simpleNavigation = useSimpleNavigation((st) => st.enabled);
+   const askDirect = useDirectStart((st) => st.ask);
+   const p: LocalPrefs = {
+     lang,
+@@ -432,6 +447,7 @@ export function useSettingsDraft() {
+     size,
+     reduceMotion,
+     singleKeys: prefs.singleKeys ?? singleKeys,
++    simpleNavigation: prefs.simpleNavigation ?? simpleNavigation,
+     analytics: prefs.analytics ?? analyticsEnabled(),
+     askDirect: prefs.askDirect ?? askDirect,
+   };
 diff --git a/src/shared/api/backendWarnings.test.ts b/src/shared/api/backendWarnings.test.ts
 index b00b5adb3b0f80a9b5ad069280967eee68cb3f68..e1335cfedf46a4f0a6fed26ea0ced88b811d6ac6 100644
 --- a/src/shared/api/backendWarnings.test.ts
@@ -8368,11 +8776,15 @@ index a462841a05c49f535322a49c372bbe5d85d9c554..000d8c7c642dedab45e8228b453feed7
    assert.equal(vanished?.[1], SYNC_STOPS.vanished);
    assert.ok(cycle.includes(`"${SYNC_STOPS.unread("{what}", "{e:#}")}"`), "the unread stop moved");
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index 8d0bf7f068d47f3051c43e475b6af979dbd38fc7..424898027e19e8b68b7b9442b9ff8110e73d24b8 100644
+index b26473e6905fbdbe252ae3ff96337bd67f3721cd..faed660eba01295dacb3efb4fca3d634621bd1d5 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
-@@ -1,4 +1,12 @@
+@@ -1,4 +1,16 @@
  {
++  "settings.simpleNavigation": "Simple navigation",
++  "settings.simpleNavigationHelp": "After you save, extensions, bookmarks, projects and ProxyShard move under more. All features and shortcuts remain available.",
++  "sidebar.morePages": "More",
++  "sidebar.fewerPages": "Fewer pages",
 +  "proxyChain.policyLabel": "Proxy chain choice",
 +  "proxyChain.policyInherit": "Follow global settings",
 +  "proxyChain.policyInheritProfile": "Follow proxy and global settings",
@@ -8384,7 +8796,7 @@ index 8d0bf7f068d47f3051c43e475b6af979dbd38fc7..424898027e19e8b68b7b9442b9ff8110
    "accent.custom": "Custom color",
    "actionMenu.byPosition": "{what}, by position",
    "actionMenu.clear": "Clear field",
-@@ -2330,6 +2338,95 @@
+@@ -2391,6 +2403,95 @@
    "settings.tabAbout": "About",
    "settings.tabApi": "API & MCP",
    "settings.tabAppearance": "Appearance",
@@ -8481,11 +8893,15 @@ index 8d0bf7f068d47f3051c43e475b6af979dbd38fc7..424898027e19e8b68b7b9442b9ff8110
    "settings.tabHelper": "Helper",
    "settings.tabOther": "Other",
 diff --git a/src/shared/i18n/locales/ru.json b/src/shared/i18n/locales/ru.json
-index f0b98deb3c0a2024ef1ecb5daba76c80fd85c9dd..da2f3bec04ffb19b27851960518febb83bf53287 100644
+index 031e6d1b353fe0a85b3057fb2787687bc2bc0617..ba8c119336c5213fa4067dcc08b564b6345f0fed 100644
 --- a/src/shared/i18n/locales/ru.json
 +++ b/src/shared/i18n/locales/ru.json
-@@ -1,4 +1,12 @@
+@@ -1,4 +1,16 @@
  {
++  "settings.simpleNavigation": "Упрощённая навигация",
++  "settings.simpleNavigationHelp": "После сохранения расширения, закладки, проекты и ProxyShard будут в разделе «Ещё». Все функции и сочетания клавиш останутся доступны.",
++  "sidebar.morePages": "Ещё",
++  "sidebar.fewerPages": "Свернуть страницы",
 +  "proxyChain.policyLabel": "Режим цепочки прокси",
 +  "proxyChain.policyInherit": "По общим настройкам",
 +  "proxyChain.policyInheritProfile": "По настройкам прокси и общим",
@@ -8497,7 +8913,7 @@ index f0b98deb3c0a2024ef1ecb5daba76c80fd85c9dd..da2f3bec04ffb19b27851960518febb8
    "accent.custom": "Свой цвет",
    "actionMenu.byPosition": "{what} (по координатам)",
    "actionMenu.clear": "Очистить поле",
-@@ -2330,6 +2338,95 @@
+@@ -2391,6 +2403,95 @@
    "settings.tabAbout": "О программе",
    "settings.tabApi": "API и MCP",
    "settings.tabAppearance": "Внешний вид",
@@ -8594,11 +9010,15 @@ index f0b98deb3c0a2024ef1ecb5daba76c80fd85c9dd..da2f3bec04ffb19b27851960518febb8
    "settings.tabHelper": "Shard Helper",
    "settings.tabOther": "Прочее",
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index ac20660402ea28eda21df123d5cb200aaf35861f..8b56ac625e6c9dead3643588b3cd1a48525e7490 100644
+index 86121184fd1cc0640e8e68c6a07e4f3258166bf1..dd785276898aec6691ac54d3b0b6999f6363b619 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
-@@ -1,4 +1,12 @@
+@@ -1,4 +1,16 @@
  {
++  "settings.simpleNavigation": "简洁导航",
++  "settings.simpleNavigationHelp": "保存后，扩展、书签、项目和 ProxyShard 收进“更多”。全部功能和快捷键仍然可用。",
++  "sidebar.morePages": "更多",
++  "sidebar.fewerPages": "收起更多页面",
 +  "proxyChain.policyLabel": "代理链使用方式",
 +  "proxyChain.policyInherit": "跟随全局设置",
 +  "proxyChain.policyInheritProfile": "跟随代理与全局设置",
@@ -8610,7 +9030,7 @@ index ac20660402ea28eda21df123d5cb200aaf35861f..8b56ac625e6c9dead3643588b3cd1a48
    "accent.custom": "自定义颜色",
    "actionMenu.byPosition": "{what}（按位置）",
    "actionMenu.clear": "清空字段",
-@@ -2330,6 +2338,95 @@
+@@ -2391,6 +2403,95 @@
    "settings.tabAbout": "关于",
    "settings.tabApi": "API 与 MCP",
    "settings.tabAppearance": "外观",
@@ -8707,18 +9127,18 @@ index ac20660402ea28eda21df123d5cb200aaf35861f..8b56ac625e6c9dead3643588b3cd1a48
    "settings.tabHelper": "助手",
    "settings.tabOther": "其他",
 diff --git a/src/shared/lib/errors.ts b/src/shared/lib/errors.ts
-index 286d8fcdcd2507d482c6c9c4e84d66930c35ea53..0787cbb71cf57b3e81add52dfdf17388d61a844c 100644
+index 2a5295ad9fe2fc5ad48db00de827b92bcb77232d..d29519ad889be93bf49ad6fd11c4fe61deded729 100644
 --- a/src/shared/lib/errors.ts
 +++ b/src/shared/lib/errors.ts
-@@ -3,6 +3,7 @@ import { SYNC_REFUSALS } from "../../entities/sync/model/types";
- import { refusal } from "../../entities/sync/lib/refusals";
- import { EXTENSION_TOO_BIG_RE, FORBIDDEN_RE, TEAM_REFUSALS } from "../api/teamRefusals";
+@@ -5,6 +5,7 @@ import { EXTENSION_TOO_BIG_RE, FORBIDDEN_RE, TEAM_REFUSALS } from "../api/teamRe
+ import { LOCK_REFUSALS } from "../api/lockRefusals";
+ import { AUTOMATION_REFUSALS } from "../api/automationRefusals";
  import { fmtBytes } from "./format";
 +import { proxyChainErrorFromText, proxyChainErrorText } from "./proxyChainError";
  
  const LEASED = refusal(SYNC_REFUSALS.leased);
  /** A fixed refusal as a pattern, its dots taken literally. */
-@@ -145,10 +146,15 @@ export function rawError(e: unknown): string | undefined {
+@@ -160,10 +161,15 @@ export function rawError(e: unknown): string | undefined {
  export function explainError(e: unknown): string | undefined {
    if (e && typeof e === "object" && !(e instanceof Error)) {
      const code = (e as { code?: unknown }).code;
@@ -8857,6 +9277,28 @@ index a67ced561886b0d1e186c0bb2ff3cbcf1ce0998c..b5e04f347cc38cb74396281436a46804
  };
  
  function tabFromUrl(): SettingsTab {
+diff --git a/src/shared/model/simpleNavigation.ts b/src/shared/model/simpleNavigation.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..cd6833354c5d07f1ffe5aa337b47f75dcdb0ce79
+--- /dev/null
++++ b/src/shared/model/simpleNavigation.ts
+@@ -0,0 +1,16 @@
++import { create } from "zustand";
++
++const KEY = "shardx.simpleNavigation";
++function read(): boolean {
++  try { return localStorage.getItem(KEY) === "true"; } catch { return false; }
++}
++
++/** Presentation only, per window. Settings commits it after Save succeeds;
++ * no profile, proxy, permission, command or navigation state is rewritten. */
++export const useSimpleNavigation = create<{ enabled: boolean; setEnabled: (enabled: boolean) => void }>((set) => ({
++  enabled: read(),
++  setEnabled: (enabled) => {
++    try { localStorage.setItem(KEY, String(enabled)); } catch { /* applies for this window */ }
++    set({ enabled });
++  },
++}));
 diff --git a/src/shared/ui/ChainPolicyField.tsx b/src/shared/ui/ChainPolicyField.tsx
 new file mode 100644
 index 0000000000000000000000000000000000000000..0a6ca098c8e0f6360d81ee50d0b6278eb02c1e4b
@@ -8903,6 +9345,31 @@ index e75b652de558706c78583827a39814e2dc342e5a..50c6825bcf86207cd1691b30dfdd8445
    if (/port in use|address in use/i.test(raw)) return t("overview.whyPort");
    // The backend's own words, as the end of a sentence.
    const words = raw.replace(/^Error:\s*/, "").replace(/[.\s]+$/, "");
+diff --git a/src/widgets/ProxyPeek/Details.tsx b/src/widgets/ProxyPeek/Details.tsx
+index 0a8b322ec6e1658b105d448a1c2ff2f3a7e38861..c2376f2e10d4245e091123a97a69383b03d97751 100644
+--- a/src/widgets/ProxyPeek/Details.tsx
++++ b/src/widgets/ProxyPeek/Details.tsx
+@@ -33,6 +33,12 @@ export function Details({ proxy: p }: { proxy: ProxyEntry }) {
+       {/* 2 px between 32 px rows, as the profile panel's. */}
+       <div className="flex flex-col gap-[2px]">
+         {row("type", t("proxyEditor.typeLabel"), KIND[p.kind])}
++        {row("chain-policy", t("proxyChain.policyLabel"), t(
++          p.proxy_chain_policy === "enabled" ? "proxyChain.policyEnabled"
++            : p.proxy_chain_policy === "disabled" ? "proxyChain.policyDisabled"
++              : !p.proxy_chain_policy || p.proxy_chain_policy === "inherit" ? "proxyChain.policyInherit"
++                : "proxyChain.errorPolicy"
++        ), { wrap: true })}
+         {row("host", t("proxyEditor.hostLabel"), p.host, { mono: true, selectable: true })}
+         {row("port", t("proxyEditor.portLabel"), p.port, { mono: true, selectable: true })}
+         {row("username", t("proxyEditor.usernameLabel"), p.username || none, { empty: !p.username, selectable: !!p.username })}
+@@ -71,6 +77,7 @@ export function Details({ proxy: p }: { proxy: ProxyEntry }) {
+         </PropertyRow>
+         {row("notes", t("proxyPeek.notes"), p.notes || t("peek.noNotes"), { empty: !p.notes, wrap: true, selectable: !!p.notes })}
+       </div>
++      <p data-chain-choice-note className="m-0 text-help text-text-sub-600">{t("proxyChain.policyHelp")}</p>
+       <Signature proxy={p} />
+     </PropertySheet>
+   );
 diff --git a/src/widgets/ProxyPeek/ProxyPeek.tsx b/src/widgets/ProxyPeek/ProxyPeek.tsx
 index 3014d476469aef5876e46ca7a20de8332154080e..443d5027ee363a0ffd223285252eeb81d039e3ae 100644
 --- a/src/widgets/ProxyPeek/ProxyPeek.tsx
@@ -8956,6 +9423,71 @@ index 3014d476469aef5876e46ca7a20de8332154080e..443d5027ee363a0ffd223285252eeb81
          </p>
        )}
      </div>
+diff --git a/src/widgets/Sidebar/Sidebar.tsx b/src/widgets/Sidebar/Sidebar.tsx
+index c94ae7bd3dd87f800e47d794acc3a77f251b2d85..b82301bd2ea615582bf505d2d3e31fb74f399a3d 100644
+--- a/src/widgets/Sidebar/Sidebar.tsx
++++ b/src/widgets/Sidebar/Sidebar.tsx
+@@ -30,6 +30,7 @@ import { useNarrowWindow } from "../../shared/hooks/useNarrowWindow";
+ import type { RtUpdate, Section } from "../../shared/types";
+ import { useNav } from "../../shared/model/navigation";
+ import { useKeyPrefs } from "../../shared/model/keyPrefs";
++import { useSimpleNavigation } from "../../shared/model/simpleNavigation";
+ import { useWhatsNew } from "../../shared/model/whatsNew";
+ import { useLang, useT } from "../../shared/i18n";
+ import {
+@@ -240,6 +241,40 @@ function ExtensionsItem({ compact }: { compact: boolean }) {
+   );
+ }
+ 
++/// Simple mode folds destinations, not capabilities. The current destination
++/// stays visible even after a deep link or command opens it while folded.
++function SecondaryPages({ compact }: { compact: boolean }) {
++  const t = useT();
++  const simple = useSimpleNavigation((s) => s.enabled);
++  const current = useNav((s) => s.section);
++  const updates = useExtensionUpdates((s) => updatableCount(s.byId));
++  const [open, setOpen] = useState(false);
++  const controls = useId();
++  useEffect(() => { setOpen(false); }, [simple]);
++  const shown = (id: Section) => !simple || open || current === id;
++  const showUpdates = !open && current !== "extensions" && updates > 0;
++  const label = open ? t("sidebar.fewerPages") : t("sidebar.morePages");
++  const updateLabel = t(updates === 1 ? "sidebar.extensionUpdatesOne" : "sidebar.extensionUpdatesMany", { n: updates });
++  return <>
++    {simple && <NavItem
++      size="small" data-nav="more" icon={compact && showUpdates ? <span className="relative flex">
++        <MoreIcon className="size-3.5" />
++        <Badge data-update-count aria-hidden="true" color="warning" size="small" shape="pill" className="absolute -top-2 left-2 min-w-[14px] px-[3px]! leading-none">{updates}</Badge>
++      </span> : <MoreIcon className="size-3.5" />}
++      label={compact && showUpdates ? `${label}: ${updateLabel}` : label} collapsed={compact}
++      aria-expanded={open} aria-controls={controls} onClick={() => setOpen((value) => !value)}
++      badge={showUpdates ? <Badge data-update-count color="warning" size="small">{updates}</Badge> : undefined}
++      badgeLabel={showUpdates ? updateLabel : undefined}
++    />}
++    <div id={controls} data-secondary-pages className="flex flex-col gap-0.5">
++      {shown("extensions") && <ExtensionsItem compact={compact} />}
++      {shown("bookmarks") && <PageItem id="bookmarks" label={t("sidebar.navBookmarks")} icon={<NavBookmarksIcon className="size-3.5" />} compact={compact} />}
++      {shown("automation") && <PageItem id="automation" label={t("sidebar.navProjects")} icon={<NavAutomationIcon className="size-3.5" />} compact={compact} />}
++      {shown("proxyshard") && <PageItem id="proxyshard" label={t("sidebar.navAccountShop")} icon={<NavShopIcon className="size-3.5" />} compact={compact} />}
++    </div>
++  </>;
++}
++
+ /// All Profiles: a fixed destination above the user's own lists, so neither
+ /// folding nor 12 Folders ever push it away (owner feedback 5s, LAYOUT-01).
+ /// Dropping a profile here takes it out of its Folder. It shows one count,
+@@ -1053,10 +1088,7 @@ export function Sidebar() {
+           <AllProfilesItem compact={compact} />
+           <PageItem id="proxies" label={t("sidebar.navProxies")} icon={<RouteIcon className="size-3.5" />} compact={compact} />
+           <PageItem id="fingerprints" label={t("sidebar.navFingerprints")} icon={<NavFingerprintsIcon className="size-3.5" />} compact={compact} />
+-          <ExtensionsItem compact={compact} />
+-          <PageItem id="bookmarks" label={t("sidebar.navBookmarks")} icon={<NavBookmarksIcon className="size-3.5" />} compact={compact} />
+-          <PageItem id="automation" label={t("sidebar.navProjects")} icon={<NavAutomationIcon className="size-3.5" />} compact={compact} />
+-          <PageItem id="proxyshard" label={t("sidebar.navAccountShop")} icon={<NavShopIcon className="size-3.5" />} compact={compact} />
++          <SecondaryPages compact={compact} />
+         </div>
+         {/* The lists that grow with the user's data scroll on their own. */}
+         <ScrollArea>
 diff --git a/src/widgets/ToastHost/ToastHost.tsx b/src/widgets/ToastHost/ToastHost.tsx
 index 9972dea26d241515909439b2d297f9c87e76faa7..92ee4018ecf15251194fd47bb9247f0eb80ca0b0 100644
 --- a/src/widgets/ToastHost/ToastHost.tsx

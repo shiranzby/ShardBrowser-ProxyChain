@@ -1,8 +1,10 @@
 ## Windows proxy-chain fork
 
-This fork adds **Settings → Proxy → Use system proxy to connect to proxies** on Windows. A profile's saved SOCKS5 proxy remains the final exit; HTTP CONNECT or SOCKS5 provides the first hop. The original engine, profiles and browser data remain upstream components.
+This fork adds **Settings → Proxy → Use system proxy to connect to proxies** on Windows. A profile's saved SOCKS5, HTTP or HTTPS proxy remains the final exit; HTTP CONNECT or SOCKS5 provides the first hop. HTTPS verifies the original proxy host inside the first-hop tunnel. The original engine, profiles and browser data remain upstream components.
 
-V1 is TCP only: QUIC is disabled, WebRTC uses the engine's TCP-only policy, and raw DevTools/automation launches are refused while chaining is enabled. PAC/WPAD and ambiguous Windows SOCKS mappings require manual configuration. Failed chain preparation blocks Start.
+Chains are TCP only: QUIC is disabled, WebRTC uses the engine's TCP-only policy, and raw DevTools/automation launches are refused while chaining is enabled. Automatic mode prefers enabled static Windows proxies, otherwise resolves PAC/WPAD for the actual second hop; DIRECT and ambiguous routes are refused. Failed chain preparation blocks Start. A profile's choice overrides its proxy's choice, then the global default; disabling skips only the first hop. See [route choice and protocol boundaries](docs/PROXY-CHAIN-POLICY.md).
+
+Optional **Settings → Appearance → Simple navigation** folds extensions, bookmarks, projects and ProxyShard under More after Save. It does not remove capabilities, commands, permissions or the current destination. The complete navigation remains the default.
 
 Daily stable-release checks replay a separate patch, run Rust/UI gates and build a Windows x64 Portable. Download candidate builds from this fork's [Actions](https://github.com/shiranzby/ShardBrowser-ProxyChain/actions); candidate status does not certify the complete real-engine acceptance matrix. See [maintenance, upgrade and conflict handling](docs/PROXY-CHAIN-MAINTENANCE.md).
 
