@@ -1,9 +1,9 @@
 diff --git a/docs/PROXY-CHAIN-POLICY.md b/docs/PROXY-CHAIN-POLICY.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..58c7de2d71330683eb3d2c2c9800e296befa054d
+index 0000000000000000000000000000000000000000..99e6de32b6798a065ac2493998c61f1b30fd087a
 --- /dev/null
 +++ b/docs/PROXY-CHAIN-POLICY.md
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,47 @@
 +# Per-profile route choice and HTTP/HTTPS second hops (pc5)
 +
 +Each saved profile `_meta.proxy_chain_policy` and saved proxy
@@ -24,7 +24,11 @@ index 0000000000000000000000000000000000000000..58c7de2d71330683eb3d2c2c9800e296
 +
 +Local API `POST /profiles` and `PATCH /profiles/{id}` accept
 +`proxy_chain_policy`. `GET /profiles/{id}` keeps it inside `_meta`; the list also
-+returns the policy. `POST /proxies` accepts the same field. Profile JSON
++returns the policy. `POST /proxies` accepts the same field; its response and
++`GET /proxies` also return it without credentials. Proxy history used as an
++unchained launch fallback is filtered by the resolved profile policy, not only
++the global switch. Team and local proxy deduplication both include the policy.
++Profile JSON
 +export/import, clone and the opaque team/sync payload retain the choice. Older
 +unpatched clients may discard fields they do not understand: use the patched
 +version on every machine that edits these records. No claim is made that an old
@@ -694,7 +698,7 @@ index d860e1e6a7cac333c3cc0bc9cb67faf286b07d69..5d36fdbd40e30008637c830f2015d4e5
 +    }
  }
 diff --git a/src-tauri/src/api.rs b/src-tauri/src/api.rs
-index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..7baa5589816797a18a877b580f12a77c460894e1 100644
+index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..eb7363885f9aba1ae6f0f69bead2a9b480934913 100644
 --- a/src-tauri/src/api.rs
 +++ b/src-tauri/src/api.rs
 @@ -208,6 +208,7 @@ async fn list_profiles() -> ApiResult {
@@ -761,7 +765,23 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..7baa5589816797a18a877b580f12a77c
      if let Some(n) = body.name.filter(|s| !s.is_empty()) {
          entry.name = n;
      }
-@@ -1373,6 +1381,25 @@ mod tests {
+@@ -780,6 +788,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
+         "host": stored.host,
+         "port": stored.port,
+         "country": stored.country,
++        "proxy_chain_policy": stored.proxy_chain_policy,
+     })))
+ }
+ 
+@@ -805,6 +814,7 @@ async fn list_proxies() -> ApiResult {
+                 "host": p.host,
+                 "port": p.port,
+                 "country": p.country,
++                "proxy_chain_policy": p.proxy_chain_policy,
+             })
+         })
+         .collect();
+@@ -1373,6 +1383,50 @@ mod tests {
          assert_eq!(all, json!([]));
      }
  
@@ -784,9 +804,73 @@ index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..7baa5589816797a18a877b580f12a77c
 +        assert_eq!(after, before);
 +    }
 +
++    #[tokio::test]
++    async fn api_proxy_chain_defaults_are_returned_without_credentials() {
++        let _serial = crate::migrate::serial();
++        let _root = crate::store::test_root("api-proxy-chain-defaults").with_config();
++        for policy in ["inherit", "enabled", "disabled"] {
++            let mut body = json!({ "proxy": "203.0.113.8:1080:synthetic-user:synthetic-password" });
++            if policy != "inherit" { body["proxy_chain_policy"] = json!(policy); }
++            let (status, _, made) = authed("POST", "/proxies", Some(body)).await;
++            assert_eq!(status, StatusCode::OK, "{made}");
++            assert_eq!(made["proxy_chain_policy"], policy);
++            assert!(made.get("username").is_none() && made.get("password").is_none());
++        }
++        let (status, _, listed) = authed("GET", "/proxies", None).await;
++        assert_eq!(status, StatusCode::OK, "{listed}");
++        let rows = listed.as_array().unwrap();
++        assert_eq!(rows.len(), 3, "different route choices must not be deduplicated");
++        for policy in ["inherit", "enabled", "disabled"] {
++            assert!(rows.iter().any(|p| p["proxy_chain_policy"] == policy));
++        }
++        assert!(!listed.to_string().contains("synthetic-"), "proxy responses must not expose credentials");
++        let (status, _, _) = authed("POST", "/proxies", Some(json!({ "proxy": "203.0.113.9:1080", "proxy_chain_policy": "future" }))).await;
++        assert_eq!(status, StatusCode::BAD_REQUEST);
++        assert_eq!(authed("GET", "/proxies", None).await.2, listed);
++    }
++
      /// The local API in a team's space, against a real team server in-process.
      mod in_a_team {
          use super::*;
+@@ -1719,6 +1773,38 @@ mod tests {
+             drop(t.srv);
+         }
+ 
++        #[tokio::test]
++        async fn team_bound_proxy_password_update_keeps_route_choices_separate() {
++            use crate::proxy_chain::policy::ChainPolicy;
++            let t = Team::as_admin().await;
++            t.enter().await;
++            let tk = Ticket::now();
++            let mut entry = crate::space::proxy::parse_single("203.0.113.5:1080:synthetic-user:synthetic-old").unwrap();
++            entry.proxy_chain_policy = ChainPolicy::Enabled;
++            let original = crate::space::proxy::upsert(Door("proxy_save"), &tk, entry.clone()).await.unwrap();
++
++            entry.proxy_chain_policy = ChainPolicy::Disabled;
++            entry.password = "synthetic-new".into();
++            let separate = crate::space::proxy::upsert_for_binding(Door("proxy_save"), &tk, entry.clone(), Some(&original.id)).await.unwrap();
++            assert_ne!(separate.id, original.id, "a changed route choice must not mutate the bound proxy");
++            assert_eq!(separate.proxy_chain_policy, ChainPolicy::Disabled);
++            assert_eq!(serde_json::to_value(crate::space::proxy::get(&original.id).unwrap().unwrap()).unwrap(), serde_json::to_value(&original).unwrap());
++
++            entry.password = "synthetic-rotated".into();
++            let rotated = crate::space::proxy::upsert_for_binding(Door("proxy_save"), &tk, entry, Some(&separate.id)).await.unwrap();
++            assert_eq!(rotated.id, separate.id, "the same route still supports a password-only update");
++            assert_eq!(rotated.proxy_chain_policy, ChainPolicy::Disabled);
++            assert_eq!(rotated.password, "synthetic-rotated");
++            let (status, listed) = t.call("GET", "/proxies", None).await;
++            assert_eq!(status, StatusCode::OK, "{listed}");
++            let rows = listed.as_array().unwrap();
++            assert_eq!(rows.len(), 2);
++            assert_eq!(rows.iter().find(|p| p["id"] == original.id).unwrap()["proxy_chain_policy"], "enabled");
++            assert_eq!(rows.iter().find(|p| p["id"] == rotated.id).unwrap()["proxy_chain_policy"], "disabled");
++            assert!(!listed.to_string().contains("synthetic-"));
++            drop(t.srv);
++        }
++
+         #[tokio::test]
+         async fn a_member_with_the_rights_writes_each_kind_of_change_to_the_team() {
+             let all = [Action::See, Action::Start, Action::Edit, Action::Create, Action::Delete];
 diff --git a/src-tauri/src/cdp.rs b/src-tauri/src/cdp.rs
 index a759d290c6827d67db6b39fe0b146fd5124eac23..5a49bc028c5063133ca4b39cc30938d7f57759ca 100644
 --- a/src-tauri/src/cdp.rs
@@ -802,7 +886,7 @@ index a759d290c6827d67db6b39fe0b146fd5124eac23..5a49bc028c5063133ca4b39cc30938d7
      let page = s.page().ok_or_else(|| anyhow!("no page attached"))?;
      s.call(method, params, Some(&page)).await
 diff --git a/src-tauri/src/launch.rs b/src-tauri/src/launch.rs
-index 6998280cc5502e92ac7c848cbfee66efb33960ab..fc97cd9a3e611daef7b0d23043d36c1490171d82 100644
+index 6998280cc5502e92ac7c848cbfee66efb33960ab..410b748c3b218d983f035717b323696826171df6 100644
 --- a/src-tauri/src/launch.rs
 +++ b/src-tauri/src/launch.rs
 @@ -366,6 +366,17 @@ fn bound_proxy(
@@ -868,6 +952,15 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..fc97cd9a3e611daef7b0d23043d36c14
          if matches!(p.kind, proxy::ProxyKind::Socks5) {
              match proxy::probe_udp(p).await {
                  Ok(ms) => {
+@@ -592,7 +624,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+                         );
+                         true
+                     } else {
+-                        let cached = proxy::latest_test(&p.id).and_then(|s| s.udp_ms).is_some();
++                        let cached = proxy::latest_test_for(p).and_then(|s| s.udp_ms).is_some();
+                         eprintln!(
+                             "[launcher] UDP probe failed for proxy {} ({e}) while this \
+                              process CAN send UDP, so the proxy has no relay; cached={cached}",
 @@ -613,13 +645,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      // Win/Linux profile whose resolution the operator picked in the editor is
      // left out of it, or the switch would report the host's screen over exactly
@@ -883,7 +976,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..fc97cd9a3e611daef7b0d23043d36c14
      // The proxy probe and the geo lookup are the slow part: a cancel made
      // while they ran stops here, before anything is written.
      check_cancel(&input.profile_id)?;
-@@ -705,7 +736,9 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -705,10 +736,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      }
  
      // Live geo for ICE-candidate spoofing, cached snapshot as fallback.
@@ -893,7 +986,11 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..fc97cd9a3e611daef7b0d23043d36c14
 +    } else if let Some(p) = input.proxy.as_ref() {
          match proxy::geo_check(p, None).await {
              Ok(g) if !g.ip.is_empty() => Some(g.ip),
-             _ => proxy::latest_test(&p.id)
+-            _ => proxy::latest_test(&p.id)
++            _ => proxy::latest_test_for(p)
+                 .map(|s| s.ip)
+                 .filter(|ip| !ip.is_empty()),
+         }
 @@ -723,6 +756,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      let args = command_line(
          &input,
@@ -930,7 +1027,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..fc97cd9a3e611daef7b0d23043d36c14
  ) {
      let want_tz_auto = cfg.get("timezone").and_then(|v| v.as_str()) == Some("auto");
      let want_lang_auto = cfg
-@@ -1036,7 +1072,10 @@ async fn resolve_auto_fields(
+@@ -1036,13 +1072,16 @@ async fn resolve_auto_fields(
  
      // ---- geo source ----
      let mut source = "";
@@ -942,6 +1039,13 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..fc97cd9a3e611daef7b0d23043d36c14
          Some(p) => {
              match proxy::geo_check_via(Some(p), None).await {
                  Ok(g) => { source = "proxy-live"; Some(g) }
+                 Err(e) => {
+                     eprintln!("[launcher] proxy geo failed: {e} — falling back to cached snapshot");
+-                    if let Some(snap) = proxy::latest_test(&p.id) {
++                    if let Some(snap) = proxy::latest_test_for(p) {
+                         if !snap.country_code.is_empty() || !snap.timezone.is_empty() {
+                             source = "cached-snapshot";
+                             Some(proxy::GeoInfo {
 @@ -1088,7 +1127,7 @@ async fn resolve_auto_fields(
                  }
              }
@@ -2680,10 +2784,10 @@ index 0000000000000000000000000000000000000000..b53e5b910df49df61865567902df08b9
 +}
 diff --git a/src-tauri/src/proxy_chain/detection_tests.rs b/src-tauri/src/proxy_chain/detection_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..d897d74808d96ee80eedfad7bc02c0ebf454443d
+index 0000000000000000000000000000000000000000..25163f0030fab8be0880d588b00e1a431731eb39
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detection_tests.rs
-@@ -0,0 +1,440 @@
+@@ -0,0 +1,474 @@
 +//! Detection uses real loopback proxy protocols. Fixtures answer Geo requests
 +//! themselves; they never resolve or connect to any external destination.
 +
@@ -2898,6 +3002,40 @@ index 0000000000000000000000000000000000000000..d897d74808d96ee80eedfad7bc02c0eb
 +        assert_eq!(first.requests.lock().unwrap().len() > before, chained);
 +        assert_eq!(dto["system_proxy"]["state"], if chained { "ok" } else { "not_tested" });
 +    }
++}
++
++#[test]
++fn cached_test_uses_saved_proxy_or_frozen_profile_policy_not_only_global() {
++    use super::policy::ChainPolicy;
++    use crate::space::proxy;
++    let _root = crate::store::test_root("chain-policy-history");
++    std::fs::write(crate::store::settings_path().unwrap(), r#"{"proxy_chain":{"enabled":true}}"#).unwrap();
++    std::fs::write(crate::store::proxies_path().unwrap(), json!({"proxies":[{
++        "id":"history-proxy", "name":"Synthetic history", "kind":"http", "host":"127.0.0.1", "port":1,
++        "proxy_chain_policy":"disabled"
++    }]}).to_string()).unwrap();
++    let direct = json!({
++        "first_seen":"@1", "last_seen":"@1", "ip":"192.0.2.1", "country_code":"JP", "country":"Japan",
++        "region":"", "city":"", "isp":"", "timezone":"Asia/Tokyo", "latitude":0.0, "longitude":0.0,
++        "tcp_ms":1, "udp_ms":2, "udp_error":null, "provider":"synthetic"
++    });
++    let mut chained = direct.clone();
++    chained["transport"] = json!("proxy_chain");
++    chained["ip"] = json!("192.0.2.2");
++    chained["udp_ms"] = json!(null);
++    std::fs::write(crate::store::config_root().unwrap().join("proxies-history.json"), json!({
++        "by_proxy":{"history-proxy":[direct, chained]}
++    }).to_string()).unwrap();
++    // The list follows the stored proxy's explicit off despite global on.
++    assert_eq!(proxy::latest_test("history-proxy").unwrap().ip, "192.0.2.1");
++    let mut runtime = proxy::get("history-proxy").unwrap().unwrap();
++    runtime.proxy_chain_policy = ChainPolicy::Enabled;
++    assert_eq!(proxy::latest_test_for(&runtime).unwrap().ip, "192.0.2.2");
++    runtime.proxy_chain_policy = ChainPolicy::Disabled;
++    assert_eq!(proxy::latest_test_for(&runtime).unwrap().udp_ms, Some(2));
++    runtime.proxy_chain_policy = ChainPolicy::Invalid;
++    assert!(proxy::latest_test_for(&runtime).is_none());
++    assert_eq!(proxy::get("history-proxy").unwrap().unwrap().proxy_chain_policy, ChainPolicy::Disabled);
 +}
 +
 +#[tokio::test]
@@ -7363,7 +7501,7 @@ index e650ebdb78ecbd7cf4fbd1e43095ef95f209d9ea..56dea346ae658f94d5bd1803c4370408
          name: stored
              .config
 diff --git a/src-tauri/src/space/mod.rs b/src-tauri/src/space/mod.rs
-index 00d90e17f3869e100400cd0ceae4478808abf924..1afd17ac1a9f6001dd5a3e681b71ad2371b59288 100644
+index 00d90e17f3869e100400cd0ceae4478808abf924..dafeb9624d4a8e825b6bce969a82192e775df3b3 100644
 --- a/src-tauri/src/space/mod.rs
 +++ b/src-tauri/src/space/mod.rs
 @@ -360,6 +360,8 @@ pub mod profile {
@@ -7462,7 +7600,7 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..1afd17ac1a9f6001dd5a3e681b71ad23
          match t.team() {
              Some(team) => Ok(write::save_proxies(door, t, team, entries).await?),
              None => {
-@@ -654,10 +696,8 @@ pub mod proxy {
+@@ -654,10 +696,15 @@ pub mod proxy {
      }
  
      pub fn latest_test(id: &str) -> Option<TestSnapshot> {
@@ -7470,8 +7608,15 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..1afd17ac1a9f6001dd5a3e681b71ad23
 -            Some(team) => cache::tests(&team, id).pop(),
 -            None => local::latest_test(id),
 -        }
-+        let enabled = crate::proxy_chain::saved_settings().ok()?.proxy_chain.enabled;
-+        history(id).ok()?.into_iter().rev().find(|s| (s.transport.as_deref() == Some("proxy_chain")) == enabled)
++        latest_test_for(&get(id).ok()??)
++    }
++
++    /// Launch passes its in-memory proxy with the resolved profile policy.
++    /// The proxy list instead uses the saved proxy's policy via latest_test.
++    pub fn latest_test_for(entry: &ProxyEntry) -> Option<TestSnapshot> {
++        let settings = crate::proxy_chain::saved_settings().ok()?;
++        let enabled = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy).ok()?.enabled;
++        history(&entry.id).ok()?.into_iter().rev().find(|s| (s.transport.as_deref() == Some("proxy_chain")) == enabled)
      }
  }
  
@@ -7495,6 +7640,18 @@ index 7000d07a4589cd40e9d5c9156328875e480b4bb7..d11b24062c570fa9f58fe28bb464dd58
          id: String::new(),
          name: String::new(),
          kind: ProxyKind::Socks5,
+diff --git a/src-tauri/src/space/write.rs b/src-tauri/src/space/write.rs
+index 85047f9559dacb309fa3a6f7282751ad347876bb..96427c04f80029c7df36b247e0b347f060e943cb 100644
+--- a/src-tauri/src/space/write.rs
++++ b/src-tauri/src/space/write.rs
+@@ -443,6 +443,7 @@ pub async fn save_proxy_for_binding(
+     let own = bound_id.filter(|b| !b.is_empty()).and_then(|b| {
+         held.into_iter().find(|p| {
+             p.id == b && p.kind == entry.kind && p.host == entry.host && p.port == entry.port && p.username == entry.username
++                && p.proxy_chain_policy == entry.proxy_chain_policy
+         })
+     });
+     match own {
 diff --git a/src/dev/mock/fixtures.ts b/src/dev/mock/fixtures.ts
 index e5a46b6e64386b6cc95d06fe9a513df8b4f24a9d..3cb5436fc50deb1b1eea33602a6f7a4b0eb20f14 100644
 --- a/src/dev/mock/fixtures.ts
