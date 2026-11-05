@@ -1,3 +1,52 @@
+diff --git a/docs/PROXY-CHAIN-POLICY.md b/docs/PROXY-CHAIN-POLICY.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..58c7de2d71330683eb3d2c2c9800e296befa054d
+--- /dev/null
++++ b/docs/PROXY-CHAIN-POLICY.md
+@@ -0,0 +1,43 @@
++# Per-profile route choice and HTTP/HTTPS second hops (pc5)
++
++Each saved profile `_meta.proxy_chain_policy` and saved proxy
++`proxy_chain_policy` accepts `inherit`, `enabled`, or `disabled`. Missing fields
++mean `inherit`. Unknown values are errors, never an unchained fallback.
++
++Precedence is **profile > assigned proxy > global `settings.proxy_chain.enabled`**.
++`disabled` skips only the first hop: the original proxy binding, credentials,
++fingerprint and data directory stay unchanged. It is not a command to clear the
++proxy. If the profile originally has no proxy, the original unchained behavior
++still applies. Saved edits affect the next start; active tunnels remain owned by
++the running Session, including runtime proxy-swap restrictions.
++
++UI: edit a profile, open Proxy, choose Proxy chain choice; or open a proxy's Peek,
++press Edit and choose its default. A profile's explicit choice wins when multiple
++profiles share one proxy. Global first-hop host/port/credentials remain shared;
++this is not a separate first-hop server per profile.
++
++Local API `POST /profiles` and `PATCH /profiles/{id}` accept
++`proxy_chain_policy`. `GET /profiles/{id}` keeps it inside `_meta`; the list also
++returns the policy. `POST /proxies` accepts the same field. Profile JSON
++export/import, clone and the opaque team/sync payload retain the choice. Older
++unpatched clients may discard fields they do not understand: use the patched
++version on every machine that edits these records. No claim is made that an old
++launcher understands the new policy.
++
++Second-hop SOCKS5 and HTTP remain transparent byte tunnels through the first
++proxy. A true HTTPS proxy requires TLS **inside the first-hop tunnel**, validated
++against the original proxy host/IP with WebPKI roots. Only the in-memory loopback
++view changes from HTTPS to HTTP; the saved entry stays HTTPS. The local listener
++forwards HTTP requests/CONNECT through verified TLS, leaving second-hop
++authentication with the engine/detection client. TLS failures do not retry HTTP,
++disable certificate checks, or connect directly. Private/self-signed certificates
++are not accepted by an untrusted override. First-hop credentials remain separate.
++
++A supplier saying “HTTPS proxy” may mean a plain HTTP CONNECT proxy that carries
++HTTPS websites. Select `http` only after verifying the actual endpoint; never
++silently downgrade a saved `https` entry. An IP HTTPS endpoint must have a matching
++IP certificate. HTTP Basic credentials are not protected by proxy TLS in HTTP mode.
++
++pc5 still has TCP-only chains, no QUIC/UDP and no raw-CDP/automation launch in a
++chained Session. First-hop HTTP/SOCKS5 routes may be automatic Windows settings or
++manual remote endpoints; encrypted subscription protocols are not implemented.
 diff --git a/e2e/proxy-chain-errors.spec.ts b/e2e/proxy-chain-errors.spec.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..a02f550460912d1c782de76c86f888d2439d2638
@@ -62,6 +111,73 @@ index 0000000000000000000000000000000000000000..a02f550460912d1c782de76c86f888d2
 +  expect(detail).toContain("First hop:");
 +  expect(detail).toContain("routing rules");
 +});
+diff --git a/e2e/proxy-chain-policy.spec.ts b/e2e/proxy-chain-policy.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f5fb3be499e5e1296842d2455548cfdb0ed01517
+--- /dev/null
++++ b/e2e/proxy-chain-policy.spec.ts
+@@ -0,0 +1,61 @@
++import { expect, test } from "@playwright/test";
++import { openApp, openEditForm, reloadApp } from "./support/app";
++
++test("profile chain choice is saved, reopened and does not unbind its proxy", async ({ page }) => {
++  await openApp(page, { theme: "light" });
++  const before = await page.evaluate(() => (window as any).__shardxMock.state.profiles["f62a9d43"]._meta.proxy_id);
++  let form = await openEditForm(page, "Sandbox", "Proxy");
++  await form.getByRole("combobox", { name: "Proxy chain choice" }).click();
++  await page.getByRole("option", { name: "Do not use first hop", exact: true }).click();
++  await form.getByRole("button", { name: "Save", exact: true }).click();
++  await expect(form).toBeHidden();
++  expect(await page.evaluate(() => (window as any).__shardxMock.state.profiles["f62a9d43"]._meta.proxy_chain_policy)).toBe("disabled");
++  expect(await page.evaluate(() => (window as any).__shardxMock.state.profiles["f62a9d43"]._meta.proxy_id)).toBe(before);
++  await reloadApp(page);
++  form = await openEditForm(page, "Sandbox", "Proxy");
++  await expect(form.getByRole("combobox", { name: "Proxy chain choice" })).toContainText("Do not use first hop");
++});
++
++test("proxy choice is editable without touching credentials and cancel writes nothing", async ({ page }, info) => {
++  await openApp(page, { section: "proxies", theme: "light" });
++  const before = await page.evaluate(() => (window as any).__shardxMock.state.proxies.find((p: any) => p.id === "px-jp-1"));
++  const edit = async () => {
++    await page.locator("[role='row'][data-proxy-id='px-jp-1'] [data-cell='name']").click();
++    await page.locator("aside[data-peek='proxy'] [data-peek-header]").getByRole("button", { name: "Edit", exact: true }).click();
++    return page.getByRole("dialog", { name: "Edit DC Tokyo", exact: true });
++  };
++  let d = await edit();
++  await d.getByRole("combobox", { name: "Proxy chain choice" }).click();
++  await page.getByRole("option", { name: "Use first hop for this proxy", exact: true }).click();
++  await d.getByRole("button", { name: "Save", exact: true }).click();
++  await expect(d).toBeHidden();
++  const after = await page.evaluate(() => (window as any).__shardxMock.state.proxies.find((p: any) => p.id === "px-jp-1"));
++  expect(after).toEqual({ ...before, proxy_chain_policy: "enabled" });
++  d = await edit();
++  await expect(d.getByRole("combobox", { name: "Proxy chain choice" })).toContainText("Use first hop");
++  await page.screenshot({ path: info.outputPath("proxy-policy-light.png"), animations: "disabled" });
++  await d.getByRole("combobox", { name: "Proxy chain choice" }).click();
++  await page.getByRole("option", { name: "Do not use first hop", exact: true }).click();
++  await d.getByRole("button", { name: "Cancel", exact: true }).click();
++  const discard = page.getByRole("button", { name: /Discard|Don’t save|Don't save/i });
++  if (await discard.count()) await discard.last().click();
++  expect(await page.evaluate(() => (window as any).__shardxMock.state.proxies.find((p: any) => p.id === "px-jp-1").proxy_chain_policy)).toBe("enabled");
++});
++
++for (const language of ["zh", "ru"]) {
++  test(`route choice stays readable in ${language} at the minimum window`, async ({ page }, info) => {
++    await page.setViewportSize({ width: 1024, height: 680 });
++    await page.addInitScript((lang) => localStorage.setItem("shardx.lang", lang), language);
++    await openApp(page, { section: "proxies", theme: "light" });
++    await page.locator("[role='row'][data-proxy-id='px-jp-1'] [data-cell='name']").click();
++    const label = language === "zh" ? "编辑" : "Изменить";
++    await page.locator("aside[data-peek='proxy'] [data-peek-header]").getByRole("button", { name: label, exact: true }).click();
++    const d = page.getByRole("dialog");
++    const policy = d.locator("[data-chain-policy]");
++    await policy.scrollIntoViewIfNeeded();
++    await expect(policy).toBeVisible();
++    expect(await policy.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
++    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
++    await page.screenshot({ path: info.outputPath(`proxy-policy-${language}-1024.png`), animations: "disabled" });
++  });
++}
 diff --git a/e2e/proxy-chain-settings.spec.ts b/e2e/proxy-chain-settings.spec.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..0b962bb48bbac47b5990defe330dd41f2f76a6ca
@@ -482,11 +598,67 @@ index 2728094b5be739435166d6cd606210234d72a925..a7a634b22036c026601858c9a7251452
        if (SKIP.some((re) => re.test(rel))) continue;
        if (statSync(p).isDirectory()) walk(p);
        else if (/\.(tsx?|jsx?)$/.test(name)) {
+diff --git a/src-tauri/Cargo.lock b/src-tauri/Cargo.lock
+index fec16f012028c3da192b53980473cd9c1f5e5f82..ef7752168ede1fceb8c76b21bab7b1c61dc33ff7 100644
+--- a/src-tauri/Cargo.lock
++++ b/src-tauri/Cargo.lock
+@@ -4834,6 +4834,19 @@ dependencies = [
+  "crossbeam-utils",
+ ]
+ 
++[[package]]
++name = "rcgen"
++version = "0.13.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "75e669e5202259b5314d1ea5397316ad400819437857b90861765f24c4cf80a2"
++dependencies = [
++ "pem",
++ "ring",
++ "rustls-pki-types",
++ "time",
++ "yasna",
++]
++
+ [[package]]
+ name = "redox_syscall"
+ version = "0.5.18"
+@@ -5529,6 +5542,7 @@ dependencies = [
+  "postgres",
+  "quick-xml",
+  "rand 0.8.8",
++ "rcgen",
+  "reqwest 0.12.28",
+  "ring",
+  "rusqlite",
+@@ -8824,6 +8838,15 @@ dependencies = [
+  "rustix",
+ ]
+ 
++[[package]]
++name = "yasna"
++version = "0.5.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
++dependencies = [
++ "time",
++]
++
+ [[package]]
+ name = "yoke"
+ version = "0.8.2"
 diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
-index 327c4074b8586e21ca6b481f9214a2cf8aa1cfac..57232bf331b75ce73da52efeb34f39edc6342df6 100644
+index 327c4074b8586e21ca6b481f9214a2cf8aa1cfac..7ec64f9cfd91942d4e3790a7857636bc6bf27ba6 100644
 --- a/src-tauri/Cargo.toml
 +++ b/src-tauri/Cargo.toml
-@@ -121,6 +121,7 @@ libc = "0.2"
+@@ -21,6 +21,7 @@ default = ["automation"]
+ automation = ["dep:wasmtime", "dep:wreq", "dep:wreq-util", "dep:postgres", "dep:mysql", "dep:mongodb"]
+ 
+ [dev-dependencies]
++rcgen = "0.13"
+ # `oneshot` on the router, so the API can be exercised without binding a port.
+ tower = { version = "0.5", features = ["util"] }
+ # A real team server in-process, for the team client's tests.
+@@ -121,6 +122,7 @@ libc = "0.2"
  aes-gcm = "0.10"
  getrandom = "0.2"
  windows-sys = { version = "0.59", features = [
@@ -521,6 +693,100 @@ index d860e1e6a7cac333c3cc0bc9cb67faf286b07d69..5d36fdbd40e30008637c830f2015d4e5
 +        println!("cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'");
 +    }
  }
+diff --git a/src-tauri/src/api.rs b/src-tauri/src/api.rs
+index 57d1f478f5ead2ed72fac14bfcdbcb295fcf4e4a..7baa5589816797a18a877b580f12a77c460894e1 100644
+--- a/src-tauri/src/api.rs
++++ b/src-tauri/src/api.rs
+@@ -208,6 +208,7 @@ async fn list_profiles() -> ApiResult {
+                 "name": m.name,
+                 "notes": m.notes,
+                 "proxy_id": m.proxy_id,
++                "proxy_chain_policy": m.proxy_chain_policy,
+                 "last_launched_at": m.last_launched_at,
+                 "created_at": m.created_at,
+                 "pinned": m.pinned,
+@@ -260,6 +261,7 @@ async fn new_fingerprint_impl(platform: Option<String>) -> ApiResult {
+ 
+ #[derive(Deserialize)]
+ struct CreateReq {
++    proxy_chain_policy: Option<crate::proxy_chain::policy::ChainPolicy>,
+     name: Option<String>,
+     notes: Option<String>,
+     proxy_id: Option<String>,
+@@ -306,6 +308,7 @@ async fn persist_created(door: Door, t: &Ticket, folder_override: Option<String>
+         validate_extension_ids(ids)?;
+         meta["extensions"] = json!(ids);
+     }
++    if let Some(choice) = body.proxy_chain_policy { choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?; meta["proxy_chain_policy"] = json!(choice); }
+     let mut inline_proxy = false;
+     if let Some(pid) = body.proxy_id.as_ref() {
+         meta["proxy_id"] = json!(pid);
+@@ -483,6 +486,7 @@ async fn delete_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>)
+ 
+ #[derive(Deserialize)]
+ struct EditReq {
++    proxy_chain_policy: Option<crate::proxy_chain::policy::ChainPolicy>,
+     name: Option<String>,
+     notes: Option<String>,
+     /// "" unfiles.
+@@ -545,6 +549,7 @@ async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, J
+     if let Some(n) = body.notes.as_ref() {
+         stored.config.insert("notes".into(), json!(n));
+     }
++    if let Some(choice) = body.proxy_chain_policy { choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?; stored.meta.proxy_chain_policy = choice; }
+     if let Some(pid) = body.proxy_id.as_ref() {
+         stored.meta.proxy_id = if pid.is_empty() { None } else { Some(pid.clone()) };
+         stored.meta.inline_proxy = None;
+@@ -716,6 +721,7 @@ async fn list_fingerprints() -> ApiResult {
+ 
+ #[derive(Deserialize)]
+ struct AddProxyReq {
++    proxy_chain_policy: Option<crate::proxy_chain::policy::ChainPolicy>,
+     /// "scheme://user:pass@host:port" or "host:port:user:pass"; wins over fields.
+     proxy: Option<String>,
+     /// socks5 | http | https (default socks5).
+@@ -748,6 +754,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
+             _ => crate::space::proxy::ProxyKind::Socks5,
+         };
+         crate::space::proxy::ProxyEntry {
++            proxy_chain_policy: Default::default(),
+             id: String::new(),
+             name: String::new(),
+             kind,
+@@ -760,6 +767,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
+         }
+     };
+     // metadata overrides (applied to parsed entries too).
++    if let Some(choice) = body.proxy_chain_policy { choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?; entry.proxy_chain_policy = choice; }
+     if let Some(n) = body.name.filter(|s| !s.is_empty()) {
+         entry.name = n;
+     }
+@@ -1373,6 +1381,25 @@ mod tests {
+         assert_eq!(all, json!([]));
+     }
+ 
++    #[tokio::test]
++    async fn api_proxy_chain_choice_roundtrips_and_rejects_unknown_without_writes() {
++        let _serial = crate::migrate::serial();
++        let _root = crate::store::test_root("api-chain-policy").with_config();
++        let (status, _, made) = authed("POST", "/profiles", Some(json!({"name":"Policy", "fingerprint":{}, "proxy_chain_policy":"disabled"}))).await;
++        assert_eq!(status, StatusCode::OK, "{made}");
++        let path = format!("/profiles/{}", made["id"].as_str().unwrap());
++        let (_, _, loaded) = authed("GET", &path, None).await;
++        assert_eq!(loaded["_meta"]["proxy_chain_policy"], "disabled");
++        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"enabled"}))).await;
++        assert_eq!(status, StatusCode::OK);
++        let (_, _, before) = authed("GET", &path, None).await;
++        assert_eq!(before["_meta"]["proxy_chain_policy"], "enabled");
++        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"future", "name":"Must not write"}))).await;
++        assert_eq!(status, StatusCode::BAD_REQUEST);
++        let (_, _, after) = authed("GET", &path, None).await;
++        assert_eq!(after, before);
++    }
++
+     /// The local API in a team's space, against a real team server in-process.
+     mod in_a_team {
+         use super::*;
 diff --git a/src-tauri/src/cdp.rs b/src-tauri/src/cdp.rs
 index a759d290c6827d67db6b39fe0b146fd5124eac23..5a49bc028c5063133ca4b39cc30938d7f57759ca 100644
 --- a/src-tauri/src/cdp.rs
@@ -536,10 +802,10 @@ index a759d290c6827d67db6b39fe0b146fd5124eac23..5a49bc028c5063133ca4b39cc30938d7
      let page = s.page().ok_or_else(|| anyhow!("no page attached"))?;
      s.call(method, params, Some(&page)).await
 diff --git a/src-tauri/src/launch.rs b/src-tauri/src/launch.rs
-index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff615e6a84a 100644
+index 6998280cc5502e92ac7c848cbfee66efb33960ab..fc97cd9a3e611daef7b0d23043d36c1490171d82 100644
 --- a/src-tauri/src/launch.rs
 +++ b/src-tauri/src/launch.rs
-@@ -366,6 +366,13 @@ fn bound_proxy(
+@@ -366,6 +366,17 @@ fn bound_proxy(
      }
  }
  
@@ -547,13 +813,17 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff6
 +pub(crate) fn proxy_for_test(profile_id: &str) -> Result<proxy::ProxyEntry> {
 +    let _pass = perm::start(profile_id)?;
 +    let stored = profile::load_raw(profile_id)?;
-+    bound_proxy(&stored, profile_id, proxy::get)?.ok_or_else(|| anyhow::anyhow!("This profile has no upstream proxy assigned."))
++    let mut entry = bound_proxy(&stored, profile_id, proxy::get)?.ok_or_else(|| anyhow::anyhow!("This profile has no upstream proxy assigned."))?;
++    stored.meta.proxy_chain_policy.validate()?;
++    entry.proxy_chain_policy.validate()?;
++    if !stored.meta.proxy_chain_policy.is_inherit() { entry.proxy_chain_policy = stored.meta.proxy_chain_policy; }
++    Ok(entry)
 +}
 +
  /// Machine switches a team's profile does not take: each would open a door
  /// the team keeps shut (debugging, the data folder, the proxy, extensions).
  fn team_extra_args(args: Vec<String>) -> Vec<String> {
-@@ -542,6 +549,7 @@ pub(crate) async fn launch_with(engine: PathBuf, profile_id: &str, enable_cdp: b
+@@ -542,6 +553,7 @@ pub(crate) async fn launch_with(engine: PathBuf, profile_id: &str, enable_cdp: b
  
  /// What the command line is made from once the slow steps are done.
  struct Ready<'a> {
@@ -561,11 +831,19 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff6
      fp_file: &'a Path,
      icon: Option<&'a Path>,
      /// The profile as the engine reads it: no `_meta`, "auto" resolved.
-@@ -556,13 +564,27 @@ struct Ready<'a> {
+@@ -555,14 +567,34 @@ struct Ready<'a> {
+     ext_alone: bool,
  }
  
- async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) -> Result<LaunchOutcome> {
-+    let s = crate::proxy_chain::saved_settings()?;
+-async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) -> Result<LaunchOutcome> {
++async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>) -> Result<LaunchOutcome> {
++    let mut s = crate::proxy_chain::saved_settings()?;
++    s.proxy_chain = crate::proxy_chain::policy::effective(&s.proxy_chain, input.stored.meta.proxy_chain_policy, input.proxy.as_ref().map(|p| p.proxy_chain_policy).unwrap_or_default())?;
++    // All later checks for this start use the same resolved choice, including
++    // the original route's UDP/Geo wrappers. Never persist this temporary copy.
++    if let Some(proxy) = &mut input.proxy {
++        proxy.proxy_chain_policy = if s.proxy_chain.enabled { crate::proxy_chain::policy::ChainPolicy::Enabled } else { crate::proxy_chain::policy::ChainPolicy::Disabled };
++    }
 +    if s.proxy_chain.enabled {
 +        crate::proxy_chain::validate_args(&s.extra_args)?;
 +        // A raw DevTools client can change Traffic.setProxy inside the closed
@@ -590,7 +868,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff6
          if matches!(p.kind, proxy::ProxyKind::Socks5) {
              match proxy::probe_udp(p).await {
                  Ok(ms) => {
-@@ -613,13 +635,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -613,13 +645,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      // Win/Linux profile whose resolution the operator picked in the editor is
      // left out of it, or the switch would report the host's screen over exactly
      // the one they asked for.
@@ -605,7 +883,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff6
      // The proxy probe and the geo lookup are the slow part: a cancel made
      // while they ran stops here, before anything is written.
      check_cancel(&input.profile_id)?;
-@@ -705,7 +726,9 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -705,7 +736,9 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      }
  
      // Live geo for ICE-candidate spoofing, cached snapshot as fallback.
@@ -616,7 +894,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff6
          match proxy::geo_check(p, None).await {
              Ok(g) if !g.ip.is_empty() => Some(g.ip),
              _ => proxy::latest_test(&p.id)
-@@ -723,6 +746,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -723,6 +756,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      let args = command_line(
          &input,
          &Ready {
@@ -624,7 +902,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff6
              fp_file: &fp_file,
              icon: icon.as_deref(),
              raw: &raw,
-@@ -764,7 +788,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -764,7 +798,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
          Some(_) => process::spawn_tied(cmd).await.context("start the ShardBrowser engine")?,
          None => (cmd.spawn().context("start the ShardBrowser engine")?, process::Tie::default()),
      };
@@ -633,7 +911,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff6
  
      if let Some(s) = &remote {
          s.spawned(tie, pid);
-@@ -865,8 +889,9 @@ fn command_line(
+@@ -865,8 +899,9 @@ fn command_line(
          args.push("--hide-crash-restore-bubble".into());
      }
  
@@ -644,7 +922,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff6
  
          // QUIC: enable only when proxy UDP relay verified; rely on Alt-Svc upgrade path.
          if ready.proxy_udp_ok {
-@@ -1010,6 +1035,7 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
+@@ -1010,6 +1045,7 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
  async fn resolve_auto_fields(
      cfg: &mut serde_json::Map<String, serde_json::Value>,
      proxy_opt: Option<&proxy::ProxyEntry>,
@@ -652,7 +930,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff6
  ) {
      let want_tz_auto = cfg.get("timezone").and_then(|v| v.as_str()) == Some("auto");
      let want_lang_auto = cfg
-@@ -1036,7 +1062,10 @@ async fn resolve_auto_fields(
+@@ -1036,7 +1072,10 @@ async fn resolve_auto_fields(
  
      // ---- geo source ----
      let mut source = "";
@@ -664,7 +942,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff6
          Some(p) => {
              match proxy::geo_check_via(Some(p), None).await {
                  Ok(g) => { source = "proxy-live"; Some(g) }
-@@ -1088,7 +1117,7 @@ async fn resolve_auto_fields(
+@@ -1088,7 +1127,7 @@ async fn resolve_auto_fields(
                  }
              }
          }
@@ -673,7 +951,7 @@ index 6998280cc5502e92ac7c848cbfee66efb33960ab..b8d43d0060502903a1d48dcfcdcc8ff6
  
      let host_warn = || {
          if proxy_opt.is_some() {
-@@ -1632,6 +1661,7 @@ mod tests {
+@@ -1632,6 +1671,7 @@ mod tests {
          let fp = PathBuf::from(format!("{}/fingerprint.json", input.udd.display()));
          let icon = PathBuf::from(format!("/runtime/profile-icons/{}.png", input.profile_id));
          let ready = Ready {
@@ -2402,10 +2680,10 @@ index 0000000000000000000000000000000000000000..b53e5b910df49df61865567902df08b9
 +}
 diff --git a/src-tauri/src/proxy_chain/detection_tests.rs b/src-tauri/src/proxy_chain/detection_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..dea24c9f4289491904ec90682524eace5f8ab1d9
+index 0000000000000000000000000000000000000000..d897d74808d96ee80eedfad7bc02c0ebf454443d
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detection_tests.rs
-@@ -0,0 +1,414 @@
+@@ -0,0 +1,440 @@
 +//! Detection uses real loopback proxy protocols. Fixtures answer Geo requests
 +//! themselves; they never resolve or connect to any external destination.
 +
@@ -2593,6 +2871,32 @@ index 0000000000000000000000000000000000000000..dea24c9f4289491904ec90682524eace
 +        username: FIRST_USER.into(),
 +        password: PasswordUpdate::Replace(FIRST_PASS.into()),
 +        ..Default::default()
++    }
++}
++
++#[tokio::test]
++async fn profile_choice_controls_detection_and_overrides_proxy_then_global() {
++    let _root = crate::store::test_root("chain-policy-detection");
++    let second = http_proxy(None, true).await;
++    let first = http_proxy(Some(second.addr), true).await;
++    let proxies = crate::store::proxies_path().unwrap();
++    let profile = crate::store::profiles_dir().unwrap().join("policy-profile.json");
++    for (global, proxy_policy, profile_policy, chained) in [
++        (true, "enabled", "disabled", false),
++        (true, "disabled", "inherit", false),
++        (false, "disabled", "enabled", true),
++        (false, "enabled", "inherit", true),
++        (false, "inherit", "inherit", false),
++    ] {
++        std::fs::write(&proxies, json!({"proxies":[{"id":"policy-proxy","name":"Synthetic","kind":"http","host":"127.0.0.1","port":second.addr.port(),"proxy_chain_policy":proxy_policy}]}).to_string()).unwrap();
++        std::fs::write(&profile, json!({"name":"Synthetic policy","_meta":{"id":"policy-profile","proxy_id":"policy-proxy","proxy_chain_policy":profile_policy}}).to_string()).unwrap();
++        let before = first.requests.lock().unwrap().len();
++        let mut draft = config(first.addr, "http"); draft.enabled = global;
++        let dto = serde_json::to_value(super::test("profile".into(), draft, Some("policy-profile".into())).await.unwrap()).unwrap();
++        assert_eq!(dto["profile_proxy"]["state"], "ok", "{dto}");
++        assert_eq!(dto["exit_ip"], "198.51.100.44");
++        assert_eq!(first.requests.lock().unwrap().len() > before, chained);
++        assert_eq!(dto["system_proxy"]["state"], if chained { "ok" } else { "not_tested" });
 +    }
 +}
 +
@@ -2857,10 +3161,10 @@ index 0000000000000000000000000000000000000000..13cf7269c1d1ef0e0ec83874b042c47c
 +impl std::error::Error for ChainError {}
 diff --git a/src-tauri/src/proxy_chain/integration_tests.rs b/src-tauri/src/proxy_chain/integration_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..f9f35f072074681bf9aa8d1188d11d723aab0035
+index 0000000000000000000000000000000000000000..bef59322561dbe22aa57f174e15aaec26ca930c5
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/integration_tests.rs
-@@ -0,0 +1,562 @@
+@@ -0,0 +1,663 @@
 +//! Product integration invariants, using only isolated profile files and
 +//! synthetic loopback services. No system settings or remote proxies are read.
 +
@@ -2881,6 +3185,83 @@ index 0000000000000000000000000000000000000000..f9f35f072074681bf9aa8d1188d11d72
 +use tokio::task::{JoinHandle, JoinSet};
 +
 +const WAIT: Duration = Duration::from_secs(15);
++
++#[tokio::test]
++async fn https_second_hop_verifies_original_name_and_carries_http_inside_tls() {
++    use rustls::pki_types::PrivatePkcs8KeyDer;
++    let certified = rcgen::generate_simple_self_signed(vec!["second.test".into()]).unwrap();
++    let cert = certified.cert.der().clone();
++    let provider = Arc::new(rustls::crypto::ring::default_provider());
++    let server = rustls::ServerConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().unwrap()
++        .with_no_client_auth().with_single_cert(vec![cert.clone()], PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der()).into()).unwrap();
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = listener.local_addr().unwrap();
++    let second = tokio::spawn(async move {
++        let mut clients = JoinSet::new();
++        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server));
++        loop {
++            tokio::select! {
++                _ = clients.join_next(), if !clients.is_empty() => {},
++                raw = listener.accept() => {
++                    let (raw, _) = raw.unwrap();
++                    let acceptor = acceptor.clone();
++                    clients.spawn(async move {
++                        let Ok(mut stream) = acceptor.accept(raw).await else { return; };
++                        let mut head = Vec::new();
++                        while !head.ends_with(b"\r\n\r\n") && head.len() < 4096 {
++                            let Ok(byte) = stream.read_u8().await else { return; };
++                            head.push(byte);
++                        }
++                        assert!(head.starts_with(b"CONNECT example.com:443 HTTP/1.1"));
++                        assert!(String::from_utf8_lossy(&head).contains("Proxy-Authorization: Basic c2Vjb25kOnNlY3JldA=="));
++                        stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
++                        let _ = stream.shutdown().await;
++                    });
++                }
++            }
++        }
++    });
++    let first = first_hop(addr).await;
++    let hop = chain(first.addr).hop(&Default::default()).unwrap();
++    let target = Target::new("second.test", addr.port()).unwrap();
++    // Default trust must reject our self-signed fixture, not silently downgrade.
++    assert_eq!(super::tls::connect(&hop, &target, super::tls::client().unwrap(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
++    let mut roots = rustls::RootCertStore::empty(); roots.add(cert).unwrap();
++    let client = Arc::new(rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth());
++    let wrong = Target::new("wrong.test", addr.port()).unwrap();
++    assert_eq!(super::tls::connect(&hop, &wrong, client.clone(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
++    let tunnel = Tunnel::bind_tls(hop, target, client).await.unwrap();
++    let mut local = TcpStream::connect(tunnel.addr()).await.unwrap();
++    local.write_all(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Basic c2Vjb25kOnNlY3JldA==\r\n\r\n").await.unwrap();
++    let head = tokio::time::timeout(WAIT, http_head(&mut local)).await.unwrap().unwrap();
++    assert!(head.starts_with(b"HTTP/1.1 200"));
++    tunnel.shutdown().await;
++    assert!(first.accepted.load(Ordering::SeqCst) >= 3);
++    second.abort();
++    let _ = second.await;
++}
++
++#[tokio::test]
++async fn http_second_hop_refusal_is_typed_and_does_not_change_saved_proxy() {
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = listener.local_addr().unwrap();
++    let task = tokio::spawn(async move {
++        for _ in 0..2 {
++            let (mut s, _) = listener.accept().await.unwrap();
++            if http_head(&mut s).await.is_ok() { let _ = s.write_all(b"HTTP/1.1 407 Authentication Required\r\n\r\n").await; }
++        }
++    });
++    let first = first_hop(addr).await;
++    let mut proxy = entry("http-fixture", addr);
++    proxy.kind = crate::space::proxy::ProxyKind::Http;
++    let before = serde_json::to_value(&proxy).unwrap();
++    let prepared = super::prepare(Some(&proxy), &chain(first.addr)).await.unwrap().unwrap();
++    let refusal = crate::space::proxy::probe_on_route(&prepared.effective).await.unwrap_err();
++    assert_eq!(super::profile_failure(&prepared.tunnel, &refusal).code, "proxy_chain_profile_auth_failed");
++    assert_eq!(serde_json::to_value(&proxy).unwrap(), before);
++    prepared.tunnel.shutdown().await;
++    task.abort();
++}
 +
 +struct Service {
 +    addr: SocketAddr,
@@ -3127,6 +3508,30 @@ index 0000000000000000000000000000000000000000..f9f35f072074681bf9aa8d1188d11d72
 +    );
 +    std::fs::write(&path, b"{}").unwrap();
 +    assert!(!super::saved_settings().unwrap().proxy_chain.enabled);
++}
++
++#[test]
++fn profile_policy_survives_disk_and_export_without_changing_fingerprint() {
++    use crate::space::profile::{save_here, load_raw, SaveOpts, StoredProfile};
++    use super::policy::ChainPolicy;
++    let _root = crate::store::test_root("chain-profile-policy-disk");
++    let mut stored: StoredProfile = serde_json::from_value(json!({"name":"Synthetic policy", "navigator":{"platform":"Win32"},"_meta":{"proxy_id":"kept-proxy","proxy_chain_policy":"disabled"}})).unwrap();
++    let row = save_here(stored, SaveOpts::default()).unwrap();
++    assert_eq!(row.proxy_chain_policy, ChainPolicy::Disabled);
++    stored = load_raw(&row.id).unwrap();
++    let fingerprint = stored.config.clone();
++    stored.meta.proxy_chain_policy = ChainPolicy::Enabled;
++    save_here(stored, SaveOpts::default()).unwrap();
++    let saved = load_raw(&row.id).unwrap();
++    assert_eq!(saved.meta.proxy_chain_policy, ChainPolicy::Enabled);
++    assert_eq!(saved.meta.proxy_id.as_deref(), Some("kept-proxy"));
++    assert_eq!(saved.config, fingerprint);
++    let roundtrip: StoredProfile = serde_json::from_value(serde_json::to_value(&saved).unwrap()).unwrap();
++    assert_eq!(roundtrip.meta.proxy_chain_policy, ChainPolicy::Enabled);
++    let mut bad = roundtrip;
++    bad.meta.proxy_chain_policy = ChainPolicy::Invalid;
++    assert!(save_here(bad, SaveOpts::default()).is_err());
++    assert_eq!(load_raw(&row.id).unwrap().meta.proxy_chain_policy, ChainPolicy::Enabled);
 +}
 +
 +#[tokio::test]
@@ -3425,10 +3830,10 @@ index 0000000000000000000000000000000000000000..f9f35f072074681bf9aa8d1188d11d72
 +}
 diff --git a/src-tauri/src/proxy_chain/live_geo_tests.rs b/src-tauri/src/proxy_chain/live_geo_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..d86fdcef0789ce1e3e2327a551868750f38d855e
+index 0000000000000000000000000000000000000000..203a12f803c249967e51e0350210711d48e775bd
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/live_geo_tests.rs
-@@ -0,0 +1,367 @@
+@@ -0,0 +1,370 @@
 +//! Opt-in acceptance of the public detection entry against real proxies.
 +//! This is backend network evidence, not native UI or browser-engine evidence.
 +//! Run this exact ignored test alone with SHARD_PROXY_CHAIN_RUN_LIVE_GEO=1.
@@ -3447,6 +3852,8 @@ index 0000000000000000000000000000000000000000..d86fdcef0789ce1e3e2327a551868750
 +
 +#[derive(Deserialize)]
 +struct LiveInput {
++    #[serde(default = "default_kind")]
++    kind: String,
 +    host: String,
 +    port: u16,
 +    username: String,
@@ -3454,6 +3861,7 @@ index 0000000000000000000000000000000000000000..d86fdcef0789ce1e3e2327a551868750
 +    system_host: String,
 +    system_port: u16,
 +}
++fn default_kind() -> String { "socks5".into() }
 +
 +#[derive(Serialize)]
 +struct Exit {
@@ -3646,7 +4054,7 @@ index 0000000000000000000000000000000000000000..d86fdcef0789ce1e3e2327a551868750
 +        "live_geo_store_isolation_failed",
 +    )?;
 +    let proxy_bytes = serde_json::to_vec(&json!({"proxies": [{
-+        "id": proxy_id, "name": "Synthetic live Geo proxy", "kind": "socks5",
++        "id": proxy_id, "name": "Synthetic live Geo proxy", "kind": cfg.kind,
 +        "host": cfg.host, "port": cfg.port,
 +        "username": cfg.username, "password": cfg.password
 +    }]}))
@@ -3798,10 +4206,10 @@ index 0000000000000000000000000000000000000000..d86fdcef0789ce1e3e2327a551868750
 +}
 diff --git a/src-tauri/src/proxy_chain/live_tests.rs b/src-tauri/src/proxy_chain/live_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..732a54a44e451d4db6891dafcc0af7ac0191d222
+index 0000000000000000000000000000000000000000..782b504c6f2f6fd96b4d3bdb2f4e547015fc8348
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/live_tests.rs
-@@ -0,0 +1,758 @@
+@@ -0,0 +1,761 @@
 +//! Explicitly opt-in Windows acceptance of the public product launch path.
 +//! This test never reads the user's profiles. Its only secret input is a
 +//! current-user DPAPI file outside the checkout. The encrypted JSON has the
@@ -3833,6 +4241,8 @@ index 0000000000000000000000000000000000000000..732a54a44e451d4db6891dafcc0af7ac
 +
 +#[derive(Deserialize)]
 +struct LiveInput {
++    #[serde(default = "default_kind")]
++    kind: String,
 +    host: String,
 +    port: u16,
 +    username: String,
@@ -3840,6 +4250,7 @@ index 0000000000000000000000000000000000000000..732a54a44e451d4db6891dafcc0af7ac
 +    system_host: String,
 +    system_port: u16,
 +}
++fn default_kind() -> String { "socks5".into() }
 +
 +#[derive(Deserialize)]
 +struct OwnedProcess {
@@ -4117,7 +4528,7 @@ index 0000000000000000000000000000000000000000..732a54a44e451d4db6891dafcc0af7ac
 +    let mut preserved = Vec::new();
 +    for (n, id) in scope.ids.iter().enumerate() {
 +        let proxy_id = format!("live-synthetic-proxy-{n}");
-+        proxies.push(json!({"id":proxy_id,"name":format!("Live test {n}"),"kind":"socks5","host":cfg.host,"port":cfg.port,"username":cfg.username,"password":cfg.password}));
++        proxies.push(json!({"id":proxy_id,"name":format!("Live test {n}"),"kind":cfg.kind,"host":cfg.host,"port":cfg.port,"username":cfg.username,"password":cfg.password}));
 +        let mut profile = original.clone();
 +        profile["name"] = json!(format!("Synthetic live test {n}"));
 +        profile["_meta"] =
@@ -4562,19 +4973,21 @@ index 0000000000000000000000000000000000000000..732a54a44e451d4db6891dafcc0af7ac
 +}
 diff --git a/src-tauri/src/proxy_chain/mod.rs b/src-tauri/src/proxy_chain/mod.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..e83f00a6ec9e30e3282115dc167519fc79a31fc5
+index 0000000000000000000000000000000000000000..270ca28f9b8dc22c270d4f59204f40bbb2b06718
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/mod.rs
-@@ -0,0 +1,383 @@
+@@ -0,0 +1,409 @@
 +//! Windows system proxy -> original profile proxy. Never fall back to direct.
 +pub mod config;
 +pub mod connector;
 +pub mod credentials;
 +pub mod detect_windows;
 +pub mod error;
++pub mod policy;
 +#[cfg(test)]
 +mod tests;
 +pub mod tunnel;
++pub mod tls;
 +
 +use crate::space::proxy::{self, ProxyEntry, ProxyKind};
 +use config::ProxyChainSettings;
@@ -4610,7 +5023,7 @@ index 0000000000000000000000000000000000000000..e83f00a6ec9e30e3282115dc167519fc
 +        ChainError::new(
 +            "proxy_chain_profile_required",
 +            "profile",
-+            "This profile has no upstream proxy. Assign a SOCKS5 proxy or disable proxy chaining.",
++            "This profile has no upstream proxy. Assign a proxy before starting the proxy chain.",
 +        )
 +    })?;
 +    let target = Target::new(&entry.host, entry.port)?;
@@ -4619,15 +5032,19 @@ index 0000000000000000000000000000000000000000..e83f00a6ec9e30e3282115dc167519fc
 +}
 +
 +async fn prepare_with_hop(entry: &ProxyEntry, hop: ProxyHop) -> anyhow::Result<PreparedProxy> {
-+    if entry.kind != ProxyKind::Socks5 {
-+        return Err(ChainError::new("proxy_chain_profile_kind_unsupported", "profile", "Proxy-chain V1 requires a SOCKS5 profile proxy. HTTP/HTTPS profile data is preserved; disable chaining to use its original connection.").into());
-+    }
 +    let target = Target::new(&entry.host, entry.port)?;
 +    // Proves the first hop can reach the original upstream before binding.
 +    // It is not proof of second-hop authentication; callers also run probe.
-+    drop(connector::connect(&hop, &target).await?);
-+    let tunnel = Tunnel::bind(hop, target).await?;
++    let tunnel = if entry.kind == ProxyKind::Https {
++        let tls = tls::client()?;
++        drop(tls::connect(&hop, &target, tls.clone(), connector::CONNECT_TIMEOUT).await?);
++        Tunnel::bind_tls(hop, target, tls).await?
++    } else {
++        drop(connector::connect(&hop, &target).await?);
++        Tunnel::bind(hop, target).await?
++    };
 +    let mut effective = entry.clone();
++    if effective.kind == ProxyKind::Https { effective.kind = ProxyKind::Http; }
 +    effective.host = "127.0.0.1".into();
 +    effective.port = tunnel.addr().port();
 +    // Never persist an ephemeral loopback address or use direct-route history.
@@ -4672,6 +5089,9 @@ index 0000000000000000000000000000000000000000..e83f00a6ec9e30e3282115dc167519fc
 +}
 +
 +pub fn profile_failure(tunnel: &Tunnel, cause: &anyhow::Error) -> ChainError {
++    if let Some(error) = cause.downcast_ref::<proxy::HttpProbeError>() {
++        return ChainError::new(if error.0 == 407 { "proxy_chain_profile_auth_failed" } else { "proxy_chain_profile_connect_failed" }, "profile", format!("The profile HTTP proxy refused CONNECT (status {}). Check its credentials and source restrictions.", error.0));
++    }
 +    // A reply received on THIS probe is authoritative. Another concurrent
 +    // Geo stream's close/reset must not overwrite a definite second-hop reply.
 +    if let Some(error) = cause.downcast_ref::<proxy::Socks5ProbeError>() {
@@ -4793,6 +5213,7 @@ index 0000000000000000000000000000000000000000..e83f00a6ec9e30e3282115dc167519fc
 +        hop.host.clone()
 +    };
 +    ProxyEntry {
++        proxy_chain_policy: Default::default(),
 +        id: String::new(),
 +        name: String::new(),
 +        kind: match hop.kind {
@@ -4863,6 +5284,22 @@ index 0000000000000000000000000000000000000000..e83f00a6ec9e30e3282115dc167519fc
 +        } else {
 +            None
 +        };
++        if kind == "profile" {
++            let policy = entry.as_ref().map(|p| p.proxy_chain_policy).unwrap_or_default();
++            let effective = policy::effective(&config, Default::default(), policy)?;
++            if !effective.enabled {
++                let entry = entry.as_ref().expect("profile entry loaded");
++                result.profile_proxy_address = Some(format!("{}:{}", entry.host, entry.port));
++                result.source = Some("profile_proxy_without_first_hop");
++                let phase = Instant::now();
++                match proxy::probe_on_route(entry).await {
++                    Ok(_) => { result.profile_proxy = Stage::ok(phase); result.set_exit(proxy::geo_check_on_route(Some(entry), None).await); },
++                    Err(_) => result.profile_proxy = Stage::failed(ChainError::new("proxy_chain_profile_connect_failed", "profile", "The profile proxy failed on the explicitly selected route without the first hop.")),
++                }
++                result.total_ms = start.elapsed().as_millis();
++                return Ok(result);
++            }
++        }
 +        let target = if let Some(entry) = &entry {
 +            result.profile_proxy_address = Some(format!("{}:{}", entry.host, entry.port));
 +            Target::new(&entry.host, entry.port)?
@@ -4949,6 +5386,127 @@ index 0000000000000000000000000000000000000000..e83f00a6ec9e30e3282115dc167519fc
 +mod live_tests;
 +#[cfg(all(test, windows))]
 +mod live_geo_tests;
+diff --git a/src-tauri/src/proxy_chain/policy.rs b/src-tauri/src/proxy_chain/policy.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..ea9d9f82f9832b535cc2cdac94c78de3c281a2a0
+--- /dev/null
++++ b/src-tauri/src/proxy_chain/policy.rs
+@@ -0,0 +1,115 @@
++use super::{config::ProxyChainSettings, error::ChainError};
++use serde::{Deserialize, Deserializer, Serialize};
++
++/// Missing fields inherit. Unrecognised data is retained as a refusal, never
++/// silently converted to an unchained route by a legacy/defaulting reader.
++#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
++#[serde(rename_all = "snake_case")]
++pub enum ChainPolicy {
++    #[default]
++    Inherit,
++    Enabled,
++    Disabled,
++    Invalid,
++}
++
++impl<'de> Deserialize<'de> for ChainPolicy {
++    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
++        let value = serde_json::Value::deserialize(d)?;
++        Ok(match value.as_str() {
++            Some("inherit") => Self::Inherit,
++            Some("enabled") => Self::Enabled,
++            Some("disabled") => Self::Disabled,
++            _ => Self::Invalid,
++        })
++    }
++}
++
++impl ChainPolicy {
++    pub fn is_inherit(&self) -> bool {
++        *self == Self::Inherit
++    }
++
++    pub fn validate(self) -> Result<(), ChainError> {
++        if self == Self::Invalid {
++            return Err(ChainError::new("proxy_chain_policy_invalid", "configuration", "The proxy-chain choice is invalid. Choose inherit, enabled or disabled before saving or starting."));
++        }
++        Ok(())
++    }
++}
++
++/// Profile > assigned proxy > this computer's default. Disabling only skips
++/// the first hop; it never removes the original assigned/inline proxy.
++pub fn effective(
++    config: &ProxyChainSettings,
++    profile: ChainPolicy,
++    proxy: ChainPolicy,
++) -> Result<ProxyChainSettings, ChainError> {
++    profile.validate()?;
++    proxy.validate()?;
++    // A damaged enabled protection setting must be repaired explicitly, not
++    // hidden by a per-object override.
++    if config.invalid || config.enabled {
++        config.validate()?;
++    }
++    let mut resolved = config.clone();
++    resolved.enabled = match if profile.is_inherit() { proxy } else { profile } {
++        ChainPolicy::Inherit => config.enabled,
++        ChainPolicy::Enabled => true,
++        ChainPolicy::Disabled => false,
++        ChainPolicy::Invalid => unreachable!("validated above"),
++    };
++    if resolved.enabled {
++        resolved.validate()?;
++    }
++    Ok(resolved)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn precedence_covers_every_profile_proxy_global_combination() {
++        use ChainPolicy::*;
++        for global in [false, true] {
++            let config = ProxyChainSettings {
++                enabled: global,
++                ..Default::default()
++            };
++            for profile in [Inherit, Enabled, Disabled] {
++                for proxy in [Inherit, Enabled, Disabled] {
++                    let expected = match (profile, proxy) {
++                        (Enabled, _) | (Inherit, Enabled) => true,
++                        (Disabled, _) | (Inherit, Disabled) => false,
++                        _ => global,
++                    };
++                    assert_eq!(
++                        effective(&config, profile, proxy).unwrap().enabled,
++                        expected
++                    );
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn malformed_choices_and_enabled_settings_fail_closed() {
++        for raw in ["null", "true", "12", "{}", "\"future\""] {
++            let policy: ChainPolicy = serde_json::from_str(raw).unwrap();
++            assert!(policy.validate().is_err());
++            assert!(effective(&Default::default(), ChainPolicy::Disabled, policy).is_err());
++        }
++        let broken = ProxyChainSettings {
++            enabled: true,
++            invalid: true,
++            ..Default::default()
++        };
++        assert!(effective(&broken, ChainPolicy::Disabled, ChainPolicy::Inherit).is_err());
++        let disabled = ProxyChainSettings {
++            mode: "unknown".into(),
++            ..Default::default()
++        };
++        assert!(effective(&disabled, ChainPolicy::Enabled, ChainPolicy::Inherit).is_err());
++    }
++}
 diff --git a/src-tauri/src/proxy_chain/tests.rs b/src-tauri/src/proxy_chain/tests.rs
 new file mode 100644
 index 0000000000000000000000000000000000000000..1eac4784185e68adf5f7acc0b94470633733c0ca
@@ -5723,12 +6281,59 @@ index 0000000000000000000000000000000000000000..1eac4784185e68adf5f7acc0b9447063
 +    // An exit path and a tracker monitor may both request closure.
 +    within(tunnel.close_and_wait()).await.unwrap();
 +}
+diff --git a/src-tauri/src/proxy_chain/tls.rs b/src-tauri/src/proxy_chain/tls.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..b2903fa85c23807173dc1408733d04de06fa8688
+--- /dev/null
++++ b/src-tauri/src/proxy_chain/tls.rs
+@@ -0,0 +1,41 @@
++//! TLS to the original HTTPS proxy, inside the first-hop CONNECT stream.
++//! The loopback endpoint speaks HTTP; authentication stays inside verified TLS.
++use super::{
++    connector::{self, ProxyHop, Target},
++    error::ChainError,
++};
++use std::{sync::Arc, time::Duration};
++use tokio::net::TcpStream;
++use tokio_rustls::{client::TlsStream, TlsConnector};
++
++pub(crate) fn client() -> Result<Arc<rustls::ClientConfig>, ChainError> {
++    let roots = rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
++    let mut config = rustls::ClientConfig::builder_with_provider(Arc::new(
++        rustls::crypto::ring::default_provider(),
++    ))
++    .with_safe_default_protocol_versions()
++    .map_err(|_| failed())?
++    .with_root_certificates(roots)
++    .with_no_client_auth();
++    // Browser/reqwest sends HTTP/1 CONNECT over our local HTTP endpoint.
++    config.alpn_protocols = vec![b"http/1.1".to_vec()];
++    Ok(Arc::new(config))
++}
++
++fn failed() -> ChainError {
++    ChainError::new("proxy_chain_profile_tls_failed", "profile", "TLS to the HTTPS profile proxy failed. Check that this port supports TLS and its certificate matches the original proxy host. No HTTP downgrade or certificate bypass was used.")
++}
++
++pub(crate) async fn connect(
++    hop: &ProxyHop,
++    target: &Target,
++    config: Arc<rustls::ClientConfig>,
++    deadline: Duration,
++) -> Result<TlsStream<TcpStream>, ChainError> {
++    let name =
++        rustls::pki_types::ServerName::try_from(target.host.clone()).map_err(|_| failed())?;
++    tokio::time::timeout(deadline, async {
++        let raw = connector::connect_with_timeout(hop, target, deadline).await?;
++        TlsConnector::from(config).connect(name, raw).await.map_err(|_| failed())
++    }).await.map_err(|_| ChainError::new("proxy_chain_profile_tls_timeout", "profile", "TLS to the HTTPS profile proxy timed out. The connection was closed without a direct fallback."))?
++}
 diff --git a/src-tauri/src/proxy_chain/tunnel.rs b/src-tauri/src/proxy_chain/tunnel.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..23eb1d7e5b87712613972ce4c2624aff1a9e61ec
+index 0000000000000000000000000000000000000000..a7a14b76995ca570cc028325fa2ca460c2bec07c
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tunnel.rs
-@@ -0,0 +1,302 @@
+@@ -0,0 +1,316 @@
 +//! A per-profile transparent TCP entry. It never accepts a destination from
 +//! the browser: every connection goes through the first hop to one target.
 +
@@ -5775,6 +6380,14 @@ index 0000000000000000000000000000000000000000..23eb1d7e5b87712613972ce4c2624aff
 +        idle_timeout: Duration,
 +        max_connections: usize,
 +    ) -> Result<Self, ChainError> {
++        Self::bind_transport(hop, target, connect_timeout, idle_timeout, max_connections, None).await
++    }
++
++    pub(crate) async fn bind_tls(hop: ProxyHop, target: Target, tls: Arc<rustls::ClientConfig>) -> Result<Self, ChainError> {
++        Self::bind_transport(hop, target, connector::CONNECT_TIMEOUT, IDLE_TIMEOUT, MAX_CONNECTIONS, Some(tls)).await
++    }
++
++    async fn bind_transport(hop: ProxyHop, target: Target, connect_timeout: Duration, idle_timeout: Duration, max_connections: usize, tls: Option<Arc<rustls::ClientConfig>>) -> Result<Self, ChainError> {
 +        connector::validate(&hop, &target)?;
 +        if max_connections == 0 || connect_timeout.is_zero() || idle_timeout.is_zero() {
 +            return Err(ChainError::new(
@@ -5832,11 +6445,17 @@ index 0000000000000000000000000000000000000000..23eb1d7e5b87712613972ce4c2624aff
 +                            let hop = hop.clone();
 +                            let target = target.clone();
 +                            let error = error.clone();
++                            let tls = tls.clone();
 +                            flows.spawn(async move {
 +                                let _slot = slot;
 +                                let result = async {
-+                                    let remote = connector::connect_with_timeout(&hop, &target, connect_timeout).await?;
-+                                    relay(local, remote, idle_timeout).await
++                                    if let Some(tls) = tls {
++                                        let remote = super::tls::connect(&hop, &target, tls, connect_timeout).await?;
++                                        relay(local, remote, idle_timeout).await
++                                    } else {
++                                        let remote = connector::connect_with_timeout(&hop, &target, connect_timeout).await?;
++                                        relay(local, remote, idle_timeout).await
++                                    }
 +                                }.await;
 +                                if let Err(e) = result {
 +                                    *error.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
@@ -5979,10 +6598,10 @@ index 0000000000000000000000000000000000000000..23eb1d7e5b87712613972ce4c2624aff
 +    }
 +}
 +
-+async fn relay(local: TcpStream, remote: TcpStream, idle: Duration) -> Result<(), ChainError> {
++async fn relay<S: AsyncRead + AsyncWrite + Unpin>(local: TcpStream, remote: S, idle: Duration) -> Result<(), ChainError> {
 +    let last = Arc::new(Mutex::new(Instant::now()));
 +    let (lr, lw) = local.into_split();
-+    let (rr, rw) = remote.into_split();
++    let (rr, rw) = tokio::io::split(remote);
 +    let transfer = async {
 +        tokio::try_join!(pump(lr, rw, last.clone()), pump(rr, lw, last.clone()))?;
 +        Ok(())
@@ -6031,6 +6650,26 @@ index 0000000000000000000000000000000000000000..23eb1d7e5b87712613972ce4c2624aff
 +        }
 +    }
 +}
+diff --git a/src-tauri/src/psapi.rs b/src-tauri/src/psapi.rs
+index 6136aa2085847cd6c40295766bfbf04c99c9cc3c..578867050e78651e5a688b81e5d06886282ed1ec 100644
+--- a/src-tauri/src/psapi.rs
++++ b/src-tauri/src/psapi.rs
+@@ -177,6 +177,7 @@ pub async fn import_order_proxies(t: &crate::space::Ticket, order_id: i64, kind:
+             continue;
+         }
+         entries.push(ProxyEntry {
++            proxy_chain_policy: Default::default(),
+             id: String::new(),
+             name: format!("{label} ({ip})"),
+             kind: proxy_kind,
+@@ -405,6 +406,7 @@ pub async fn residential_proxy(req: ResiRequest<'_>) -> Result<ProxyEntry> {
+     };
+ 
+     Ok(ProxyEntry {
++        proxy_chain_policy: Default::default(),
+         id: String::new(),
+         name: format!("resi {plan}"),
+         kind,
 diff --git a/src-tauri/src/reset.rs b/src-tauri/src/reset.rs
 index 1da3914ad41124294eae495b8e77ca8c20d6e8f6..fa5e3839bc061e67dd44acf1b75a1127ef73bba4 100644
 --- a/src-tauri/src/reset.rs
@@ -6206,11 +6845,124 @@ index cc0b266511e4134e1ec4d7db0e863d6b837a4481..07f3632b101b6793d0b6a68bb5cd7e50
      assert!(e.contains("could not reach"), "{e}");
      let u = r.view(&id);
      assert_eq!((u.state, u.latest.as_deref()), (State::Available, Some("1.1")));
+diff --git a/src-tauri/src/space/local/profile.rs b/src-tauri/src/space/local/profile.rs
+index 176606ee3402a8b368cad2ad1058fe0cec11819e..b1973743ed8b0e6aa4282b27eec937a58c283af4 100644
+--- a/src-tauri/src/space/local/profile.rs
++++ b/src-tauri/src/space/local/profile.rs
+@@ -52,6 +52,8 @@ fn write_atomic(path: &Path, body: &[u8]) -> Result<()> {
+ /// Launcher-side view of a profile (wraps raw FingerprintConfig JSON).
+ #[derive(Debug, Clone, Serialize, Deserialize)]
+ pub struct ProfileMeta {
++    #[serde(default)]
++    pub proxy_chain_policy: crate::proxy_chain::policy::ChainPolicy,
+     pub id: String,
+     pub name: String,
+     pub notes: String,
+@@ -132,6 +134,8 @@ pub struct StoredMeta {
+     pub id: String,
+     #[serde(default)]
+     pub proxy_id: Option<String>,
++    #[serde(default, skip_serializing_if = "crate::proxy_chain::policy::ChainPolicy::is_inherit")]
++    pub proxy_chain_policy: crate::proxy_chain::policy::ChainPolicy,
+     #[serde(default)]
+     pub last_launched_at: Option<String>,
+     /// "@<unix_secs>" creation marker.
+@@ -280,6 +284,7 @@ pub(in crate::space) fn list_all() -> Result<Vec<ProfileMeta>> {
+             .unwrap_or("")
+             .to_string();
+         out.push(ProfileMeta {
++            proxy_chain_policy: stored.meta.proxy_chain_policy,
+             id: stored.meta.id,
+             name,
+             notes,
+@@ -446,6 +451,8 @@ pub(in crate::space) fn fill_missing_window(id: &str, window: serde_json::Value)
+ }
+ 
+ pub(in crate::space) fn save_raw(stored: &mut StoredProfile) -> Result<()> {
++    stored.meta.proxy_chain_policy.validate()?;
++    if let Some(proxy) = &stored.meta.inline_proxy { proxy.proxy_chain_policy.validate()?; }
+     let _guard = file_lock();
+     save_raw_locked(stored)
+ }
+@@ -462,6 +469,7 @@ fn save_raw_new_locked(stored: &mut StoredProfile, id: String) -> Result<()> {
+ /// Body of `save_raw` for callers already holding the lock. It reloads the file
+ /// itself, so a caller that loaded first must hold the lock across both halves.
+ fn save_raw_locked(stored: &mut StoredProfile) -> Result<()> {
++    stored.meta.proxy_chain_policy.validate()?;
+     let is_new = stored.meta.id.is_empty();
+     if is_new {
+         stored.meta.id = uuid::Uuid::new_v4().to_string();
+@@ -592,6 +600,7 @@ pub(in crate::space) fn clone_profile(id: &str) -> Result<ProfileMeta> {
+     let new_id = std::mem::take(&mut src.meta.id);
+     save_raw_new_locked(&mut src, new_id)?;
+     Ok(ProfileMeta {
++        proxy_chain_policy: src.meta.proxy_chain_policy,
+         id: src.meta.id,
+         name,
+         notes: src
 diff --git a/src-tauri/src/space/local/proxy.rs b/src-tauri/src/space/local/proxy.rs
-index 63d3972b4adf061dbddbd0a79026b32912897e64..3888564673d4a8a1f5fcfc004abd83c7562664f0 100644
+index 63d3972b4adf061dbddbd0a79026b32912897e64..8773d998a3b9b139d7d18a2a9dd87f8c78314662 100644
 --- a/src-tauri/src/space/local/proxy.rs
 +++ b/src-tauri/src/space/local/proxy.rs
-@@ -258,6 +258,25 @@ fn socks5_reply_text(rep: u8) -> String {
+@@ -32,6 +32,8 @@ pub struct ProxyEntry {
+     /// Free-form note.
+     #[serde(default)]
+     pub notes: String,
++    #[serde(default, skip_serializing_if = "crate::proxy_chain::policy::ChainPolicy::is_inherit")]
++    pub proxy_chain_policy: crate::proxy_chain::policy::ChainPolicy,
+ }
+ 
+ impl ProxyEntry {
+@@ -46,6 +48,7 @@ impl ProxyEntry {
+             && self.port == other.port
+             && self.username == other.username
+             && self.password == other.password
++            && self.proxy_chain_policy == other.proxy_chain_policy
+     }
+ 
+     /// Build `--proxy-server=<scheme>://[user:pass@]host:port` for ShardX.
+@@ -133,7 +136,7 @@ pub(in crate::space) fn load() -> Result<ProxyStore> {
+         return Ok(ProxyStore::default());
+     }
+     let body = fs::read_to_string(&path)?;
+-    Ok(serde_json::from_str(&body).unwrap_or_default())
++    Ok(serde_json::from_str(&body).context("read proxy store")?)
+ }
+ 
+ fn save(s: &ProxyStore) -> Result<()> {
+@@ -147,6 +150,7 @@ pub(in crate::space) fn list() -> Result<Vec<ProxyEntry>> {
+ }
+ 
+ pub(in crate::space) fn upsert(mut entry: ProxyEntry) -> Result<ProxyEntry> {
++    entry.proxy_chain_policy.validate()?;
+     if entry.id.is_empty() {
+         entry.id = uuid::Uuid::new_v4().to_string();
+     }
+@@ -163,6 +167,7 @@ pub(in crate::space) fn upsert(mut entry: ProxyEntry) -> Result<ProxyEntry> {
+ /// Upsert that reuses an identical entry (`same_proxy`): one with the same
+ /// endpoint and user but another password is a proxy of its own.
+ pub(in crate::space) fn upsert_dedup(mut entry: ProxyEntry) -> Result<ProxyEntry> {
++    entry.proxy_chain_policy.validate()?;
+     let mut s = load()?;
+     if let Some(existing) = s.proxies.iter().find(|p| p.same_proxy(&entry)) {
+         return Ok(existing.clone());
+@@ -187,6 +192,7 @@ pub(in crate::space) fn upsert_dedup(mut entry: ProxyEntry) -> Result<ProxyEntry
+ /// separate door, opened only when the caller names the profile the proxy
+ /// belongs to.
+ pub(in crate::space) fn upsert_for_binding(mut entry: ProxyEntry, bound_id: Option<&str>) -> Result<ProxyEntry> {
++    entry.proxy_chain_policy.validate()?;
+     let mut s = load()?;
+     if let Some(existing) = s.proxies.iter().find(|p| p.same_proxy(&entry)) {
+         return Ok(existing.clone());
+@@ -198,6 +204,7 @@ pub(in crate::space) fn upsert_for_binding(mut entry: ProxyEntry, bound_id: Opti
+                 && p.host == entry.host
+                 && p.port == entry.port
+                 && p.username == entry.username
++                && p.proxy_chain_policy == entry.proxy_chain_policy
+         }) {
+             slot.password = entry.password.clone();
+             let out = slot.clone();
+@@ -258,6 +265,25 @@ fn socks5_reply_text(rep: u8) -> String {
      }
  }
  
@@ -6236,7 +6988,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..3888564673d4a8a1f5fcfc004abd83c7
  /// RFC 1928 §3 greeting and, if the proxy picks it, the RFC 1929 user/pass
  /// exchange. Leaves the stream right after the handshake.
  ///
-@@ -304,8 +323,11 @@ where
+@@ -304,8 +330,11 @@ where
              tokio::time::timeout(STEP_TIMEOUT, stream.read_exact(&mut auth_resp))
                  .await
                  .context("no answer to the username and password")??;
@@ -6249,7 +7001,21 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..3888564673d4a8a1f5fcfc004abd83c7
              }
          }
          0xFF => anyhow::bail!(if has_creds {
-@@ -385,7 +407,7 @@ async fn probe_inner(entry: &ProxyEntry) -> Result<u128> {
+@@ -325,6 +354,13 @@ where
+ /// and authenticates exactly like a working one, which is why this used to
+ /// call such a proxy reachable. Every kind now ends with a real CONNECT to
+ /// `PROBE_HOST`, and only the answer to that decides.
++#[derive(Debug)]
++pub struct HttpProbeError(pub u16);
++impl std::fmt::Display for HttpProbeError {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "HTTP proxy CONNECT refused (status {})", self.0) }
++}
++impl std::error::Error for HttpProbeError {}
++
+ pub async fn probe(entry: &ProxyEntry) -> Result<u128> {
+     // One deadline over the whole exchange as well as one per step. A proxy
+     // that answers every read just inside the step timeout could otherwise
+@@ -385,7 +421,7 @@ async fn probe_inner(entry: &ProxyEntry) -> Result<u128> {
                  anyhow::bail!("not SOCKS5");
              }
              if hdr[1] != 0x00 {
@@ -6258,7 +7024,33 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..3888564673d4a8a1f5fcfc004abd83c7
              }
              // Read BND.ADDR/BND.PORT so the reply is consumed whole.
              let skip = match hdr[3] {
-@@ -1057,9 +1079,29 @@ pub fn country_to_locale(cc: &str) -> &'static str {
+@@ -436,7 +472,8 @@ async fn probe_inner(entry: &ProxyEntry) -> Result<u128> {
+             };
+             let first_line = head.lines().next().unwrap_or("");
+             if !first_line.starts_with("HTTP/1.1 200") && !first_line.starts_with("HTTP/1.0 200") {
+-                anyhow::bail!("CONNECT failed: {first_line}");
++                let status = first_line.split_whitespace().nth(1).and_then(|v| v.parse::<u16>().ok()).unwrap_or(0);
++                return Err(HttpProbeError(status).into());
+             }
+         }
+     }
+@@ -531,6 +568,7 @@ fn parse_one(line: &str, default_kind: &ProxyKind) -> Option<ProxyEntry> {
+     }
+     let name = name_parts.join(" ");
+     Some(ProxyEntry {
++        proxy_chain_policy: Default::default(),
+         // ID assigned now so pre-save test snapshots key under the kept uuid.
+         id: uuid::Uuid::new_v4().to_string(),
+         name: if name.is_empty() { format!("{host}:{port}") } else { name },
+@@ -548,6 +586,7 @@ fn parse_one(line: &str, default_kind: &ProxyKind) -> Option<ProxyEntry> {
+ /// identical to one already stored, or to one earlier in `entries`, is
+ /// skipped (`same_proxy`).
+ pub(in crate::space) fn bulk_save(entries: Vec<ProxyEntry>) -> Result<usize> {
++    for entry in &entries { entry.proxy_chain_policy.validate()?; }
+     let mut store_data = load()?;
+     let added = add_new(&mut store_data.proxies, entries);
+     save(&store_data)?;
+@@ -1057,9 +1096,29 @@ pub fn country_to_locale(cc: &str) -> &'static str {
  
  // ---- Test history ----
  
@@ -6288,7 +7080,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..3888564673d4a8a1f5fcfc004abd83c7
      pub first_seen: String,
      pub last_seen: String,
      pub ip: String,
-@@ -1162,7 +1204,7 @@ pub(in crate::space) fn keep_test(entries: &mut Vec<TestSnapshot>, mut snap: Tes
+@@ -1162,7 +1221,7 @@ pub(in crate::space) fn keep_test(entries: &mut Vec<TestSnapshot>, mut snap: Tes
      // used to stay as they were first seen, so a proxy that had moved
      // went on claiming its old city.
      if let Some(last) = entries.last_mut() {
@@ -6297,13 +7089,14 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..3888564673d4a8a1f5fcfc004abd83c7
              snap.first_seen = last.first_seen.clone();
              *last = snap.clone();
              return snap;
-@@ -1226,10 +1268,35 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
+@@ -1226,10 +1285,36 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
  /// other: the reach test, the relay test and the address the world sees are
  /// three separate questions to the same proxy.
  pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
 +    let prepared = async {
 +        let settings = crate::proxy_chain::saved_settings()?;
-+        crate::proxy_chain::prepare(Some(entry), &settings.proxy_chain).await
++        let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?;
++        crate::proxy_chain::prepare(Some(entry), &config).await
 +    }.await;
 +    match prepared {
 +        Ok(prepared) => {
@@ -6334,7 +7127,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..3888564673d4a8a1f5fcfc004abd83c7
              Some(probe_udp(entry).await)
          } else {
              None
-@@ -1251,11 +1318,25 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1251,11 +1336,25 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      // probe asks for and carry everything else. The other way round, a probe
      // that reached a host is proof too, and the test then says so with no
      // address rather than calling a working proxy dead.
@@ -6362,7 +7155,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..3888564673d4a8a1f5fcfc004abd83c7
      let (ip, country_code, country, region, city, isp, tz, lat, lng, provider) = match &geo_res {
          Ok(g) => (
              g.ip.clone(), g.country_code.clone(), g.country.clone(),
-@@ -1268,6 +1349,9 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1268,6 +1367,9 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      };
  
      TestSnapshot {
@@ -6372,7 +7165,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..3888564673d4a8a1f5fcfc004abd83c7
          first_seen: String::new(),
          last_seen: now,
          ip,
-@@ -1282,7 +1366,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1282,7 +1384,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
          // Set whenever the proxy carried something, so "reached" always comes
          // with a time: the probe's own round trip, or the geo request's when
          // only that one got through.
@@ -6381,7 +7174,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..3888564673d4a8a1f5fcfc004abd83c7
          udp_ms: udp_res
              .as_ref()
              .and_then(|r| r.as_ref().ok().copied()),
-@@ -1347,6 +1431,138 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
+@@ -1347,6 +1449,138 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
  mod tests {
      use super::*;
  
@@ -6520,11 +7313,40 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..3888564673d4a8a1f5fcfc004abd83c7
      fn entry(line: &str) -> ProxyEntry {
          parse_one(line, &ProxyKind::Socks5).expect("parses")
      }
+diff --git a/src-tauri/src/space/local/trash.rs b/src-tauri/src/space/local/trash.rs
+index e650ebdb78ecbd7cf4fbd1e43095ef95f209d9ea..56dea346ae658f94d5bd1803c4370408b2c199fe 100644
+--- a/src-tauri/src/space/local/trash.rs
++++ b/src-tauri/src/space/local/trash.rs
+@@ -205,6 +205,7 @@ pub(in crate::space) fn restore(id: &str) -> Result<profile::ProfileMeta> {
+     let _ = fs::remove_file(&meta_path);
+ 
+     Ok(profile::ProfileMeta {
++        proxy_chain_policy: stored.meta.proxy_chain_policy,
+         id: stored.meta.id.clone(),
+         name: stored
+             .config
 diff --git a/src-tauri/src/space/mod.rs b/src-tauri/src/space/mod.rs
-index 00d90e17f3869e100400cd0ceae4478808abf924..cb010dcb5a38f7d05103a2d803072f6d0bf046ad 100644
+index 00d90e17f3869e100400cd0ceae4478808abf924..1afd17ac1a9f6001dd5a3e681b71ad2371b59288 100644
 --- a/src-tauri/src/space/mod.rs
 +++ b/src-tauri/src/space/mod.rs
-@@ -562,9 +562,41 @@ pub mod proxy {
+@@ -360,6 +360,8 @@ pub mod profile {
+ 
+     /// Saves a profile built whole (the editor, the API); new when its id is empty.
+     pub async fn save(door: Door, t: &Ticket, stored: StoredProfile, opts: SaveOpts) -> Result<ProfileMeta> {
++        stored.meta.proxy_chain_policy.validate()?;
++        if let Some(proxy) = &stored.meta.inline_proxy { proxy.proxy_chain_policy.validate()?; }
+         match t.team() {
+             Some(team) => Ok(write::save_profile(door, t, team, stored, opts).await?),
+             None => {
+@@ -403,6 +405,7 @@ pub mod profile {
+     fn meta_of(stored: &StoredProfile) -> ProfileMeta {
+         let text = |k: &str, or: &str| stored.config.get(k).and_then(|v| v.as_str()).unwrap_or(or).to_string();
+         ProfileMeta {
++            proxy_chain_policy: stored.meta.proxy_chain_policy,
+             id: stored.meta.id.clone(),
+             name: text("name", "(unnamed)"),
+             notes: text("notes", ""),
+@@ -562,9 +565,44 @@ pub mod proxy {
      use anyhow::Result;
  
      pub use local::{
@@ -6533,11 +7355,12 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..cb010dcb5a38f7d05103a2d803072f6d
 +        can_send_udp_directly, country_to_locale, country_to_timezone,
 +        parse_bulk, parse_single, GeoInfo, ProxyEntry, ProxyKind, TestSnapshot,
      };
-+    pub(crate) use local::{probe as probe_on_route, geo_check_via as geo_check_on_route, Socks5ProbeError};
++    pub(crate) use local::{probe as probe_on_route, geo_check_via as geo_check_on_route, Socks5ProbeError, HttpProbeError};
 +
 +    pub async fn probe(entry: &ProxyEntry) -> Result<u128> {
 +        let settings = crate::proxy_chain::saved_settings()?;
-+        let prepared = crate::proxy_chain::prepare(Some(entry), &settings.proxy_chain).await?;
++        let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?;
++        let prepared = crate::proxy_chain::prepare(Some(entry), &config).await?;
 +        let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
 +        match local::probe(effective).await {
 +            Err(e) if prepared.is_some() => Err(crate::proxy_chain::profile_failure(&prepared.as_ref().unwrap().tunnel, &e).into()),
@@ -6546,7 +7369,8 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..cb010dcb5a38f7d05103a2d803072f6d
 +    }
 +
 +    pub async fn probe_udp(entry: &ProxyEntry) -> Result<u128> {
-+        if crate::proxy_chain::saved_settings()?.proxy_chain.enabled {
++        let settings = crate::proxy_chain::saved_settings()?;
++        if crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?.enabled {
 +            anyhow::bail!("Proxy-chain V1 does not support UDP. This is a transport limitation, not the profile proxy's capability.");
 +        }
 +        local::probe_udp(entry).await
@@ -6559,7 +7383,8 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..cb010dcb5a38f7d05103a2d803072f6d
 +    pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider: Option<String>) -> Result<GeoInfo> {
 +        let Some(entry) = entry else { return local::geo_check_via(None, provider).await };
 +        let settings = crate::proxy_chain::saved_settings()?;
-+        let prepared = crate::proxy_chain::prepare(Some(entry), &settings.proxy_chain).await?;
++        let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?;
++        let prepared = crate::proxy_chain::prepare(Some(entry), &config).await?;
 +        let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
 +        local::geo_check_via(Some(effective), provider).await.map_err(|e| if prepared.is_some() {
 +            anyhow::anyhow!("The exit IP request through the profile proxy chain failed.")
@@ -6568,7 +7393,39 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..cb010dcb5a38f7d05103a2d803072f6d
  
      /// A team's proxies carry an address only where this member may use them.
      pub fn list() -> Result<Vec<ProxyEntry>> {
-@@ -654,10 +686,8 @@ pub mod proxy {
+@@ -583,6 +621,7 @@ pub mod proxy {
+ 
+     /// Adds the proxy, or changes the one with its id.
+     pub async fn upsert(door: Door, t: &Ticket, entry: ProxyEntry) -> Result<ProxyEntry> {
++        entry.proxy_chain_policy.validate()?;
+         match t.team() {
+             Some(team) => Ok(write::save_proxy(door, t, team, entry).await?),
+             None => {
+@@ -594,6 +633,7 @@ pub mod proxy {
+ 
+     /// Adds the proxy unless an identical one is kept: that one is answered.
+     pub async fn upsert_dedup(door: Door, t: &Ticket, entry: ProxyEntry) -> Result<ProxyEntry> {
++        entry.proxy_chain_policy.validate()?;
+         match t.team() {
+             Some(team) => Ok(write::save_proxy_dedup(door, t, team, entry).await?),
+             None => {
+@@ -605,6 +645,7 @@ pub mod proxy {
+ 
+     /// As [`upsert_dedup`], but a new password for the profile's own proxy changes it.
+     pub async fn upsert_for_binding(door: Door, t: &Ticket, entry: ProxyEntry, bound_id: Option<&str>) -> Result<ProxyEntry> {
++        entry.proxy_chain_policy.validate()?;
+         match t.team() {
+             Some(team) => Ok(write::save_proxy_for_binding(door, t, team, entry, bound_id).await?),
+             None => {
+@@ -616,6 +657,7 @@ pub mod proxy {
+ 
+     /// Adds each proxy not kept yet; answers how many went in.
+     pub async fn bulk_save(door: Door, t: &Ticket, entries: Vec<ProxyEntry>) -> Result<usize> {
++        for entry in &entries { entry.proxy_chain_policy.validate()?; }
+         match t.team() {
+             Some(team) => Ok(write::save_proxies(door, t, team, entries).await?),
+             None => {
+@@ -654,10 +696,8 @@ pub mod proxy {
      }
  
      pub fn latest_test(id: &str) -> Option<TestSnapshot> {
@@ -6581,6 +7438,26 @@ index 00d90e17f3869e100400cd0ceae4478808abf924..cb010dcb5a38f7d05103a2d803072f6d
      }
  }
  
+diff --git a/src-tauri/src/space/remote.rs b/src-tauri/src/space/remote.rs
+index 7000d07a4589cd40e9d5c9156328875e480b4bb7..d11b24062c570fa9f58fe28bb464dd587e0730e1 100644
+--- a/src-tauri/src/space/remote.rs
++++ b/src-tauri/src/space/remote.rs
+@@ -140,6 +140,7 @@ fn open_on(lease: &Lease, device_id: &str) -> OpenOn {
+ /// A row as the profile list shows it; the settings fill in what only they know.
+ pub fn meta(team: &str, row: &ProfileRow, detail: Option<&StoredProfile>, device_id: &str) -> ProfileMeta {
+     ProfileMeta {
++        proxy_chain_policy: detail.map(|p| p.meta.proxy_chain_policy).unwrap_or_default(),
+         id: row.id.clone(),
+         name: row.name.clone(),
+         notes: row.card.notes.clone(),
+@@ -203,6 +204,7 @@ pub fn proxy(row: &ProxyRow, login: Option<&str>) -> ProxyEntry {
+         serde_json::from_value(v).ok()
+     });
+     let mut e = read.unwrap_or_else(|| ProxyEntry {
++        proxy_chain_policy: Default::default(),
+         id: String::new(),
+         name: String::new(),
+         kind: ProxyKind::Socks5,
 diff --git a/src/dev/mock/fixtures.ts b/src/dev/mock/fixtures.ts
 index e5a46b6e64386b6cc95d06fe9a513df8b4f24a9d..3cb5436fc50deb1b1eea33602a6f7a4b0eb20f14 100644
 --- a/src/dev/mock/fixtures.ts
@@ -6655,6 +7532,58 @@ index 75e7e9dfcb88c2f5c861b6b773f84af87b143eaf..2c34c6fb79540841effe83b08d2e2186
    api_info: (_a, { state }) => state.api,
    api_regenerate_token: (_a, ctx) => {
      // As the backend: a new signing key on disk, and a token signed with it.
+diff --git a/src/entities/profile/lib/formCache.ts b/src/entities/profile/lib/formCache.ts
+index 567e183f77ccca0dd3488bdf675411cf9adae9f0..49fef6e08f43ea9780134f68790956747ed938c0 100644
+--- a/src/entities/profile/lib/formCache.ts
++++ b/src/entities/profile/lib/formCache.ts
+@@ -36,6 +36,7 @@ export function forgetForm(id: string) {
+ /** The fields a row and a form share differ: the form is older than the row. */
+ const differs = (row: ProfileMeta, form: ProfileForm) =>
+   row.name !== form.name || row.notes !== form.notes || row.proxy_id !== form.proxy_id
++  || (row.proxy_chain_policy ?? "inherit") !== (form.proxy_chain_policy ?? "inherit")
+   || (row.color ?? "") !== form.color || row.extensions.join("\n") !== form.extensions.join("\n");
+ 
+ /** A row that changed (an edit elsewhere, a reload with news) in a field the
+diff --git a/src/entities/profile/model/form.ts b/src/entities/profile/model/form.ts
+index 8163b29d6559c9bc2d9d3242d0f91beabc33b4e6..67aef26feabdf303c2583f01060c33ffe4e4870b 100644
+--- a/src/entities/profile/model/form.ts
++++ b/src/entities/profile/model/form.ts
+@@ -62,6 +62,7 @@ export function fromStored(stored: any): ProfileForm {
+   f.id = stored?._meta?.id ?? "";
+   f.rev = stored?._meta?.rev ?? 0;
+   f.proxy_id = stored?._meta?.proxy_id ?? null;
++  f.proxy_chain_policy = stored?._meta?.proxy_chain_policy ?? "inherit";
+   f.name = stored?.name ?? "";
+   f.notes = stored?.notes ?? "";
+   f.color = stored?._meta?.color ?? "";
+@@ -129,6 +130,7 @@ export function toStored(f: ProfileForm, lib: FingerprintEntry | null, prev?: an
+     id: f.id,
+     rev: f.rev,
+     proxy_id: f.proxy_id,
++    proxy_chain_policy: f.proxy_chain_policy ?? "inherit",
+     last_launched_at: null,
+     gpu_preset_id: f.gpu_preset_id,
+     ...(f.real_gpu ? { real_gpu: true } : {}),
+diff --git a/src/entities/profile/model/types.ts b/src/entities/profile/model/types.ts
+index c90819d572b30d12241931c712f6f88d4b6a1ffc..51a96f38eb7292bd2bbac89cce1e3c91271c937f 100644
+--- a/src/entities/profile/model/types.ts
++++ b/src/entities/profile/model/types.ts
+@@ -6,6 +6,7 @@ export type GeoMode = "auto" | "manual";
+ export type UiLanguage = "system" | "profile";
+ 
+ export type ProfileMeta = {
++  proxy_chain_policy?: "inherit" | "enabled" | "disabled";
+   id: string;
+   name: string;
+   notes: string;
+@@ -49,6 +50,7 @@ export type ProfileRight = keyof ProfileRights;
+ export type OpenOn = { device_name: string; member_name: string; this_device: boolean; since: number; until: number };
+ 
+ export type ProfileForm = {
++  proxy_chain_policy?: "inherit" | "enabled" | "disabled";
+   id: string;
+   /** The file's version when the editor opened it; a save carries it back. */
+   rev: number;
 diff --git a/src/entities/proxy/lib/status.test.ts b/src/entities/proxy/lib/status.test.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..c67c9f0d743cc063200c015c8c94c0488e284954
@@ -6699,10 +7628,16 @@ index 8a354921532a2d36ea0144e9eb358296ae043e28..ad64fe6f4aaab3d6c24d8ab5ec6dff69
  }
  
 diff --git a/src/entities/proxy/model/types.ts b/src/entities/proxy/model/types.ts
-index f974aadf7b17aad26835b5e71742e38dbf29d984..273204b5d8d99e11592915d9df4a669acbe20973 100644
+index f974aadf7b17aad26835b5e71742e38dbf29d984..da361b2a2923260ab71c1a163e4369369c466e3b 100644
 --- a/src/entities/proxy/model/types.ts
 +++ b/src/entities/proxy/model/types.ts
-@@ -28,6 +28,11 @@ export type ProxyTestSnapshot = {
+@@ -1,4 +1,5 @@
+ export type ProxyEntry = {
++  proxy_chain_policy?: "inherit" | "enabled" | "disabled";
+   id: string;
+   name: string;
+   kind: "socks5" | "http" | "https";
+@@ -28,6 +29,11 @@ export type ProxyTestSnapshot = {
    /** Why this snapshot has no location. */
    geo_error: string | null;
    provider: string;
@@ -6834,6 +7769,49 @@ index 8b2a63b991ff6e1a249d418a11ee3c1ef8c82d3e..e9c782ae3035f8ecac5c8aef251cd6e1
    other: () => t("settings.tabOther"),
    about: () => t("settings.tabAbout"),
  };
+diff --git a/src/features/manage-proxies/ui/EditProxyDialog.tsx b/src/features/manage-proxies/ui/EditProxyDialog.tsx
+index 592692c8e26a79668df25bac717498322179702f..2cf975a77e32cf0d4584e670b392c440ace24673 100644
+--- a/src/features/manage-proxies/ui/EditProxyDialog.tsx
++++ b/src/features/manage-proxies/ui/EditProxyDialog.tsx
+@@ -11,8 +11,9 @@ import { NumField } from "../../../shared/ui/NumField";
+ import { SelectField } from "../../../shared/ui/SelectField";
+ import { useT } from "../../../shared/i18n";
+ import { useProxy, type ProxyEntry } from "../../../entities/proxy";
++import { ChainPolicyField } from "../../../shared/ui/ChainPolicyField";
+ 
+-const FIELDS = ["name", "kind", "host", "port", "username", "password", "country", "notes"] as const;
++const FIELDS = ["name", "kind", "host", "port", "username", "password", "country", "notes", "proxy_chain_policy"] as const;
+ 
+ /// Edit proxy (manual save, owner 2026-10-07): one dialog changes a proxy,
+ /// and nothing is written until Save. Opened by the proxy panel's Edit;
+@@ -202,6 +203,7 @@ function EditProxyBody({ id, open, onClose }: { id: string; open: boolean; onClo
+             />
+           </div>
+           <Field label={t("proxyPeek.notes")} value={draft.notes} onChange={(notes) => patch({ notes })} />
++          <ChainPolicyField value={draft.proxy_chain_policy} onChange={(proxy_chain_policy) => patch({ proxy_chain_policy })} />
+         </div>
+       </fieldset>
+     </DialogModal>
+diff --git a/src/features/profile-form/ui/ProxyTab.tsx b/src/features/profile-form/ui/ProxyTab.tsx
+index ad42268f83a576ac9e16f54147183dfdb5e92c63..0663d5be621c029a8ca57f24ee0818720ba541a7 100644
+--- a/src/features/profile-form/ui/ProxyTab.tsx
++++ b/src/features/profile-form/ui/ProxyTab.tsx
+@@ -2,6 +2,7 @@ import { PropertySheet } from "../../../shared/ui/peek";
+ import { useT } from "../../../shared/i18n";
+ import { patchDraft, patchForm, type ProfileFormDraft } from "../model/useProfileForm";
+ import { ProxyRow } from "./fields";
++import { ChainPolicyField } from "../../../shared/ui/ChainPolicyField";
+ 
+ /// Proxy: the picker ("No proxy", every proxy, a search), and a new proxy
+ /// from a pasted line, added only when the form is saved. The walk through
+@@ -19,6 +20,7 @@ export function ProxyTab({ draft }: { draft: ProfileFormDraft }) {
+           onNewLine={(newProxyLine) => patchDraft({ newProxyLine })}
+         />
+       </PropertySheet>
++      <ChainPolicyField profile value={draft.form.proxy_chain_policy} onChange={(proxy_chain_policy) => patchForm({ proxy_chain_policy })} />
+       <p className="m-0 text-secondary text-text-soft-400">{t("profileForm.proxyHelp")}</p>
+     </div>
+   );
 diff --git a/src/pages/settings/index.tsx b/src/pages/settings/index.tsx
 index a7c8b9b5bebb80043bc0a2f9fa75db521f30f51d..7af37f196c646cfa8cd411b4e9adef5abeabe8ed 100644
 --- a/src/pages/settings/index.tsx
@@ -7196,10 +8174,23 @@ index a462841a05c49f535322a49c372bbe5d85d9c554..000d8c7c642dedab45e8228b453feed7
    assert.equal(vanished?.[1], SYNC_STOPS.vanished);
    assert.ok(cycle.includes(`"${SYNC_STOPS.unread("{what}", "{e:#}")}"`), "the unread stop moved");
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index 8d0bf7f068d47f3051c43e475b6af979dbd38fc7..d2db773a8b94afc672efaed3d663900a1a5fabb5 100644
+index 8d0bf7f068d47f3051c43e475b6af979dbd38fc7..424898027e19e8b68b7b9442b9ff8110e73d24b8 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
-@@ -2330,6 +2330,95 @@
+@@ -1,4 +1,12 @@
+ {
++  "proxyChain.policyLabel": "Proxy chain choice",
++  "proxyChain.policyInherit": "Follow global settings",
++  "proxyChain.policyInheritProfile": "Follow proxy and global settings",
++  "proxyChain.policyEnabled": "Use first hop for this proxy",
++  "proxyChain.policyDisabled": "Do not use first hop",
++  "proxyChain.policyHelp": "The profile choice overrides the proxy, then global settings. Disabling skips only the first hop, keeping the original proxy. Saved changes apply on the next start.",
++  "proxyChain.errorPolicy": "The proxy-chain choice is invalid. Choose and save it again.",
++  "proxyChain.errorSecondTls": "TLS or certificate verification for the HTTPS profile proxy failed. Check the port supports TLS and the certificate matches the proxy host. No HTTP downgrade or certificate bypass was used.",
+   "accent.custom": "Custom color",
+   "actionMenu.byPosition": "{what}, by position",
+   "actionMenu.clear": "Clear field",
+@@ -2330,6 +2338,95 @@
    "settings.tabAbout": "About",
    "settings.tabApi": "API & MCP",
    "settings.tabAppearance": "Appearance",
@@ -7241,7 +8232,7 @@ index 8d0bf7f068d47f3051c43e475b6af979dbd38fc7..d2db773a8b94afc672efaed3d663900a
 +  "proxyChain.testLocal": "Test local network",
 +  "proxyChain.testSystem": "Test system proxy",
 +  "proxyChain.profile": "Profile",
-+  "proxyChain.profileHelp": "Test both proxy layers and query the final exit IP using the profile’s existing proxy.",
++  "proxyChain.profileHelp": "Test the profile’s chosen route and final exit IP. Without the first hop, only the original proxy is tested.",
 +  "proxyChain.chooseProfile": "Choose a profile",
 +  "proxyChain.testProfile": "Test profile proxy chain",
 +  "proxyChain.stageLatency": "Connected, {ms} ms",
@@ -7288,18 +8279,31 @@ index 8d0bf7f068d47f3051c43e475b6af979dbd38fc7..d2db773a8b94afc672efaed3d663900a
 +  "proxyChain.errorSecondAuth": "Second hop: the profile proxy rejected authentication. Check its account, password, subscription and allowed source IP or region; this response does not identify which restriction failed.",
 +  "proxyChain.errorSecondTimeout": "Second hop: the profile proxy did not finish authentication or the destination connection in time. Check its availability and the first hop’s route, then retry.",
 +  "proxyChain.errorSecondConnect": "Second hop: the profile proxy could not connect to the test destination. Check its access restrictions, available traffic and the first hop’s route to it.",
-+  "proxyChain.errorSecondKind": "The second hop must be a SOCKS5 profile proxy. Its existing data has not been changed.",
-+  "proxyChain.errorProfileRequired": "Assign a SOCKS5 proxy to this profile before testing or starting the proxy chain.",
++  "proxyChain.errorSecondKind": "The second hop requires a supported SOCKS5, HTTP or HTTPS profile proxy. Its existing data has not been changed.",
++  "proxyChain.errorProfileRequired": "Assign a proxy to this profile before testing or starting the proxy chain.",
 +  "proxyChain.errorTunnelClosed": "The local proxy-chain connection closed or was interrupted. Retry the check; no direct fallback was used.",
 +  "proxyChain.udpUnsupported": "UDP unavailable in proxy chain",
    "settings.tabGeneral": "General",
    "settings.tabHelper": "Helper",
    "settings.tabOther": "Other",
 diff --git a/src/shared/i18n/locales/ru.json b/src/shared/i18n/locales/ru.json
-index f0b98deb3c0a2024ef1ecb5daba76c80fd85c9dd..f5bc30ca572b0da18771ce240e60b8829ccf3155 100644
+index f0b98deb3c0a2024ef1ecb5daba76c80fd85c9dd..da2f3bec04ffb19b27851960518febb83bf53287 100644
 --- a/src/shared/i18n/locales/ru.json
 +++ b/src/shared/i18n/locales/ru.json
-@@ -2330,6 +2330,95 @@
+@@ -1,4 +1,12 @@
+ {
++  "proxyChain.policyLabel": "Режим цепочки прокси",
++  "proxyChain.policyInherit": "По общим настройкам",
++  "proxyChain.policyInheritProfile": "По настройкам прокси и общим",
++  "proxyChain.policyEnabled": "Подключать через первый прокси",
++  "proxyChain.policyDisabled": "Без первого прокси",
++  "proxyChain.policyHelp": "Выбор профиля важнее выбора прокси и общих настроек. Отключение убирает только первый узел, сохраняя исходный прокси. Изменения действуют при следующем запуске.",
++  "proxyChain.errorPolicy": "Неверный режим цепочки. Выберите и сохраните его снова.",
++  "proxyChain.errorSecondTls": "Ошибка TLS или сертификата HTTPS-прокси профиля. Проверьте поддержку TLS на порту и соответствие сертификата адресу. Переход на HTTP и обход проверки не выполнялись.",
+   "accent.custom": "Свой цвет",
+   "actionMenu.byPosition": "{what} (по координатам)",
+   "actionMenu.clear": "Очистить поле",
+@@ -2330,6 +2338,95 @@
    "settings.tabAbout": "О программе",
    "settings.tabApi": "API и MCP",
    "settings.tabAppearance": "Внешний вид",
@@ -7341,7 +8345,7 @@ index f0b98deb3c0a2024ef1ecb5daba76c80fd85c9dd..f5bc30ca572b0da18771ce240e60b882
 +  "proxyChain.testLocal": "Проверить локальную сеть",
 +  "proxyChain.testSystem": "Проверить системный прокси",
 +  "proxyChain.profile": "Профиль",
-+  "proxyChain.profileHelp": "Проверка обоих прокси и конечного выходного IP через существующий прокси профиля.",
++  "proxyChain.profileHelp": "Проверка выбранного маршрута профиля и выходного IP. Без первого узла проверяется только исходный прокси.",
 +  "proxyChain.chooseProfile": "Выберите профиль",
 +  "proxyChain.testProfile": "Проверить цепочку прокси профиля",
 +  "proxyChain.stageLatency": "Подключено, {ms} мс",
@@ -7388,18 +8392,31 @@ index f0b98deb3c0a2024ef1ecb5daba76c80fd85c9dd..f5bc30ca572b0da18771ce240e60b882
 +  "proxyChain.errorSecondAuth": "Второй узел: прокси профиля отклонил аутентификацию. Проверьте логин, пароль, тариф и разрешённый исходный IP или регион; ответ не указывает точную причину ограничения.",
 +  "proxyChain.errorSecondTimeout": "Второй узел: прокси профиля не завершил аутентификацию или подключение вовремя. Проверьте сервис и маршрут первого узла к нему.",
 +  "proxyChain.errorSecondConnect": "Второй узел: прокси профиля не подключился к цели проверки. Проверьте ограничения, остаток трафика и маршрут первого узла к нему.",
-+  "proxyChain.errorSecondKind": "Вторым узлом должен быть SOCKS5-прокси профиля. Сохранённые данные прокси не изменены.",
-+  "proxyChain.errorProfileRequired": "Назначьте профилю SOCKS5-прокси перед проверкой или запуском цепочки.",
++  "proxyChain.errorSecondKind": "Второй узел должен быть прокси SOCKS5, HTTP или HTTPS. Сохранённые данные не изменены.",
++  "proxyChain.errorProfileRequired": "Назначьте профилю прокси перед проверкой или запуском цепочки.",
 +  "proxyChain.errorTunnelClosed": "Локальное соединение цепочки прокси закрылось или было прервано. Повторите проверку; прямое соединение не использовалось.",
 +  "proxyChain.udpUnsupported": "UDP недоступен в цепочке прокси",
    "settings.tabGeneral": "Общие",
    "settings.tabHelper": "Shard Helper",
    "settings.tabOther": "Прочее",
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index ac20660402ea28eda21df123d5cb200aaf35861f..2afc7170c6dede62d290db6e848120a90d7039b0 100644
+index ac20660402ea28eda21df123d5cb200aaf35861f..8b56ac625e6c9dead3643588b3cd1a48525e7490 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
-@@ -2330,6 +2330,95 @@
+@@ -1,4 +1,12 @@
+ {
++  "proxyChain.policyLabel": "代理链使用方式",
++  "proxyChain.policyInherit": "跟随全局设置",
++  "proxyChain.policyInheritProfile": "跟随代理与全局设置",
++  "proxyChain.policyEnabled": "使用第一层连接此代理",
++  "proxyChain.policyDisabled": "不使用第一层",
++  "proxyChain.policyHelp": "配置选择优先于代理选择，再跟随全局。关闭只跳过第一层，保留原代理；保存后下次启动生效。",
++  "proxyChain.errorPolicy": "代理链选择无效，请重新选择并保存。",
++  "proxyChain.errorSecondTls": "第二层 HTTPS 代理的 TLS 握手或证书校验失败。检查该端口是否支持 TLS，以及证书是否匹配代理地址；未降级 HTTP 或忽略证书。",
+   "accent.custom": "自定义颜色",
+   "actionMenu.byPosition": "{what}（按位置）",
+   "actionMenu.clear": "清空字段",
+@@ -2330,6 +2338,95 @@
    "settings.tabAbout": "关于",
    "settings.tabApi": "API 与 MCP",
    "settings.tabAppearance": "外观",
@@ -7441,7 +8458,7 @@ index ac20660402ea28eda21df123d5cb200aaf35861f..2afc7170c6dede62d290db6e848120a9
 +  "proxyChain.testLocal": "检测本地网络",
 +  "proxyChain.testSystem": "检测系统代理",
 +  "proxyChain.profile": "配置",
-+  "proxyChain.profileHelp": "使用配置原有的代理检测完整两层链路，并查询最终出口 IP。",
++  "proxyChain.profileHelp": "按配置的代理链选择检测实际路线，并查询最终出口 IP；选择不使用第一层时只检测原代理。",
 +  "proxyChain.chooseProfile": "选择配置",
 +  "proxyChain.testProfile": "检测配置代理链",
 +  "proxyChain.stageLatency": "已连接，{ms} 毫秒",
@@ -7488,8 +8505,8 @@ index ac20660402ea28eda21df123d5cb200aaf35861f..2afc7170c6dede62d290db6e848120a9
 +  "proxyChain.errorSecondAuth": "第二层：配置代理拒绝认证。请检查账号、密码、套餐及允许的来源 IP 或地区；该响应不能确定具体是哪项限制。",
 +  "proxyChain.errorSecondTimeout": "第二层：配置代理未能及时完成认证或目标连接。请检查服务状态以及第一层到它的分流路径后重试。",
 +  "proxyChain.errorSecondConnect": "第二层：配置代理无法连接检测目标。请检查访问限制、剩余流量以及第一层到它的分流路径。",
-+  "proxyChain.errorSecondKind": "第二层需要配置的 SOCKS5 代理。原有代理资料未被修改。",
-+  "proxyChain.errorProfileRequired": "请先为此配置分配 SOCKS5 代理，再检测或启动代理链。",
++  "proxyChain.errorSecondKind": "第二层需要受支持的 SOCKS5、HTTP 或 HTTPS 配置代理。原有代理资料未被修改。",
++  "proxyChain.errorProfileRequired": "请先为此配置分配代理，再检测或启动代理链。",
 +  "proxyChain.errorTunnelClosed": "本地代理链连接已关闭或中断，请重新检测；本次没有改为直连。",
 +  "proxyChain.udpUnsupported": "代理链不支持 UDP",
    "settings.tabGeneral": "通用",
@@ -7557,16 +8574,19 @@ index 0000000000000000000000000000000000000000..a0e14763b55b7c180523f951c137b202
 +});
 diff --git a/src/shared/lib/proxyChainError.ts b/src/shared/lib/proxyChainError.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..d9165b4079f95261c212ea92599f0b1e3171c512
+index 0000000000000000000000000000000000000000..d1b8a36bbcbcdfbe1e2cee3ae20d1ae63fbf9c34
 --- /dev/null
 +++ b/src/shared/lib/proxyChainError.ts
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,63 @@
 +type ChainError = { code?: string | null; error_code?: string | null; message?: string | null; error_message?: string | null };
 +
 +/** Shared by settings, proxy history and launch failures. Unknown safe backend
 + * errors keep their own message rather than becoming an unrelated offline error. */
 +export function proxyChainErrorText(t: (key: string) => string, error?: ChainError | null): string | undefined {
 +  switch (error?.code ?? error?.error_code) {
++    case "proxy_chain_policy_invalid": return t("proxyChain.errorPolicy");
++    case "proxy_chain_profile_tls_failed":
++    case "proxy_chain_profile_tls_timeout": return t("proxyChain.errorSecondTls");
 +    case "proxy_chain_manual_required": return t("proxyChain.errorManualRequired");
 +    case "proxy_chain_system_not_configured": return t("proxyChain.errorSystemNotConfigured");
 +    case "proxy_chain_system_detect_failed": return t("proxyChain.errorSystemDetectFailed");
@@ -7643,6 +8663,27 @@ index a67ced561886b0d1e186c0bb2ff3cbcf1ce0998c..b5e04f347cc38cb74396281436a46804
  };
  
  function tabFromUrl(): SettingsTab {
+diff --git a/src/shared/ui/ChainPolicyField.tsx b/src/shared/ui/ChainPolicyField.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..0a6ca098c8e0f6360d81ee50d0b6278eb02c1e4b
+--- /dev/null
++++ b/src/shared/ui/ChainPolicyField.tsx
+@@ -0,0 +1,15 @@
++import { useT } from "../i18n";
++import { SelectField } from "./SelectField";
++
++type Policy = "inherit" | "enabled" | "disabled";
++export function ChainPolicyField({ value, onChange, profile = false }: { value?: Policy; onChange: (value: Policy) => void; profile?: boolean }) {
++  const t = useT();
++  return <div className="flex flex-col gap-2" data-chain-policy>
++    <SelectField label={t("proxyChain.policyLabel")} value={value ?? "inherit"} onChange={onChange} options={[
++      { value: "inherit", label: profile ? t("proxyChain.policyInheritProfile") : t("proxyChain.policyInherit") },
++      { value: "enabled", label: t("proxyChain.policyEnabled") },
++      { value: "disabled", label: t("proxyChain.policyDisabled") },
++    ]} />
++    <p className="m-0 text-help text-text-sub-600">{t("proxyChain.policyHelp")}</p>
++  </div>;
++}
 diff --git a/src/widgets/Overview/useProblemCards.tsx b/src/widgets/Overview/useProblemCards.tsx
 index e75b652de558706c78583827a39814e2dc342e5a..50c6825bcf86207cd1691b30dfdd84458b428564 100644
 --- a/src/widgets/Overview/useProblemCards.tsx
