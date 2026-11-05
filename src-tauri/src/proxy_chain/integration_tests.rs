@@ -63,6 +63,15 @@ async fn https_second_hop_verifies_original_name_and_carries_http_inside_tls() {
     let client = Arc::new(rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth());
     let wrong = Target::new("wrong.test", addr.port()).unwrap();
     assert_eq!(super::tls::connect(&hop, &wrong, client.clone(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
+    // A later connection can fail TLS after the initial preflight succeeded.
+    // Its loopback EOF is not an HTTP status and must preserve the TLS cause.
+    let rejected = Tunnel::bind_tls(hop.clone(), wrong, client.clone()).await.unwrap();
+    let mut probe = entry("tls-refusal", rejected.addr());
+    probe.kind = crate::space::proxy::ProxyKind::Http;
+    let error = crate::space::proxy::probe_on_route(&probe).await.unwrap_err();
+    assert!(error.downcast_ref::<crate::space::proxy::HttpProbeError>().is_none());
+    assert_eq!(super::profile_failure(&rejected, &error).code, "proxy_chain_profile_tls_failed");
+    rejected.shutdown().await;
     let tunnel = Tunnel::bind_tls(hop, target, client).await.unwrap();
     let mut local = TcpStream::connect(tunnel.addr()).await.unwrap();
     local.write_all(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Basic c2Vjb25kOnNlY3JldA==\r\n\r\n").await.unwrap();
@@ -94,6 +103,24 @@ async fn http_second_hop_refusal_is_typed_and_does_not_change_saved_proxy() {
     assert_eq!(serde_json::to_value(&proxy).unwrap(), before);
     prepared.tunnel.shutdown().await;
     task.abort();
+}
+
+#[tokio::test]
+async fn http_second_hop_invalid_replies_are_not_authoritative_status_codes() {
+    for reply in ["", "HTTP/1.1 2000 Invalid\r\n\r\n", "HTTP/2 200 Invalid\r\n\r\n", "HTTP/1.1 99 Invalid\r\n\r\n"] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            http_head(&mut stream).await.unwrap();
+            stream.write_all(reply.as_bytes()).await.unwrap();
+        });
+        let mut proxy = entry("invalid-http", addr);
+        proxy.kind = crate::space::proxy::ProxyKind::Http;
+        let error = crate::space::proxy::probe_on_route(&proxy).await.unwrap_err();
+        assert!(error.downcast_ref::<crate::space::proxy::HttpProbeError>().is_none());
+        task.await.unwrap();
+    }
 }
 
 struct Service {

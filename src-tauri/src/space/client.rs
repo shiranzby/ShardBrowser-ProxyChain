@@ -1486,7 +1486,7 @@ mod tests {
     }
 
     /// Files that talk HTTP or open sockets for something other than a team.
-    const OTHER_TRAFFIC: [(&str, &str); 14] = [
+    const OTHER_TRAFFIC: [(&str, &str); 16] = [
         ("process/close.rs", "Stop's Browser.close on a launched browser's own devtools"),
         ("live_e2e.rs", "the live end-to-end harness, run by hand: a test site, a proxy, CDP, the server raw"),
         ("runtime.rs", "engine and launcher downloads"),
@@ -1498,6 +1498,8 @@ mod tests {
         ("space/local/proxy.rs", "proxy checks"),
         ("space/local/extensions.rs", "extension downloads"),
         ("proxy_chain/connector.rs", "the configured first-hop proxy TCP transport"),
+        ("proxy_chain/tls.rs", "verified TLS to the original HTTPS proxy only inside the first-hop connector stream"),
+        ("proxy_chain/tunnel.rs", "owned loopback relay with optional second-hop TLS config; never carries team tokens"),
         ("proxy_chain/tests.rs", "synthetic loopback proxy and tunnel tests"),
         ("proxy_chain/integration_tests.rs", "synthetic profile launch and lifecycle tests"),
         ("proxy_chain/detection_tests.rs", "synthetic loopback Geo responders and proxy URL validation"),

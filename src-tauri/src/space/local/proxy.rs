@@ -471,8 +471,14 @@ async fn probe_inner(entry: &ProxyEntry) -> Result<u128> {
                 }
             };
             let first_line = head.lines().next().unwrap_or("");
-            if !first_line.starts_with("HTTP/1.1 200") && !first_line.starts_with("HTTP/1.0 200") {
-                let status = first_line.split_whitespace().nth(1).and_then(|v| v.parse::<u16>().ok()).unwrap_or(0);
+            let mut parts = first_line.split_whitespace();
+            let version = parts.next();
+            let status = parts.next().and_then(|v| v.parse::<u16>().ok()).filter(|n| (100..=599).contains(n));
+            if !matches!(version, Some("HTTP/1.1" | "HTTP/1.0")) || status.is_none() {
+                anyhow::bail!("The profile proxy closed or returned an invalid HTTP CONNECT reply.");
+            }
+            let status = status.expect("checked above");
+            if status != 200 {
                 return Err(HttpProbeError(status).into());
             }
         }

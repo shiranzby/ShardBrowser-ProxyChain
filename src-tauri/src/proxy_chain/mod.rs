@@ -106,7 +106,7 @@ pub fn validate_args(raw: &str) -> anyhow::Result<()> {
 }
 
 pub fn profile_error(tunnel: &Tunnel) -> ChainError {
-    tunnel.last_error().unwrap_or_else(|| ChainError::new("proxy_chain_profile_failed", "profile", "The profile SOCKS5 proxy rejected authentication or could not reach the test target through the system proxy."))
+    tunnel.last_error().unwrap_or_else(|| ChainError::new("proxy_chain_profile_failed", "profile", "The profile proxy rejected authentication or could not reach the test target through the system proxy."))
 }
 
 pub fn profile_failure(tunnel: &Tunnel, cause: &anyhow::Error) -> ChainError {
@@ -133,11 +133,11 @@ pub fn profile_failure(tunnel: &Tunnel, cause: &anyhow::Error) -> ChainError {
         if let Some(error) = tunnel.last_error() { return error; }
     }
     if text.contains("time") || text.contains("never answered") || text.contains("no answer") {
-        ChainError::new("proxy_chain_profile_timeout", "profile", "The profile SOCKS5 proxy did not finish its handshake or CONNECT in time.")
+        ChainError::new("proxy_chain_profile_timeout", "profile", "The profile proxy did not finish its handshake or CONNECT in time.")
     } else if text.contains("username") || text.contains("password") || text.contains("login method") {
-        ChainError::new("proxy_chain_profile_auth_failed", "profile", "The profile SOCKS5 proxy rejected authentication. Check its credentials and allowed source IPs; system proxy credentials are separate.")
+        ChainError::new("proxy_chain_profile_auth_failed", "profile", "The profile proxy rejected authentication. Check its credentials and allowed source IPs; system proxy credentials are separate.")
     } else {
-        ChainError::new("proxy_chain_profile_connect_failed", "profile", "The profile SOCKS5 proxy refused or could not complete the destination CONNECT request.")
+        ChainError::new("proxy_chain_profile_connect_failed", "profile", "The profile proxy refused or could not complete the destination CONNECT request.")
     }
 }
 
