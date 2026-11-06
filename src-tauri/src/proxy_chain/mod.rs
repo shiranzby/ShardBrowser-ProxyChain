@@ -29,6 +29,28 @@ pub struct PreparedProxy {
     pub verified_tcp_ms: Option<u128>,
 }
 
+/// Internal evidence from a strict preparation that reached the proxy but
+/// could not obtain its live exit. It is not a ready route or public error DTO.
+#[derive(Debug, Clone)]
+struct VerifiedRouteFailure {
+    error: ChainError,
+    route: Route,
+    tcp_ms: u128,
+    first_hop_error: Option<ChainError>,
+}
+
+impl std::fmt::Display for VerifiedRouteFailure {
+    fn fmt(&self,f:&mut std::fmt::Formatter<'_>)->std::fmt::Result {std::fmt::Display::fmt(&self.error,f)}
+}
+
+fn preparation_failure(prepared:&PreparedProxy,error:ChainError)->anyhow::Error {
+    let cause=anyhow::Error::new(error.clone());
+    match prepared.verified_tcp_ms {
+        Some(tcp_ms)=>cause.context(VerifiedRouteFailure{error,route:prepared.route,tcp_ms,first_hop_error:prepared.first_hop_error.clone()}),
+        None=>cause,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Route { FirstHop, AssignedProxyFallback, SameProxyEndpoint, ExplicitDirect, ExplicitSystem, ExplicitProxy, ExplicitChain }
@@ -112,10 +134,15 @@ fn effective_entry(entry: &ProxyEntry, tunnel: &Tunnel) -> ProxyEntry {
 }
 
 async fn verify_prepared(prepared: &mut PreparedProxy) -> Result<(), ChainError> {
+    prepared.verified_tcp_ms=None;
+    prepared.verified_geo=None;
     let tcp_ms = proxy::probe_on_route(&prepared.effective).await.map_err(|e| profile_failure(&prepared.tunnel, &e))?;
-    let geo = proxy::geo_check_on_route(Some(&prepared.effective), None).await.map_err(|_| ChainError::new(
-        "proxy_chain_profile_geo_failed", "exit", "The assigned proxy connected, but its live exit IP could not be verified on this route."))?;
     prepared.verified_tcp_ms = Some(tcp_ms);
+    let geo = proxy::geo_check_on_route(Some(&prepared.effective), None).await.map_err(|cause| {
+        let mut error=ChainError::new("proxy_chain_profile_geo_failed", "exit", "The assigned proxy connected, but its live exit IP could not be verified on this route.");
+        error.geo_failures=cause.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone());
+        error
+    })?;
     prepared.verified_geo = Some(geo);
     Ok(())
 }
@@ -125,16 +152,18 @@ async fn assigned_route(entry: &ProxyEntry, route: Route, first_hop_error: Optio
     let tls = if entry.kind == ProxyKind::Https { Some(tls::client()?) } else { None };
     let tunnel = Tunnel::bind_assigned(target, tls).await?;
     let mut prepared = PreparedProxy { effective: effective_entry(entry, &tunnel), tunnel, route, first_hop_error, verified_geo: None, verified_tcp_ms: None };
-    if verify_prepared(&mut prepared).await.is_err() {
+    if let Err(cause)=verify_prepared(&mut prepared).await {
         let first_hop_error_code = prepared.first_hop_error.as_ref().map(|e| e.code);
-        prepared.tunnel.shutdown().await;
         let mut error = if route == Route::SameProxyEndpoint {
             ChainError::new("proxy_chain_same_proxy_failed", "profile", "The identical proxy endpoint was used once, but the assigned proxy handshake or live exit could not be verified. No website direct connection was attempted.")
         } else {
             ChainError::new("proxy_chain_routes_failed", "profile", "The first-hop route and the direct connection to the assigned proxy could not be verified. The assigned proxy was kept; no website direct connection was attempted.")
         };
         error.first_hop_error_code = first_hop_error_code;
-        return Err(error.into());
+        error.geo_failures=cause.geo_failures;
+        let error=preparation_failure(&prepared,error);
+        prepared.tunnel.shutdown().await;
+        return Err(error);
     }
     Ok(prepared)
 }
@@ -193,7 +222,8 @@ pub fn profile_error(tunnel: &Tunnel) -> ChainError {
 
 pub fn profile_failure(tunnel: &Tunnel, cause: &anyhow::Error) -> ChainError {
     if let Some(error) = cause.downcast_ref::<proxy::HttpProbeError>() {
-        return ChainError::new(if error.0 == 407 { "proxy_chain_profile_auth_failed" } else { "proxy_chain_profile_connect_failed" }, "profile", format!("The profile HTTP proxy refused CONNECT (status {}). Check its credentials and source restrictions.", error.0));
+        return ChainError::new(if error.0 == 407 { "proxy_chain_profile_auth_failed" } else { "proxy_chain_profile_connect_failed" }, "profile", format!("The profile HTTP proxy refused CONNECT (status {}). Check its credentials and source restrictions.", error.0))
+            .with_proxy_response("http",if error.0==407 {"authentication"} else {"connect"},error.0,if error.0==407 {None} else {Some("example.com:443")});
     }
     // A reply received on THIS probe is authoritative. Another concurrent
     // Geo stream's close/reset must not overwrite a definite second-hop reply.
@@ -202,11 +232,11 @@ pub fn profile_failure(tunnel: &Tunnel, cause: &anyhow::Error) -> ChainError {
             proxy::Socks5ProbeError::AuthenticationRejected(status) => ChainError::new(
                 "proxy_chain_profile_auth_failed", "profile",
                 format!("The profile SOCKS5 proxy rejected authentication (status {status}). Check its credentials and allowed source IPs; system proxy credentials are separate."),
-            ),
+            ).with_proxy_response("socks5","authentication",(*status).into(),None),
             proxy::Socks5ProbeError::ConnectRejected(status) => ChainError::new(
                 "proxy_chain_profile_connect_failed", "profile",
                 format!("The profile SOCKS5 proxy refused the destination CONNECT request (reply {status})."),
-            ),
+            ).with_proxy_response("socks5","connect",(*status).into(),Some("example.com:443")),
         };
     }
     // Classify our own probe labels; never return its raw error/URL to the UI.
@@ -232,6 +262,8 @@ pub struct Stage {
     error_code: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error_message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_details: Option<error::ProxyFailureDetails>,
 }
 impl Stage {
     fn pending() -> Self {
@@ -240,14 +272,19 @@ impl Stage {
             latency_ms: None,
             error_code: None,
             error_message: None,
+            error_details: None,
         }
     }
     fn ok(start: Instant) -> Self {
+        Self::measured(start.elapsed().as_millis())
+    }
+    fn measured(latency_ms:u128)->Self {
         Self {
             state: "ok",
-            latency_ms: Some(start.elapsed().as_millis()),
+            latency_ms: Some(latency_ms),
             error_code: None,
             error_message: None,
+            error_details: None,
         }
     }
     fn failed(e: ChainError) -> Self {
@@ -256,6 +293,7 @@ impl Stage {
             latency_ms: None,
             error_code: Some(e.code),
             error_message: Some(e.message),
+            error_details: e.details,
         }
     }
 }
@@ -278,6 +316,8 @@ pub struct TestResult {
     exit_geo: Option<proxy::GeoInfo>,
     exit_error: Option<String>,
     exit_error_code: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_error_details: Option<Vec<proxy::GeoProviderFailure>>,
     total_ms: u128,
     tested_at: String,
 }
@@ -286,10 +326,15 @@ impl TestResult {
     fn set_exit(&mut self, geo: anyhow::Result<proxy::GeoInfo>) {
         match geo {
             Ok(geo) => {
+                self.exit_error=None;
+                self.exit_error_code=None;
+                self.exit_error_details=None;
                 self.exit_ip = Some(geo.ip.clone());
                 self.exit_geo = Some(geo);
             }
-            Err(_) => {
+            Err(error) => {
+                self.exit_error_details=error.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone())
+                    .or_else(||error.downcast_ref::<ChainError>().and_then(|error|error.geo_failures.clone()));
                 let (code, message) = match self.kind.as_str() {
                     "local" => (
                         "proxy_chain_local_geo_failed",
@@ -362,6 +407,7 @@ pub async fn test(
         exit_geo: None,
         exit_error: None,
         exit_error_code: None,
+        exit_error_details: None,
         total_ms: 0,
         tested_at: format!(
             "@{}",

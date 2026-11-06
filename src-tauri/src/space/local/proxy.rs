@@ -843,6 +843,69 @@ pub struct GeoInfo {
     pub provider: String,
 }
 
+/// Safe metadata about one fixed public Geo source. Never retain a response
+/// body, request URL, proxy login or the underlying client's rendered error.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct GeoProviderFailure {
+    pub provider: String,
+    pub phase: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+}
+
+impl GeoProviderFailure {
+    fn new(provider: &str, phase: &'static str) -> Self {
+        Self { provider: geo_provider(provider).into(), phase, http_status: None }
+    }
+}
+
+impl std::fmt::Display for GeoProviderFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.provider, self.phase)?;
+        if let Some(status)=self.http_status { write!(f, " (HTTP {status})")?; }
+        Ok(())
+    }
+}
+
+impl std::error::Error for GeoProviderFailure {}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct GeoLookupError {
+    pub failures: Vec<GeoProviderFailure>,
+}
+
+impl std::fmt::Display for GeoLookupError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "every geo source failed")?;
+        for failure in &self.failures { write!(f, "; {failure}")?; }
+        Ok(())
+    }
+}
+
+impl std::error::Error for GeoLookupError {}
+
+fn geo_provider(provider: &str) -> &'static str {
+    match provider { "ipapi.co" => "ipapi.co", "ipwho.is" => "ipwho.is", _ => "ip-api.com" }
+}
+
+fn geo_request_failure(provider: &str, error: reqwest::Error, fallback: &'static str) -> GeoProviderFailure {
+    use std::error::Error;
+    let mut source: Option<&(dyn Error+'static)>=Some(&error);
+    let mut tls=false;
+    while let Some(cause)=source {
+        if cause.downcast_ref::<rustls::Error>().is_some() { tls=true; break; }
+        source=cause.source();
+    }
+    let phase=if error.is_timeout() { "timeout" }
+        else if tls { "tls" }
+        else if error.is_connect() { "connect" }
+        else if error.is_decode() { "json" }
+        else if error.is_body() { "response_body" }
+        else if error.is_redirect() { "redirect" }
+        else { fallback };
+    GeoProviderFailure::new(provider,phase)
+}
+
 /// Probe IP/country the world sees when traffic exits the proxy.
 pub async fn geo_check(entry: &ProxyEntry, provider_override: Option<String>) -> Result<GeoInfo> {
     geo_check_via(Some(entry), provider_override).await
@@ -853,6 +916,7 @@ pub async fn geo_check(entry: &ProxyEntry, provider_override: Option<String>) ->
 /// alone — the other two are HTTPS, so the chain gets an answer anyway.
 fn provider_chain(chosen: &str) -> Vec<String> {
     let all = ["ip-api.com", "ipapi.co", "ipwho.is"];
+    let chosen=geo_provider(chosen);
     let mut out = vec![chosen.to_string()];
     out.extend(all.iter().filter(|p| **p != chosen).map(|p| p.to_string()));
     out
@@ -889,12 +953,12 @@ pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider_override: Option
                         if !failures.is_empty() {
                             eprintln!(
                                 "[launcher] geo: {provider} answered after {} failed: {}",
-                                failures.len(), failures.join("; ")
+                                failures.len(), failures.iter().map(ToString::to_string).collect::<Vec<_>>().join("; ")
                             );
                         }
                         return Ok(info);
                     }
-                    Err(e) => failures.push(format!("{provider}: {e}")),
+                    Err(e) => failures.push(e),
                 }
                 if pending.is_empty() && next >= chain.len() {
                     break;
@@ -914,10 +978,11 @@ pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider_override: Option
             else => break,
         }
     }
-    anyhow::bail!("every geo source failed — {}", failures.join("; "))
+    Err(GeoLookupError { failures }.into())
 }
 
-async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<GeoInfo> {
+async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> std::result::Result<GeoInfo,GeoProviderFailure> {
+    let provider=geo_provider(provider);
     let url = match provider {
         "ip-api.com" => "http://ip-api.com/json/?fields=status,message,query,country,countryCode,regionName,city,isp,timezone,lat,lon",
         "ipapi.co" => "https://ipapi.co/json/",
@@ -948,15 +1013,19 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
                 entry.port
             )
         };
-        let proxy = reqwest::Proxy::all(&proxy_url).context("bad proxy URL")?;
+        let proxy = reqwest::Proxy::all(&proxy_url).map_err(|_|GeoProviderFailure::new(provider,"configuration"))?;
         builder = builder.proxy(proxy);
     } else {
         // Direct check: bypass any system proxy.
         builder = builder.no_proxy();
     }
-    let client = builder.build()?;
+    let client = builder.build().map_err(|_|GeoProviderFailure::new(provider,"configuration"))?;
 
-    let body: serde_json::Value = client.get(url).send().await?.json().await?;
+    let response=client.get(url).send().await.map_err(|error|geo_request_failure(provider,error,"request"))?;
+    if !response.status().is_success() {
+        return Err(GeoProviderFailure { provider:provider.into(), phase:"http_status", http_status:Some(response.status().as_u16()) });
+    }
+    let body: serde_json::Value=response.json().await.map_err(|error|geo_request_failure(provider,error,"json"))?;
 
     let s = |v: &serde_json::Value, k: &str| {
         v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
@@ -970,18 +1039,13 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
     if body.get("error").and_then(|v| v.as_bool()) == Some(true)
         || body.get("success").and_then(|v| v.as_bool()) == Some(false)
     {
-        let why = body
-            .get("reason")
-            .or_else(|| body.get("message"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("refused");
-        anyhow::bail!("{provider}: {why}");
+        return Err(GeoProviderFailure::new(provider,"provider_refused"));
     }
 
     let info = match provider {
         "ip-api.com" => {
             if s(&body, "status") == "fail" {
-                anyhow::bail!("ip-api.com: {}", s(&body, "message"));
+                return Err(GeoProviderFailure::new(provider,"provider_refused"));
             }
             GeoInfo {
                 ip: s(&body, "query"),
@@ -1035,8 +1099,8 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
     };
     // Every provider names the address it saw. Without one there is nothing to
     // trust in the rest of the object, so the next provider gets a turn.
-    if info.ip.trim().is_empty() {
-        anyhow::bail!("{provider}: answered without an IP");
+    if info.ip.parse::<std::net::IpAddr>().is_err() {
+        return Err(GeoProviderFailure::new(provider,"invalid_ip"));
     }
     Ok(info)
 }
@@ -1467,6 +1531,85 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn geo_http_fixture(status: u16, body: &'static str) -> (ProxyEntry, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr=listener.local_addr().unwrap();
+        let worker=tokio::spawn(async move {
+            let (mut socket,_)=listener.accept().await.unwrap();
+            let mut head=Vec::new();
+            while !head.ends_with(b"\r\n\r\n") {head.push(socket.read_u8().await.unwrap());}
+            let reply=format!("HTTP/1.1 {status} Synthetic private response\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\nX-Private: hidden-provider-detail\r\n\r\n{body}",body.len());
+            socket.write_all(reply.as_bytes()).await.unwrap();
+        });
+        (serde_json::from_value(serde_json::json!({"id":"geo-safe-fixture","name":"Synthetic Geo", "kind":"http", "host":"127.0.0.1", "port":addr.port(), "username":"private-fixture-user","password":"private-fixture-secret"})).unwrap(),worker)
+    }
+
+    #[tokio::test]
+    async fn geo_provider_rejects_http_error_even_when_body_looks_successful() {
+        let (proxy,worker)=geo_http_fixture(429,r#"{"status":"success","query":"203.0.113.44","message":"private-provider-detail"}"#).await;
+        let result=geo_check_one(Some(&proxy),"ip-api.com").await;
+        worker.await.unwrap();
+        assert!(result.is_err(),"a non-success HTTP response cannot supply a trusted exit IP");
+        let error=result.unwrap_err();
+        assert_eq!(error.phase,"http_status");assert_eq!(error.http_status,Some(429));
+        let safe=serde_json::to_string(&error).unwrap();
+        for secret in ["private-provider-detail","hidden-provider-detail","private-fixture-user","private-fixture-secret"] {assert!(!safe.contains(secret));}
+    }
+
+    #[tokio::test]
+    async fn geo_provider_rejects_non_ip_exit_before_accepting_location() {
+        let (proxy,worker)=geo_http_fixture(200,r#"{"status":"success","query":"private-invalid-ip-value","country":"Synthetic"}"#).await;
+        let result=geo_check_one(Some(&proxy),"ip-api.com").await;
+        worker.await.unwrap();
+        assert!(result.is_err(),"a nonempty string is not proof of an exit IP");
+        let error=result.unwrap_err();
+        assert_eq!(error.phase,"invalid_ip");assert_eq!(error.http_status,None);
+        assert!(!serde_json::to_string(&error).unwrap().contains("private-invalid-ip-value"));
+    }
+
+    #[tokio::test]
+    async fn geo_provider_failure_classes_never_copy_response_text_or_credentials() {
+        for (body,expected) in [("private-non-json-body","json"),(r#"{"status":"fail","message":"private-provider-reason"}"#,"provider_refused")] {
+            let (proxy,worker)=geo_http_fixture(200,body).await;
+            let error=geo_check_one(Some(&proxy),"ip-api.com").await.unwrap_err();
+            worker.await.unwrap();
+            assert_eq!(error.phase,expected);assert_eq!(error.http_status,None);
+            let safe=format!("{error:?} {error}");
+            for secret in [body,"private-provider-reason","private-fixture-user","private-fixture-secret"] {assert!(!safe.contains(secret));}
+        }
+        let (proxy,worker)=geo_http_fixture(200,r#"{"status":"success","query":"2001:db8::44","country":"Synthetic"}"#).await;
+        let info=geo_check_one(Some(&proxy),"ip-api.com").await.unwrap();
+        worker.await.unwrap();
+        assert_eq!(info.ip,"2001:db8::44");
+    }
+
+    #[tokio::test]
+    async fn geo_provider_all_failed_keeps_typed_safe_source_results() {
+        use tokio::io::{AsyncReadExt,AsyncWriteExt};
+        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr=listener.local_addr().unwrap();
+        let worker=tokio::spawn(async move {
+            let mut clients=tokio::task::JoinSet::new();
+            loop {tokio::select! {
+                _=clients.join_next(),if !clients.is_empty()=>{},
+                accepted=listener.accept()=>{let (mut socket,_)=accepted.unwrap();clients.spawn(async move {
+                    let mut head=Vec::new();while !head.ends_with(b"\r\n\r\n") {let Ok(byte)=socket.read_u8().await else{return;};head.push(byte);}
+                    let status=if head.starts_with(b"CONNECT "){502}else{429};
+                    let _=socket.write_all(format!("HTTP/1.1 {status} private-provider-reason\r\nX-Private: hidden-provider-detail\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes()).await;
+                });}
+            }}
+        });
+        let proxy=serde_json::from_value(serde_json::json!({"id":"geo-aggregate-fixture","name":"Synthetic", "kind":"http", "host":"127.0.0.1", "port":addr.port(), "username":"private-fixture-user","password":"private-fixture-secret"})).unwrap();
+        let error=geo_check_via(Some(&proxy),Some("ip-api.com".into())).await.unwrap_err();
+        worker.abort();let _=worker.await;
+        let typed=error.downcast_ref::<GeoLookupError>().expect("all provider failures retain the typed aggregate");
+        assert_eq!(typed.failures.len(),3);
+        assert!(typed.failures.iter().any(|failure|failure.provider=="ip-api.com"&&failure.phase=="http_status"&&failure.http_status==Some(429)));
+        let safe=format!("{error:#} {}",serde_json::to_string(typed).unwrap());
+        for secret in ["private-provider-reason","hidden-provider-detail","private-fixture-user","private-fixture-secret","127.0.0.1"] {assert!(!safe.contains(secret));}
+    }
 
     #[test]
     fn equal_exit_history_does_not_merge_distinct_actual_proxy_routes() {

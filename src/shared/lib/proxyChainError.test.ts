@@ -24,3 +24,25 @@ test("unknown safe chain errors retain detail and empty errors remain empty", ()
   assert.equal(proxyChainErrorText(key, { error_message: "Safe legacy detail." }), "Safe legacy detail.");
   assert.equal(proxyChainErrorText(key, null), undefined);
 });
+
+test("single selected-proxy errors do not refer to a chain or its first hop", () => {
+  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_connect_failed" }, "proxy"), "profileRoute.errorProxyConnect");
+  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_auth_failed" }, "proxy"), "profileRoute.errorProxyAuth");
+  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_timeout" }, "proxy"), "profileRoute.errorProxyTimeout");
+  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_tls_failed" }, "proxy"), "profileRoute.errorProxyTls");
+  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_geo_failed" }, "proxy"), "profileRoute.errorProxyGeo");
+  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_kind_unsupported" }, "proxy"), "profileRoute.errorProxyKind");
+});
+
+test("single system-proxy errors identify the system connection without hop numbers", () => {
+  assert.equal(proxyChainErrorText(key, { code: "system_proxy_connect_refused" }, "system"), "profileRoute.errorSystemConnect");
+  assert.equal(proxyChainErrorText(key, { code: "system_proxy_auth_failed" }, "system"), "profileRoute.errorSystemAuth");
+  assert.equal(proxyChainErrorText(key, { code: "system_proxy_timeout" }, "system"), "profileRoute.errorSystemTimeout");
+  assert.equal(proxyChainErrorText(key, { code: "system_proxy_protocol_error" }, "system"), "profileRoute.errorSystemProtocol");
+  assert.equal(proxyChainErrorText(key, { code: "system_proxy_tls_failed" }, "system"), "profileRoute.errorSystemTls");
+  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_geo_failed" }, "system"), "proxyChain.systemGeoFailed");
+});
+
+test("explicit local-network failure is translated without inventing a proxy layer", () => {
+  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_local_network_failed" }), "proxyChain.localGeoFailed");
+});

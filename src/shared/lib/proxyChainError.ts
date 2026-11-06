@@ -2,8 +2,30 @@ type ChainError = { code?: string | null; error_code?: string | null; message?: 
 
 /** Shared by settings, proxy history and launch failures. Unknown safe backend
  * errors keep their own message rather than becoming an unrelated offline error. */
-export function proxyChainErrorText(t: (key: string) => string, error?: ChainError | null): string | undefined {
-  switch (error?.code ?? error?.error_code) {
+export function proxyChainErrorText(t: (key: string) => string, error?: ChainError | null, scope?: "proxy" | "system"): string | undefined {
+  const code = error?.code ?? error?.error_code;
+  if (scope === "proxy") switch (code) {
+    case "proxy_chain_profile_auth_failed": return t("profileRoute.errorProxyAuth");
+    case "proxy_chain_profile_timeout": return t("profileRoute.errorProxyTimeout");
+    case "proxy_chain_profile_connect_failed":
+    case "proxy_chain_profile_failed": return t("profileRoute.errorProxyConnect");
+    case "proxy_chain_profile_tls_failed":
+    case "proxy_chain_profile_tls_timeout": return t("profileRoute.errorProxyTls");
+    case "proxy_chain_profile_kind_unsupported": return t("profileRoute.errorProxyKind");
+    case "proxy_chain_profile_geo_failed": return t("profileRoute.errorProxyGeo");
+  }
+  if (scope === "system") switch (code) {
+    case "system_proxy_connect_failed":
+    case "system_proxy_connect_refused": return t("profileRoute.errorSystemConnect");
+    case "system_proxy_auth_failed": return t("profileRoute.errorSystemAuth");
+    case "system_proxy_timeout": return t("profileRoute.errorSystemTimeout");
+    case "system_proxy_io_failed":
+    case "system_proxy_protocol_error": return t("profileRoute.errorSystemProtocol");
+    case "system_proxy_tls_failed":
+    case "system_proxy_tls_timeout": return t("profileRoute.errorSystemTls");
+    case "proxy_chain_profile_geo_failed": return t("proxyChain.systemGeoFailed");
+  }
+  switch (code) {
     case "proxy_chain_routes_failed": return t("proxyChain.errorRoutesFailed");
     case "proxy_chain_same_proxy_failed": return t("proxyChain.errorSameProxyFailed");
     case "proxy_chain_policy_invalid": return t("proxyChain.errorPolicy");
@@ -38,6 +60,7 @@ export function proxyChainErrorText(t: (key: string) => string, error?: ChainErr
     case "proxy_chain_profile_required": return t("proxyChain.errorProfileRequired");
     case "proxy_chain_stream_closed":
     case "proxy_chain_idle_timeout": return t("proxyChain.errorTunnelClosed");
+    case "proxy_chain_local_network_failed":
     case "proxy_chain_local_geo_failed": return t("proxyChain.localGeoFailed");
     case "proxy_chain_system_geo_failed": return t("proxyChain.systemGeoFailed");
     case "proxy_chain_profile_geo_failed": return t("proxyChain.profileGeoFailed");

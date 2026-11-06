@@ -873,3 +873,89 @@ async fn real_assigned_proxy_preferred_route_detection_and_public_launch() {
     println!("{body}");
     assert!(error.is_none(),"preferred_live_acceptance_failed; see safe report");
 }
+
+#[tokio::test]
+#[ignore = "Read-only explicit single-proxy draft diagnosis with a supplied DPAPI input; no browser or user data."]
+async fn real_assigned_single_proxy_draft_route() {
+    assert_eq!(std::env::var("SHARD_PROXY_CHAIN_RUN_LIVE").as_deref(),Ok("1"));
+    let _serial=crate::migrate::serial();
+    let root=crate::store::test_root("single-proxy-draft-live");
+    let root_path=root.path.clone();
+    let cfg=input().expect("protected_input_unavailable");
+    let entry:crate::space::proxy::ProxyEntry=serde_json::from_value(json!({"id":"single-live-assigned","name":"Synthetic single proxy",
+        "kind":cfg.kind,"host":cfg.host,"port":cfg.port,"username":cfg.username,"password":cfg.password})).unwrap();
+    let mut report=json!({"kind":"explicit-single-proxy-draft-live","samples":[],"browser_started":false,"user_files_written":false});
+    // Deliberately invalid global first hop must have no effect on an explicit
+    // single proxy route, including when the legacy global switch is enabled.
+    crate::settings::save(&crate::settings::Settings {proxy_chain:ProxyChainSettings{enabled:true,mode:"http".into(),host:"127.0.0.1".into(),port:9,..Default::default()},..Default::default()}).unwrap();
+    for _ in 0..3 {
+        let direct=crate::space::proxy::probe_on_route(&entry).await;
+        let direct_error=direct.as_ref().err().map(|error| {
+            if let Some(error)=error.downcast_ref::<crate::space::proxy::Socks5ProbeError>() {match error {
+                crate::space::proxy::Socks5ProbeError::AuthenticationRejected(_)=>"authentication_rejected",
+                crate::space::proxy::Socks5ProbeError::ConnectRejected(_)=>"destination_connect_rejected",
+            }} else if error.to_string().to_ascii_lowercase().contains("time") {"timeout"} else {"io_or_protocol_failure"}
+        });
+        let tested=super::routing::test_resolved_route(Some(&super::route::ProfileProxyRoute::Proxy),super::policy::ChainPolicy::Inherit,Some(&entry),None).await.unwrap();
+        report["samples"].as_array_mut().unwrap().push(json!({"direct_probe_ok":direct.is_ok(),"direct_probe_error_code":direct_error,
+            "route":tested.route.map(|route|route.as_str()),"source":tested.source,"system_state":tested.system_proxy.state,
+            "profile_state":tested.profile_proxy.state,"profile_error_code":tested.profile_proxy.error_code,"exit_error_code":tested.exit_error_code,
+            "exit_ip":tested.exit_ip,"country_code":tested.exit_geo.map(|geo|geo.country_code)}));
+    }
+    drop(root);
+    report["isolated_store_removed"]=json!(!root_path.exists());
+    let passed=report["samples"].as_array().unwrap().iter().all(|sample|sample["route"]=="explicit_proxy"&&sample["profile_state"]=="ok"&&sample["system_state"]=="not_tested");
+    report["state"]=json!(if passed{"passed"}else{"failed"});
+    if let Some(path)=std::env::var_os("SHARD_PROXY_CHAIN_SINGLE_REPORT"){std::fs::write(path,serde_json::to_string_pretty(&report).unwrap()).unwrap();}
+    println!("{}",serde_json::to_string_pretty(&report).unwrap());
+    assert!(passed,"single_proxy_live_failed_see_safe_report");
+}
+
+#[tokio::test]
+#[ignore = "Explicit protected-input stability diagnosis; read-only network, isolated settings, no browser."]
+async fn real_assigned_single_proxy_stability() {
+    assert_eq!(std::env::var("SHARD_PROXY_CHAIN_RUN_LIVE").as_deref(),Ok("1"));
+    let _serial=crate::migrate::serial();
+    let root=crate::store::test_root("single-proxy-stability");
+    let root_path=root.path.clone();
+    let cfg=input().expect("protected_input_unavailable");
+    let entry:crate::space::proxy::ProxyEntry=serde_json::from_value(json!({"id":"stability-assigned","name":"Synthetic stability proxy",
+        "kind":cfg.kind,"host":cfg.host,"port":cfg.port,"username":cfg.username,"password":cfg.password})).unwrap();
+    let provider=std::env::var("SHARD_PROXY_CHAIN_STABILITY_PROVIDER").unwrap_or_else(|_|"ip-api.com".into());
+    assert!(["ip-api.com","ipapi.co","ipwho.is"].contains(&provider.as_str()));
+    crate::settings::save(&crate::settings::Settings{geo_checker:Some(provider.clone()),..Default::default()}).unwrap();
+    let mut report=json!({"kind":"single-proxy-stability-diagnosis","preferred_geo_provider":provider,"samples":[],"browser_started":false,"user_files_written":false});
+    for index in 0..8 {
+        let raw_start=Instant::now();
+        let probe=crate::space::proxy::probe_on_route(&entry).await;
+        let raw_probe_ms=raw_start.elapsed().as_millis();
+        let probe_error=probe.as_ref().err().map(|error| {
+            if let Some(error)=error.downcast_ref::<crate::space::proxy::Socks5ProbeError>() {match error {
+                crate::space::proxy::Socks5ProbeError::AuthenticationRejected(status)=>json!({"phase":"authentication","response_code":status}),
+                crate::space::proxy::Socks5ProbeError::ConnectRejected(status)=>json!({"phase":"connect","response_code":status}),
+            }} else {json!({"phase":if error.to_string().to_ascii_lowercase().contains("time"){"timeout"}else{"io_or_protocol"}})}
+        });
+        let raw_geo_start=Instant::now();
+        let raw_geo=crate::space::proxy::geo_check_on_route(Some(&entry),None).await;
+        let raw_geo_ms=raw_geo_start.elapsed().as_millis();
+        let raw_geo_safe=raw_geo.as_ref().ok().map(|geo|json!({"ip":geo.ip,"provider":geo.provider,"country_code":geo.country_code}));
+        let route_start=Instant::now();
+        let tested=super::routing::test_resolved_route(Some(&super::route::ProfileProxyRoute::Proxy),super::policy::ChainPolicy::Inherit,Some(&entry),None).await.unwrap();
+        report["samples"].as_array_mut().unwrap().push(json!({"sample":index+1,"at_unix_ms":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
+            "raw_probe_ok":probe.is_ok(),"raw_probe_ms":raw_probe_ms,"raw_probe_error":probe_error,
+            "raw_geo_ok":raw_geo.is_ok(),"raw_geo_ms":raw_geo_ms,"raw_geo":raw_geo_safe,
+            "product_ms":route_start.elapsed().as_millis(),"product_route":tested.route.map(|route|route.as_str()),
+            "system_state":tested.system_proxy.state,"profile_state":tested.profile_proxy.state,
+            "profile_error_code":tested.profile_proxy.error_code,"profile_error_details":tested.profile_proxy.error_details,
+            "exit_error_code":tested.exit_error_code,"exit_ip":tested.exit_ip,
+            "geo_provider":tested.exit_geo.map(|geo|geo.provider)}));
+        if let Some(path)=std::env::var_os("SHARD_PROXY_CHAIN_STABILITY_REPORT"){std::fs::write(path,serde_json::to_string_pretty(&report).unwrap()).unwrap();}
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+    drop(root);
+    report["isolated_store_removed"]=json!(!root_path.exists());
+    report["state"]=json!("observed");
+    if let Some(path)=std::env::var_os("SHARD_PROXY_CHAIN_STABILITY_REPORT"){std::fs::write(path,serde_json::to_string_pretty(&report).unwrap()).unwrap();}
+    println!("{}",serde_json::to_string_pretty(&report).unwrap());
+    assert!(!root_path.exists());
+}

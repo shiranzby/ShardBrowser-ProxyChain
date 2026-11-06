@@ -73,6 +73,13 @@ export type ProxyChainStage = {
   latency_ms?: number | null;
   error_code?: string | null;
   error_message?: string | null;
+  /** Safe fields from a typed proxy reply, never a raw response or credential. */
+  error_details?: {
+    protocol: "http" | "socks5";
+    phase: "authentication" | "connect";
+    response_code: number;
+    target?: string;
+  } | null;
 };
 
 export type ProxyChainTestResult = {
@@ -104,6 +111,12 @@ export type ProxyChainTestResult = {
   } | null;
   exit_error?: string | null;
   exit_error_code?: string | null;
+  /** Fixed provider names and failure categories; no response bodies or URLs. */
+  exit_error_details?: {
+    provider: string;
+    phase?: string;
+    http_status?: number;
+  }[] | null;
   total_ms?: number | null;
   tested_at: string;
 };
