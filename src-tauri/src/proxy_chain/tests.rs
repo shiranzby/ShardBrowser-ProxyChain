@@ -726,10 +726,18 @@ async fn a_system_handshake_timeout_publishes_its_typed_error_before_loopback_eo
         // budget immediately. No timer may race against fixture negotiation.
         super::tunnel::system_connect(local, Duration::ZERO, resolver, published).await.err().unwrap()
     });
-    let closed=within(client.read(&mut [0;1])).await;
+    // Keep the multithreaded EOF/publication race, but distinguish a stalled
+    // reader from a stalled worker under a busy full-suite runtime. This is a
+    // fixture wait; the system-connect budget above remains zero.
+    let closed=tokio::time::timeout(Duration::from_secs(15),client.read(&mut [0;1])).await
+        .unwrap_or_else(|_|panic!("system timeout publication: local stream did not close; worker_finished={}, published={:?}",
+            worker.is_finished(),error.try_lock().ok().and_then(|error|error.as_ref().map(|error|error.code))));
     assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
     assert_eq!(error.lock().unwrap().as_ref().map(|error| error.code), Some("system_proxy_timeout"));
-    assert_eq!(within(worker).await.unwrap().code, "system_proxy_timeout");
+    let completed=tokio::time::timeout(Duration::from_secs(15),worker).await
+        .expect("system timeout publication: worker did not finish")
+        .expect("system timeout publication: worker panicked");
+    assert_eq!(completed.code, "system_proxy_timeout");
 }
 
 #[tokio::test]
