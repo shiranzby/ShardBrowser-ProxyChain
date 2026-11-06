@@ -7369,10 +7369,10 @@ index 0000000000000000000000000000000000000000..203a12f803c249967e51e0350210711d
 +}
 diff --git a/src-tauri/src/proxy_chain/live_tests.rs b/src-tauri/src/proxy_chain/live_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..b30ffc6f48db27baf9a6091561f38c65c6bfbea7
+index 0000000000000000000000000000000000000000..ef4b586162e71e2c6ce0e62e0f03ba137120103a
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/live_tests.rs
-@@ -0,0 +1,869 @@
+@@ -0,0 +1,871 @@
 +//! Explicitly opt-in Windows acceptance of the public product launch path.
 +//! This test never reads the user's profiles. Its only secret input is a
 +//! current-user DPAPI file outside the checkout. The encrypted JSON has the
@@ -8158,7 +8158,9 @@ index 0000000000000000000000000000000000000000..b30ffc6f48db27baf9a6091561f38c65
 +            "kind":cfg.kind,"host":cfg.host,"port":cfg.port,"username":cfg.username,"password":cfg.password,"proxy_chain_policy":"prefer_first_hop"})).map_err(|_| "preferred_live_entry_invalid")?;
 +        let mut raw: serde_json::Value = serde_json::from_slice(&std::fs::read(&template).map_err(|_| "preferred_live_template_unreadable")?).map_err(|_| "preferred_live_template_invalid")?;
 +        raw["name"] = json!("Synthetic preferred-route acceptance");
-+        raw["startup_url"] = json!("about:blank");
++        // Headless accepts only one target; extra_args already supplies about:blank.
++        // Startup-tab reuse has its own independent Engine acceptance.
++        raw["startup_url"] = json!("");
 +        raw["_meta"] = json!({"id":id, "proxy_id":entry.id,"screen_custom":true,"proxy_chain_policy":"prefer_first_hop"});
 +        let profile_path = crate::store::profiles_dir().map_err(|_| "preferred_live_store_failed")?.join(format!("{id}.json"));
 +        std::fs::write(&profile_path, raw.to_string()).map_err(|_| "preferred_live_store_failed")?;
