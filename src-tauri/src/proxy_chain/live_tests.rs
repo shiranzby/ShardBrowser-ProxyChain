@@ -783,7 +783,9 @@ async fn real_assigned_proxy_preferred_route_detection_and_public_launch() {
             "kind":cfg.kind,"host":cfg.host,"port":cfg.port,"username":cfg.username,"password":cfg.password,"proxy_chain_policy":"prefer_first_hop"})).map_err(|_| "preferred_live_entry_invalid")?;
         let mut raw: serde_json::Value = serde_json::from_slice(&std::fs::read(&template).map_err(|_| "preferred_live_template_unreadable")?).map_err(|_| "preferred_live_template_invalid")?;
         raw["name"] = json!("Synthetic preferred-route acceptance");
-        raw["startup_url"] = json!("about:blank");
+        // Headless accepts only one target; extra_args already supplies about:blank.
+        // Startup-tab reuse has its own independent Engine acceptance.
+        raw["startup_url"] = json!("");
         raw["_meta"] = json!({"id":id, "proxy_id":entry.id,"screen_custom":true,"proxy_chain_policy":"prefer_first_hop"});
         let profile_path = crate::store::profiles_dir().map_err(|_| "preferred_live_store_failed")?.join(format!("{id}.json"));
         std::fs::write(&profile_path, raw.to_string()).map_err(|_| "preferred_live_store_failed")?;
