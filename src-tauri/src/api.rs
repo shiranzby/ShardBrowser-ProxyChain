@@ -1473,7 +1473,7 @@ mod tests {
     async fn api_proxy_chain_defaults_are_returned_without_credentials() {
         let _serial = crate::migrate::serial();
         let _root = crate::store::test_root("api-proxy-chain-defaults").with_config();
-        for policy in ["inherit", "enabled", "disabled"] {
+        for policy in ["inherit", "enabled", "prefer_first_hop", "disabled"] {
             let mut body = json!({ "proxy": "203.0.113.8:1080:synthetic-user:synthetic-password" });
             if policy != "inherit" { body["proxy_chain_policy"] = json!(policy); }
             let (status, _, made) = authed("POST", "/proxies", Some(body)).await;
@@ -1484,8 +1484,8 @@ mod tests {
         let (status, _, listed) = authed("GET", "/proxies", None).await;
         assert_eq!(status, StatusCode::OK, "{listed}");
         let rows = listed.as_array().unwrap();
-        assert_eq!(rows.len(), 3, "different route choices must not be deduplicated");
-        for policy in ["inherit", "enabled", "disabled"] {
+        assert_eq!(rows.len(), 4, "different route choices must not be deduplicated");
+        for policy in ["inherit", "enabled", "prefer_first_hop", "disabled"] {
             assert!(rows.iter().any(|p| p["proxy_chain_policy"] == policy));
         }
         assert!(!listed.to_string().contains("synthetic-"), "proxy responses must not expose credentials");
@@ -1504,7 +1504,7 @@ mod tests {
         let id = made["id"].as_str().unwrap();
         crate::space::profile::protect(id, "synthetic password").unwrap();
         let path = format!("/profiles/{id}");
-        for choice in ["inherit", "disabled", "enabled"] {
+        for choice in ["inherit", "disabled", "enabled", "prefer_first_hop"] {
             let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":choice}))).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED);
         }
@@ -1515,6 +1515,10 @@ mod tests {
         let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"disabled", "password":"synthetic password"}))).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(crate::space::profile::unlock(id,"synthetic password").unwrap().meta.proxy_chain_policy, ChainPolicy::Disabled);
+        assert_eq!(crate::space::profile::load_raw(id).unwrap().meta.proxy_chain_policy, ChainPolicy::Inherit);
+        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"prefer_first_hop", "password":"synthetic password"}))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(crate::space::profile::unlock(id,"synthetic password").unwrap().meta.proxy_chain_policy, ChainPolicy::PreferFirstHop);
         assert_eq!(crate::space::profile::load_raw(id).unwrap().meta.proxy_chain_policy, ChainPolicy::Inherit);
     }
 
@@ -1893,6 +1897,11 @@ mod tests {
             assert_eq!(rows.iter().find(|p| p["id"] == original.id).unwrap()["proxy_chain_policy"], "enabled");
             assert_eq!(rows.iter().find(|p| p["id"] == rotated.id).unwrap()["proxy_chain_policy"], "disabled");
             assert!(!listed.to_string().contains("synthetic-"));
+            let mut adaptive = original.clone(); adaptive.proxy_chain_policy = ChainPolicy::PreferFirstHop;
+            let adaptive = crate::space::proxy::upsert_for_binding(Door("proxy_save"), &tk, adaptive, Some(&original.id)).await.unwrap();
+            assert_ne!(adaptive.id, original.id);
+            assert_eq!(adaptive.proxy_chain_policy, ChainPolicy::PreferFirstHop);
+            assert_eq!(crate::space::proxy::get(&original.id).unwrap().unwrap().proxy_chain_policy, ChainPolicy::Enabled);
             drop(t.srv);
         }
 

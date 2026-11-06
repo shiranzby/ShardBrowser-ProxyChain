@@ -14,6 +14,7 @@ import { fmtTs } from "../../../shared/lib/utils";
 import { fmtCountry } from "../../../shared/lib/format";
 import { NumField } from "../../../shared/ui/NumField";
 import { SelectField } from "../../../shared/ui/SelectField";
+import { ChainRouteSummary } from "../../../shared/ui/ChainRouteSummary";
 import { SettingRow, SettingsGroup, type SettingsProps } from "../SettingRow";
 import { holdSave } from "../useSettingsDraft";
 
@@ -219,17 +220,18 @@ function ChainResult({ result }: { result: ProxyChainTestResult }) {
   const time = result.tested_at.startsWith("@") ? fmtTs(result.tested_at) : new Date(result.tested_at).toLocaleString(appLocale());
   const rows = [
     { id: "local", label: t("proxyChain.localNetwork"), value: stage(result.local_network), detail: result.local_network },
-    { id: "system", label: t("proxyChain.systemProxy"), value: stage(result.system_proxy), detail: result.system_proxy },
+    { id: "system", label: result.route ? t("proxyChain.firstRoute") : t("proxyChain.systemProxy"), value: stage(result.system_proxy), detail: result.system_proxy },
     { id: "profile", label: t("proxyChain.profileProxy"), value: stage(result.profile_proxy), detail: result.profile_proxy },
   ];
   return (
     <div data-chain-result role="status" aria-live="polite" className="pb-3 text-help text-text-sub-600">
+      <ChainRouteSummary route={result.route} firstHopError={result.first_hop_error_code} />
       <dl className="m-0 flex flex-col gap-2">
         {result.proxy_kind && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.proxyType")}</dt><dd className="m-0">{result.proxy_kind === "http" ? "HTTP" : "SOCKS5"}</dd></div>}
         {result.proxy_address && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.firstProxyAddress")}</dt><dd className="mono m-0 break-all">{result.proxy_address}</dd></div>}
         {result.profile_proxy_address && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.profileProxyAddress")}</dt><dd className="mono m-0 break-all">{result.profile_proxy_address}</dd></div>}
         {result.resolved_for && <div className="break-all">{t("proxyChain.resolvedFor")}: {result.resolved_for}</div>}
-        {result.source && <div>{t("proxyChain.source", { source: result.source })}</div>}
+        {result.source && !result.route && <div>{t("proxyChain.source", { source: result.source })}</div>}
         {result.profile_name && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.profile")}</dt><dd className="m-0 break-all">{result.profile_name}</dd></div>}
         {rows.map((row) => {
           const error = proxyChainErrorText(t, row.detail);

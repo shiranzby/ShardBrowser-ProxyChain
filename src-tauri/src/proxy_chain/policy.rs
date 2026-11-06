@@ -9,6 +9,9 @@ pub enum ChainPolicy {
     #[default]
     Inherit,
     Enabled,
+    /// Explicitly permit connecting the assigned proxy without the first hop
+    /// after a first-hop route failure. It never permits a website direct route.
+    PreferFirstHop,
     Disabled,
     Invalid,
 }
@@ -19,6 +22,7 @@ impl<'de> Deserialize<'de> for ChainPolicy {
         Ok(match value.as_str() {
             Some("inherit") => Self::Inherit,
             Some("enabled") => Self::Enabled,
+            Some("prefer_first_hop") => Self::PreferFirstHop,
             Some("disabled") => Self::Disabled,
             _ => Self::Invalid,
         })
@@ -32,7 +36,7 @@ impl ChainPolicy {
 
     pub fn validate(self) -> Result<(), ChainError> {
         if self == Self::Invalid {
-            return Err(ChainError::new("proxy_chain_policy_invalid", "configuration", "The proxy-chain choice is invalid. Choose inherit, enabled or disabled before saving or starting."));
+            return Err(ChainError::new("proxy_chain_policy_invalid", "configuration", "The proxy-chain choice is invalid. Choose inherit, enabled, prefer_first_hop or disabled before saving or starting."));
         }
         Ok(())
     }
@@ -53,9 +57,11 @@ pub fn effective(
         config.validate()?;
     }
     let mut resolved = config.clone();
-    resolved.enabled = match if profile.is_inherit() { proxy } else { profile } {
+    let choice = if profile.is_inherit() { proxy } else { profile };
+    resolved.allow_assigned_fallback = choice == ChainPolicy::PreferFirstHop;
+    resolved.enabled = match choice {
         ChainPolicy::Inherit => config.enabled,
-        ChainPolicy::Enabled => true,
+        ChainPolicy::Enabled | ChainPolicy::PreferFirstHop => true,
         ChainPolicy::Disabled => false,
         ChainPolicy::Invalid => unreachable!("validated above"),
     };
@@ -77,10 +83,10 @@ mod tests {
                 enabled: global,
                 ..Default::default()
             };
-            for profile in [Inherit, Enabled, Disabled] {
-                for proxy in [Inherit, Enabled, Disabled] {
+            for profile in [Inherit, Enabled, PreferFirstHop, Disabled] {
+                for proxy in [Inherit, Enabled, PreferFirstHop, Disabled] {
                     let expected = match (profile, proxy) {
-                        (Enabled, _) | (Inherit, Enabled) => true,
+                        (Enabled | PreferFirstHop, _) | (Inherit, Enabled | PreferFirstHop) => true,
                         (Disabled, _) | (Inherit, Disabled) => false,
                         _ => global,
                     };
@@ -88,6 +94,8 @@ mod tests {
                         effective(&config, profile, proxy).unwrap().enabled,
                         expected
                     );
+                    assert_eq!(effective(&config, profile, proxy).unwrap().allow_assigned_fallback,
+                        profile == PreferFirstHop || (profile == Inherit && proxy == PreferFirstHop));
                 }
             }
         }

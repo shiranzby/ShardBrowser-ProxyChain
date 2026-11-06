@@ -6,6 +6,7 @@ import { ProxyTestPill } from "../../shared/ui/StatusPill";
 import { PeekBody, PeekHeader, PeekPanel, PeekSection } from "../../shared/ui/peek";
 import { explainError } from "../../shared/lib/errors";
 import { proxyChainErrorText } from "../../shared/lib/proxyChainError";
+import { ChainRouteSummary } from "../../shared/ui/ChainRouteSummary";
 import { fmtTs } from "../../shared/lib/utils";
 import { focusProxyRow } from "../../shared/lib/focusRow";
 import { useT } from "../../shared/i18n";
@@ -184,7 +185,9 @@ function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot })
       )}
       {snap.timezone && <Line icon={<ClockIcon className="size-3.5" />}>{snap.timezone}</Line>}
       {snap.isp && <Line icon={<BuildingIcon className="size-3.5" />}>{snap.isp}</Line>}
-      {snap.transport === "proxy_chain" && <p className="m-0 text-secondary text-text-sub-600">{t("proxyChain.viaSystem")}</p>}
+      {snap.transport === "proxy_chain" && (snap.route
+        ? <ChainRouteSummary route={snap.route} firstHopError={snap.first_hop_error_code} />
+        : <p className="m-0 text-secondary text-text-sub-600">{t("proxyChain.viaSystem")}</p>)}
       <div className="flex flex-wrap items-center gap-2">
         <Badge color={snap.tcp_ms != null ? "success" : "error"} size="small">
           {snap.tcp_ms != null ? t("proxyPeek.tcpOk", { ms: snap.tcp_ms }) : t("proxyPeek.tcpFailed")}

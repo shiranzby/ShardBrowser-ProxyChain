@@ -1,7 +1,7 @@
-# Per-profile route choice and HTTP/HTTPS second hops (pc6)
+# Per-profile route choice and HTTP/HTTPS second hops (pc8)
 
 Each saved profile `_meta.proxy_chain_policy` and saved proxy
-`proxy_chain_policy` accepts `inherit`, `enabled`, or `disabled`. Missing fields
+`proxy_chain_policy` accepts `inherit`, `enabled`, `disabled`, or `prefer_first_hop`. Missing fields
 mean `inherit`. Unknown values are errors, never an unchained fallback.
 
 Precedence is **profile > assigned proxy > global `settings.proxy_chain.enabled`**.
@@ -42,7 +42,7 @@ HTTPS websites. Select `http` only after verifying the actual endpoint; never
 silently downgrade a saved `https` entry. An IP HTTPS endpoint must have a matching
 IP certificate. HTTP Basic credentials are not protected by proxy TLS in HTTP mode.
 
-pc6 still has TCP-only chains, no QUIC/UDP and no raw-CDP/automation launch in a
+pc8 still has TCP-only protected routes, no QUIC/UDP and no raw-CDP/automation launch in a
 chained Session. First-hop HTTP/SOCKS5 routes may be automatic Windows settings or
 manual remote endpoints; encrypted subscription protocols are not implemented.
 
@@ -58,3 +58,39 @@ route. Simple navigation under Settings / Appearance is a separate local UI
 preference: saved manually, complete navigation by default, and no proxy or profile
 data changes. More keeps all secondary destinations available; the current one
 remains visible when the group is folded, and extension update notices remain visible.
+
+## Preferred first hop, always keeping the assigned proxy
+
+`prefer_first_hop` is an explicit per-profile or per-proxy choice. It first
+verifies the configured first-hop route to the assigned proxy. If that network
+route fails, it tries a connection from this computer to the same assigned proxy,
+with the same protocol and credentials, and requires both proxy handshake and
+live Geo verification before starting. It never tries a direct website connection.
+The existing `enabled` policy remains strict and has no alternative route.
+
+When the resolved first-hop endpoint and assigned proxy match in normalized
+host, port, protocol and actual credentials, this explicit policy connects to
+that endpoint once. A matching public exit IP does not prove a matching endpoint
+and is never used for this decision. A local proxy such as `127.0.0.1:7890` does
+not expose its internal selected node through HTTP/SOCKS; no private account or
+subscription state is inspected to guess it.
+
+Both alternatives retain the protected fixed-target loopback tunnel, TCP-only
+behavior, strict HTTPS certificate verification and runtime proxy-control
+restrictions. The selected route stays fixed for that Session; the next start
+may choose again. Changing the upstream node inside a separate local proxy app
+can still affect that app's own connections; the Launcher cannot freeze its
+private node selection.
+
+The `route` field in test results/history reports `first_hop`,
+`assigned_proxy_fallback` or `same_proxy_endpoint`; an alternative route keeps
+`first_hop_error_code` when relevant. The interface shows that first attempt
+separately and reports the route after a successful native start. No IP equality
+is labeled as proof of identical proxy nodes. Unknown policy values, corrupt
+settings/credentials, missing proxy bindings and locked-profile authorization
+errors are not eligible for route recovery. Existing saved choices are not
+automatically changed.
+
+Older pc7 clients treat the new policy as invalid and refuse it. Use pc8 on
+clients editing or starting profiles with this choice; switch back to a supported
+explicit policy in pc8 before returning to pc7. Proxy identity and data stay intact.

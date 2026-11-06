@@ -22,7 +22,7 @@ use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 type Result<T> = std::result::Result<T, &'static str>;
 const SESSION_WAIT: Duration = Duration::from_secs(45);
@@ -758,4 +758,100 @@ async fn live_invalid_second_hop_credentials_are_refused() {
         rejected.is_err(),
         "live_test_public_wrong_password_was_accepted"
     );
+}
+
+#[tokio::test]
+#[ignore = "Manual preferred-route acceptance using an explicitly supplied assigned-proxy DPAPI input; isolated headless profiles only."]
+async fn real_assigned_proxy_preferred_route_detection_and_public_launch() {
+    assert_eq!(std::env::var("SHARD_PROXY_CHAIN_RUN_LIVE").as_deref(), Ok("1"), "live_test_requires_explicit_opt_in");
+    let _serial = crate::migrate::serial();
+    let root = crate::store::test_root("preferred-live-public-launch");
+    let root_path = root.path.clone();
+    let scope = Scope { root, ids: vec![format!("preferred-live-{}", uuid::Uuid::new_v4().simple())] };
+    let roaming = PathBuf::from(std::env::var_os("APPDATA").unwrap_or_default());
+    let engine = env_path("SHARD_PROXY_CHAIN_LIVE_ENGINE", roaming.join("shardx-launcher/runtime/ShardX-Windows/chrome.exe"));
+    let template = env_path("SHARD_PROXY_CHAIN_LIVE_FINGERPRINT", roaming.join("shardx-launcher/fingerprints/win-amd-00001114.json"));
+    let mut report = json!({"kind":"preferred-route-public-live-acceptance", "state":"failed", "stage":"read_protected_input",
+        "browser_exit_ip_verified":false, "native_launcher_ui":false, "headless_no_foreground":true, "samples":[]});
+    let work = async {
+        let cfg = input()?;
+        check(matches!(cfg.kind.as_str(), "http" | "socks5"), "preferred_live_requires_http_or_socks5_assigned_proxy")?;
+        report["engine_sha256"] = json!(hash_file(&engine)?);
+        report["fingerprint_template_sha256"] = json!(hash_file(&template)?);
+        let id = &scope.ids[0];
+        let entry: crate::space::proxy::ProxyEntry = serde_json::from_value(json!({"id":"preferred-assigned", "name":"Synthetic assigned proxy",
+            "kind":cfg.kind,"host":cfg.host,"port":cfg.port,"username":cfg.username,"password":cfg.password,"proxy_chain_policy":"prefer_first_hop"})).map_err(|_| "preferred_live_entry_invalid")?;
+        let mut raw: serde_json::Value = serde_json::from_slice(&std::fs::read(&template).map_err(|_| "preferred_live_template_unreadable")?).map_err(|_| "preferred_live_template_invalid")?;
+        raw["name"] = json!("Synthetic preferred-route acceptance");
+        raw["startup_url"] = json!("about:blank");
+        raw["_meta"] = json!({"id":id, "proxy_id":entry.id,"screen_custom":true,"proxy_chain_policy":"prefer_first_hop"});
+        let profile_path = crate::store::profiles_dir().map_err(|_| "preferred_live_store_failed")?.join(format!("{id}.json"));
+        std::fs::write(&profile_path, raw.to_string()).map_err(|_| "preferred_live_store_failed")?;
+        let stored = crate::space::profile::load_raw(id).map_err(|_| "preferred_live_store_failed")?;
+        crate::space::profile::save_here(stored, Default::default()).map_err(|_| "preferred_live_store_failed")?;
+        let fingerprint = crate::space::profile::load_raw(id).map_err(|_| "preferred_live_store_failed")?.config;
+        let proxy_path = crate::store::proxies_path().map_err(|_| "preferred_live_store_failed")?;
+        std::fs::write(&proxy_path, json!({"proxies":[entry]}).to_string()).map_err(|_| "preferred_live_store_failed")?;
+        let proxy_hash = hash_file(&proxy_path)?;
+        // This local responder intentionally refuses CONNECT. No system proxy
+        // settings or daily application data are changed for the failure case.
+        let refusing = TcpListener::bind("127.0.0.1:0").await.map_err(|_| "preferred_live_fixture_bind_failed")?;
+        let refused_addr = refusing.local_addr().map_err(|_| "preferred_live_fixture_bind_failed")?;
+        let refusal_task = tokio::spawn(async move {
+            let mut tasks = tokio::task::JoinSet::new();
+            loop { tokio::select! {
+                _ = tasks.join_next(), if !tasks.is_empty() => {},
+                accepted = refusing.accept() => {
+                    let Ok((mut socket,_)) = accepted else { break; };
+                    tasks.spawn(async move {
+                        let mut bytes=Vec::new();
+                        while !bytes.ends_with(b"\r\n\r\n") && bytes.len()<16384 { let Ok(byte)=socket.read_u8().await else { return; }; bytes.push(byte); }
+                        let _=socket.write_all(b"HTTP/1.1 403 Synthetic refusal\r\nContent-Length: 0\r\n\r\n").await;
+                    });
+                }
+            }}
+        });
+        struct StopTask(tokio::task::JoinHandle<()>);
+        impl Drop for StopTask { fn drop(&mut self) { self.0.abort(); } }
+        let _refusal = StopTask(refusal_task);
+        let configs = [
+            ("same_proxy_endpoint", ProxyChainSettings { enabled:true, mode:cfg.kind.clone(), host:cfg.host.clone(), port:cfg.port,
+                username:cfg.username.clone(), password:super::config::PasswordUpdate::Replace(cfg.password.clone()), ..Default::default() }),
+            ("assigned_proxy_fallback", ProxyChainSettings { enabled:true, mode:"http".into(),host:"127.0.0.1".into(),port:refused_addr.port(), ..Default::default() }),
+        ];
+        for (expected, config) in configs {
+            report["stage"] = json!(expected);
+            let mut saved = config.clone(); saved.apply_update(&Default::default()).map_err(|_| "preferred_live_settings_failed")?;
+            write_settings(&engine, saved.clone())?;
+            let result = super::test("profile".into(), saved.public(), Some(id.clone())).await.map_err(|_| "preferred_live_detection_failed")?;
+            check(result.route.is_some_and(|route| route.as_str()==expected), "preferred_live_wrong_route")?;
+            check(result.profile_proxy.state == "ok" && result.exit_error.is_none(), "preferred_live_assigned_proxy_failed")?;
+            let exit = result.exit_ip.clone().ok_or("preferred_live_exit_missing")?;
+            check(exit.parse::<std::net::IpAddr>().is_ok(), "preferred_live_exit_invalid")?;
+            let port = start(&scope,id).await?;
+            let active_protected = crate::process::Tracker::shared().is_chained(id);
+            stop(&scope,id).await?;
+            check(TcpStream::connect(("127.0.0.1", port)).await.is_err(), "preferred_live_listener_not_closed")?;
+            check(hash_file(&proxy_path)?==proxy_hash, "preferred_live_proxy_changed")?;
+            check(crate::space::profile::load_raw(id).map_err(|_| "preferred_live_store_failed")?.config==fingerprint, "preferred_live_fingerprint_changed")?;
+            report["samples"].as_array_mut().unwrap().push(json!({"route":expected,"exit_ip":exit,"country_code":result.exit_geo.map(|g|g.country_code),
+                "first_hop_error_code":result.first_hop_error_code,"public_launch_protected":active_protected,"listener_closed":true,
+                "saved_proxy_bytes_unchanged":true,"fingerprint_unchanged":true,"no_raw_cdp":true}));
+        }
+        Ok::<_, &'static str>(())
+    };
+    let outcome = match tokio::time::timeout(Duration::from_secs(180),work).await { Ok(result)=>result,Err(_)=>Err("preferred_live_timeout") };
+    let id=&scope.ids[0];
+    if crate::process::Tracker::shared().is_running(id) { let _=stop(&scope,id).await; }
+    let clean=!crate::process::Tracker::shared().is_running(id)&&owned_processes(&scope.udd(id)).is_ok_and(|p|p.is_empty());
+    scope.scrub_proxy_file(); drop(scope);
+    report["all_test_sessions_stopped"]=json!(clean);
+    report["isolated_store_removed"]=json!(!root_path.exists());
+    let error=outcome.err().or(if clean&&!root_path.exists(){None}else{Some("preferred_live_cleanup_failed")});
+    report["error_code"]=json!(error);
+    if error.is_none(){report["state"]=json!("passed");report["stage"]=json!("completed_and_cleaned");}
+    let body=serde_json::to_string_pretty(&report).unwrap();
+    if let Some(path)=std::env::var_os("SHARD_PROXY_CHAIN_LIVE_REPORT"){std::fs::write(path,&body).expect("safe_preferred_report_write_failed");}
+    println!("{body}");
+    assert!(error.is_none(),"preferred_live_acceptance_failed; see safe report");
 }

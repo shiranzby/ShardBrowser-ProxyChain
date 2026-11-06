@@ -8,6 +8,8 @@ pub struct ChainError {
     pub code: &'static str,
     pub layer: &'static str,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_hop_error_code: Option<&'static str>,
 }
 
 impl ChainError {
@@ -16,6 +18,7 @@ impl ChainError {
             code,
             layer,
             message: message.into(),
+            first_hop_error_code: None,
         }
     }
 }

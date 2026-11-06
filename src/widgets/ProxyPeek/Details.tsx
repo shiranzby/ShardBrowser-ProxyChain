@@ -36,6 +36,7 @@ export function Details({ proxy: p }: { proxy: ProxyEntry }) {
         {row("chain-policy", t("proxyChain.policyLabel"), t(
           p.proxy_chain_policy === "enabled" ? "proxyChain.policyEnabled"
             : p.proxy_chain_policy === "disabled" ? "proxyChain.policyDisabled"
+              : p.proxy_chain_policy === "prefer_first_hop" ? "proxyChain.policyPreferFirstHop"
               : !p.proxy_chain_policy || p.proxy_chain_policy === "inherit" ? "proxyChain.policyInherit"
                 : "proxyChain.errorPolicy"
         ), { wrap: true })}

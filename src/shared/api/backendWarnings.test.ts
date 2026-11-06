@@ -13,9 +13,11 @@ const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 const rust = (path: string) => read(join("src-tauri/src", path)).replace(/\\\r?\n\s*/g, "");
 
 test("each warning is the backend's own format", () => {
-  const src = ["space/open.rs", "space/live.rs", "space/admin.rs", "space/items.rs", "space/sync/cycle.rs", "space/sync/cycle/extension.rs", "lib.rs", "reset.rs"].map(rust).join("\n");
+  const src = ["space/open.rs", "space/live.rs", "space/admin.rs", "space/items.rs", "space/sync/cycle.rs", "space/sync/cycle/extension.rs", "lib.rs", "reset.rs", "launch.rs"].map(rust).join("\n");
   // Each formatter, given the Rust format's own placeholders, is that format.
   const formats: Record<keyof typeof TEAM_WARNINGS, string> = {
+    proxyAssignedFallback: TEAM_WARNINGS.proxyAssignedFallback("{name}"),
+    proxySameEndpoint: TEAM_WARNINGS.proxySameEndpoint("{name}"),
     stale: TEAM_WARNINGS.stale("{}"),
     notSaved: TEAM_WARNINGS.notSaved("{}", "{why}"),
     // The Unsent reason's own format; notSaved wraps it.

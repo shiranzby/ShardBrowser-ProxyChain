@@ -1122,6 +1122,10 @@ pub struct TestSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_hop_error_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub udp_state: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chain_error: Option<ChainTestError>,
@@ -1227,7 +1231,7 @@ pub(in crate::space) fn keep_test(entries: &mut Vec<TestSnapshot>, mut snap: Tes
     // used to stay as they were first seen, so a proxy that had moved
     // went on claiming its old city.
     if let Some(last) = entries.last_mut() {
-        if !snap.ip.is_empty() && last.ip == snap.ip && last.transport == snap.transport {
+        if !snap.ip.is_empty() && last.ip == snap.ip && last.transport == snap.transport && last.route == snap.route {
             snap.first_seen = last.first_seen.clone();
             *last = snap.clone();
             return snap;
@@ -1299,7 +1303,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
     match prepared {
         Ok(prepared) => {
             let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
-            let result = measure_on_route(effective, prepared.as_ref().map(|p| &p.tunnel)).await;
+            let result = measure_on_route(effective, prepared.as_ref()).await;
             if let Some(prepared) = prepared { prepared.tunnel.shutdown().await; }
             result
         }
@@ -1309,14 +1313,16 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
             });
             TestSnapshot {
             transport: Some("proxy_chain".into()), udp_state: Some("unsupported_by_chain".into()),
+            route: None, first_hop_error_code: error.first_hop_error_code.map(str::to_owned),
             first_seen: String::new(), last_seen: unix_now(), ip: String::new(), country_code: String::new(), country: String::new(), region: String::new(), city: String::new(), isp: String::new(), timezone: String::new(), latitude: 0.0, longitude: 0.0, tcp_ms: None, udp_ms: None, udp_error: None, geo_error: Some(error.message.clone()), chain_error: Some(error.into()), provider: String::new(),
             }
         },
     }
 }
 
-async fn measure_on_route(entry: &ProxyEntry, tunnel: Option<&crate::proxy_chain::tunnel::Tunnel>) -> TestSnapshot {
+async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_chain::PreparedProxy>) -> TestSnapshot {
     let now = unix_now();
+    let tunnel = prepared.map(|p| &p.tunnel);
     let chained = tunnel.is_some();
 
     let udp_fut = async {
@@ -1330,11 +1336,16 @@ async fn measure_on_route(entry: &ProxyEntry, tunnel: Option<&crate::proxy_chain
     // else still shows how long a round trip through it takes.
     let geo_fut = async {
         let started = std::time::Instant::now();
-        let res = geo_check(entry, None).await;
+        let res = if let Some(geo) = prepared.and_then(|p| p.verified_geo.as_ref()) { Ok(geo.clone()) }
+            else { geo_check(entry, None).await };
         (res, started.elapsed().as_millis())
     };
+    let tcp_fut = async {
+        if let Some(ms) = prepared.and_then(|p| p.verified_tcp_ms) { Ok(ms) }
+        else { probe(entry).await }
+    };
     let (tcp_res, udp_res, (geo_res, geo_ms)) =
-        tokio::join!(probe(entry), udp_fut, geo_fut);
+        tokio::join!(tcp_fut, udp_fut, geo_fut);
 
     // An answer from a geo service IS the proxy working: the request went out
     // through it and came back. So its address is kept whenever it arrived,
@@ -1374,6 +1385,8 @@ async fn measure_on_route(entry: &ProxyEntry, tunnel: Option<&crate::proxy_chain
 
     TestSnapshot {
         transport: if chained { Some("proxy_chain".into()) } else { None },
+        route: prepared.map(|p| p.route.as_str().into()),
+        first_hop_error_code: prepared.and_then(|p| p.first_hop_error.as_ref()).map(|e| e.code.into()),
         udp_state: if chained { Some("unsupported_by_chain".into()) } else { None },
         chain_error,
         first_seen: String::new(),
@@ -1456,6 +1469,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn equal_exit_history_does_not_merge_distinct_actual_proxy_routes() {
+        let baseline = serde_json::json!({
+            "first_seen":"@1", "last_seen":"@1", "ip":"192.0.2.1", "country_code":"ZZ", "country":"Synthetic",
+            "region":"", "city":"", "isp":"", "timezone":"Etc/UTC", "latitude":0.0, "longitude":0.0,
+            "tcp_ms":1, "udp_ms":null, "udp_error":null, "provider":"synthetic", "transport":"proxy_chain"
+        });
+        let mut history = Vec::new();
+        for route in ["first_hop", "assigned_proxy_fallback", "same_proxy_endpoint"] {
+            let mut sample = baseline.clone(); sample["route"] = serde_json::json!(route);
+            keep_test(&mut history, serde_json::from_value(sample).unwrap());
+        }
+        assert_eq!(history.len(), 3);
+        let mut repeated = history.last().unwrap().clone(); repeated.last_seen = "@2".into();
+        keep_test(&mut history, repeated);
+        assert_eq!(history.len(), 3);
+        assert_eq!(history.last().unwrap().first_seen, "@1");
+    }
+
+    #[test]
     fn proxy_chain_cached_test_uses_saved_proxy_or_frozen_profile_policy_not_only_global() {
         use crate::proxy_chain::policy::ChainPolicy;
         use serde_json::json;
@@ -1479,6 +1511,9 @@ mod tests {
         chained["ip"] = json!("192.0.2.2");
         chained["udp_ms"] = json!(null);
         record_test(&id, serde_json::from_value(direct).unwrap()).unwrap();
+        record_test(&id, serde_json::from_value(chained.clone()).unwrap()).unwrap();
+        chained["route"] = json!("assigned_proxy_fallback");
+        chained["ip"] = json!("192.0.2.3");
         record_test(&id, serde_json::from_value(chained).unwrap()).unwrap();
         // The list follows the stored proxy's explicit off despite global on.
         assert_eq!(proxy::latest_test(&id).unwrap().ip, "192.0.2.1");
@@ -1488,6 +1523,8 @@ mod tests {
         runtime.proxy_chain_policy = ChainPolicy::Disabled;
         assert_eq!(proxy::latest_test_for(&runtime).unwrap().udp_ms, Some(2));
         runtime.proxy_chain_policy = ChainPolicy::Invalid;
+        assert!(proxy::latest_test_for(&runtime).is_none());
+        runtime.proxy_chain_policy = ChainPolicy::PreferFirstHop;
         assert!(proxy::latest_test_for(&runtime).is_none());
         assert_eq!(proxy::get(&id).unwrap().unwrap().proxy_chain_policy, ChainPolicy::Disabled);
         delete(&id).unwrap();

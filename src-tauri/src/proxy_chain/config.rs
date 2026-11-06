@@ -55,6 +55,10 @@ pub struct ProxyChainSettings {
     /// Preserves a malformed chain as an error instead of defaulting to direct.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub invalid: bool,
+    /// Runtime-only permission derived from a profile/proxy policy. Never
+    /// accepted from the global settings JSON or written back to settings.
+    #[serde(skip)]
+    pub(crate) allow_assigned_fallback: bool,
 }
 impl Default for ProxyChainSettings {
     fn default() -> Self {
@@ -68,6 +72,7 @@ impl Default for ProxyChainSettings {
             password: PasswordUpdate::Keep,
             protected_password: None,
             invalid: false,
+            allow_assigned_fallback: false,
         }
     }
 }
@@ -199,6 +204,14 @@ mod tests {
         #[serde(default, deserialize_with = "deserialize")]
         proxy_chain: ProxyChainSettings,
     }
+    #[test]
+    fn fallback_permission_cannot_be_injected_through_settings_json() {
+        let config: ProxyChainSettings = serde_json::from_str(r#"{"enabled":true,"mode":"http","host":"127.0.0.1","port":7890,"allow_assigned_fallback":true}"#).unwrap();
+        assert!(!config.allow_assigned_fallback);
+        let mut runtime = config.clone(); runtime.allow_assigned_fallback = true;
+        assert!(serde_json::to_value(runtime).unwrap().get("allow_assigned_fallback").is_none());
+    }
+
     #[test]
     fn old_settings_default_off_but_malformed_enabled_stays_closed() {
         assert!(

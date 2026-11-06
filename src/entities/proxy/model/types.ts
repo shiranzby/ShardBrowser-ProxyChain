@@ -1,5 +1,7 @@
+import type { ChainPolicy, ProxyChainRoute } from "../../../shared/model/proxyChain";
+
 export type ProxyEntry = {
-  proxy_chain_policy?: "inherit" | "enabled" | "disabled";
+  proxy_chain_policy?: ChainPolicy;
   id: string;
   name: string;
   kind: "socks5" | "http" | "https";
@@ -31,6 +33,9 @@ export type ProxyTestSnapshot = {
   provider: string;
   /** Missing in observations from before the proxy-chain patch. */
   transport?: "direct" | "proxy_chain";
+  /** The selected route for this observation, never inferred from its exit IP. */
+  route?: ProxyChainRoute | null;
+  first_hop_error_code?: string | null;
   udp_state?: "unsupported_by_chain";
   /** Safe failure details from the exact chain route; absent in old history. */
   chain_error?: { code: string; layer: string; message: string } | null;

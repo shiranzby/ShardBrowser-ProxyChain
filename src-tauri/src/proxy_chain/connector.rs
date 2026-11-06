@@ -151,6 +151,15 @@ pub async fn connect(hop: &ProxyHop, target: &Target) -> Result<TcpStream, Chain
     connect_with_timeout(hop, target, CONNECT_TIMEOUT).await
 }
 
+/// A protected route may explicitly skip the first hop, but it still dials
+/// only the original assigned proxy. Never pass a browser destination here.
+pub(crate) async fn connect_assigned(target: &Target, deadline: Duration) -> Result<TcpStream, ChainError> {
+    tokio::time::timeout(deadline, TcpStream::connect((target.host.as_str(), target.port)))
+        .await
+        .map_err(|_| ChainError::new("proxy_chain_assigned_proxy_timeout", "profile", "Connecting to the assigned proxy without the first hop timed out. No website direct connection was attempted."))?
+        .map_err(|_| ChainError::new("proxy_chain_assigned_proxy_failed", "profile", "Could not connect to the assigned proxy without the first hop. No website direct connection was attempted."))
+}
+
 pub(super) async fn connect_with_timeout(
     hop: &ProxyHop,
     target: &Target,

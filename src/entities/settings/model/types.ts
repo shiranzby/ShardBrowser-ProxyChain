@@ -1,3 +1,5 @@
+import type { ProxyChainRoute } from "../../../shared/model/proxyChain";
+
 export type Settings = {
   /** Copied into new profiles; changing these never edits existing profiles. */
   profile_defaults?: ProfileDefaults;
@@ -75,6 +77,8 @@ export type ProxyChainStage = {
 
 export type ProxyChainTestResult = {
   kind: ProxyChainTestKind;
+  route?: ProxyChainRoute | null;
+  first_hop_error_code?: string | null;
   proxy_kind?: "http" | "socks5" | null;
   proxy_address?: string | null;
   source?: string | null;

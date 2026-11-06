@@ -611,7 +611,8 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
     // All later checks for this start use the same resolved choice, including
     // the original route's UDP/Geo wrappers. Never persist this temporary copy.
     if let Some(proxy) = &mut input.proxy {
-        proxy.proxy_chain_policy = if s.proxy_chain.enabled { crate::proxy_chain::policy::ChainPolicy::Enabled } else { crate::proxy_chain::policy::ChainPolicy::Disabled };
+        proxy.proxy_chain_policy = if s.proxy_chain.allow_assigned_fallback { crate::proxy_chain::policy::ChainPolicy::PreferFirstHop }
+            else if s.proxy_chain.enabled { crate::proxy_chain::policy::ChainPolicy::Enabled } else { crate::proxy_chain::policy::ChainPolicy::Disabled };
     }
     if s.proxy_chain.enabled {
         crate::proxy_chain::validate_args(&s.extra_args)?;
@@ -621,8 +622,11 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
     }
     let chain = crate::proxy_chain::prepare(input.proxy.as_ref(), &s.proxy_chain).await?;
     let chain_geo = if let Some(chain) = &chain {
-        proxy::probe_on_route(&chain.effective).await.map_err(|e| crate::proxy_chain::profile_failure(&chain.tunnel, &e))?;
-        Some(proxy::geo_check_on_route(Some(&chain.effective), None).await.map_err(|_| anyhow::anyhow!("The proxy chain connected, but its live exit IP could not be verified. No direct connection was attempted."))?)
+        if let Some(geo) = &chain.verified_geo { Some(geo.clone()) }
+        else {
+            proxy::probe_on_route(&chain.effective).await.map_err(|e| crate::proxy_chain::profile_failure(&chain.tunnel, &e))?;
+            Some(proxy::geo_check_on_route(Some(&chain.effective), None).await.map_err(|_| anyhow::anyhow!("The proxy chain connected, but its live exit IP could not be verified. No direct connection was attempted."))?)
+        }
     } else { None };
     // Read off the engine binary while the proxy is probed; once per engine version.
     let ext_alone = (!input.extensions.is_empty() || input.library.is_some()).then(|| {
@@ -807,6 +811,14 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
         opts,
         &s,
     );
+    let route_notice = chain.as_ref().and_then(|chain| {
+        let name = input.stored.config.get("name").and_then(|v| v.as_str()).filter(|v| !v.is_empty()).unwrap_or(&input.profile_id);
+        match chain.route {
+            crate::proxy_chain::Route::AssignedProxyFallback => Some(format!("Proxy route for “{name}”: using the assigned proxy without the first hop after its route failed.")),
+            crate::proxy_chain::Route::SameProxyEndpoint => Some(format!("Proxy route for “{name}”: identical first-hop endpoint skipped.")),
+            crate::proxy_chain::Route::FirstHop => None,
+        }
+    });
     let LaunchInput { profile_id, udd, exit, cdp: enable_cdp, ext_ids, .. } = input;
     let remote = exit.session();
     // A team's profile has no launch count of its own here.
@@ -837,6 +849,7 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
         None => (cmd.spawn().context("start the ShardBrowser engine")?, process::Tie::default()),
     };
     let pid = Tracker::shared().track_with_chain(profile_id.clone(), child, udd.clone(), exit, ext_ids, chain.map(|c| c.tunnel));
+    if let Some(notice) = route_notice { crate::notify_warning(&notice); }
 
     if let Some(s) = &remote {
         s.spawned(tie, pid);

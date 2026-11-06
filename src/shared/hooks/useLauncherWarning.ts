@@ -24,6 +24,8 @@ function setDifferently(kind: string): string {
 /// every toast they close on their own (a warning after 8 s, longer once the
 /// pointer or the keyboard is on it). `null`: said elsewhere, so not again here.
 const KNOWN: ReadonlyArray<readonly [RegExp, Say | null]> = [
+  [warningRe(TEAM_WARNINGS.proxyAssignedFallback), (m) => warn(t("proxyChain.launchRouteTitle", { name: m[1] }), t("proxyChain.routeAssignedFallback"))],
+  [warningRe(TEAM_WARNINGS.proxySameEndpoint), (m) => warn(t("proxyChain.launchRouteTitle", { name: m[1] }), t("proxyChain.routeSameEndpoint"))],
   [/would not let the launcher send UDP/i, () => warn(t("launcherWarning.udpTitle"), t("launcherWarning.udpDetail"))],
   [/could not read the proxy'?s location/i, () => warn(t("launcherWarning.geoTitle"), t("launcherWarning.geoDetail"))],
   // A team profile's session as it closed (open.rs); the reason it gives is explained.

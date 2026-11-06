@@ -27,6 +27,7 @@ export const DEFAULT_BLOCKED_PORTS = [3389, 5900, 5901, 5800, 7070, 6568, 5938, 
  *  own fields; the rest is the FingerprintConfig the engine consumes. */
 export type StoredProfile = {
   _meta: {
+    proxy_chain_policy?: ProfileMeta["proxy_chain_policy"];
     id: string;
     rev: number;
     proxy_id: string | null;

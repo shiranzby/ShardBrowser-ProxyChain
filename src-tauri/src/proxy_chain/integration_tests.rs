@@ -20,6 +20,50 @@ use tokio::task::{JoinHandle, JoinSet};
 const WAIT: Duration = Duration::from_secs(15);
 
 #[tokio::test]
+async fn assigned_proxy_tls_keeps_certificate_and_original_name_validation() {
+    use rustls::pki_types::PrivatePkcs8KeyDer;
+    let certified = rcgen::generate_simple_self_signed(vec!["127.0.0.1".into()]).unwrap();
+    let cert = certified.cert.der().clone();
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let server = rustls::ServerConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().unwrap()
+        .with_no_client_auth().with_single_cert(vec![cert.clone()], PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der()).into()).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let task = tokio::spawn(async move {
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server));
+        let mut clients = JoinSet::new();
+        loop {
+            tokio::select! {
+                _ = clients.join_next(), if !clients.is_empty() => {},
+                raw = listener.accept() => {
+                    let (raw, _) = raw.unwrap(); let acceptor = acceptor.clone();
+                    clients.spawn(async move {
+                        let Ok(mut stream) = acceptor.accept(raw).await else { return; };
+                        let mut head = Vec::new();
+                        while !head.ends_with(b"\r\n\r\n") && head.len() < 4096 {
+                            let Ok(byte) = stream.read_u8().await else { return; }; head.push(byte);
+                        }
+                        if head.starts_with(b"CONNECT example.com:443 HTTP/1.1") { let _ = stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await; }
+                    });
+                }
+            }
+        }
+    });
+    let target = Target::new("127.0.0.1", addr.port()).unwrap();
+    assert_eq!(super::tls::connect_assigned(&target, super::tls::client().unwrap(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
+    let mut roots = rustls::RootCertStore::empty(); roots.add(cert).unwrap();
+    let client = Arc::new(rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth());
+    let wrong = Target::new("localhost", addr.port()).unwrap();
+    assert_eq!(super::tls::connect_assigned(&wrong, client.clone(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
+    let tunnel = Tunnel::bind_assigned(target, Some(client)).await.unwrap();
+    let mut local = TcpStream::connect(tunnel.addr()).await.unwrap();
+    local.write_all(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n").await.unwrap();
+    assert!(http_head(&mut local).await.unwrap().starts_with(b"HTTP/1.1 200"));
+    tunnel.shutdown().await;
+    task.abort(); let _ = task.await;
+}
+
+#[tokio::test]
 async fn https_second_hop_verifies_original_name_and_carries_http_inside_tls() {
     use rustls::pki_types::PrivatePkcs8KeyDer;
     let certified = rcgen::generate_simple_self_signed(vec!["second.test".into()]).unwrap();
@@ -514,6 +558,29 @@ async fn first_hop_failure_prevents_the_real_launch_path_from_spawning() {
         0,
         "never connect directly to second hop"
     );
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn preferred_both_proxy_routes_fail_before_spawn_and_preserve_profile_bytes() {
+    let _serial = crate::migrate::serial();
+    let root = crate::store::test_root("preferred-launch-refuses-both");
+    let second = second_hop(true).await;
+    let first = first_hop(second.addr).await;
+    let mut p = entry("preferred-failed-proxy", second.addr);
+    p.proxy_chain_policy = super::policy::ChainPolicy::PreferFirstHop;
+    let saved = save_proxies(std::slice::from_ref(&p));
+    let profile_path = profile("preferred-failed-profile", &p.id);
+    let before = std::fs::read(&profile_path).unwrap();
+    crate::settings::save(&crate::settings::Settings { proxy_chain: chain(first.addr), ..Default::default() }).unwrap();
+    let (engine, marker) = marker_engine(&root.path);
+    let error = tokio::time::timeout(WAIT, crate::launch::launch_with(engine, "preferred-failed-profile", false)).await.unwrap().err().unwrap();
+    assert_eq!(error.downcast_ref::<ChainError>().map(|e| e.code), Some("proxy_chain_routes_failed"));
+    assert!(!marker.exists());
+    assert!(!crate::process::Tracker::shared().is_running("preferred-failed-profile"));
+    assert!(second.accepted.load(Ordering::SeqCst) >= 3, "first-hop preflight, chain authentication and assigned authentication were attempted");
+    assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), saved);
+    assert_eq!(std::fs::read(profile_path).unwrap(), before);
 }
 
 #[cfg(windows)]

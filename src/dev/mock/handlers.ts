@@ -506,12 +506,17 @@ export const handlers: Record<string, Handler> = {
   },
   proxy_chain_test: ({ kind, profileId }, { state }) => {
     const profile = profileId ? state.profiles[String(profileId)] : undefined;
+    const assigned = state.proxies.find((p) => p.id === profile?._meta.proxy_id);
+    const selected = profile?._meta.proxy_chain_policy ?? "inherit";
+    const policy = selected === "inherit" ? assigned?.proxy_chain_policy ?? "inherit" : selected;
+    const skipsFirst = kind === "profile" && policy === "disabled";
     const now = `@${Math.floor(Date.now() / 1000)}`;
-    const system = kind === "local" ? { state: "not_tested" } : { state: "ok", latency_ms: 12 };
+    const system = kind === "local" || skipsFirst ? { state: "not_tested" } : { state: "ok", latency_ms: 12 };
     const profileStage = kind === "profile" ? { state: profile ? "ok" : "failed", latency_ms: profile ? 88 : null, error_message: profile ? null : "profile not found" } : { state: "not_tested" };
     const ip = kind === "profile" ? (profile ? "203.0.113.42" : null) : kind === "system" ? "198.51.100.24" : "192.0.2.18";
     return {
-      kind, proxy_kind: kind === "local" ? null : "http", proxy_address: kind === "local" ? null : "127.0.0.1:7890", source: "mock", profile_name: profile?.name ?? null,
+      kind, proxy_kind: kind === "local" || skipsFirst ? null : "http", proxy_address: kind === "local" || skipsFirst ? null : "127.0.0.1:7890", source: skipsFirst ? "profile_proxy_without_first_hop" : "mock", profile_name: profile?.name ?? null,
+      ...(kind === "profile" && policy === "prefer_first_hop" ? { route: "first_hop" } : {}),
       local_network: kind === "local" ? { state: "ok", latency_ms: 8 } : null,
       system_proxy: system, profile_proxy: profileStage,
       exit_ip: ip,

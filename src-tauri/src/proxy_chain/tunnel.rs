@@ -44,15 +44,20 @@ impl Tunnel {
         idle_timeout: Duration,
         max_connections: usize,
     ) -> Result<Self, ChainError> {
-        Self::bind_transport(hop, target, connect_timeout, idle_timeout, max_connections, None).await
+        Self::bind_transport(Some(hop), target, connect_timeout, idle_timeout, max_connections, None).await
     }
 
     pub(crate) async fn bind_tls(hop: ProxyHop, target: Target, tls: Arc<rustls::ClientConfig>) -> Result<Self, ChainError> {
-        Self::bind_transport(hop, target, connector::CONNECT_TIMEOUT, IDLE_TIMEOUT, MAX_CONNECTIONS, Some(tls)).await
+        Self::bind_transport(Some(hop), target, connector::CONNECT_TIMEOUT, IDLE_TIMEOUT, MAX_CONNECTIONS, Some(tls)).await
     }
 
-    async fn bind_transport(hop: ProxyHop, target: Target, connect_timeout: Duration, idle_timeout: Duration, max_connections: usize, tls: Option<Arc<rustls::ClientConfig>>) -> Result<Self, ChainError> {
-        connector::validate(&hop, &target)?;
+    pub(crate) async fn bind_assigned(target: Target, tls: Option<Arc<rustls::ClientConfig>>) -> Result<Self, ChainError> {
+        Self::bind_transport(None, target, connector::CONNECT_TIMEOUT, IDLE_TIMEOUT, MAX_CONNECTIONS, tls).await
+    }
+
+    async fn bind_transport(hop: Option<ProxyHop>, target: Target, connect_timeout: Duration, idle_timeout: Duration, max_connections: usize, tls: Option<Arc<rustls::ClientConfig>>) -> Result<Self, ChainError> {
+        if let Some(hop) = &hop { connector::validate(hop, &target)?; }
+        else { Target::new(&target.host, target.port)?; }
         if max_connections == 0 || connect_timeout.is_zero() || idle_timeout.is_zero() {
             return Err(ChainError::new(
                 "proxy_chain_invalid_config",
@@ -114,10 +119,12 @@ impl Tunnel {
                                 let _slot = slot;
                                 let result = async {
                                     if let Some(tls) = tls {
-                                        let remote = super::tls::connect(&hop, &target, tls, connect_timeout).await?;
+                                        let remote = if let Some(hop) = &hop { super::tls::connect(hop, &target, tls, connect_timeout).await? }
+                                            else { super::tls::connect_assigned(&target, tls, connect_timeout).await? };
                                         relay(local, remote, idle_timeout).await
                                     } else {
-                                        let remote = connector::connect_with_timeout(&hop, &target, connect_timeout).await?;
+                                        let remote = if let Some(hop) = &hop { connector::connect_with_timeout(hop, &target, connect_timeout).await? }
+                                            else { connector::connect_assigned(&target, connect_timeout).await? };
                                         relay(local, remote, idle_timeout).await
                                     }
                                 }.await;

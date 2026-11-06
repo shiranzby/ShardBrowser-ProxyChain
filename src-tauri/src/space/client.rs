@@ -1486,7 +1486,7 @@ mod tests {
     }
 
     /// Files that talk HTTP or open sockets for something other than a team.
-    const OTHER_TRAFFIC: [(&str, &str); 17] = [
+    const OTHER_TRAFFIC: [(&str, &str); 18] = [
         ("process/close.rs", "Stop's Browser.close on a launched browser's own devtools"),
         ("live_e2e.rs", "the live end-to-end harness, run by hand: a test site, a proxy, CDP, the server raw"),
         ("runtime.rs", "engine and launcher downloads"),
@@ -1498,12 +1498,13 @@ mod tests {
         ("requests.rs", "the automation runner's own requests"),
         ("space/local/proxy.rs", "proxy checks"),
         ("space/local/extensions.rs", "extension downloads"),
-        ("proxy_chain/connector.rs", "the configured first-hop proxy TCP transport"),
-        ("proxy_chain/tls.rs", "verified TLS to the original HTTPS proxy only inside the first-hop connector stream"),
+        ("proxy_chain/connector.rs", "TCP to the configured first hop or explicitly permitted fixed assigned proxy"),
+        ("proxy_chain/tls.rs", "verified TLS to the original HTTPS proxy through the selected fixed proxy route"),
         ("proxy_chain/tunnel.rs", "owned loopback relay with optional second-hop TLS config; never carries team tokens"),
         ("proxy_chain/tests.rs", "synthetic loopback proxy and tunnel tests"),
         ("proxy_chain/integration_tests.rs", "synthetic profile launch and lifecycle tests"),
         ("proxy_chain/detection_tests.rs", "synthetic loopback Geo responders and proxy URL validation"),
+        ("proxy_chain/live_tests.rs", "explicit opt-in isolated Engine acceptance checks its own loopback listener cleanup"),
     ];
 
     const TALKS: [&str; 6] = ["reqwest", "tungstenite", "wreq", "TcpStream::connect", "hyper", "rustls"];

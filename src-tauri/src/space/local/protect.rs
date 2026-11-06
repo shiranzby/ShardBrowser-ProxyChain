@@ -354,13 +354,13 @@ mod tests {
         let (mut full, key) = unlock("policy-lock", "long enough").unwrap();
         assert_eq!(full.meta.proxy_chain_policy, ChainPolicy::Enabled);
         let rev = full.meta.rev;
-        full.meta.proxy_chain_policy = ChainPolicy::Disabled;
+        full.meta.proxy_chain_policy = ChainPolicy::PreferFirstHop;
         save_full(&full, &key).unwrap();
         let (again, _) = unlock("policy-lock", "long enough").unwrap();
-        assert_eq!(again.meta.proxy_chain_policy, ChainPolicy::Disabled);
+        assert_eq!(again.meta.proxy_chain_policy, ChainPolicy::PreferFirstHop);
         assert_eq!(again.meta.rev, rev.wrapping_add(1));
         assert_eq!(again.meta.proxy_id, p.meta.proxy_id);
         unprotect("policy-lock", "long enough").unwrap();
-        assert_eq!(profile::load_raw("policy-lock").unwrap().meta.proxy_chain_policy, ChainPolicy::Disabled);
+        assert_eq!(profile::load_raw("policy-lock").unwrap().meta.proxy_chain_policy, ChainPolicy::PreferFirstHop);
     }
 }

@@ -699,6 +699,10 @@ pub mod proxy {
         let settings = crate::proxy_chain::saved_settings()?;
         let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?;
         let prepared = crate::proxy_chain::prepare(Some(entry), &config).await?;
+        if let Some(ms) = prepared.as_ref().and_then(|p| p.verified_tcp_ms) {
+            prepared.expect("verified route exists").tunnel.shutdown().await;
+            return Ok(ms);
+        }
         let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
         match local::probe(effective).await {
             Err(e) if prepared.is_some() => Err(crate::proxy_chain::profile_failure(&prepared.as_ref().unwrap().tunnel, &e).into()),
@@ -723,6 +727,12 @@ pub mod proxy {
         let settings = crate::proxy_chain::saved_settings()?;
         let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?;
         let prepared = crate::proxy_chain::prepare(Some(entry), &config).await?;
+        if provider.is_none() {
+            if let Some(geo) = prepared.as_ref().and_then(|p| p.verified_geo.clone()) {
+                prepared.expect("verified route exists").tunnel.shutdown().await;
+                return Ok(geo);
+            }
+        }
         let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
         local::geo_check_via(Some(effective), provider).await.map_err(|e| if prepared.is_some() {
             anyhow::anyhow!("The exit IP request through the profile proxy chain failed.")
@@ -821,15 +831,27 @@ pub mod proxy {
     }
 
     pub fn latest_test(id: &str) -> Option<TestSnapshot> {
-        latest_test_for(&get(id).ok()??)
+        let entry = get(id).ok()??;
+        if entry.proxy_chain_policy == crate::proxy_chain::policy::ChainPolicy::PreferFirstHop {
+            return history(id).ok()?.into_iter().rev().find(|s| s.transport.as_deref() == Some("proxy_chain") &&
+                matches!(s.route.as_deref(), Some("first_hop" | "assigned_proxy_fallback" | "same_proxy_endpoint")));
+        }
+        latest_test_for(&entry)
     }
 
     /// Launch passes its in-memory proxy with the resolved profile policy.
     /// The proxy list instead uses the saved proxy's policy via latest_test.
     pub fn latest_test_for(entry: &ProxyEntry) -> Option<TestSnapshot> {
         let settings = crate::proxy_chain::saved_settings().ok()?;
-        let enabled = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy).ok()?.enabled;
-        history(&entry.id).ok()?.into_iter().rev().find(|s| (s.transport.as_deref() == Some("proxy_chain")) == enabled)
+        let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy).ok()?;
+        // Adaptive policy requires a fresh route decision. A previous route,
+        // even one with the same exit IP, is never its capability fallback.
+        if config.allow_assigned_fallback { return None; }
+        let enabled = config.enabled;
+        history(&entry.id).ok()?.into_iter().rev().find(|s| {
+            if enabled { s.transport.as_deref() == Some("proxy_chain") && matches!(s.route.as_deref(), None | Some("first_hop")) }
+            else { s.transport.as_deref() != Some("proxy_chain") }
+        })
     }
 }
 

@@ -39,3 +39,15 @@ pub(crate) async fn connect(
         TlsConnector::from(config).connect(name, raw).await.map_err(|_| failed())
     }).await.map_err(|_| ChainError::new("proxy_chain_profile_tls_timeout", "profile", "TLS to the HTTPS profile proxy timed out. The connection was closed without a direct fallback."))?
 }
+
+pub(crate) async fn connect_assigned(
+    target: &Target,
+    config: Arc<rustls::ClientConfig>,
+    deadline: Duration,
+) -> Result<TlsStream<TcpStream>, ChainError> {
+    let name = rustls::pki_types::ServerName::try_from(target.host.clone()).map_err(|_| failed())?;
+    tokio::time::timeout(deadline, async {
+        let raw = connector::connect_assigned(target, deadline).await?;
+        TlsConnector::from(config).connect(name, raw).await.map_err(|_| failed())
+    }).await.map_err(|_| ChainError::new("proxy_chain_profile_tls_timeout", "profile", "TLS to the HTTPS profile proxy timed out. No HTTP downgrade or website direct connection was attempted."))?
+}
