@@ -204,7 +204,7 @@ try {
         $definitions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$uiTests' }, $true))
         Assert ($definitions.Count -eq 1) 'The UI gate must have one canonical test list.'
         $listed = @($definitions[0].Right.FindAll({ param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true) | ForEach-Object { $_.Value })
-        $required = @('proxy-chain-settings.spec.ts','proxy-chain-errors.spec.ts','proxy-chain-policy.spec.ts','settings-save.spec.ts','settings-secret.spec.ts','profile-password.spec.ts','sidebar-simple.spec.ts','sidebar.spec.ts')
+        $required = @('proxy-chain-settings.spec.ts','proxy-chain-errors.spec.ts','proxy-chain-policy.spec.ts','settings-save.spec.ts','settings-secret.spec.ts','profile-password.spec.ts','sidebar-simple.spec.ts','sidebar.spec.ts','personalization.spec.ts','list-order.spec.ts','nested-folders.spec.ts','folders.spec.ts','profile-defaults.spec.ts','tnb-extract.spec.ts','tnb-locations.spec.ts','settings.spec.ts')
         foreach ($name in $required) { Assert ($name -in $listed) "The canonical UI gate omits $name" }
         Assert (($listed | Sort-Object -Unique).Count -eq $listed.Count) 'The canonical UI test list has duplicates.'
         Assert ($verify.Contains('foreach ($uiTest in $uiTests)') -and $verify.Contains('Test-Path -LiteralPath (Join-Path $candidate "e2e/$uiTest") -PathType Leaf')) 'Every required UI test must be checked before running.'

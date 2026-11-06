@@ -38,7 +38,9 @@ if (-not (Test-Path -LiteralPath (Join-Path $candidate 'src-tauri/src/proxy_chai
 $uiTests = @(
     'proxy-chain-settings.spec.ts', 'proxy-chain-errors.spec.ts', 'proxy-chain-policy.spec.ts',
     'settings-save.spec.ts', 'settings-secret.spec.ts', 'profile-password.spec.ts',
-    'sidebar-simple.spec.ts', 'sidebar.spec.ts'
+    'sidebar-simple.spec.ts', 'sidebar.spec.ts', 'personalization.spec.ts',
+    'list-order.spec.ts', 'nested-folders.spec.ts', 'folders.spec.ts',
+    'profile-defaults.spec.ts', 'tnb-extract.spec.ts', 'tnb-locations.spec.ts', 'settings.spec.ts'
 )
 foreach ($uiTest in $uiTests) {
     if (-not (Test-Path -LiteralPath (Join-Path $candidate "e2e/$uiTest") -PathType Leaf)) { throw "Required browser test is missing: $uiTest" }
