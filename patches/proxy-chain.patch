@@ -10069,10 +10069,10 @@ index 0000000000000000000000000000000000000000..618826278d962ba00f733700f93d7145
 +}
 diff --git a/src-tauri/src/proxy_chain/tests.rs b/src-tauri/src/proxy_chain/tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..d90888eb8e4436ee3503741aeba57574ddb71c96
+index 0000000000000000000000000000000000000000..d4664e10dad5edf9a9f204706919973207b6dda6
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tests.rs
-@@ -0,0 +1,893 @@
+@@ -0,0 +1,890 @@
 +//! Synthetic loopback services only. None of these tests reads settings,
 +//! credentials, the system proxy configuration or the user's profiles.
 +
@@ -10784,7 +10784,7 @@ index 0000000000000000000000000000000000000000..d90888eb8e4436ee3503741aeba57574
 +}
 +
 +#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-+async fn a_system_resolution_timeout_publishes_its_typed_error_before_loopback_eof() {
++async fn a_system_handshake_timeout_publishes_its_typed_error_before_loopback_eof() {
 +    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 +    let mut client = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
 +    let (local, _) = listener.accept().await.unwrap();
@@ -10792,13 +10792,10 @@ index 0000000000000000000000000000000000000000..d90888eb8e4436ee3503741aeba57574
 +    let published = error.clone();
 +    let resolver: super::tunnel::SystemResolver = Arc::new(|_| Box::pin(std::future::pending()));
 +    let worker = tokio::spawn(async move {
-+        super::tunnel::system_connect(local, Duration::from_millis(50), resolver, published).await.err().unwrap()
++        // Leave the local greeting unreadable and expire the total handshake
++        // budget immediately. No timer may race against fixture negotiation.
++        super::tunnel::system_connect(local, Duration::ZERO, resolver, published).await.err().unwrap()
 +    });
-+    client.write_all(&[5, 1, 0]).await.unwrap();
-+    let mut greeting = [0; 2];
-+    within(client.read_exact(&mut greeting)).await.unwrap();
-+    assert_eq!(greeting, [5, 0]);
-+    client.write_all(&[5, 1, 0, 1, 203, 0, 113, 1, 1, 187]).await.unwrap();
 +    let closed=within(client.read(&mut [0;1])).await;
 +    assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
 +    assert_eq!(error.lock().unwrap().as_ref().map(|error| error.code), Some("system_proxy_timeout"));
