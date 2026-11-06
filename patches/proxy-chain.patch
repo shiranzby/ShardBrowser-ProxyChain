@@ -7369,10 +7369,10 @@ index 0000000000000000000000000000000000000000..203a12f803c249967e51e0350210711d
 +}
 diff --git a/src-tauri/src/proxy_chain/live_tests.rs b/src-tauri/src/proxy_chain/live_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..ef4b586162e71e2c6ce0e62e0f03ba137120103a
+index 0000000000000000000000000000000000000000..d944b1dcc9fe9d720a2856221290a535bf5aef77
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/live_tests.rs
-@@ -0,0 +1,871 @@
+@@ -0,0 +1,875 @@
 +//! Explicitly opt-in Windows acceptance of the public product launch path.
 +//! This test never reads the user's profiles. Its only secret input is a
 +//! current-user DPAPI file outside the checkout. The encrypted JSON has the
@@ -8213,6 +8213,10 @@ index 0000000000000000000000000000000000000000..ef4b586162e71e2c6ce0e62e0f03ba13
 +                let first=if expected=="same_proxy_endpoint" {&entry} else {&refused};
 +                super::routing::test_resolved_route(Some(route),super::policy::ChainPolicy::PreferFirstHop,Some(&entry),Some(first)).await
 +            } else {super::test("profile".into(), saved.public(), Some(id.clone())).await}.map_err(|_| "preferred_live_detection_failed")?;
++            report["last_detection"] = json!({"explicit_route":explicit,"expected_route":expected,
++                "actual_route":result.route.map(|route|route.as_str()),"system_state":result.system_proxy.state,
++                "profile_state":result.profile_proxy.state,"profile_error_code":result.profile_proxy.error_code,
++                "exit_error_code":result.exit_error_code});
 +            check(result.route.is_some_and(|route| route.as_str()==expected), "preferred_live_wrong_route")?;
 +            check(result.profile_proxy.state == "ok" && result.exit_error.is_none(), "preferred_live_assigned_proxy_failed")?;
 +            let exit = result.exit_ip.clone().ok_or("preferred_live_exit_missing")?;
