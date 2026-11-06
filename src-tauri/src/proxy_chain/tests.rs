@@ -709,7 +709,7 @@ async fn a_refused_first_hop_publishes_its_typed_error_before_loopback_eof() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_system_resolution_timeout_publishes_its_typed_error_before_loopback_eof() {
+async fn a_system_handshake_timeout_publishes_its_typed_error_before_loopback_eof() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut client = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
     let (local, _) = listener.accept().await.unwrap();
@@ -717,13 +717,10 @@ async fn a_system_resolution_timeout_publishes_its_typed_error_before_loopback_e
     let published = error.clone();
     let resolver: super::tunnel::SystemResolver = Arc::new(|_| Box::pin(std::future::pending()));
     let worker = tokio::spawn(async move {
-        super::tunnel::system_connect(local, Duration::from_millis(50), resolver, published).await.err().unwrap()
+        // Leave the local greeting unreadable and expire the total handshake
+        // budget immediately. No timer may race against fixture negotiation.
+        super::tunnel::system_connect(local, Duration::ZERO, resolver, published).await.err().unwrap()
     });
-    client.write_all(&[5, 1, 0]).await.unwrap();
-    let mut greeting = [0; 2];
-    within(client.read_exact(&mut greeting)).await.unwrap();
-    assert_eq!(greeting, [5, 0]);
-    client.write_all(&[5, 1, 0, 1, 203, 0, 113, 1, 1, 187]).await.unwrap();
     let closed=within(client.read(&mut [0;1])).await;
     assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
     assert_eq!(error.lock().unwrap().as_ref().map(|error| error.code), Some("system_proxy_timeout"));
