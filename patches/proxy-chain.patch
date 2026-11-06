@@ -844,10 +844,10 @@ index 0000000000000000000000000000000000000000..8b861301db89cc4b044b89599b7148bb
 +});
 diff --git a/e2e/profile-route.spec.ts b/e2e/profile-route.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..22c4522aba61f6ffc74163a225b46f99fc95e5f7
+index 0000000000000000000000000000000000000000..18dfd0f6e27539b57face4cb707a75d2d22d4bab
 --- /dev/null
 +++ b/e2e/profile-route.spec.ts
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,277 @@
 +import { expect, test, type Page } from "@playwright/test";
 +import { appModule, openApp, openEditForm, reloadApp } from "./support/app";
 +
@@ -888,6 +888,150 @@ index 0000000000000000000000000000000000000000..22c4522aba61f6ffc74163a225b46f99
 +  await reloadApp(page);
 +  const reopened = await openEditForm(page, "FB Ads acc-02", "Proxy");
 +  await expect(reopened.getByRole("combobox", { name: "Connection", exact: true })).toContainText("Real IP, direct connection");
++});
++
++for (const mode of ["proxy", "system", "direct"] as const) test(`single ${mode} failures describe only the selected connection`, async ({ page }) => {
++  await openApp(page, { theme: "light" });
++  const form = await custom(page);
++  if (mode !== "proxy") await pick(page, "Connection", mode === "system" ? "Use system proxy" : "Real IP, direct connection");
++  await appModule(page, "/src/shared/i18n/index.ts", "__singleRouteI18n");
++  await page.evaluate((mode) => {
++    (window as any).__singleRouteI18n.useLang.getState().setLang("zh");
++    (window as any).__shardxMockRouteResult = {
++      local_network: mode === "direct" ? { state: "failed", error_code: "proxy_chain_local_network_failed" } : null,
++      system_proxy: mode === "system" ? { state: "failed", error_code: "system_proxy_connect_refused", error_details: { protocol: "http", phase: "connect", response_code: 403, target: "example.com:443" } } : { state: "not_tested" },
++      profile_proxy: mode === "proxy" ? { state: "failed", error_code: "proxy_chain_profile_connect_failed", error_details: { protocol: "socks5", phase: "connect", response_code: 4, target: "example.com:443" } } : { state: "not_tested" },
++      proxy_address: mode === "system" ? "127.0.0.1:7890" : null,
++      // An inactive assignment must not appear as a second hop in system/direct mode.
++      profile_proxy_address: "203.0.113.7:1080", exit_ip: null, exit_geo: null,
++    };
++  }, mode);
++  const localizedForm = page.getByRole("dialog");
++  await localizedForm.getByRole("button", { name: "测试连接", exact: true }).click();
++  const result = localizedForm.locator("[data-profile-route-result]");
++  await expect(result).toContainText(mode === "proxy" ? "所选代理无法连接检测目标" : mode === "system" ? "系统代理无法连接检测目标" : "本机网络的出口 IP 和地区查询失败");
++  await expect(result).not.toContainText(/第一层|第二层/);
++  if (mode !== "direct") {
++    await expect(result.locator("[data-profile-route-protocol]")).toContainText(mode === "proxy" ? "SOCKS5 CONNECT 返回：4" : "HTTP CONNECT 返回：403");
++    await expect(result.locator("[data-profile-route-protocol]")).toContainText("检测目标：example.com:443");
++  }
++  if (mode === "proxy") await expect(result).toContainText("代理地址");
++  else await expect(result).not.toContainText("203.0.113.7:1080");
++  if (mode === "proxy") {
++    await page.setViewportSize({ width: 1024, height: 680 });
++    expect(await localizedForm.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
++    await page.screenshot({ path: test.info().outputPath("single-proxy-failed-zh.png"), fullPage: true });
++  }
++  expect(await calls(page, "profile_save")).toBe(0);
++  expect(await calls(page, "proxy_save")).toBe(0);
++});
++
++test("single proxy authentication reply does not claim a target connection", async ({ page }) => {
++  await openApp(page);
++  const form = await custom(page);
++  await page.evaluate(() => { (window as any).__shardxMockRouteResult = {
++    profile_proxy: { state: "failed", error_code: "proxy_chain_profile_auth_failed", error_details: { protocol: "socks5", phase: "authentication", response_code: 1 } },
++    exit_ip: null, exit_geo: null,
++  }; });
++  await form.getByRole("button", { name: "Test connection", exact: true }).click();
++  const result = form.locator("[data-profile-route-result]");
++  await expect(result.locator("[data-profile-route-protocol]")).toContainText("SOCKS5 authentication response: 1");
++  await expect(result).not.toContainText("Test target:");
++  await expect(result).not.toContainText(/First hop|Second hop/);
++});
++
++test("connected proxy with failed exit lookup shows safe provider failures without a stale IP", async ({ page }) => {
++  await openApp(page, { theme: "light" });
++  const form = await custom(page);
++  await appModule(page, "/src/shared/i18n/index.ts", "__geoRouteI18n");
++  await page.evaluate(() => {
++    (window as any).__geoRouteI18n.useLang.getState().setLang("zh");
++    (window as any).__shardxMockRouteResult = {
++      profile_proxy: { state: "ok", latency_ms: 42 },
++      exit_ip: "203.0.113.201", exit_geo: { ip: "203.0.113.201", country: "Stale country", country_code: "US", city: "Stale city" },
++      exit_error: "Safe lookup failure", exit_error_code: "proxy_chain_profile_geo_failed",
++      exit_error_details: [
++        { provider: "ip-api.com", phase: "http_status", http_status: 429 },
++        { provider: "ipapi.co", phase: "timeout" },
++        { provider: "ipwho.is", phase: "invalid_ip" },
++      ],
++    };
++  });
++  const localizedForm = page.getByRole("dialog");
++  await localizedForm.getByRole("button", { name: "测试连接", exact: true }).click();
++  const result = localizedForm.locator("[data-profile-route-result]");
++  await expect(result).toContainText("已连接，42 毫秒");
++  await expect(result).toContainText("所选代理已连接，但出口 IP 和地区查询失败");
++  await expect(result.locator("[data-profile-route-geo-details]")).toContainText("ip-api.com：HTTP 返回 429");
++  await expect(result.locator("[data-profile-route-geo-details]")).toContainText("ipapi.co：请求超时");
++  await expect(result.locator("[data-profile-route-geo-details]")).toContainText("ipwho.is：未返回有效出口 IP");
++  await expect(result.locator("[data-profile-route-exit]")).toContainText("查询失败");
++  await expect(result).not.toContainText(/203\.0\.113\.201|Stale country|Stale city|第二层|第一层/);
++  await page.setViewportSize({ width: 1024, height: 680 });
++  expect(await localizedForm.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
++  await page.screenshot({ path: test.info().outputPath("single-proxy-geo-failed-zh.png"), fullPage: true });
++  const lastFailure = result.locator("[data-profile-route-geo-details] li").last();
++  await lastFailure.scrollIntoViewIfNeeded();
++  await expect(lastFailure).toBeVisible();
++  const lastBox = await lastFailure.boundingBox();
++  const saveBox = await localizedForm.getByRole("button", { name: "保存", exact: true }).boundingBox();
++  expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(saveBox!.y);
++  await page.screenshot({ path: test.info().outputPath("single-proxy-geo-failed-zh-bottom.png"), fullPage: true });
++  expect(await calls(page, "profile_save")).toBe(0);
++});
++
++test("exit lookup diagnostics never render raw provider errors or unknown phase values", async ({ page }) => {
++  await openApp(page);
++  const form = await custom(page);
++  await page.evaluate(() => { (window as any).__shardxMockRouteResult = {
++    profile_proxy: { state: "ok", latency_ms: 42 }, exit_ip: null, exit_geo: null,
++    exit_error: "Safe lookup failure", exit_error_code: "proxy_chain_profile_geo_failed",
++    exit_error_details: [
++      { provider: "ip-api.com", phase: "tls", message: "raw-secret-A" },
++      { provider: "ipapi.co", phase: "json", message: "raw-secret-B" },
++      { provider: "ipwho.is", phase: "provider_refused", message: "raw-secret-C" },
++      { provider: "raw-secret-provider", phase: "raw-secret-phase", http_status: "raw-secret-status" },
++      { provider: "ip-api.com", phase: "connect" },
++      { provider: "ip-api.com", phase: "response_body" },
++      { provider: "ipapi.co", phase: "redirect" },
++      { provider: "ipwho.is", phase: "configuration" },
++      { provider: "ipwho.is", phase: "request" },
++    ],
++  }; });
++  await form.getByRole("button", { name: "Test connection", exact: true }).click();
++  const details = form.locator("[data-profile-route-geo-details]");
++  await expect(details).toContainText("TLS or certificate verification failed");
++  await expect(details).toContainText("Response could not be parsed");
++  await expect(details).toContainText("Provider refused the lookup");
++  await expect(details).toContainText("Unknown source: Lookup failed");
++  await expect(details).toContainText("Connection failed");
++  await expect(details).toContainText("Response could not be read");
++  await expect(details).toContainText("Redirect failed");
++  await expect(details).toContainText("Lookup configuration failed");
++  await expect(details).toContainText("Request failed");
++  await expect(details).not.toContainText("raw-secret");
++});
++
++test("single system proxy exit lookup failure never describes a full chain", async ({ page }) => {
++  await openApp(page);
++  await custom(page);
++  await pick(page, "Connection", "Use system proxy");
++  await appModule(page, "/src/shared/i18n/index.ts", "__systemGeoI18n");
++  await page.evaluate(() => {
++    (window as any).__systemGeoI18n.useLang.getState().setLang("zh");
++    (window as any).__shardxMockRouteResult = {
++      system_proxy: { state: "ok", latency_ms: 24 }, profile_proxy: { state: "not_tested" },
++      exit_ip: null, exit_geo: null, exit_error: "Safe lookup failure", exit_error_code: "proxy_chain_profile_geo_failed",
++      exit_error_details: [{ provider: "ipapi.co", phase: "http_status", http_status: 429 }],
++    };
++  });
++  const form = page.getByRole("dialog");
++  await form.getByRole("button", { name: "测试连接", exact: true }).click();
++  const result = form.locator("[data-profile-route-result]");
++  await expect(result).toContainText("系统代理已连接，但出口 IP 和地区查询失败");
++  await expect(result).toContainText("已连接，24 毫秒");
++  await expect(result).not.toContainText(/完整代理链|第一层|第二层/);
++  await expect(result.locator("[data-profile-route-geo-details]")).toContainText("HTTP 返回 429");
 +});
 +
 +test("chain first-hop choices and direct second hop describe and save the exact route", async ({ page }) => {
@@ -5469,10 +5613,10 @@ index 0000000000000000000000000000000000000000..b53e5b910df49df61865567902df08b9
 +}
 diff --git a/src-tauri/src/proxy_chain/detection_tests.rs b/src-tauri/src/proxy_chain/detection_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..4e45b410e835e67b1aee065fb10d18aa259666c0
+index 0000000000000000000000000000000000000000..51a9c878ad9a2151c158f8de2eb54e4f49af86b1
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detection_tests.rs
-@@ -0,0 +1,717 @@
+@@ -0,0 +1,899 @@
 +//! Detection uses real loopback proxy protocols. Fixtures answer Geo requests
 +//! themselves; they never resolve or connect to any external destination.
 +
@@ -5669,6 +5813,102 @@ index 0000000000000000000000000000000000000000..4e45b410e835e67b1aee065fb10d18aa
 +        "proxy_chain_policy":"prefer_first_hop"})).unwrap()
 +}
 +
++async fn socks_connect_refusal(reply: u8) -> Service {
++    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr=listener.local_addr().unwrap();
++    let requests=Arc::new(Mutex::new(Vec::new()));
++    let record=requests.clone();
++    let task=tokio::spawn(async move {
++        while let Ok((mut stream,_))=listener.accept().await {
++            let mut greeting=[0;4];
++            if stream.read_exact(&mut greeting).await.is_err() {continue;}
++            assert_eq!(greeting,[5,2,0,2]);
++            stream.write_all(&[5,2]).await.unwrap();
++            assert_eq!(stream.read_u8().await.unwrap(),1);
++            let mut username=vec![0;stream.read_u8().await.unwrap() as usize];
++            stream.read_exact(&mut username).await.unwrap();
++            let mut password=vec![0;stream.read_u8().await.unwrap() as usize];
++            stream.read_exact(&mut password).await.unwrap();
++            assert_eq!(username,SECOND_USER.as_bytes());
++            assert_eq!(password,SECOND_PASS.as_bytes());
++            stream.write_all(&[1,0]).await.unwrap();
++            let mut header=[0;4];stream.read_exact(&mut header).await.unwrap();
++            assert_eq!(header,[5,1,0,3]);
++            let mut host=vec![0;stream.read_u8().await.unwrap() as usize];
++            stream.read_exact(&mut host).await.unwrap();
++            let port=stream.read_u16().await.unwrap();
++            record.lock().unwrap().push(format!("{}:{port}",String::from_utf8_lossy(&host)));
++            stream.write_all(&[5,reply,0,1,0,0,0,0,0,0]).await.unwrap();
++        }
++    });
++    Service{addr,requests,task}
++}
++
++#[tokio::test]
++async fn explicit_single_proxy_failures_keep_socks_response_details_and_skip_global_chain() {
++    use super::{policy::ChainPolicy,route::ProfileProxyRoute as R,routing};
++    let _root=crate::store::test_root("explicit-single-proxy-response");
++    let first=http_proxy(None,true).await;
++    crate::settings::save(&crate::settings::Settings{proxy_chain:ProxyChainSettings{
++        enabled:true,invalid:true,host:first.addr.ip().to_string(),port:first.addr.port(),..Default::default()
++    },..Default::default()}).unwrap();
++    for reply in [4,5] {
++        let endpoint=socks_connect_refusal(reply).await;
++        let entry=assigned(endpoint.addr,"socks5");
++        let before=serde_json::to_value(&entry).unwrap();
++        for policy in [ChainPolicy::Enabled,ChainPolicy::PreferFirstHop] {
++            let result=routing::test_resolved_route(Some(&R::Proxy),policy,Some(&entry),None).await.unwrap();
++            assert_eq!(result.system_proxy.state,"not_tested");
++            assert_eq!(result.profile_proxy.state,"failed");
++            assert_eq!(result.profile_proxy.error_code,Some("proxy_chain_profile_connect_failed"));
++            assert!(result.exit_ip.is_none()&&result.exit_geo.is_none());
++            let dto=serde_json::to_value(result).unwrap();
++            assert_eq!(dto["profile_proxy"]["error_details"],json!({"protocol":"socks5","phase":"connect","response_code":reply,"target":"example.com:443"}));
++            assert!(dto["system_proxy"].get("error_details").is_none());
++            for secret in [SECOND_USER,SECOND_PASS] {assert!(!dto.to_string().contains(secret));}
++        }
++        assert_eq!(serde_json::to_value(&entry).unwrap(),before);
++        assert_eq!(&*endpoint.requests.lock().unwrap(),&["example.com:443","example.com:443"]);
++    }
++    let endpoint=socks_proxy(SECOND_USER,"different synthetic secret","198.51.100.88").await;
++    let entry=assigned(endpoint.addr,"socks5");
++    let result=routing::test_resolved_route(Some(&R::Proxy),ChainPolicy::PreferFirstHop,Some(&entry),None).await.unwrap();
++    assert_eq!(result.system_proxy.state,"not_tested");
++    assert_eq!(result.profile_proxy.error_code,Some("proxy_chain_profile_auth_failed"));
++    assert!(result.exit_ip.is_none()&&result.exit_geo.is_none());
++    let dto=serde_json::to_value(result).unwrap();
++    assert_eq!(dto["profile_proxy"]["error_details"],json!({"protocol":"socks5","phase":"authentication","response_code":1}));
++    assert_eq!(&*endpoint.requests.lock().unwrap(),&["AUTHENTICATION_MISMATCH"]);
++    assert!(first.requests.lock().unwrap().is_empty(),"an explicit single proxy must never try the global first hop");
++}
++
++#[tokio::test]
++async fn explicit_single_http_proxy_failures_keep_status_without_private_response_text() {
++    use super::{policy::ChainPolicy,route::ProfileProxyRoute as R,routing};
++    let _root=crate::store::test_root("explicit-single-http-response");
++    for status in [403,407] {
++        let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let entry=assigned(listener.local_addr().unwrap(),"http");
++        let server=tokio::spawn(async move {
++            let (mut stream,_)=listener.accept().await.unwrap();
++            let request=http_head(&mut stream).await.unwrap();
++            assert!(request.starts_with("CONNECT example.com:443 HTTP/1.1\r\n"));
++            stream.write_all(format!("HTTP/1.1 {status} fixture-private-detail\r\nContent-Length: 0\r\n\r\n").as_bytes()).await.unwrap();
++        });
++        let result=routing::test_resolved_route(Some(&R::Proxy),ChainPolicy::Enabled,Some(&entry),None).await.unwrap();
++        assert_eq!(result.system_proxy.state,"not_tested");
++        assert_eq!(result.profile_proxy.state,"failed");
++        assert_eq!(result.profile_proxy.error_code,Some(if status==407 {"proxy_chain_profile_auth_failed"} else {"proxy_chain_profile_connect_failed"}));
++        let dto=serde_json::to_value(result).unwrap();
++        let expected=if status==407 {json!({"protocol":"http","phase":"authentication","response_code":407})}
++            else {json!({"protocol":"http","phase":"connect","response_code":403,"target":"example.com:443"})};
++        assert_eq!(dto["profile_proxy"]["error_details"],expected);
++        let safe=dto.to_string();
++        for secret in [SECOND_USER,SECOND_PASS,"fixture-private-detail"] {assert!(!safe.contains(secret));}
++        server.await.unwrap();
++    }
++}
++
 +#[tokio::test]
 +async fn explicit_proxy_routes_ignore_global_chain_and_preserve_their_selected_binding() {
 +    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing};
@@ -5750,7 +5990,17 @@ index 0000000000000000000000000000000000000000..4e45b410e835e67b1aee065fb10d18aa
 +async fn explicit_route_failure_detection_does_not_claim_an_identical_failed_endpoint_passed() {
 +    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,policy::ChainPolicy};
 +    let _root=crate::store::test_root("explicit-identical-failure-stages");
-+    let second=http_proxy(None,false).await;
++    // This is a failed proxy CONNECT, distinct from a connected route whose
++    // Geo sources failed (covered by the partial-result tests below).
++    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let requests=Arc::new(Mutex::new(Vec::new()));
++    let record=requests.clone();
++    let second=Service{addr:listener.local_addr().unwrap(),requests,task:tokio::spawn(async move {
++        while let Ok((mut socket,_))=listener.accept().await {
++            if let Ok(head)=http_head(&mut socket).await {record.lock().unwrap().push(head);}
++            let _=socket.write_all(b"HTTP/1.1 403 Synthetic refusal\r\nContent-Length: 0\r\n\r\n").await;
++        }
++    })};
 +    let entry=assigned(second.addr,"http");
 +    let route=R::Chain {first:FirstHop::Proxy {proxy_id:entry.id.clone()},second:SecondHop::Proxy};
 +    let result=routing::test_resolved_route(Some(&route),ChainPolicy::Enabled,Some(&entry),Some(&entry)).await.unwrap();
@@ -6052,6 +6302,81 @@ index 0000000000000000000000000000000000000000..4e45b410e835e67b1aee065fb10d18aa
 +}
 +
 +#[tokio::test]
++async fn explicit_geo_failure_preserves_verified_connectivity_and_keeps_start_fail_closed() {
++    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing};
++    let _root=crate::store::test_root("explicit-geo-partial-result");
++    let service=http_proxy(None,false).await;
++    let entry=assigned(service.addr,"http");
++    let original=serde_json::to_value(&entry).unwrap();
++    crate::settings::save(&crate::settings::Settings{proxy_chain:ProxyChainSettings{enabled:true,invalid:true,..Default::default()},..Default::default()}).unwrap();
++    for route in [R::Proxy,R::Chain{first:FirstHop::Direct,second:SecondHop::Proxy}] {
++        let result=routing::test_resolved_route(Some(&route),super::policy::ChainPolicy::Enabled,Some(&entry),None).await.unwrap();
++        assert_eq!(result.profile_proxy.state,"ok","a Geo lookup failure must not erase the successful proxy CONNECT");
++        assert!(result.profile_proxy.latency_ms.is_some());
++        assert_eq!(result.system_proxy.state,"not_tested");
++        assert_eq!(result.route,Some(super::Route::ExplicitProxy));
++        assert_eq!(result.source,Some("explicit_proxy"));
++        assert_eq!(result.exit_error_code,Some("proxy_chain_profile_geo_failed"));
++        assert!(result.exit_error.is_some()&&result.exit_ip.is_none()&&result.exit_geo.is_none());
++        let failures=result.exit_error_details.as_ref().expect("fixed provider failure stages survive the strict preparation error");
++        assert_eq!(failures.len(),3);
++        assert!(failures.iter().any(|failure|failure.provider=="ip-api.com"&&failure.phase=="provider_refused"&&failure.http_status.is_none()));
++        assert_eq!(serde_json::to_value(&entry).unwrap(),original);
++        assert!(!serde_json::to_string(&result).unwrap().contains("fixture-private-detail"));
++        let error=routing::prepare_route(&route,Some(&entry),None,false).await.err().expect("launch must still reject the missing live exit");
++        assert_eq!(error.downcast_ref::<super::error::ChainError>().unwrap().code,"proxy_chain_profile_geo_failed");
++    }
++    assert!(service.requests.lock().unwrap().iter().any(|request|request.starts_with("CONNECT example.com:443 ")));
++    assert!(service.requests.lock().unwrap().iter().any(|request|request.starts_with("GET http://ip-api.com/")));
++}
++
++#[tokio::test]
++async fn explicit_geo_partial_results_preserve_used_skipped_and_failed_first_hops() {
++    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,policy::ChainPolicy,Route};
++    let _root=crate::store::test_root("explicit-geo-partial-first-hop");
++    let second=http_proxy(None,false).await;
++    let entry=assigned(second.addr,"http");
++    let same_route=R::Chain{first:FirstHop::Proxy{proxy_id:entry.id.clone()},second:SecondHop::Proxy};
++    let same=routing::test_resolved_route(Some(&same_route),ChainPolicy::Enabled,Some(&entry),Some(&entry)).await.unwrap();
++    assert_eq!(same.route,Some(Route::SameProxyEndpoint));
++    assert_eq!(same.system_proxy.state,"not_tested","a duplicate hop was skipped rather than connected");
++    assert_eq!(same.profile_proxy.state,"ok");
++    assert_eq!(same.exit_error_code,Some("proxy_chain_profile_geo_failed"));
++    assert!(same.exit_ip.is_none()&&same.exit_geo.is_none()&&same.exit_error_details.is_some());
++    assert!(routing::prepare_route(&same_route,Some(&entry),Some(&entry),false).await.is_err());
++
++    let first=http_proxy(Some(second.addr),true).await;
++    let first_entry=assigned(first.addr,"http");
++    let chain=R::Chain{first:FirstHop::Proxy{proxy_id:first_entry.id.clone()},second:SecondHop::Proxy};
++    let chained=routing::test_resolved_route(Some(&chain),ChainPolicy::Enabled,Some(&entry),Some(&first_entry)).await.unwrap();
++    assert_eq!(chained.route,Some(Route::ExplicitChain));
++    assert_eq!(chained.system_proxy.state,"ok");
++    assert_eq!(chained.profile_proxy.state,"ok");
++    assert_eq!(chained.exit_error_code,Some("proxy_chain_profile_geo_failed"));
++    assert!(chained.exit_ip.is_none()&&chained.exit_geo.is_none()&&chained.exit_error_details.is_some());
++    assert!(routing::prepare_route(&chain,Some(&entry),Some(&first_entry),false).await.is_err());
++
++    let refused=http_proxy(None,true).await;
++    let refused_entry=assigned(refused.addr,"http");
++    let fallback=routing::test_resolved_route(Some(&chain),ChainPolicy::PreferFirstHop,Some(&entry),Some(&refused_entry)).await.unwrap();
++    assert_eq!(fallback.route,Some(Route::AssignedProxyFallback));
++    assert_eq!(fallback.system_proxy.state,"failed");
++    assert!(fallback.first_hop_error_code.is_some());
++    assert_eq!(fallback.profile_proxy.state,"ok");
++    assert_eq!(fallback.exit_error_code,Some("proxy_chain_profile_geo_failed"));
++    assert!(fallback.exit_ip.is_none()&&fallback.exit_geo.is_none()&&fallback.exit_error_details.is_some());
++    assert!(routing::prepare_route(&chain,Some(&entry),Some(&refused_entry),true).await.is_err());
++
++    let first_only=R::Chain{first:FirstHop::Proxy{proxy_id:entry.id.clone()},second:SecondHop::Direct};
++    let result=routing::test_resolved_route(Some(&first_only),ChainPolicy::Enabled,None,Some(&entry)).await.unwrap();
++    assert_eq!(result.system_proxy.state,"ok");
++    assert_eq!(result.profile_proxy.state,"not_tested");
++    assert!(result.profile_proxy_address.is_none());
++    assert!(result.exit_ip.is_none()&&result.exit_geo.is_none()&&result.exit_error.is_some());
++    assert!(routing::prepare_route(&first_only,None,Some(&entry),false).await.is_err());
++}
++
++#[tokio::test]
 +async fn profile_geo_is_the_second_hop_exit_and_original_binding_is_unchanged() {
 +    let _root = crate::store::test_root("chain-profile-exit-geo");
 +    let second = socks_proxy(SECOND_USER, SECOND_PASS, "203.0.113.81").await;
@@ -6125,6 +6450,7 @@ index 0000000000000000000000000000000000000000..4e45b410e835e67b1aee065fb10d18aa
 +        exit_geo: None,
 +        exit_error: None,
 +        exit_error_code: None,
++        exit_error_details: None,
 +        total_ms: 0,
 +        tested_at: "@1".into(),
 +    }
@@ -6192,12 +6518,22 @@ index 0000000000000000000000000000000000000000..4e45b410e835e67b1aee065fb10d18aa
 +}
 diff --git a/src-tauri/src/proxy_chain/error.rs b/src-tauri/src/proxy_chain/error.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..98be6865fac0bb3c0a8c4390d30ba55b321cfc44
+index 0000000000000000000000000000000000000000..1b144f9bc3fc6633ff8913d2ef1546ef08fda06f
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/error.rs
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,54 @@
 +use serde::Serialize;
 +use std::fmt;
++
++/// Fixed protocol metadata from a parsed proxy response, never its raw text.
++#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
++pub struct ProxyFailureDetails {
++    pub protocol: &'static str,
++    pub phase: &'static str,
++    pub response_code: u16,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub target: Option<&'static str>,
++}
 +
 +/// An error safe to show in the interface or keep in a diagnostic log.
 +/// Never carry a proxy URL, response body, authentication header or IO source.
@@ -6208,6 +6544,11 @@ index 0000000000000000000000000000000000000000..98be6865fac0bb3c0a8c4390d30ba55b
 +    pub message: String,
 +    #[serde(skip_serializing_if = "Option::is_none")]
 +    pub first_hop_error_code: Option<&'static str>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub details: Option<ProxyFailureDetails>,
++    /// Internal typed source failures; detection exposes only its safe DTO.
++    #[serde(skip)]
++    pub geo_failures: Option<Vec<crate::space::proxy::GeoProviderFailure>>,
 +}
 +
 +impl ChainError {
@@ -6217,7 +6558,14 @@ index 0000000000000000000000000000000000000000..98be6865fac0bb3c0a8c4390d30ba55b
 +            layer,
 +            message: message.into(),
 +            first_hop_error_code: None,
++            details: None,
++            geo_failures: None,
 +        }
++    }
++
++    pub fn with_proxy_response(mut self, protocol: &'static str, phase: &'static str, response_code: u16, target: Option<&'static str>) -> Self {
++        self.details=Some(ProxyFailureDetails{protocol,phase,response_code,target});
++        self
 +    }
 +}
 +
@@ -7369,10 +7717,10 @@ index 0000000000000000000000000000000000000000..203a12f803c249967e51e0350210711d
 +}
 diff --git a/src-tauri/src/proxy_chain/live_tests.rs b/src-tauri/src/proxy_chain/live_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..d944b1dcc9fe9d720a2856221290a535bf5aef77
+index 0000000000000000000000000000000000000000..2007ecd2929d6fe1139aeec01c32c0c8ae509d89
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/live_tests.rs
-@@ -0,0 +1,875 @@
+@@ -0,0 +1,961 @@
 +//! Explicitly opt-in Windows acceptance of the public product launch path.
 +//! This test never reads the user's profiles. Its only secret input is a
 +//! current-user DPAPI file outside the checkout. The encrypted JSON has the
@@ -8248,12 +8596,98 @@ index 0000000000000000000000000000000000000000..d944b1dcc9fe9d720a2856221290a535
 +    println!("{body}");
 +    assert!(error.is_none(),"preferred_live_acceptance_failed; see safe report");
 +}
++
++#[tokio::test]
++#[ignore = "Read-only explicit single-proxy draft diagnosis with a supplied DPAPI input; no browser or user data."]
++async fn real_assigned_single_proxy_draft_route() {
++    assert_eq!(std::env::var("SHARD_PROXY_CHAIN_RUN_LIVE").as_deref(),Ok("1"));
++    let _serial=crate::migrate::serial();
++    let root=crate::store::test_root("single-proxy-draft-live");
++    let root_path=root.path.clone();
++    let cfg=input().expect("protected_input_unavailable");
++    let entry:crate::space::proxy::ProxyEntry=serde_json::from_value(json!({"id":"single-live-assigned","name":"Synthetic single proxy",
++        "kind":cfg.kind,"host":cfg.host,"port":cfg.port,"username":cfg.username,"password":cfg.password})).unwrap();
++    let mut report=json!({"kind":"explicit-single-proxy-draft-live","samples":[],"browser_started":false,"user_files_written":false});
++    // Deliberately invalid global first hop must have no effect on an explicit
++    // single proxy route, including when the legacy global switch is enabled.
++    crate::settings::save(&crate::settings::Settings {proxy_chain:ProxyChainSettings{enabled:true,mode:"http".into(),host:"127.0.0.1".into(),port:9,..Default::default()},..Default::default()}).unwrap();
++    for _ in 0..3 {
++        let direct=crate::space::proxy::probe_on_route(&entry).await;
++        let direct_error=direct.as_ref().err().map(|error| {
++            if let Some(error)=error.downcast_ref::<crate::space::proxy::Socks5ProbeError>() {match error {
++                crate::space::proxy::Socks5ProbeError::AuthenticationRejected(_)=>"authentication_rejected",
++                crate::space::proxy::Socks5ProbeError::ConnectRejected(_)=>"destination_connect_rejected",
++            }} else if error.to_string().to_ascii_lowercase().contains("time") {"timeout"} else {"io_or_protocol_failure"}
++        });
++        let tested=super::routing::test_resolved_route(Some(&super::route::ProfileProxyRoute::Proxy),super::policy::ChainPolicy::Inherit,Some(&entry),None).await.unwrap();
++        report["samples"].as_array_mut().unwrap().push(json!({"direct_probe_ok":direct.is_ok(),"direct_probe_error_code":direct_error,
++            "route":tested.route.map(|route|route.as_str()),"source":tested.source,"system_state":tested.system_proxy.state,
++            "profile_state":tested.profile_proxy.state,"profile_error_code":tested.profile_proxy.error_code,"exit_error_code":tested.exit_error_code,
++            "exit_ip":tested.exit_ip,"country_code":tested.exit_geo.map(|geo|geo.country_code)}));
++    }
++    drop(root);
++    report["isolated_store_removed"]=json!(!root_path.exists());
++    let passed=report["samples"].as_array().unwrap().iter().all(|sample|sample["route"]=="explicit_proxy"&&sample["profile_state"]=="ok"&&sample["system_state"]=="not_tested");
++    report["state"]=json!(if passed{"passed"}else{"failed"});
++    if let Some(path)=std::env::var_os("SHARD_PROXY_CHAIN_SINGLE_REPORT"){std::fs::write(path,serde_json::to_string_pretty(&report).unwrap()).unwrap();}
++    println!("{}",serde_json::to_string_pretty(&report).unwrap());
++    assert!(passed,"single_proxy_live_failed_see_safe_report");
++}
++
++#[tokio::test]
++#[ignore = "Explicit protected-input stability diagnosis; read-only network, isolated settings, no browser."]
++async fn real_assigned_single_proxy_stability() {
++    assert_eq!(std::env::var("SHARD_PROXY_CHAIN_RUN_LIVE").as_deref(),Ok("1"));
++    let _serial=crate::migrate::serial();
++    let root=crate::store::test_root("single-proxy-stability");
++    let root_path=root.path.clone();
++    let cfg=input().expect("protected_input_unavailable");
++    let entry:crate::space::proxy::ProxyEntry=serde_json::from_value(json!({"id":"stability-assigned","name":"Synthetic stability proxy",
++        "kind":cfg.kind,"host":cfg.host,"port":cfg.port,"username":cfg.username,"password":cfg.password})).unwrap();
++    let provider=std::env::var("SHARD_PROXY_CHAIN_STABILITY_PROVIDER").unwrap_or_else(|_|"ip-api.com".into());
++    assert!(["ip-api.com","ipapi.co","ipwho.is"].contains(&provider.as_str()));
++    crate::settings::save(&crate::settings::Settings{geo_checker:Some(provider.clone()),..Default::default()}).unwrap();
++    let mut report=json!({"kind":"single-proxy-stability-diagnosis","preferred_geo_provider":provider,"samples":[],"browser_started":false,"user_files_written":false});
++    for index in 0..8 {
++        let raw_start=Instant::now();
++        let probe=crate::space::proxy::probe_on_route(&entry).await;
++        let raw_probe_ms=raw_start.elapsed().as_millis();
++        let probe_error=probe.as_ref().err().map(|error| {
++            if let Some(error)=error.downcast_ref::<crate::space::proxy::Socks5ProbeError>() {match error {
++                crate::space::proxy::Socks5ProbeError::AuthenticationRejected(status)=>json!({"phase":"authentication","response_code":status}),
++                crate::space::proxy::Socks5ProbeError::ConnectRejected(status)=>json!({"phase":"connect","response_code":status}),
++            }} else {json!({"phase":if error.to_string().to_ascii_lowercase().contains("time"){"timeout"}else{"io_or_protocol"}})}
++        });
++        let raw_geo_start=Instant::now();
++        let raw_geo=crate::space::proxy::geo_check_on_route(Some(&entry),None).await;
++        let raw_geo_ms=raw_geo_start.elapsed().as_millis();
++        let raw_geo_safe=raw_geo.as_ref().ok().map(|geo|json!({"ip":geo.ip,"provider":geo.provider,"country_code":geo.country_code}));
++        let route_start=Instant::now();
++        let tested=super::routing::test_resolved_route(Some(&super::route::ProfileProxyRoute::Proxy),super::policy::ChainPolicy::Inherit,Some(&entry),None).await.unwrap();
++        report["samples"].as_array_mut().unwrap().push(json!({"sample":index+1,"at_unix_ms":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
++            "raw_probe_ok":probe.is_ok(),"raw_probe_ms":raw_probe_ms,"raw_probe_error":probe_error,
++            "raw_geo_ok":raw_geo.is_ok(),"raw_geo_ms":raw_geo_ms,"raw_geo":raw_geo_safe,
++            "product_ms":route_start.elapsed().as_millis(),"product_route":tested.route.map(|route|route.as_str()),
++            "system_state":tested.system_proxy.state,"profile_state":tested.profile_proxy.state,
++            "profile_error_code":tested.profile_proxy.error_code,"profile_error_details":tested.profile_proxy.error_details,
++            "exit_error_code":tested.exit_error_code,"exit_ip":tested.exit_ip,
++            "geo_provider":tested.exit_geo.map(|geo|geo.provider)}));
++        if let Some(path)=std::env::var_os("SHARD_PROXY_CHAIN_STABILITY_REPORT"){std::fs::write(path,serde_json::to_string_pretty(&report).unwrap()).unwrap();}
++        tokio::time::sleep(Duration::from_secs(5)).await;
++    }
++    drop(root);
++    report["isolated_store_removed"]=json!(!root_path.exists());
++    report["state"]=json!("observed");
++    if let Some(path)=std::env::var_os("SHARD_PROXY_CHAIN_STABILITY_REPORT"){std::fs::write(path,serde_json::to_string_pretty(&report).unwrap()).unwrap();}
++    println!("{}",serde_json::to_string_pretty(&report).unwrap());
++    assert!(!root_path.exists());
++}
 diff --git a/src-tauri/src/proxy_chain/mod.rs b/src-tauri/src/proxy_chain/mod.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d9d7d843a
+index 0000000000000000000000000000000000000000..47d92195440048bdb3362d239ff4a02aa10b2076
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/mod.rs
-@@ -0,0 +1,522 @@
+@@ -0,0 +1,568 @@
 +//! Windows system proxy -> original profile proxy. Never fall back to direct.
 +pub mod config;
 +pub mod connector;
@@ -8283,6 +8717,28 @@ index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d
 +    pub first_hop_error: Option<ChainError>,
 +    pub verified_geo: Option<proxy::GeoInfo>,
 +    pub verified_tcp_ms: Option<u128>,
++}
++
++/// Internal evidence from a strict preparation that reached the proxy but
++/// could not obtain its live exit. It is not a ready route or public error DTO.
++#[derive(Debug, Clone)]
++struct VerifiedRouteFailure {
++    error: ChainError,
++    route: Route,
++    tcp_ms: u128,
++    first_hop_error: Option<ChainError>,
++}
++
++impl std::fmt::Display for VerifiedRouteFailure {
++    fn fmt(&self,f:&mut std::fmt::Formatter<'_>)->std::fmt::Result {std::fmt::Display::fmt(&self.error,f)}
++}
++
++fn preparation_failure(prepared:&PreparedProxy,error:ChainError)->anyhow::Error {
++    let cause=anyhow::Error::new(error.clone());
++    match prepared.verified_tcp_ms {
++        Some(tcp_ms)=>cause.context(VerifiedRouteFailure{error,route:prepared.route,tcp_ms,first_hop_error:prepared.first_hop_error.clone()}),
++        None=>cause,
++    }
 +}
 +
 +#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -8368,10 +8824,15 @@ index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d
 +}
 +
 +async fn verify_prepared(prepared: &mut PreparedProxy) -> Result<(), ChainError> {
++    prepared.verified_tcp_ms=None;
++    prepared.verified_geo=None;
 +    let tcp_ms = proxy::probe_on_route(&prepared.effective).await.map_err(|e| profile_failure(&prepared.tunnel, &e))?;
-+    let geo = proxy::geo_check_on_route(Some(&prepared.effective), None).await.map_err(|_| ChainError::new(
-+        "proxy_chain_profile_geo_failed", "exit", "The assigned proxy connected, but its live exit IP could not be verified on this route."))?;
 +    prepared.verified_tcp_ms = Some(tcp_ms);
++    let geo = proxy::geo_check_on_route(Some(&prepared.effective), None).await.map_err(|cause| {
++        let mut error=ChainError::new("proxy_chain_profile_geo_failed", "exit", "The assigned proxy connected, but its live exit IP could not be verified on this route.");
++        error.geo_failures=cause.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone());
++        error
++    })?;
 +    prepared.verified_geo = Some(geo);
 +    Ok(())
 +}
@@ -8381,16 +8842,18 @@ index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d
 +    let tls = if entry.kind == ProxyKind::Https { Some(tls::client()?) } else { None };
 +    let tunnel = Tunnel::bind_assigned(target, tls).await?;
 +    let mut prepared = PreparedProxy { effective: effective_entry(entry, &tunnel), tunnel, route, first_hop_error, verified_geo: None, verified_tcp_ms: None };
-+    if verify_prepared(&mut prepared).await.is_err() {
++    if let Err(cause)=verify_prepared(&mut prepared).await {
 +        let first_hop_error_code = prepared.first_hop_error.as_ref().map(|e| e.code);
-+        prepared.tunnel.shutdown().await;
 +        let mut error = if route == Route::SameProxyEndpoint {
 +            ChainError::new("proxy_chain_same_proxy_failed", "profile", "The identical proxy endpoint was used once, but the assigned proxy handshake or live exit could not be verified. No website direct connection was attempted.")
 +        } else {
 +            ChainError::new("proxy_chain_routes_failed", "profile", "The first-hop route and the direct connection to the assigned proxy could not be verified. The assigned proxy was kept; no website direct connection was attempted.")
 +        };
 +        error.first_hop_error_code = first_hop_error_code;
-+        return Err(error.into());
++        error.geo_failures=cause.geo_failures;
++        let error=preparation_failure(&prepared,error);
++        prepared.tunnel.shutdown().await;
++        return Err(error);
 +    }
 +    Ok(prepared)
 +}
@@ -8449,7 +8912,8 @@ index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d
 +
 +pub fn profile_failure(tunnel: &Tunnel, cause: &anyhow::Error) -> ChainError {
 +    if let Some(error) = cause.downcast_ref::<proxy::HttpProbeError>() {
-+        return ChainError::new(if error.0 == 407 { "proxy_chain_profile_auth_failed" } else { "proxy_chain_profile_connect_failed" }, "profile", format!("The profile HTTP proxy refused CONNECT (status {}). Check its credentials and source restrictions.", error.0));
++        return ChainError::new(if error.0 == 407 { "proxy_chain_profile_auth_failed" } else { "proxy_chain_profile_connect_failed" }, "profile", format!("The profile HTTP proxy refused CONNECT (status {}). Check its credentials and source restrictions.", error.0))
++            .with_proxy_response("http",if error.0==407 {"authentication"} else {"connect"},error.0,if error.0==407 {None} else {Some("example.com:443")});
 +    }
 +    // A reply received on THIS probe is authoritative. Another concurrent
 +    // Geo stream's close/reset must not overwrite a definite second-hop reply.
@@ -8458,11 +8922,11 @@ index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d
 +            proxy::Socks5ProbeError::AuthenticationRejected(status) => ChainError::new(
 +                "proxy_chain_profile_auth_failed", "profile",
 +                format!("The profile SOCKS5 proxy rejected authentication (status {status}). Check its credentials and allowed source IPs; system proxy credentials are separate."),
-+            ),
++            ).with_proxy_response("socks5","authentication",(*status).into(),None),
 +            proxy::Socks5ProbeError::ConnectRejected(status) => ChainError::new(
 +                "proxy_chain_profile_connect_failed", "profile",
 +                format!("The profile SOCKS5 proxy refused the destination CONNECT request (reply {status})."),
-+            ),
++            ).with_proxy_response("socks5","connect",(*status).into(),Some("example.com:443")),
 +        };
 +    }
 +    // Classify our own probe labels; never return its raw error/URL to the UI.
@@ -8488,6 +8952,8 @@ index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d
 +    error_code: Option<&'static str>,
 +    #[serde(skip_serializing_if = "Option::is_none")]
 +    error_message: Option<String>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    error_details: Option<error::ProxyFailureDetails>,
 +}
 +impl Stage {
 +    fn pending() -> Self {
@@ -8496,14 +8962,19 @@ index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d
 +            latency_ms: None,
 +            error_code: None,
 +            error_message: None,
++            error_details: None,
 +        }
 +    }
 +    fn ok(start: Instant) -> Self {
++        Self::measured(start.elapsed().as_millis())
++    }
++    fn measured(latency_ms:u128)->Self {
 +        Self {
 +            state: "ok",
-+            latency_ms: Some(start.elapsed().as_millis()),
++            latency_ms: Some(latency_ms),
 +            error_code: None,
 +            error_message: None,
++            error_details: None,
 +        }
 +    }
 +    fn failed(e: ChainError) -> Self {
@@ -8512,6 +8983,7 @@ index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d
 +            latency_ms: None,
 +            error_code: Some(e.code),
 +            error_message: Some(e.message),
++            error_details: e.details,
 +        }
 +    }
 +}
@@ -8534,6 +9006,8 @@ index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d
 +    exit_geo: Option<proxy::GeoInfo>,
 +    exit_error: Option<String>,
 +    exit_error_code: Option<&'static str>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    exit_error_details: Option<Vec<proxy::GeoProviderFailure>>,
 +    total_ms: u128,
 +    tested_at: String,
 +}
@@ -8542,10 +9016,15 @@ index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d
 +    fn set_exit(&mut self, geo: anyhow::Result<proxy::GeoInfo>) {
 +        match geo {
 +            Ok(geo) => {
++                self.exit_error=None;
++                self.exit_error_code=None;
++                self.exit_error_details=None;
 +                self.exit_ip = Some(geo.ip.clone());
 +                self.exit_geo = Some(geo);
 +            }
-+            Err(_) => {
++            Err(error) => {
++                self.exit_error_details=error.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone())
++                    .or_else(||error.downcast_ref::<ChainError>().and_then(|error|error.geo_failures.clone()));
 +                let (code, message) = match self.kind.as_str() {
 +                    "local" => (
 +                        "proxy_chain_local_geo_failed",
@@ -8618,6 +9097,7 @@ index 0000000000000000000000000000000000000000..090559ad2e0202e3790a330aa9729e4d
 +        exit_geo: None,
 +        exit_error: None,
 +        exit_error_code: None,
++        exit_error_details: None,
 +        total_ms: 0,
 +        tested_at: format!(
 +            "@{}",
@@ -9007,10 +9487,10 @@ index 0000000000000000000000000000000000000000..5deb3d3764ee04eb8d7626e574624463
 +}
 diff --git a/src-tauri/src/proxy_chain/routing.rs b/src-tauri/src/proxy_chain/routing.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..6dd0ce3e17285ebcf9741903f160d7c82039265c
+index 0000000000000000000000000000000000000000..309db5edfd331c7983749da64e0e9160c8f00ca0
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/routing.rs
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,154 @@
 +//! Explicit routes are resolved once per launch. The assigned profile binding
 +//! stays untouched; neither the global switch nor a failed hop can change it.
 +use super::{*, route::{FirstHop, ProfileProxyRoute, SecondHop}};
@@ -9040,7 +9520,7 @@ index 0000000000000000000000000000000000000000..6dd0ce3e17285ebcf9741903f160d7c8
 +    let tls=if entry.kind==ProxyKind::Https {Some(tls::client()?)} else {None};
 +    let tunnel=Tunnel::bind_assigned(target,tls).await?;
 +    let mut prepared=PreparedProxy{effective:effective_entry(entry,&tunnel),tunnel,route,first_hop_error:None,verified_geo:None,verified_tcp_ms:None};
-+    if let Err(error)=verify_prepared(&mut prepared).await {prepared.tunnel.shutdown().await;return Err(error.into());}
++    if let Err(error)=verify_prepared(&mut prepared).await {let error=preparation_failure(&prepared,error);prepared.tunnel.shutdown().await;return Err(error);}
 +    Ok(prepared)
 +}
 +
@@ -9048,7 +9528,10 @@ index 0000000000000000000000000000000000000000..6dd0ce3e17285ebcf9741903f160d7c8
 +    let tunnel=Tunnel::bind_system().await?;
 +    let effective=ProxyEntry {proxy_chain_policy:Default::default(),id:String::new(),name:String::new(),kind:ProxyKind::Socks5,host:"127.0.0.1".into(),port:tunnel.addr().port(),username:String::new(),password:String::new(),country:String::new(),notes:String::new()};
 +    let mut prepared=PreparedProxy{effective,tunnel,route:Route::ExplicitSystem,first_hop_error:None,verified_geo:None,verified_tcp_ms:None};
-+    if let Err(error)=verify_prepared(&mut prepared).await {let error=prepared.tunnel.last_error().unwrap_or(error);prepared.tunnel.shutdown().await;return Err(error.into());}
++    if let Err(error)=verify_prepared(&mut prepared).await {
++        let error=if prepared.verified_tcp_ms.is_some(){error}else{prepared.tunnel.last_error().unwrap_or(error)};
++        let error=preparation_failure(&prepared,error);prepared.tunnel.shutdown().await;return Err(error);
++    }
 +    Ok(prepared)
 +}
 +
@@ -9072,13 +9555,16 @@ index 0000000000000000000000000000000000000000..6dd0ce3e17285ebcf9741903f160d7c8
 +                let first=match selected {Some(first)=>first,None=>detect_windows::resolve_for(&target).await?.hop};
 +                if same_endpoint(assigned,&first)? {return assigned_route(assigned,Route::SameProxyEndpoint,None).await;}
 +                let mut prepared=prepare_with_hop(assigned,first).await?;prepared.route=Route::ExplicitChain;
-+                if let Err(error)=verify_prepared(&mut prepared).await {prepared.tunnel.shutdown().await;return Err(error.into());}Ok(prepared)
++                if let Err(error)=verify_prepared(&mut prepared).await {let error=preparation_failure(&prepared,error);prepared.tunnel.shutdown().await;return Err(error);}Ok(prepared)
 +            }.await;
 +            match attempt {
 +                Ok(prepared)=>prepared,
 +                Err(error)=>{
++                    let verified=error.downcast_ref::<VerifiedRouteFailure>().cloned();
 +                    let error=safe_prepare_error(error);
-+                    if !allow_assigned_fallback || matches!(error.code,"proxy_chain_invalid_config"|"proxy_chain_credentials_unavailable"|"proxy_chain_windows_required"|"proxy_chain_same_proxy_failed") {return Err(error.into());}
++                    if !allow_assigned_fallback || matches!(error.code,"proxy_chain_invalid_config"|"proxy_chain_credentials_unavailable"|"proxy_chain_windows_required"|"proxy_chain_same_proxy_failed") {
++                        return Err(match verified {Some(verified)=>anyhow::Error::new(error).context(verified),None=>error.into()});
++                    }
 +                    assigned_route(assigned,Route::AssignedProxyFallback,Some(error)).await?
 +                }
 +            }
@@ -9088,13 +9574,23 @@ index 0000000000000000000000000000000000000000..6dd0ce3e17285ebcf9741903f160d7c8
 +    Ok(ExplicitRoute{proxy:Some(prepared.effective.clone()),prepared:Some(prepared)})
 +}
 +
++fn record_connected_route(result:&mut TestResult,route:Option<&ProfileProxyRoute>,first:Option<&ProxyEntry>,actual:Route,first_error:Option<ChainError>,tcp_ms:u128) {
++    result.route=Some(actual);result.source=Some(actual.as_str());result.first_hop_error_code=first_error.as_ref().map(|error|error.code);
++    let first_only=matches!(route,Some(ProfileProxyRoute::System|ProfileProxyRoute::Chain{second:SecondHop::Direct,..}));
++    let first_used=matches!(route,Some(ProfileProxyRoute::System|ProfileProxyRoute::Chain{first:FirstHop::System|FirstHop::Proxy{..},..}));
++    result.system_proxy=if let Some(error)=first_error {Stage::failed(error)} else if actual==Route::SameProxyEndpoint {Stage::pending()} else if first_used || route.is_none()&&actual==Route::FirstHop {Stage::measured(tcp_ms)} else {Stage::pending()};
++    result.profile_proxy=if first_only {Stage::pending()} else {Stage::measured(tcp_ms)};
++    if first_only {result.profile_proxy_address=None;}
++    if let Some(first)=first.filter(|_|first_used) {result.proxy_address=Some(format!("{}:{}",first.host,first.port));result.proxy_kind=Some(match first.kind {ProxyKind::Http=>"http",ProxyKind::Https=>"https",ProxyKind::Socks5=>"socks5"});}
++}
++
 +/// The caller resolves ids under the current space and its permissions. This
 +/// function performs no writes, starts no browser and has no saved-test cache.
 +pub async fn test_resolved_route(route:Option<&ProfileProxyRoute>,policy:policy::ChainPolicy,assigned:Option<&ProxyEntry>,first:Option<&ProxyEntry>) -> anyhow::Result<TestResult> {
 +    policy.validate()?;
 +    if let Some(route)=route {route.validate()?;}
 +    let start=Instant::now();
-+    let mut result=TestResult{kind:"profile".into(),proxy_kind:None,proxy_address:None,source:None,resolved_for:None,profile_proxy_address:assigned.map(|p|format!("{}:{}",p.host,p.port)),route:None,first_hop_error_code:None,system_proxy:Stage::pending(),profile_proxy:Stage::pending(),local_network:None,exit_ip:None,exit_geo:None,exit_error:None,exit_error_code:None,total_ms:0,tested_at:format!("@{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs())};
++    let mut result=TestResult{kind:"profile".into(),proxy_kind:None,proxy_address:None,source:None,resolved_for:None,profile_proxy_address:assigned.map(|p|format!("{}:{}",p.host,p.port)),route:None,first_hop_error_code:None,system_proxy:Stage::pending(),profile_proxy:Stage::pending(),local_network:None,exit_ip:None,exit_geo:None,exit_error:None,exit_error_code:None,exit_error_details:None,total_ms:0,tested_at:format!("@{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs())};
 +    if route.is_some_and(is_direct) {
 +        result.kind="local".into();result.route=Some(Route::ExplicitDirect);result.source=Some("explicit_direct");
 +        let geo=proxy::geo_check_on_route(None,None).await;
@@ -9108,18 +9604,23 @@ index 0000000000000000000000000000000000000000..6dd0ce3e17285ebcf9741903f160d7c8
 +        };
 +        match prepared {
 +            Ok(Some(mut prepared))=>{
-+                if prepared.verified_geo.is_none() {if let Err(error)=verify_prepared(&mut prepared).await {result.profile_proxy=Stage::failed(error);prepared.tunnel.shutdown().await;result.total_ms=start.elapsed().as_millis();return Ok(result);}}
-+                result.route=Some(prepared.route);result.source=Some(prepared.route.as_str());result.first_hop_error_code=prepared.first_hop_error.as_ref().map(|e|e.code);
-+                let first_only=matches!(route,Some(ProfileProxyRoute::System|ProfileProxyRoute::Chain{second:SecondHop::Direct,..}));
-+                let first_used=matches!(route,Some(ProfileProxyRoute::System|ProfileProxyRoute::Chain{first:FirstHop::System|FirstHop::Proxy{..},..}));
-+                result.system_proxy=if let Some(error)=prepared.first_hop_error.clone() {Stage::failed(error)} else if prepared.route==Route::SameProxyEndpoint {Stage::pending()} else if first_used || route.is_none()&&matches!(prepared.route,Route::FirstHop) {Stage::ok(start)} else {Stage::pending()};
-+                result.profile_proxy=if first_only {Stage::pending()} else {Stage::ok(start)};
-+                if first_only {result.profile_proxy_address=None;}
-+                if let Some(first)=first.filter(|_|first_used) {result.proxy_address=Some(format!("{}:{}",first.host,first.port));result.proxy_kind=Some(match first.kind {ProxyKind::Http=>"http",ProxyKind::Https=>"https",ProxyKind::Socks5=>"socks5"});}
++                if prepared.verified_geo.is_none() {if let Err(error)=verify_prepared(&mut prepared).await {
++                    if let Some(tcp_ms)=prepared.verified_tcp_ms {
++                        record_connected_route(&mut result,route,first,prepared.route,prepared.first_hop_error.clone(),tcp_ms);
++                        result.set_exit(Err(error.into()));
++                    } else {result.profile_proxy=Stage::failed(error);}
++                    prepared.tunnel.shutdown().await;result.total_ms=start.elapsed().as_millis();return Ok(result);
++                }}
++                record_connected_route(&mut result,route,first,prepared.route,prepared.first_hop_error.clone(),prepared.verified_tcp_ms.expect("route TCP verified"));
 +                result.set_exit(Ok(prepared.verified_geo.clone().expect("route verified")));
 +                prepared.tunnel.shutdown().await;
 +            },
 +            Err(error)=>{
++                if let Some(verified)=error.downcast_ref::<VerifiedRouteFailure>() {
++                    record_connected_route(&mut result,route,first,verified.route,verified.first_hop_error.clone(),verified.tcp_ms);
++                    result.set_exit(Err(verified.error.clone().into()));
++                    result.total_ms=start.elapsed().as_millis();return Ok(result);
++                }
 +                let error=safe_prepare_error(error);
 +                let first_only=matches!(route,Some(ProfileProxyRoute::System|ProfileProxyRoute::Chain{second:SecondHop::Direct,..}));
 +                result.first_hop_error_code=error.first_hop_error_code;
@@ -11147,7 +11648,7 @@ index 0b822fb2e3f1c6aa20d8e6881e8daa295bb210b9..0dec4b34bf41bc979e16b1a4fca8cb46
 +    }
  }
 diff --git a/src-tauri/src/space/local/proxy.rs b/src-tauri/src/space/local/proxy.rs
-index 63d3972b4adf061dbddbd0a79026b32912897e64..7f24852ac42078540489637081a05866fab43d3b 100644
+index 63d3972b4adf061dbddbd0a79026b32912897e64..9d3c0c6b766754f69c69884997b0a14603e563dd 100644
 --- a/src-tauri/src/space/local/proxy.rs
 +++ b/src-tauri/src/space/local/proxy.rs
 @@ -32,6 +32,8 @@ pub struct ProxyEntry {
@@ -11304,7 +11805,169 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..7f24852ac42078540489637081a05866
      let mut store_data = load()?;
      let added = add_new(&mut store_data.proxies, entries);
      save(&store_data)?;
-@@ -1057,9 +1102,33 @@ pub fn country_to_locale(cc: &str) -> &'static str {
+@@ -798,6 +843,69 @@ pub struct GeoInfo {
+     pub provider: String,
+ }
+ 
++/// Safe metadata about one fixed public Geo source. Never retain a response
++/// body, request URL, proxy login or the underlying client's rendered error.
++#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
++pub struct GeoProviderFailure {
++    pub provider: String,
++    pub phase: &'static str,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub http_status: Option<u16>,
++}
++
++impl GeoProviderFailure {
++    fn new(provider: &str, phase: &'static str) -> Self {
++        Self { provider: geo_provider(provider).into(), phase, http_status: None }
++    }
++}
++
++impl std::fmt::Display for GeoProviderFailure {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        write!(f, "{}: {}", self.provider, self.phase)?;
++        if let Some(status)=self.http_status { write!(f, " (HTTP {status})")?; }
++        Ok(())
++    }
++}
++
++impl std::error::Error for GeoProviderFailure {}
++
++#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
++pub struct GeoLookupError {
++    pub failures: Vec<GeoProviderFailure>,
++}
++
++impl std::fmt::Display for GeoLookupError {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        write!(f, "every geo source failed")?;
++        for failure in &self.failures { write!(f, "; {failure}")?; }
++        Ok(())
++    }
++}
++
++impl std::error::Error for GeoLookupError {}
++
++fn geo_provider(provider: &str) -> &'static str {
++    match provider { "ipapi.co" => "ipapi.co", "ipwho.is" => "ipwho.is", _ => "ip-api.com" }
++}
++
++fn geo_request_failure(provider: &str, error: reqwest::Error, fallback: &'static str) -> GeoProviderFailure {
++    use std::error::Error;
++    let mut source: Option<&(dyn Error+'static)>=Some(&error);
++    let mut tls=false;
++    while let Some(cause)=source {
++        if cause.downcast_ref::<rustls::Error>().is_some() { tls=true; break; }
++        source=cause.source();
++    }
++    let phase=if error.is_timeout() { "timeout" }
++        else if tls { "tls" }
++        else if error.is_connect() { "connect" }
++        else if error.is_decode() { "json" }
++        else if error.is_body() { "response_body" }
++        else if error.is_redirect() { "redirect" }
++        else { fallback };
++    GeoProviderFailure::new(provider,phase)
++}
++
+ /// Probe IP/country the world sees when traffic exits the proxy.
+ pub async fn geo_check(entry: &ProxyEntry, provider_override: Option<String>) -> Result<GeoInfo> {
+     geo_check_via(Some(entry), provider_override).await
+@@ -808,6 +916,7 @@ pub async fn geo_check(entry: &ProxyEntry, provider_override: Option<String>) ->
+ /// alone — the other two are HTTPS, so the chain gets an answer anyway.
+ fn provider_chain(chosen: &str) -> Vec<String> {
+     let all = ["ip-api.com", "ipapi.co", "ipwho.is"];
++    let chosen=geo_provider(chosen);
+     let mut out = vec![chosen.to_string()];
+     out.extend(all.iter().filter(|p| **p != chosen).map(|p| p.to_string()));
+     out
+@@ -844,12 +953,12 @@ pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider_override: Option
+                         if !failures.is_empty() {
+                             eprintln!(
+                                 "[launcher] geo: {provider} answered after {} failed: {}",
+-                                failures.len(), failures.join("; ")
++                                failures.len(), failures.iter().map(ToString::to_string).collect::<Vec<_>>().join("; ")
+                             );
+                         }
+                         return Ok(info);
+                     }
+-                    Err(e) => failures.push(format!("{provider}: {e}")),
++                    Err(e) => failures.push(e),
+                 }
+                 if pending.is_empty() && next >= chain.len() {
+                     break;
+@@ -869,10 +978,11 @@ pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider_override: Option
+             else => break,
+         }
+     }
+-    anyhow::bail!("every geo source failed — {}", failures.join("; "))
++    Err(GeoLookupError { failures }.into())
+ }
+ 
+-async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<GeoInfo> {
++async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> std::result::Result<GeoInfo,GeoProviderFailure> {
++    let provider=geo_provider(provider);
+     let url = match provider {
+         "ip-api.com" => "http://ip-api.com/json/?fields=status,message,query,country,countryCode,regionName,city,isp,timezone,lat,lon",
+         "ipapi.co" => "https://ipapi.co/json/",
+@@ -903,15 +1013,19 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
+                 entry.port
+             )
+         };
+-        let proxy = reqwest::Proxy::all(&proxy_url).context("bad proxy URL")?;
++        let proxy = reqwest::Proxy::all(&proxy_url).map_err(|_|GeoProviderFailure::new(provider,"configuration"))?;
+         builder = builder.proxy(proxy);
+     } else {
+         // Direct check: bypass any system proxy.
+         builder = builder.no_proxy();
+     }
+-    let client = builder.build()?;
++    let client = builder.build().map_err(|_|GeoProviderFailure::new(provider,"configuration"))?;
+ 
+-    let body: serde_json::Value = client.get(url).send().await?.json().await?;
++    let response=client.get(url).send().await.map_err(|error|geo_request_failure(provider,error,"request"))?;
++    if !response.status().is_success() {
++        return Err(GeoProviderFailure { provider:provider.into(), phase:"http_status", http_status:Some(response.status().as_u16()) });
++    }
++    let body: serde_json::Value=response.json().await.map_err(|error|geo_request_failure(provider,error,"json"))?;
+ 
+     let s = |v: &serde_json::Value, k: &str| {
+         v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
+@@ -925,18 +1039,13 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
+     if body.get("error").and_then(|v| v.as_bool()) == Some(true)
+         || body.get("success").and_then(|v| v.as_bool()) == Some(false)
+     {
+-        let why = body
+-            .get("reason")
+-            .or_else(|| body.get("message"))
+-            .and_then(|v| v.as_str())
+-            .unwrap_or("refused");
+-        anyhow::bail!("{provider}: {why}");
++        return Err(GeoProviderFailure::new(provider,"provider_refused"));
+     }
+ 
+     let info = match provider {
+         "ip-api.com" => {
+             if s(&body, "status") == "fail" {
+-                anyhow::bail!("ip-api.com: {}", s(&body, "message"));
++                return Err(GeoProviderFailure::new(provider,"provider_refused"));
+             }
+             GeoInfo {
+                 ip: s(&body, "query"),
+@@ -990,8 +1099,8 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
+     };
+     // Every provider names the address it saw. Without one there is nothing to
+     // trust in the rest of the object, so the next provider gets a turn.
+-    if info.ip.trim().is_empty() {
+-        anyhow::bail!("{provider}: answered without an IP");
++    if info.ip.parse::<std::net::IpAddr>().is_err() {
++        return Err(GeoProviderFailure::new(provider,"invalid_ip"));
+     }
+     Ok(info)
+ }
+@@ -1057,9 +1166,33 @@ pub fn country_to_locale(cc: &str) -> &'static str {
  
  // ---- Test history ----
  
@@ -11338,7 +12001,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..7f24852ac42078540489637081a05866
      pub first_seen: String,
      pub last_seen: String,
      pub ip: String,
-@@ -1162,7 +1231,7 @@ pub(in crate::space) fn keep_test(entries: &mut Vec<TestSnapshot>, mut snap: Tes
+@@ -1162,7 +1295,7 @@ pub(in crate::space) fn keep_test(entries: &mut Vec<TestSnapshot>, mut snap: Tes
      // used to stay as they were first seen, so a proxy that had moved
      // went on claiming its old city.
      if let Some(last) = entries.last_mut() {
@@ -11347,7 +12010,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..7f24852ac42078540489637081a05866
              snap.first_seen = last.first_seen.clone();
              *last = snap.clone();
              return snap;
-@@ -1226,10 +1295,38 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
+@@ -1226,10 +1359,38 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
  /// other: the reach test, the relay test and the address the world sees are
  /// three separate questions to the same proxy.
  pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
@@ -11387,7 +12050,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..7f24852ac42078540489637081a05866
              Some(probe_udp(entry).await)
          } else {
              None
-@@ -1239,11 +1336,16 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1239,11 +1400,16 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      // else still shows how long a round trip through it takes.
      let geo_fut = async {
          let started = std::time::Instant::now();
@@ -11406,7 +12069,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..7f24852ac42078540489637081a05866
  
      // An answer from a geo service IS the proxy working: the request went out
      // through it and came back. So its address is kept whenever it arrived,
-@@ -1251,11 +1353,25 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1251,11 +1417,25 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      // probe asks for and carry everything else. The other way round, a probe
      // that reached a host is proof too, and the test then says so with no
      // address rather than calling a working proxy dead.
@@ -11434,7 +12097,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..7f24852ac42078540489637081a05866
      let (ip, country_code, country, region, city, isp, tz, lat, lng, provider) = match &geo_res {
          Ok(g) => (
              g.ip.clone(), g.country_code.clone(), g.country.clone(),
-@@ -1268,6 +1384,11 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1268,6 +1448,11 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      };
  
      TestSnapshot {
@@ -11446,7 +12109,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..7f24852ac42078540489637081a05866
          first_seen: String::new(),
          last_seen: now,
          ip,
-@@ -1282,7 +1403,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1282,7 +1467,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
          // Set whenever the proxy carried something, so "reached" always comes
          // with a time: the probe's own round trip, or the geo request's when
          // only that one got through.
@@ -11455,10 +12118,89 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..7f24852ac42078540489637081a05866
          udp_ms: udp_res
              .as_ref()
              .and_then(|r| r.as_ref().ok().copied()),
-@@ -1347,6 +1468,201 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
+@@ -1347,6 +1532,280 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
  mod tests {
      use super::*;
  
++    async fn geo_http_fixture(status: u16, body: &'static str) -> (ProxyEntry, tokio::task::JoinHandle<()>) {
++        use tokio::io::{AsyncReadExt, AsyncWriteExt};
++        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let addr=listener.local_addr().unwrap();
++        let worker=tokio::spawn(async move {
++            let (mut socket,_)=listener.accept().await.unwrap();
++            let mut head=Vec::new();
++            while !head.ends_with(b"\r\n\r\n") {head.push(socket.read_u8().await.unwrap());}
++            let reply=format!("HTTP/1.1 {status} Synthetic private response\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\nX-Private: hidden-provider-detail\r\n\r\n{body}",body.len());
++            socket.write_all(reply.as_bytes()).await.unwrap();
++        });
++        (serde_json::from_value(serde_json::json!({"id":"geo-safe-fixture","name":"Synthetic Geo", "kind":"http", "host":"127.0.0.1", "port":addr.port(), "username":"private-fixture-user","password":"private-fixture-secret"})).unwrap(),worker)
++    }
++
++    #[tokio::test]
++    async fn geo_provider_rejects_http_error_even_when_body_looks_successful() {
++        let (proxy,worker)=geo_http_fixture(429,r#"{"status":"success","query":"203.0.113.44","message":"private-provider-detail"}"#).await;
++        let result=geo_check_one(Some(&proxy),"ip-api.com").await;
++        worker.await.unwrap();
++        assert!(result.is_err(),"a non-success HTTP response cannot supply a trusted exit IP");
++        let error=result.unwrap_err();
++        assert_eq!(error.phase,"http_status");assert_eq!(error.http_status,Some(429));
++        let safe=serde_json::to_string(&error).unwrap();
++        for secret in ["private-provider-detail","hidden-provider-detail","private-fixture-user","private-fixture-secret"] {assert!(!safe.contains(secret));}
++    }
++
++    #[tokio::test]
++    async fn geo_provider_rejects_non_ip_exit_before_accepting_location() {
++        let (proxy,worker)=geo_http_fixture(200,r#"{"status":"success","query":"private-invalid-ip-value","country":"Synthetic"}"#).await;
++        let result=geo_check_one(Some(&proxy),"ip-api.com").await;
++        worker.await.unwrap();
++        assert!(result.is_err(),"a nonempty string is not proof of an exit IP");
++        let error=result.unwrap_err();
++        assert_eq!(error.phase,"invalid_ip");assert_eq!(error.http_status,None);
++        assert!(!serde_json::to_string(&error).unwrap().contains("private-invalid-ip-value"));
++    }
++
++    #[tokio::test]
++    async fn geo_provider_failure_classes_never_copy_response_text_or_credentials() {
++        for (body,expected) in [("private-non-json-body","json"),(r#"{"status":"fail","message":"private-provider-reason"}"#,"provider_refused")] {
++            let (proxy,worker)=geo_http_fixture(200,body).await;
++            let error=geo_check_one(Some(&proxy),"ip-api.com").await.unwrap_err();
++            worker.await.unwrap();
++            assert_eq!(error.phase,expected);assert_eq!(error.http_status,None);
++            let safe=format!("{error:?} {error}");
++            for secret in [body,"private-provider-reason","private-fixture-user","private-fixture-secret"] {assert!(!safe.contains(secret));}
++        }
++        let (proxy,worker)=geo_http_fixture(200,r#"{"status":"success","query":"2001:db8::44","country":"Synthetic"}"#).await;
++        let info=geo_check_one(Some(&proxy),"ip-api.com").await.unwrap();
++        worker.await.unwrap();
++        assert_eq!(info.ip,"2001:db8::44");
++    }
++
++    #[tokio::test]
++    async fn geo_provider_all_failed_keeps_typed_safe_source_results() {
++        use tokio::io::{AsyncReadExt,AsyncWriteExt};
++        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let addr=listener.local_addr().unwrap();
++        let worker=tokio::spawn(async move {
++            let mut clients=tokio::task::JoinSet::new();
++            loop {tokio::select! {
++                _=clients.join_next(),if !clients.is_empty()=>{},
++                accepted=listener.accept()=>{let (mut socket,_)=accepted.unwrap();clients.spawn(async move {
++                    let mut head=Vec::new();while !head.ends_with(b"\r\n\r\n") {let Ok(byte)=socket.read_u8().await else{return;};head.push(byte);}
++                    let status=if head.starts_with(b"CONNECT "){502}else{429};
++                    let _=socket.write_all(format!("HTTP/1.1 {status} private-provider-reason\r\nX-Private: hidden-provider-detail\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes()).await;
++                });}
++            }}
++        });
++        let proxy=serde_json::from_value(serde_json::json!({"id":"geo-aggregate-fixture","name":"Synthetic", "kind":"http", "host":"127.0.0.1", "port":addr.port(), "username":"private-fixture-user","password":"private-fixture-secret"})).unwrap();
++        let error=geo_check_via(Some(&proxy),Some("ip-api.com".into())).await.unwrap_err();
++        worker.abort();let _=worker.await;
++        let typed=error.downcast_ref::<GeoLookupError>().expect("all provider failures retain the typed aggregate");
++        assert_eq!(typed.failures.len(),3);
++        assert!(typed.failures.iter().any(|failure|failure.provider=="ip-api.com"&&failure.phase=="http_status"&&failure.http_status==Some(429)));
++        let safe=format!("{error:#} {}",serde_json::to_string(typed).unwrap());
++        for secret in ["private-provider-reason","hidden-provider-detail","private-fixture-user","private-fixture-secret","127.0.0.1"] {assert!(!safe.contains(secret));}
++    }
++
 +    #[test]
 +    fn equal_exit_history_does_not_merge_distinct_actual_proxy_routes() {
 +        let baseline = serde_json::json!({
@@ -11671,7 +12413,7 @@ index f926201a97976a34dfb2bcf43653330890ab42a6..5f66d12d169b0a218ec298ade5c7b86b
          name: stored
              .config
 diff --git a/src-tauri/src/space/mod.rs b/src-tauri/src/space/mod.rs
-index 6bdf53c930d31f5a23d1c54dc90fa578bac7a719..05401f9d49d806dc0c71d15a319991ab490e96f5 100644
+index 6bdf53c930d31f5a23d1c54dc90fa578bac7a719..f62a1850e42b5f5fe36af78e5e144396bf691363 100644
 --- a/src-tauri/src/space/mod.rs
 +++ b/src-tauri/src/space/mod.rs
 @@ -79,9 +79,7 @@ impl Ticket {
@@ -11766,7 +12508,7 @@ index 6bdf53c930d31f5a23d1c54dc90fa578bac7a719..05401f9d49d806dc0c71d15a319991ab
 +        can_send_udp_directly, country_to_locale, country_to_timezone,
 +        parse_bulk, parse_single, GeoInfo, ProxyEntry, ProxyKind, TestSnapshot,
      };
-+    pub(crate) use local::{probe as probe_on_route, geo_check_via as geo_check_on_route, Socks5ProbeError, HttpProbeError};
++    pub(crate) use local::{probe as probe_on_route, geo_check_via as geo_check_on_route, Socks5ProbeError, HttpProbeError, GeoLookupError, GeoProviderFailure};
 +
 +    pub async fn probe(entry: &ProxyEntry) -> Result<u128> {
 +        let settings = crate::proxy_chain::saved_settings()?;
@@ -14181,7 +14923,7 @@ index 21cd2afa3542896c92ceb89852819af943113846..5b2d56c7bd5fc39c5c799ab57f31e80a
   *  the change, not what runs. A failed save changes nothing, so it does not
   *  count (Pair 34 ruling, M3); one still on its way makes a read unsure. */
 diff --git a/src/entities/settings/model/types.ts b/src/entities/settings/model/types.ts
-index 8f97bc0f390b920d84c69c8bb3b9c1a7e79df135..940f07591d3b73ef904317bc3496e059f224643b 100644
+index 8f97bc0f390b920d84c69c8bb3b9c1a7e79df135..f7a4b26048b90f25cb28e6751b68ad01df4b3155 100644
 --- a/src/entities/settings/model/types.ts
 +++ b/src/entities/settings/model/types.ts
 @@ -1,4 +1,8 @@
@@ -14193,7 +14935,7 @@ index 8f97bc0f390b920d84c69c8bb3b9c1a7e79df135..940f07591d3b73ef904317bc3496e059
    browser_path: string | null;
    theme: string;
    geo_checker?: string | null;
-@@ -19,8 +23,101 @@ export type Settings = {
+@@ -19,8 +23,114 @@ export type Settings = {
    minimize_to_tray?: boolean;
    /** Appended to every launch, one per line. Applied last, so a repeat wins. */
    extra_args?: string;
@@ -14248,6 +14990,13 @@ index 8f97bc0f390b920d84c69c8bb3b9c1a7e79df135..940f07591d3b73ef904317bc3496e059
 +  latency_ms?: number | null;
 +  error_code?: string | null;
 +  error_message?: string | null;
++  /** Safe fields from a typed proxy reply, never a raw response or credential. */
++  error_details?: {
++    protocol: "http" | "socks5";
++    phase: "authentication" | "connect";
++    response_code: number;
++    target?: string;
++  } | null;
 +};
 +
 +export type ProxyChainTestResult = {
@@ -14279,6 +15028,12 @@ index 8f97bc0f390b920d84c69c8bb3b9c1a7e79df135..940f07591d3b73ef904317bc3496e059
 +  } | null;
 +  exit_error?: string | null;
 +  exit_error_code?: string | null;
++  /** Fixed provider names and failure categories; no response bodies or URLs. */
++  exit_error_details?: {
++    provider: string;
++    phase?: string;
++    http_status?: number;
++  }[] | null;
 +  total_ms?: number | null;
 +  tested_at: string;
 +};
@@ -15225,10 +15980,10 @@ index ecd3342203ac27f52876d2dc342a567ce450b250..547d0c5891a2912255cdc0e6c83f06c4
      : s.badFields.length > 0 ? t("profileForm.numberInvalid")
 diff --git a/src/features/profile-form/ui/ProfileRouteResult.tsx b/src/features/profile-form/ui/ProfileRouteResult.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..946dbafa4d58749301e63aa57e27befb01715521
+index 0000000000000000000000000000000000000000..04f4c355e73bee7d3112269daae5fd7f644f8f12
 --- /dev/null
 +++ b/src/features/profile-form/ui/ProfileRouteResult.tsx
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,72 @@
 +import type { ProxyChainStage, ProxyChainTestResult } from "../../../entities/settings";
 +import { useT } from "../../../shared/i18n";
 +import { fmtCountry } from "../../../shared/lib/format";
@@ -15239,9 +15994,31 @@ index 0000000000000000000000000000000000000000..946dbafa4d58749301e63aa57e27befb
 +
 +export function ProfileRouteResult({ result, route }: { result: ProxyChainTestResult; route?: ProfileProxyRoute }) {
 +  const t = useT();
++  const scope = route?.mode === "proxy" ? "proxy" : route?.mode === "system" ? "system" : undefined;
++  const errorText = (error?: ProxyChainStage | null) => proxyChainErrorText(t, error, scope);
++  const firstAddressUsed = !route || route.mode === "system" || route.mode === "chain" && route.first.mode !== "direct";
++  const assignedAddressUsed = !route || route.mode === "proxy" || route.mode === "chain" && route.second.mode === "proxy";
 +  const stage = (value?: ProxyChainStage | null) => value?.state === "ok"
 +    ? value.latency_ms != null ? t("proxyChain.stageLatency", { ms: value.latency_ms }) : t("proxyChain.stageOk")
 +    : value?.state === "failed" ? t("proxyChain.stageFailed") : t("profileRoute.stageUnused");
++  const exitIp = result.exit_error ? null : result.exit_ip;
++  const geoFailure = (phase?: string, httpStatus?: number) => {
++    switch (phase) {
++      case "http_status": return Number.isInteger(httpStatus) && httpStatus! >= 100 && httpStatus! <= 599
++        ? t("profileRoute.geoHttpStatus", { status: httpStatus! }) : t("profileRoute.geoUnknown");
++      case "timeout": return t("profileRoute.geoTimeout");
++      case "connect": return t("profileRoute.geoConnect");
++      case "tls": return t("profileRoute.geoTls");
++      case "json": return t("profileRoute.geoJson");
++      case "response_body": return t("profileRoute.geoResponseBody");
++      case "redirect": return t("profileRoute.geoRedirect");
++      case "configuration": return t("profileRoute.geoConfiguration");
++      case "request": return t("profileRoute.geoRequest");
++      case "provider_refused": return t("profileRoute.geoRefused");
++      case "invalid_ip": return t("profileRoute.geoInvalidIp");
++      default: return t("profileRoute.geoUnknown");
++    }
++  };
 +  const geo = result.exit_ip && !result.exit_error && result.exit_geo?.ip === result.exit_ip ? result.exit_geo : null;
 +  const location = geo ? [...new Set([geo.country_code ? fmtCountry(geo.country_code) : geo.country, geo.region, geo.city].filter(Boolean))].join(", ") : "";
 +  const rows = result.local_network ? [{ label: t("profileRoute.directLabel"), value: result.local_network }]
@@ -15253,16 +16030,30 @@ index 0000000000000000000000000000000000000000..946dbafa4d58749301e63aa57e27befb
 +    <dl className="m-0 flex flex-col gap-2">
 +      {rows.map(({ label, value }) => <div key={label} className="flex flex-wrap gap-2">
 +        <dt>{label}</dt><dd className={`m-0 ${value?.state === "failed" ? "text-error-text" : "text-text-strong-950"}`}>
-+          {stage(value)}{proxyChainErrorText(t, value) && <span className="block break-words">{proxyChainErrorText(t, value)}</span>}
++          {stage(value)}{errorText(value) && <span className="block break-words">{errorText(value)}</span>}
++          {value?.state === "failed" && value.error_details && <span data-profile-route-protocol className="block break-words">
++            {value.error_details.phase === "authentication"
++              ? t("profileRoute.protocolAuthReply", { protocol: value.error_details.protocol === "socks5" ? "SOCKS5" : "HTTP", code: value.error_details.response_code })
++              : t("profileRoute.protocolConnectReply", { protocol: value.error_details.protocol === "socks5" ? "SOCKS5" : "HTTP", code: value.error_details.response_code })}
++            {value.error_details.phase === "connect" && value.error_details.target && <span className="block">{t("profileRoute.probeTarget", { target: value.error_details.target })}</span>}
++          </span>}
 +        </dd>
 +      </div>)}
-+      {result.proxy_address && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.firstProxyAddress")}</dt><dd className="mono m-0 break-all">{result.proxy_address}</dd></div>}
-+      {result.profile_proxy_address && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.profileProxyAddress")}</dt><dd className="mono m-0 break-all">{result.profile_proxy_address}</dd></div>}
-+      <div className="flex flex-wrap gap-2" data-profile-route-exit><dt>{t("proxyChain.exitIp")}</dt><dd className="mono m-0 break-all">{result.exit_ip || t("proxyChain.exitUnavailable")}</dd></div>
-+      <div className="flex flex-wrap gap-2" data-profile-route-location><dt>{t("proxyChain.exitLocation")}</dt><dd className="m-0 break-words">{location || (result.exit_ip ? t("proxyChain.locationNotReturned") : t("proxyChain.exitUnavailable"))}</dd></div>
++      {firstAddressUsed && result.proxy_address && <div className="flex flex-wrap gap-2"><dt>{route?.mode === "system" ? t("profileRoute.systemAddress") : t("proxyChain.firstProxyAddress")}</dt><dd className="mono m-0 break-all">{result.proxy_address}</dd></div>}
++      {assignedAddressUsed && result.profile_proxy_address && <div className="flex flex-wrap gap-2"><dt>{route?.mode === "proxy" ? t("profileRoute.proxyAddress") : t("proxyChain.profileProxyAddress")}</dt><dd className="mono m-0 break-all">{result.profile_proxy_address}</dd></div>}
++      <div className="flex flex-wrap gap-2" data-profile-route-exit><dt>{t("proxyChain.exitIp")}</dt><dd className="mono m-0 break-all">{exitIp || t("proxyChain.exitUnavailable")}</dd></div>
++      <div className="flex flex-wrap gap-2" data-profile-route-location><dt>{t("proxyChain.exitLocation")}</dt><dd className="m-0 break-words">{location || (exitIp ? t("proxyChain.locationNotReturned") : t("proxyChain.exitUnavailable"))}</dd></div>
 +      {result.tested_at && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.testedAt")}</dt><dd className="m-0">{fmtTs(result.tested_at)}</dd></div>}
 +    </dl>
-+    {result.exit_error && <p className="m-0 break-words text-error-text">{proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error })}</p>}
++    {result.exit_error && <p className="m-0 break-words text-error-text">{proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error }, scope)}</p>}
++    {result.exit_error && result.exit_error_details?.length ? <ul data-profile-route-geo-details className="m-0 flex list-none flex-col gap-2 p-0 text-error-text">
++      {result.exit_error_details.map((failure, index) => <li key={index} className="break-words">
++        {t("profileRoute.geoSourceFailure", {
++          provider: ["ip-api.com", "ipapi.co", "ipwho.is"].includes(failure.provider) ? failure.provider : t("profileRoute.geoUnknownSource"),
++          reason: geoFailure(failure.phase, failure.http_status),
++        })}
++      </li>)}
++    </ul> : null}
 +  </div>;
 +}
 diff --git a/src/features/profile-form/ui/ProxyTab.tsx b/src/features/profile-form/ui/ProxyTab.tsx
@@ -16457,7 +17248,7 @@ index 0000000000000000000000000000000000000000..c2bf0d90c6a21439ec7528289389ab90
 +  }, [kind, allIds, visibleIds, selected, groupOf, onReorder, dragHandle, resetSavedOrder, t, scope]);
 +}
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..7b3ddd58942bde11ce45eb88b369e32e65abc1b2 100644
+index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..eca3d955edbaec3fd0c1cc9a1cd9c9028e710345 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
 @@ -1,4 +1,26 @@
@@ -16598,7 +17389,7 @@ index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..7b3ddd58942bde11ce45eb88b369e32e
    "settings.tabProfiles": "Profile defaults",
    "settings.tabStorage": "Storage",
    "settings.tabSync": "Sync",
-@@ -3481,5 +3586,134 @@
+@@ -3481,5 +3586,164 @@
    "sync.guideWhere": "Run it on a computer that stays on and that all your computers can reach: a small VPS or a home server.",
    "sync.syncFirst": "Sync first",
    "sync.unsentMany": "{n} changes made here haven’t reached the server: they stay on this computer only.",
@@ -16732,10 +17523,40 @@ index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..7b3ddd58942bde11ce45eb88b369e32e
 +  "profileRoute.fallbackHelp": "After a first-hop failure, verify a direct connection to the same assigned proxy. If that also fails, stop; websites are never reached directly.",
 +  "profileRoute.invalid": "This profile’s saved route is invalid. Choose its connection again before testing or saving.",
 +  "profileRoute.resetInvalid": "Choose connection again",
-+  "proxyChain.errorFirstTls": "First hop: the HTTPS proxy could not establish a verified TLS connection. Check its protocol, certificate and host name."
++  "proxyChain.errorFirstTls": "First hop: the HTTPS proxy could not establish a verified TLS connection. Check its protocol, certificate and host name.",
++  "profileRoute.proxyAddress": "Proxy address",
++  "profileRoute.systemAddress": "System proxy address",
++  "profileRoute.errorProxyConnect": "The selected proxy could not connect to the test target. Check its address, port, access restrictions and service status.",
++  "profileRoute.errorProxyAuth": "The selected proxy refused authentication. Check its credentials, plan and allowed source IPs or regions; this reply alone does not identify which restriction applies.",
++  "profileRoute.errorProxyTimeout": "The selected proxy did not complete authentication or the target connection in time. Check its service status and retry.",
++  "profileRoute.errorProxyTls": "The selected HTTPS proxy could not establish a verified TLS connection. Check its protocol, certificate and host name.",
++  "profileRoute.errorProxyKind": "Choose a supported SOCKS5, HTTP or HTTPS proxy. The saved proxy was not changed.",
++  "profileRoute.errorProxyGeo": "The selected proxy connected, but its exit IP and location lookup failed. Retry; no direct lookup was made.",
++  "profileRoute.errorSystemConnect": "The system proxy could not connect to the test target. Check its software, address, port and target routing rules.",
++  "profileRoute.errorSystemAuth": "The system proxy requires or refused authentication. Check its credentials and access restrictions.",
++  "profileRoute.errorSystemTimeout": "The system proxy connection timed out. Check its service status and target routing rules, then retry.",
++  "profileRoute.errorSystemProtocol": "The system proxy interrupted the connection or returned an invalid reply. Check its protocol and port, then retry.",
++  "profileRoute.errorSystemTls": "The system HTTPS proxy could not establish a verified TLS connection. Check its protocol, certificate and host name.",
++  "profileRoute.protocolConnectReply": "{protocol} CONNECT response: {code}.",
++  "profileRoute.protocolAuthReply": "{protocol} authentication response: {code}.",
++  "profileRoute.probeTarget": "Test target: {target}.",
++  "profileRoute.geoSourceFailure": "{provider}: {reason}",
++  "profileRoute.geoHttpStatus": "HTTP response {status}",
++  "profileRoute.geoTimeout": "Request timed out",
++  "profileRoute.geoConnect": "Connection failed",
++  "profileRoute.geoTls": "TLS or certificate verification failed",
++  "profileRoute.geoJson": "Response could not be parsed",
++  "profileRoute.geoRefused": "Provider refused the lookup",
++  "profileRoute.geoInvalidIp": "No valid exit IP returned",
++  "profileRoute.geoUnknown": "Lookup failed",
++  "profileRoute.geoUnknownSource": "Unknown source",
++  "profileRoute.geoResponseBody": "Response could not be read",
++  "profileRoute.geoRedirect": "Redirect failed",
++  "profileRoute.geoConfiguration": "Lookup configuration failed",
++  "profileRoute.geoRequest": "Request failed"
  }
 diff --git a/src/shared/i18n/locales/ru.json b/src/shared/i18n/locales/ru.json
-index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..64061de9552607ca90d7203c10070000004806d6 100644
+index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..39e91d8533589ba487ed68b750f36786080068e6 100644
 --- a/src/shared/i18n/locales/ru.json
 +++ b/src/shared/i18n/locales/ru.json
 @@ -1,4 +1,26 @@
@@ -16876,7 +17697,7 @@ index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..64061de9552607ca90d7203c10070000
    "settings.tabProfiles": "Новые профили",
    "settings.tabStorage": "Хранилище",
    "settings.tabSync": "Синхронизация",
-@@ -3481,5 +3586,134 @@
+@@ -3481,5 +3586,164 @@
    "sync.guideWhere": "Запускайте его на компьютере, который всегда включён и доступен всем вашим компьютерам: на небольшом VPS или домашнем сервере.",
    "sync.syncFirst": "Сначала синхронизировать",
    "sync.unsentMany": "{n} {n|изменение, сделанное здесь, не дошло|изменения, сделанные здесь, не дошли|изменений, сделанных здесь, не дошли} до сервера: они останутся только на этом компьютере.",
@@ -17010,10 +17831,40 @@ index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..64061de9552607ca90d7203c10070000
 +  "profileRoute.fallbackHelp": "После ошибки первого перехода проверяет прямое соединение с тем же назначенным прокси. При повторной ошибке останавливается, не обращаясь к сайтам напрямую.",
 +  "profileRoute.invalid": "Сохранённый маршрут профиля неверен. Выберите соединение заново перед тестом или сохранением.",
 +  "profileRoute.resetInvalid": "Выбрать соединение заново",
-+  "proxyChain.errorFirstTls": "Первый узел: HTTPS-прокси не установил TLS-соединение с проверенным сертификатом. Проверьте протокол, сертификат и имя узла."
++  "proxyChain.errorFirstTls": "Первый узел: HTTPS-прокси не установил TLS-соединение с проверенным сертификатом. Проверьте протокол, сертификат и имя узла.",
++  "profileRoute.proxyAddress": "Адрес прокси",
++  "profileRoute.systemAddress": "Адрес системного прокси",
++  "profileRoute.errorProxyConnect": "Выбранный прокси не подключился к цели проверки. Проверьте адрес, порт, ограничения доступа и состояние сервиса.",
++  "profileRoute.errorProxyAuth": "Выбранный прокси отклонил аутентификацию. Проверьте учётные данные, тариф и допустимые исходные IP или регионы; этот ответ не определяет конкретное ограничение.",
++  "profileRoute.errorProxyTimeout": "Выбранный прокси не завершил аутентификацию или подключение к цели вовремя. Проверьте состояние сервиса и повторите.",
++  "profileRoute.errorProxyTls": "Выбранный HTTPS-прокси не установил TLS-соединение с проверенным сертификатом. Проверьте протокол, сертификат и имя узла.",
++  "profileRoute.errorProxyKind": "Выберите поддерживаемый SOCKS5-, HTTP- или HTTPS-прокси. Сохранённый прокси не изменён.",
++  "profileRoute.errorProxyGeo": "Выбранный прокси подключился, но IP выхода и местоположение получить не удалось. Повторите; прямой запрос не выполнялся.",
++  "profileRoute.errorSystemConnect": "Системный прокси не подключился к цели проверки. Проверьте программу, адрес, порт и правила маршрутизации к цели.",
++  "profileRoute.errorSystemAuth": "Системный прокси требует или отклонил аутентификацию. Проверьте его учётные данные и ограничения доступа.",
++  "profileRoute.errorSystemTimeout": "Истекло время соединения с системным прокси. Проверьте состояние сервиса и правила маршрутизации к цели, затем повторите.",
++  "profileRoute.errorSystemProtocol": "Системный прокси прервал соединение или вернул неверный ответ. Проверьте протокол и порт, затем повторите.",
++  "profileRoute.errorSystemTls": "Системный HTTPS-прокси не установил TLS-соединение с проверенным сертификатом. Проверьте протокол, сертификат и имя узла.",
++  "profileRoute.protocolConnectReply": "Ответ {protocol} CONNECT: {code}.",
++  "profileRoute.protocolAuthReply": "Ответ аутентификации {protocol}: {code}.",
++  "profileRoute.probeTarget": "Цель проверки: {target}.",
++  "profileRoute.geoSourceFailure": "{provider}: {reason}",
++  "profileRoute.geoHttpStatus": "Ответ HTTP {status}",
++  "profileRoute.geoTimeout": "Время запроса истекло",
++  "profileRoute.geoConnect": "Соединение не удалось",
++  "profileRoute.geoTls": "Ошибка TLS или проверки сертификата",
++  "profileRoute.geoJson": "Не удалось разобрать ответ",
++  "profileRoute.geoRefused": "Сервис отклонил запрос",
++  "profileRoute.geoInvalidIp": "Не получен допустимый IP выхода",
++  "profileRoute.geoUnknown": "Запрос IP выхода не удался",
++  "profileRoute.geoUnknownSource": "Неизвестный источник",
++  "profileRoute.geoResponseBody": "Не удалось прочитать ответ",
++  "profileRoute.geoRedirect": "Ошибка перенаправления",
++  "profileRoute.geoConfiguration": "Ошибка настройки запроса",
++  "profileRoute.geoRequest": "Запрос не удался"
  }
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..2eb162971eec3a23ca84caab3bbd2458d1230113 100644
+index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..8ed513f0ae75690cc0d8a3af6b4666aeb99504a1 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
 @@ -1,4 +1,26 @@
@@ -17154,7 +18005,7 @@ index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..2eb162971eec3a23ca84caab3bbd2458
    "settings.tabProfiles": "配置默认值",
    "settings.tabStorage": "存储",
    "settings.tabSync": "同步",
-@@ -3481,5 +3586,134 @@
+@@ -3481,5 +3586,164 @@
    "sync.guideWhere": "在一台始终开机、你所有电脑都能访问的电脑上运行它：小型 VPS 或家用服务器。",
    "sync.syncFirst": "先同步",
    "sync.unsentMany": "这里做的 {n} 项更改还没送达服务器：它们只会留在这台电脑上。",
@@ -17288,7 +18139,37 @@ index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..2eb162971eec3a23ca84caab3bbd2458
 +  "profileRoute.fallbackHelp": "第一层路线失败后，验证直接连接原绑定代理；如果仍失败则停止，不直接访问网站。",
 +  "profileRoute.invalid": "此配置保存的连接方式无效，请重新选择后再测试或保存。",
 +  "profileRoute.resetInvalid": "重新选择连接方式",
-+  "proxyChain.errorFirstTls": "第一层：HTTPS 代理无法建立通过证书验证的 TLS 连接，请检查协议、证书和主机名。"
++  "proxyChain.errorFirstTls": "第一层：HTTPS 代理无法建立通过证书验证的 TLS 连接，请检查协议、证书和主机名。",
++  "profileRoute.proxyAddress": "代理地址",
++  "profileRoute.systemAddress": "系统代理地址",
++  "profileRoute.errorProxyConnect": "所选代理无法连接检测目标。请检查代理地址、端口、访问限制和服务状态。",
++  "profileRoute.errorProxyAuth": "所选代理拒绝认证。请检查账号、密码、套餐及允许的来源 IP 或地区；该响应不能确定具体是哪项限制。",
++  "profileRoute.errorProxyTimeout": "所选代理未能及时完成认证或目标连接。请检查服务状态后重试。",
++  "profileRoute.errorProxyTls": "所选 HTTPS 代理无法建立通过证书验证的 TLS 连接。请检查协议、证书和主机名。",
++  "profileRoute.errorProxyKind": "请选择受支持的 SOCKS5、HTTP 或 HTTPS 代理，原代理资料未被修改。",
++  "profileRoute.errorProxyGeo": "所选代理已连接，但出口 IP 和地区查询失败。请重试；本次没有改为直连查询。",
++  "profileRoute.errorSystemConnect": "系统代理无法连接检测目标。请检查代理软件、地址、端口和目标分流规则。",
++  "profileRoute.errorSystemAuth": "系统代理要求认证或拒绝认证。请检查它的凭据和访问限制。",
++  "profileRoute.errorSystemTimeout": "系统代理连接超时。请检查服务状态和目标分流规则后重试。",
++  "profileRoute.errorSystemProtocol": "系统代理中断连接或返回了无效响应。请检查协议和端口后重试。",
++  "profileRoute.errorSystemTls": "系统 HTTPS 代理无法建立通过证书验证的 TLS 连接。请检查协议、证书和主机名。",
++  "profileRoute.protocolConnectReply": "{protocol} CONNECT 返回：{code}。",
++  "profileRoute.protocolAuthReply": "{protocol} 认证返回：{code}。",
++  "profileRoute.probeTarget": "检测目标：{target}。",
++  "profileRoute.geoSourceFailure": "{provider}：{reason}",
++  "profileRoute.geoHttpStatus": "HTTP 返回 {status}",
++  "profileRoute.geoTimeout": "请求超时",
++  "profileRoute.geoConnect": "连接失败",
++  "profileRoute.geoTls": "TLS 或证书校验失败",
++  "profileRoute.geoJson": "响应解析失败",
++  "profileRoute.geoRefused": "查询服务拒绝请求",
++  "profileRoute.geoInvalidIp": "未返回有效出口 IP",
++  "profileRoute.geoUnknown": "出口查询失败",
++  "profileRoute.geoUnknownSource": "未知来源",
++  "profileRoute.geoResponseBody": "响应读取失败",
++  "profileRoute.geoRedirect": "重定向失败",
++  "profileRoute.geoConfiguration": "查询配置失败",
++  "profileRoute.geoRequest": "请求失败"
  }
 diff --git a/src/shared/lib/analytics.ts b/src/shared/lib/analytics.ts
 index 3bcb604d41c995db08f9c0ec04009327ba1e7af1..62a2d628894387ff482cdd8c3b3f03ca15b57f6a 100644
@@ -17698,10 +18579,10 @@ index 0000000000000000000000000000000000000000..7d39b5fd3c813ebab380d3308fa722b0
 +}
 diff --git a/src/shared/lib/proxyChainError.test.ts b/src/shared/lib/proxyChainError.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..a0e14763b55b7c180523f951c137b20224ebb452
+index 0000000000000000000000000000000000000000..a0964c7f78bf44276f3ff20d51c33c56a9290379
 --- /dev/null
 +++ b/src/shared/lib/proxyChainError.test.ts
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,48 @@
 +import { test } from "node:test";
 +import assert from "node:assert/strict";
 +import { proxyChainErrorFromText, proxyChainErrorText } from "./proxyChainError.ts";
@@ -17728,18 +18609,62 @@ index 0000000000000000000000000000000000000000..a0e14763b55b7c180523f951c137b202
 +  assert.equal(proxyChainErrorText(key, { error_message: "Safe legacy detail." }), "Safe legacy detail.");
 +  assert.equal(proxyChainErrorText(key, null), undefined);
 +});
++
++test("single selected-proxy errors do not refer to a chain or its first hop", () => {
++  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_connect_failed" }, "proxy"), "profileRoute.errorProxyConnect");
++  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_auth_failed" }, "proxy"), "profileRoute.errorProxyAuth");
++  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_timeout" }, "proxy"), "profileRoute.errorProxyTimeout");
++  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_tls_failed" }, "proxy"), "profileRoute.errorProxyTls");
++  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_geo_failed" }, "proxy"), "profileRoute.errorProxyGeo");
++  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_kind_unsupported" }, "proxy"), "profileRoute.errorProxyKind");
++});
++
++test("single system-proxy errors identify the system connection without hop numbers", () => {
++  assert.equal(proxyChainErrorText(key, { code: "system_proxy_connect_refused" }, "system"), "profileRoute.errorSystemConnect");
++  assert.equal(proxyChainErrorText(key, { code: "system_proxy_auth_failed" }, "system"), "profileRoute.errorSystemAuth");
++  assert.equal(proxyChainErrorText(key, { code: "system_proxy_timeout" }, "system"), "profileRoute.errorSystemTimeout");
++  assert.equal(proxyChainErrorText(key, { code: "system_proxy_protocol_error" }, "system"), "profileRoute.errorSystemProtocol");
++  assert.equal(proxyChainErrorText(key, { code: "system_proxy_tls_failed" }, "system"), "profileRoute.errorSystemTls");
++  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_geo_failed" }, "system"), "proxyChain.systemGeoFailed");
++});
++
++test("explicit local-network failure is translated without inventing a proxy layer", () => {
++  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_local_network_failed" }), "proxyChain.localGeoFailed");
++});
 diff --git a/src/shared/lib/proxyChainError.ts b/src/shared/lib/proxyChainError.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..f8647488049704172868f51f3950e17ea9768f05
+index 0000000000000000000000000000000000000000..dd8f3e1039100239722d1f6fc3ad2d94a1c9d8ea
 --- /dev/null
 +++ b/src/shared/lib/proxyChainError.ts
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,90 @@
 +type ChainError = { code?: string | null; error_code?: string | null; message?: string | null; error_message?: string | null };
 +
 +/** Shared by settings, proxy history and launch failures. Unknown safe backend
 + * errors keep their own message rather than becoming an unrelated offline error. */
-+export function proxyChainErrorText(t: (key: string) => string, error?: ChainError | null): string | undefined {
-+  switch (error?.code ?? error?.error_code) {
++export function proxyChainErrorText(t: (key: string) => string, error?: ChainError | null, scope?: "proxy" | "system"): string | undefined {
++  const code = error?.code ?? error?.error_code;
++  if (scope === "proxy") switch (code) {
++    case "proxy_chain_profile_auth_failed": return t("profileRoute.errorProxyAuth");
++    case "proxy_chain_profile_timeout": return t("profileRoute.errorProxyTimeout");
++    case "proxy_chain_profile_connect_failed":
++    case "proxy_chain_profile_failed": return t("profileRoute.errorProxyConnect");
++    case "proxy_chain_profile_tls_failed":
++    case "proxy_chain_profile_tls_timeout": return t("profileRoute.errorProxyTls");
++    case "proxy_chain_profile_kind_unsupported": return t("profileRoute.errorProxyKind");
++    case "proxy_chain_profile_geo_failed": return t("profileRoute.errorProxyGeo");
++  }
++  if (scope === "system") switch (code) {
++    case "system_proxy_connect_failed":
++    case "system_proxy_connect_refused": return t("profileRoute.errorSystemConnect");
++    case "system_proxy_auth_failed": return t("profileRoute.errorSystemAuth");
++    case "system_proxy_timeout": return t("profileRoute.errorSystemTimeout");
++    case "system_proxy_io_failed":
++    case "system_proxy_protocol_error": return t("profileRoute.errorSystemProtocol");
++    case "system_proxy_tls_failed":
++    case "system_proxy_tls_timeout": return t("profileRoute.errorSystemTls");
++    case "proxy_chain_profile_geo_failed": return t("proxyChain.systemGeoFailed");
++  }
++  switch (code) {
 +    case "proxy_chain_routes_failed": return t("proxyChain.errorRoutesFailed");
 +    case "proxy_chain_same_proxy_failed": return t("proxyChain.errorSameProxyFailed");
 +    case "proxy_chain_policy_invalid": return t("proxyChain.errorPolicy");
@@ -17774,6 +18699,7 @@ index 0000000000000000000000000000000000000000..f8647488049704172868f51f3950e17e
 +    case "proxy_chain_profile_required": return t("proxyChain.errorProfileRequired");
 +    case "proxy_chain_stream_closed":
 +    case "proxy_chain_idle_timeout": return t("proxyChain.errorTunnelClosed");
++    case "proxy_chain_local_network_failed":
 +    case "proxy_chain_local_geo_failed": return t("proxyChain.localGeoFailed");
 +    case "proxy_chain_system_geo_failed": return t("proxyChain.systemGeoFailed");
 +    case "proxy_chain_profile_geo_failed": return t("proxyChain.profileGeoFailed");
