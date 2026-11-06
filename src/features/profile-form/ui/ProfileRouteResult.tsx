@@ -4,11 +4,14 @@ import { fmtCountry } from "../../../shared/lib/format";
 import { fmtTs } from "../../../shared/lib/utils";
 import { proxyChainErrorText } from "../../../shared/lib/proxyChainError";
 import type { ProfileProxyRoute } from "../../../shared/model/proxyChain";
+import { normalizedProfileRoute } from "../../../shared/model/proxyChain";
 import { ChainRouteSummary } from "../../../shared/ui/ChainRouteSummary";
 
-export function ProfileRouteResult({ result, route }: { result: ProxyChainTestResult; route?: ProfileProxyRoute }) {
+export function ProfileRouteResult({ result, route: selectedRoute }: { result: ProxyChainTestResult; route?: ProfileProxyRoute }) {
   const t = useT();
-  const scope = route?.mode === "proxy" ? "proxy" : route?.mode === "system" ? "system" : undefined;
+  const route = normalizedProfileRoute(selectedRoute);
+  const onlyFirst = route?.mode === "chain" && route.second.mode === "direct" ? route.first.mode : undefined;
+  const scope = route?.mode === "proxy" || onlyFirst === "proxy" ? "proxy" : route?.mode === "system" || onlyFirst === "system" ? "system" : undefined;
   const errorText = (error?: ProxyChainStage | null) => proxyChainErrorText(t, error, scope);
   const firstAddressUsed = !route || route.mode === "system" || route.mode === "chain" && route.first.mode !== "direct";
   const assignedAddressUsed = !route || route.mode === "proxy" || route.mode === "chain" && route.second.mode === "proxy";

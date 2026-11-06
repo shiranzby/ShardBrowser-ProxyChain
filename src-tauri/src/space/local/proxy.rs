@@ -1378,13 +1378,14 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
             result
         }
         Err(error) => {
+            let partial=crate::proxy_chain::partial_verification(&error);
             let error = error.downcast::<crate::proxy_chain::error::ChainError>().unwrap_or_else(|_| {
                 crate::proxy_chain::error::ChainError::new("proxy_chain_settings_unreadable", "configuration", "The proxy-chain settings could not be read. Repair the settings before testing or starting a profile.")
             });
             TestSnapshot {
             transport: Some("proxy_chain".into()), udp_state: Some("unsupported_by_chain".into()),
-            route: None, first_hop_error_code: error.first_hop_error_code.map(str::to_owned),
-            first_seen: String::new(), last_seen: unix_now(), ip: String::new(), country_code: String::new(), country: String::new(), region: String::new(), city: String::new(), isp: String::new(), timezone: String::new(), latitude: 0.0, longitude: 0.0, tcp_ms: None, udp_ms: None, udp_error: None, geo_error: Some(error.message.clone()), chain_error: Some(error.into()), provider: String::new(),
+            route: partial.as_ref().map(|(_,route,_)|route.as_str().into()), first_hop_error_code: error.first_hop_error_code.map(str::to_owned),
+            first_seen: String::new(), last_seen: unix_now(), ip: String::new(), country_code: String::new(), country: String::new(), region: String::new(), city: String::new(), isp: String::new(), timezone: String::new(), latitude: 0.0, longitude: 0.0, tcp_ms: partial.map(|(_,_,ms)|ms), udp_ms: None, udp_error: None, geo_error: Some(error.message.clone()), chain_error: Some(error.into()), provider: String::new(),
             }
         },
     }

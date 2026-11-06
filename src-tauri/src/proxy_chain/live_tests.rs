@@ -1018,3 +1018,96 @@ async fn real_proxy_route_back_to_back_observation() {
     println!("{body}");
     assert!(!root_path.exists(), "repeat_observation_store_cleanup_failed");
 }
+
+#[tokio::test]
+#[ignore = "Route matrix followed by owned headless Engine navigation; protected input or owned fixtures and explicit opt-in required."]
+async fn real_five_routes_detection_then_engine_navigation() {
+    use super::route::{FirstHop, ProfileProxyRoute as R, SecondHop};
+    assert_eq!(std::env::var("SHARD_PROXY_CHAIN_RUN_LIVE").as_deref(), Ok("1"));
+    let _serial = crate::migrate::serial();
+    let root = crate::store::test_root("five-route-owned-engine");
+    let root_path = root.path.clone();
+    let fixture=std::env::var("SHARD_PC11_FIXTURE_JSON").ok().map(|raw|serde_json::from_str::<serde_json::Value>(&raw).expect("owned_fixture_invalid"));
+    let entry: crate::space::proxy::ProxyEntry = if let Some(fixture)=&fixture {
+        serde_json::from_value(fixture["second_proxy"].clone()).expect("owned_second_proxy_invalid")
+    } else {
+        let cfg = input().expect("protected_input_unavailable");
+        serde_json::from_value(json!({"id":"five-route-assigned", "name":"Synthetic five-route proxy",
+            "kind":cfg.kind, "host":cfg.host, "port":cfg.port,"username":cfg.username, "password":cfg.password})).expect("protected_proxy_fields_invalid")
+    };
+    let first_entry:crate::space::proxy::ProxyEntry=fixture.as_ref().map(|fixture|serde_json::from_value(fixture["first_proxy"].clone()).expect("owned_first_proxy_invalid")).unwrap_or_else(||entry.clone());
+    crate::settings::save(&crate::settings::Settings {
+        geo_checker:Some("ip-api.com".into()),..Default::default()
+    }).expect("isolated_settings_save_failed");
+    let engine = env_path("SHARD_PROXY_CHAIN_LIVE_ENGINE", PathBuf::from(std::env::var_os("APPDATA").unwrap_or_default()).join("shardx-launcher/runtime/ShardX-Windows/chrome.exe"));
+    let helper = std::env::var_os("SHARD_PC11_HELPER").expect("owned_navigation_helper_required");
+    let node = std::env::var_os("SHARD_PC11_NODE").expect("owned_node_required");
+    let playwright = std::env::var_os("SHARD_PC11_PLAYWRIGHT").expect("owned_playwright_required");
+    let report_path = PathBuf::from(std::env::var_os("SHARD_PC11_REPORT").expect("safe_report_path_required"));
+    assert!(!report_path.exists(), "existing_evidence_preserved");
+    let mut routes = vec![
+        (1, R::Proxy), (2, R::System),
+        (3, R::Chain { first:FirstHop::Direct,second:SecondHop::Proxy }),
+        (4, R::Chain { first:FirstHop::System,second:SecondHop::Direct }),
+        (5, R::Chain { first:FirstHop::Proxy {proxy_id:first_entry.id.clone()},second:SecondHop::Direct }),
+    ];
+    if fixture.is_some() {routes.extend([
+        (6,R::Chain{first:FirstHop::Direct,second:SecondHop::System}),
+        (7,R::Chain{first:FirstHop::System,second:SecondHop::Proxy}),
+        (8,R::Chain{first:FirstHop::Proxy{proxy_id:first_entry.id.clone()},second:SecondHop::Proxy}),
+        (9,R::Direct),(10,R::Chain{first:FirstHop::Direct,second:SecondHop::Direct}),
+    ]);}
+    let mut report=json!({"kind":"route-matrix-detection-and-owned-engine","state":"observing","owned_fixtures":fixture.is_some(),"engine_sha256":hash_file(&engine).unwrap(),"engine_dll_sha256":hash_file(&engine.with_file_name("chrome.dll")).unwrap(),"samples":[],"user_files_written":false,"native_launcher_ui":false,"stability_certified":false});
+    for (number,route) in routes {
+        let assigned=route.requires_assigned().then_some(&entry);
+        let first=route.first_proxy_id().map(|_|&first_entry);
+        let mut sample=json!({"route_number":number});
+        match super::routing::test_resolved_route(Some(&route),super::policy::ChainPolicy::Inherit,assigned,first).await {
+            Ok(tested)=>sample["detection"]=json!({"system_state":tested.system_proxy.state,"system_error_code":tested.system_proxy.error_code,"profile_state":tested.profile_proxy.state,"profile_error_code":tested.profile_proxy.error_code,"exit_ip":tested.exit_ip,"exit_error_code":tested.exit_error_code}),
+            Err(error)=>sample["detection_error_code"]=json!(launch_error(&error)),
+        }
+        match super::routing::prepare_route(&route,assigned,first,false).await {
+            Err(error)=>sample["launch_preparation_error_code"]=json!(launch_error(&error)),
+            Ok(resolved)=>{
+                let prepared=resolved.prepared;
+                sample["actual_route"]=json!(prepared.as_ref().map(|prepared|prepared.route.as_str()).unwrap_or("explicit_direct"));
+                let udd=root_path.join(format!("engine-route-{number}"));
+                let mut command=tokio::process::Command::new(&node);
+                command.arg(&helper).env("SHARD_PC11_ENGINE",&engine).env("SHARD_PC11_UDD",&udd)
+                    .env("SHARD_PC11_PROXY_URL",prepared.as_ref().map(|prepared|prepared.effective.to_proxy_server_arg()).unwrap_or_default()).env("SHARD_PC11_PLAYWRIGHT",&playwright)
+                    .creation_flags(0x08000000).kill_on_drop(true).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
+                let started=Instant::now();
+                let output=command.output();tokio::pin!(output);
+                let deadline=tokio::time::sleep(Duration::from_secs(65));tokio::pin!(deadline);
+                let mut interval=tokio::time::interval(Duration::from_millis(50));
+                let mut errors=Vec::new();let mut last=None;let mut peak=0;
+                loop { tokio::select! {
+                    output=&mut output=>{
+                        sample["engine"]=output.ok().and_then(|output|serde_json::from_slice(&output.stdout).ok()).unwrap_or(json!({"helper_failed":true}));break;
+                    },
+                    _=&mut deadline=>{sample["engine"]=json!({"helper_timeout":true});break;},
+                    _=interval.tick()=>{
+                        let active=prepared.as_ref().map(|prepared|prepared.tunnel.active_connections()).unwrap_or(0);
+                        peak=peak.max(active);
+                        let current=prepared.as_ref().and_then(|prepared|prepared.tunnel.last_error()).map(|error|error.code);
+                        if current!=last {errors.push(json!({"at_ms":started.elapsed().as_millis(),"code":current,"active_connections":active}));last=current;}
+                    }
+                }}
+                sample["tunnel_error_observations"]=json!(errors);
+                sample["peak_active_connections"]=json!(peak);
+                if let Some(prepared)=prepared {
+                    sample["tunnel_error_code"]=json!(prepared.tunnel.last_error().map(|error|error.code));
+                    let address=prepared.tunnel.addr();prepared.tunnel.shutdown().await;
+                    sample["listener_closed"]=json!(TcpStream::connect(address).await.is_err());
+                }
+            }
+        }
+        report["samples"].as_array_mut().unwrap().push(sample);
+        std::fs::write(&report_path,serde_json::to_string_pretty(&report).unwrap()).expect("safe_report_write_failed");
+    }
+    drop(root);
+    report["state"]=json!("observed");report["isolated_store_removed"]=json!(!root_path.exists());
+    std::fs::write(&report_path,serde_json::to_string_pretty(&report).unwrap()).expect("safe_report_write_failed");
+    println!("{}",serde_json::to_string_pretty(&report).unwrap());
+    assert!(!root_path.exists(),"five_route_cleanup_failed");
+}

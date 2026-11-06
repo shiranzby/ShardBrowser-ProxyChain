@@ -141,11 +141,12 @@ async fn http_second_hop_refusal_is_typed_and_does_not_change_saved_proxy() {
     let mut proxy = entry("http-fixture", addr);
     proxy.kind = crate::space::proxy::ProxyKind::Http;
     let before = serde_json::to_value(&proxy).unwrap();
-    let prepared = super::prepare(Some(&proxy), &chain(first.addr)).await.unwrap().unwrap();
-    let refusal = crate::space::proxy::probe_on_route(&prepared.effective).await.unwrap_err();
-    assert_eq!(super::profile_failure(&prepared.tunnel, &refusal).code, "proxy_chain_profile_auth_failed");
+    // Strict preparation now verifies the actual route before returning it.
+    // An authoritative refusal must fail there, before any equivalence probe.
+    let refusal = super::prepare(Some(&proxy), &chain(first.addr)).await.err().unwrap();
+    assert_eq!(refusal.downcast_ref::<super::error::ChainError>().unwrap().code, "proxy_chain_profile_auth_failed");
     assert_eq!(serde_json::to_value(&proxy).unwrap(), before);
-    prepared.tunnel.shutdown().await;
+    assert_eq!(first.accepted.load(Ordering::SeqCst),1);
     task.abort();
 }
 

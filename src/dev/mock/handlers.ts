@@ -532,6 +532,7 @@ export const handlers: Record<string, Handler> = {
     if (saved?._meta.lock) checkPassword(saved, password);
     const assigned = state.proxies.find((p) => p.id === proxyId);
     const chain = route?.mode === "chain";
+    if (chain && route.second.mode === "system" && route.first.mode !== "direct") throw new Error("profile_route_invalid");
     const direct = route?.mode === "direct" || (chain && route.first.mode === "direct" && route.second.mode === "direct")
       || (!route && !assigned && !String(newProxyLine ?? "").trim() && policy !== "enabled" && policy !== "prefer_first_hop" && (policy === "disabled" || !state.settings.proxy_chain?.enabled));
     const finalProxy = !direct && (route?.mode === "proxy" || (chain && route.second.mode === "proxy") || !route);
@@ -539,7 +540,7 @@ export const handlers: Record<string, Handler> = {
     const first = chain && route.first.mode === "proxy" ? state.proxies.find((p) => p.id === route.first.proxy_id) : null;
     if (chain && route.first.mode === "proxy" && !first) throw new Error("profile_route_first_proxy_missing");
     const same = first && finalProxy && assigned && ["kind", "host", "port", "username", "password"].every(key => first[key as keyof typeof first] === assigned[key as keyof typeof assigned]);
-    const system = !same && (route?.mode === "system" || (chain && route.first.mode !== "direct"));
+    const system = !same && (route?.mode === "system" || (chain && (route.first.mode !== "direct" || route.second.mode === "system")));
     const ip = direct ? "192.0.2.18" : finalProxy ? "203.0.113.42" : "198.51.100.24";
     return { kind: "profile", source: "profile_route_draft", proxy_kind: system ? first?.kind ?? "http" : null,
       proxy_address: system ? first ? `${first.host}:${first.port}` : "127.0.0.1:7890" : null,

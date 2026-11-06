@@ -9,6 +9,8 @@ pub mod route;
 pub mod routing;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod same_exit_tests;
 pub mod tunnel;
 pub mod tls;
 
@@ -53,11 +55,15 @@ fn preparation_failure(prepared:&PreparedProxy,error:ChainError)->anyhow::Error 
     }
 }
 
+pub(crate) fn partial_verification(error:&anyhow::Error)->Option<(ChainError,Route,u128)> {
+    error.downcast_ref::<VerifiedRouteFailure>().map(|verified|(verified.error.clone(),verified.route,verified.tcp_ms))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Route { FirstHop, AssignedProxyFallback, SameProxyEndpoint, ExplicitDirect, ExplicitSystem, ExplicitProxy, ExplicitChain }
+pub enum Route { FirstHop, AssignedProxyFallback, SameProxyEndpoint, SameExitVerified, ExplicitDirect, ExplicitSystem, ExplicitProxy, ExplicitChain }
 impl Route {
-    pub fn as_str(self) -> &'static str { match self { Self::FirstHop => "first_hop", Self::AssignedProxyFallback => "assigned_proxy_fallback", Self::SameProxyEndpoint => "same_proxy_endpoint", Self::ExplicitDirect => "explicit_direct", Self::ExplicitSystem => "explicit_system", Self::ExplicitProxy => "explicit_proxy", Self::ExplicitChain => "explicit_chain" } }
+    pub fn as_str(self) -> &'static str { match self { Self::FirstHop => "first_hop", Self::AssignedProxyFallback => "assigned_proxy_fallback", Self::SameProxyEndpoint => "same_proxy_endpoint", Self::SameExitVerified => "same_exit_verified", Self::ExplicitDirect => "explicit_direct", Self::ExplicitSystem => "explicit_system", Self::ExplicitProxy => "explicit_proxy", Self::ExplicitChain => "explicit_chain" } }
 }
 
 pub fn saved_settings() -> anyhow::Result<crate::settings::Settings> {
@@ -92,18 +98,19 @@ async fn prepare_with_saved(entry: Option<&ProxyEntry>, config: &ProxyChainSetti
     config.validate()?;
     let resolved = config.hop_for(saved, &target).await;
     if !config.allow_assigned_fallback {
-        return Ok(Some(prepare_with_hop(entry, resolved?).await?));
+        let hop=resolved?;
+        if same_endpoint(entry,&hop)? {
+            return assigned_route(entry,Route::SameProxyEndpoint,None).await.map(Some);
+        }
+        return prepare_checked_chain(entry,hop).await.map(Some);
     }
     let first_error = match resolved {
         Ok(hop) => {
             if same_endpoint(entry, &hop)? {
                 return assigned_route(entry, Route::SameProxyEndpoint, None).await.map(Some);
             }
-            match prepare_with_hop(entry, hop).await {
-                Ok(mut prepared) => match verify_prepared(&mut prepared).await {
-                    Ok(()) => return Ok(Some(prepared)),
-                    Err(error) => { prepared.tunnel.shutdown().await; error }
-                },
+            match prepare_checked_chain(entry, hop).await {
+                Ok(prepared) => return Ok(Some(prepared)),
                 Err(error) => safe_prepare_error(error),
             }
         }
@@ -199,6 +206,72 @@ async fn prepare_with_hop(entry: &ProxyEntry, hop: ProxyHop) -> anyhow::Result<P
     };
     let effective = effective_entry(entry, &tunnel);
     Ok(PreparedProxy { effective, tunnel, route: Route::FirstHop, first_hop_error: None, verified_geo: None, verified_tcp_ms: None })
+}
+
+/// The caller has already resolved one first hop for the assigned endpoint.
+/// Equal fresh exits are an optimisation, not proof of equal node identity.
+/// The retained single route always uses the original assigned credentials;
+/// it never becomes a mutable system-only route or a website direct route.
+pub(super) async fn prepare_checked_chain(entry: &ProxyEntry, hop: ProxyHop) -> anyhow::Result<PreparedProxy> {
+    prepare_checked_chain_with_budget(entry, hop, std::time::Duration::from_secs(6)).await
+}
+
+async fn prepare_checked_chain_with_budget(entry: &ProxyEntry, hop: ProxyHop, comparison_budget: std::time::Duration) -> anyhow::Result<PreparedProxy> {
+    let mut chained=prepare_with_hop(entry,hop.clone()).await?;
+    let verified=verify_prepared(&mut chained).await;
+    let deadline=tokio::time::Instant::now()+comparison_budget;
+    match verified {
+        Ok(())=>{
+            let expected=chained.verified_geo.as_ref().expect("verified chain exit").ip.clone();
+            if let Some(single)=try_same_exit_single(entry,&hop,Some(&expected),deadline).await {
+                chained.tunnel.shutdown().await;
+                Ok(single)
+            } else {Ok(chained)}
+        },
+        Err(error)=>{
+            let recoverable=!matches!(error.code,"proxy_chain_profile_auth_failed"|"system_proxy_auth_failed")
+                && !matches!(error.layer,"configuration"|"exit");
+            let failure=preparation_failure(&chained,error);
+            chained.tunnel.shutdown().await;
+            if recoverable {
+                if let Some(single)=try_same_exit_single(entry,&hop,None,deadline).await {return Ok(single);}
+            }
+            Err(failure)
+        },
+    }
+}
+
+/// Cancellation only borrows an owned candidate. Every failed or expired
+/// candidate is explicitly shut down before returning, including active I/O.
+async fn assigned_candidate_before(entry:&ProxyEntry,deadline:tokio::time::Instant) -> Option<PreparedProxy> {
+    if tokio::time::Instant::now()>=deadline {return None;}
+    let target=Target::new(&entry.host,entry.port).ok()?;
+    let tls=if entry.kind==ProxyKind::Https {Some(tls::client().ok()?)} else {None};
+    let tunnel=Tunnel::bind_assigned(target,tls).await.ok()?;
+    let mut prepared=PreparedProxy{effective:effective_entry(entry,&tunnel),tunnel,route:Route::ExplicitProxy,first_hop_error:None,verified_geo:None,verified_tcp_ms:None};
+    if matches!(tokio::time::timeout_at(deadline,verify_prepared(&mut prepared)).await,Ok(Ok(()))) {Some(prepared)}
+    else {prepared.tunnel.shutdown().await;None}
+}
+
+async fn try_same_exit_single(entry:&ProxyEntry,hop:&ProxyHop,expected:Option<&str>,deadline:tokio::time::Instant) -> Option<PreparedProxy> {
+    // Use the frozen hop itself. Resolving Windows/PAC again for a Geo URL
+    // could select a different first hop than the assigned endpoint did.
+    let first=assigned_candidate_before(&system_entry(hop),deadline).await?;
+    let first_ip=first.verified_geo.as_ref().expect("verified first-hop exit").ip.clone();
+    first.tunnel.shutdown().await;
+    if expected.is_some_and(|ip|!same_exit_ip(ip,&first_ip)) {return None;}
+    let mut assigned=assigned_candidate_before(entry,deadline).await?;
+    if assigned.verified_geo.as_ref().is_some_and(|geo|same_exit_ip(&geo.ip,&first_ip)) {
+        assigned.route=Route::SameExitVerified;
+        Some(assigned)
+    } else {assigned.tunnel.shutdown().await;None}
+}
+
+fn same_exit_ip(left:&str,right:&str)->bool {
+    match (left.parse::<std::net::IpAddr>(),right.parse::<std::net::IpAddr>()) {
+        (Ok(left),Ok(right))=>left==right,
+        _=>false,
+    }
 }
 
 pub fn validate_args(raw: &str) -> anyhow::Result<()> {
@@ -511,40 +584,34 @@ pub async fn test(
                 });
                 result.proxy_address = Some(format!("{}:{}", hop.host, hop.port));
                 if let Some(entry) = entry.filter(|_| kind == "profile") {
-                    match prepare_with_hop(&entry, hop).await {
-                        Err(e) => {
-                            result.profile_proxy = Stage::failed(
-                                e.downcast::<ChainError>().unwrap_or_else(|_| {
-                                    ChainError::new(
-                                        "proxy_chain_profile_failed",
-                                        "profile",
-                                        "Could not prepare this profile proxy.",
-                                    )
-                                }),
-                            )
-                        }
-                        Ok(mut prepared) => {
-                            result.route = Some(prepared.route);
-                            match verify_prepared(&mut prepared).await {
-                                Ok(())=>{
-                                    let ms=prepared.verified_tcp_ms.expect("route reachability verified");
-                                    result.system_proxy=Stage::measured(ms);
-                                    result.profile_proxy=Stage::measured(ms);
-                                    result.set_exit(Ok(prepared.verified_geo.clone().expect("route exit verified")));
-                                },
-                                Err(error) if prepared.verified_tcp_ms.is_some()=>{
-                                    let ms=prepared.verified_tcp_ms.unwrap();
-                                    result.system_proxy=Stage::measured(ms);
-                                    result.profile_proxy=Stage::measured(ms);
-                                    result.set_exit(Err(error.into()));
-                                },
-                                Err(error)=>{
-                                    if error.layer=="system_proxy" {result.system_proxy=Stage::failed(error);}
-                                    else {result.system_proxy=Stage::ok(start);result.profile_proxy=Stage::failed(error);}
-                                },
+                    let same=same_endpoint(&entry,&hop)?;
+                    let prepared=if same {assigned_route(&entry,Route::SameProxyEndpoint,None).await}
+                        else {prepare_checked_chain(&entry,hop).await};
+                    match prepared {
+                        Err(error) => {
+                            if let Some(verified)=error.downcast_ref::<VerifiedRouteFailure>() {
+                                result.route=Some(verified.route);
+                                if verified.route==Route::FirstHop {result.system_proxy=Stage::measured(verified.tcp_ms);}
+                                result.profile_proxy=Stage::measured(verified.tcp_ms);
+                                result.set_exit(Err(verified.error.clone().into()));
+                            } else {
+                                let error=safe_prepare_error(error);
+                                if error.layer=="system_proxy" {result.system_proxy=Stage::failed(error);}
+                                else {if !same {result.system_proxy=Stage::ok(start);}result.profile_proxy=Stage::failed(error);}
                             }
+                        },
+                        Ok(prepared) => {
+                            result.route = Some(prepared.route);
+                            let ms=prepared.verified_tcp_ms.expect("route reachability verified");
+                            if prepared.route==Route::FirstHop {result.system_proxy=Stage::measured(ms);}
+                            else {
+                                result.source=Some(prepared.route.as_str());
+                                result.system_proxy=Stage::pending();
+                            }
+                            result.profile_proxy=Stage::measured(ms);
+                            result.set_exit(Ok(prepared.verified_geo.clone().expect("route exit verified")));
                             prepared.tunnel.shutdown().await;
-                        }
+                        },
                     }
                 } else {
                     match connector::connect(&hop, &target).await {

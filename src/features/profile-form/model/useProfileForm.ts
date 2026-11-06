@@ -133,6 +133,7 @@ export function problemsOf(d: ProfileFormDraft | null): { name?: string; startup
   if (!isStartupUrl(d.form.startup_url ?? "")) problems.startup_url = t("profileForm.startupUrlInvalid");
   const route = d.form.proxy_route;
   if (route?.mode === "invalid") problems.proxy_route = t("profileRoute.invalid");
+  if (route?.mode === "chain" && route.second.mode === "system" && route.first.mode !== "direct") problems.proxy_route = t("profileRoute.invalid");
   if (route && routeUsesAssignedProxy(route) && !d.form.proxy_id && !d.newProxyLine.trim()) problems.proxy_route = t("profileRoute.proxyRequired");
   if (route?.mode === "chain" && route.first.mode === "proxy" && !route.first.proxy_id) problems.proxy_route = t("profileRoute.firstProxyRequired");
   return problems;

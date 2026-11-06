@@ -26,6 +26,7 @@ function setDifferently(kind: string): string {
 const KNOWN: ReadonlyArray<readonly [RegExp, Say | null]> = [
   [warningRe(TEAM_WARNINGS.proxyAssignedFallback), (m) => warn(t("proxyChain.launchRouteTitle", { name: m[1] }), t("proxyChain.routeAssignedFallback"))],
   [warningRe(TEAM_WARNINGS.proxySameEndpoint), (m) => warn(t("proxyChain.launchRouteTitle", { name: m[1] }), t("proxyChain.routeSameEndpoint"))],
+  [warningRe(TEAM_WARNINGS.proxySameExit), (m) => warn(t("proxyChain.launchRouteTitle", { name: m[1] }), t("proxyChain.routeSameExitVerified"))],
   [/would not let the launcher send UDP/i, () => warn(t("launcherWarning.udpTitle"), t("launcherWarning.udpDetail"))],
   [/could not read the proxy'?s location/i, () => warn(t("launcherWarning.geoTitle"), t("launcherWarning.geoDetail"))],
   // A team profile's session as it closed (open.rs); the reason it gives is explained.

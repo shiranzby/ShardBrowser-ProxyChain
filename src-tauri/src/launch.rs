@@ -840,6 +840,7 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
         match chain.route {
             crate::proxy_chain::Route::AssignedProxyFallback => Some(format!("Proxy route for “{name}”: using the assigned proxy without the first hop after its route failed.")),
             crate::proxy_chain::Route::SameProxyEndpoint => Some(format!("Proxy route for “{name}”: identical first-hop endpoint skipped.")),
+            crate::proxy_chain::Route::SameExitVerified => Some(format!("Proxy route for “{name}”: fresh checks found matching exits; using the original assigned proxy once.")),
             _ => None,
         }
     });

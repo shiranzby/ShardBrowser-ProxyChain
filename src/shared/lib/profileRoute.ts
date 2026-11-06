@@ -1,4 +1,5 @@
 import type { ProfileProxyRoute } from "../model/proxyChain";
+import { normalizedProfileRoute } from "../model/proxyChain.ts";
 
 type RoutedProfile = { proxy_id: string | null; proxy_route?: ProfileProxyRoute | null; protected?: boolean };
 type T = (key: string, vars?: Record<string, string | number>) => string;
@@ -6,7 +7,7 @@ type NamedProxy = { id: string; name: string; host: string; port: number };
 
 /** The selected proxy that actually provides the final exit, not a retained inactive binding. */
 export function routeExitProxyId(p: RoutedProfile): string | null {
-  const route = p.proxy_route;
+  const route = normalizedProfileRoute(p.proxy_route);
   if (!route || route.mode === "proxy") return p.proxy_id;
   if (route.mode !== "chain") return null;
   return route.second.mode === "proxy" ? p.proxy_id
@@ -15,7 +16,7 @@ export function routeExitProxyId(p: RoutedProfile): string | null {
 
 /** Every selected library proxy this explicit route needs to start. */
 export function routeProxyIds(p: RoutedProfile): string[] {
-  const route = p.proxy_route;
+  const route = normalizedProfileRoute(p.proxy_route);
   if (!route || route.mode === "proxy") return p.proxy_id ? [p.proxy_id] : [];
   if (route.mode !== "chain") return [];
   return [...new Set([
@@ -27,7 +28,7 @@ export function routeProxyIds(p: RoutedProfile): string[] {
 /** A missing selected proxy is a failure, never an intended real-IP route. */
 export function routeUsesRealIp(p: RoutedProfile): boolean {
   if (p.protected) return false;
-  const route = p.proxy_route;
+  const route = normalizedProfileRoute(p.proxy_route);
   if (!route) return !p.proxy_id;
   return route.mode === "direct" || (route.mode === "chain" && route.first.mode === "direct" && route.second.mode === "direct");
 }
@@ -38,7 +39,7 @@ export function routeUsesProxy(p: RoutedProfile): boolean {
 }
 
 export function profileRouteLabel(p: RoutedProfile, proxies: readonly NamedProxy[], t: T): string | null {
-  const route = p.proxy_route;
+  const route = normalizedProfileRoute(p.proxy_route);
   if (!route) return null;
   const name = (id: string | null) => {
     const proxy = proxies.find(x => x.id === id);

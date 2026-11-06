@@ -19,7 +19,7 @@ pub enum FirstHop { Direct, System, Proxy { proxy_id: String } }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
-pub enum SecondHop { Direct, Proxy }
+pub enum SecondHop { Direct, Proxy, System }
 
 impl<'de> Deserialize<'de> for ProfileProxyRoute {
     fn deserialize<D: Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
@@ -51,12 +51,24 @@ impl ProfileProxyRoute {
         if matches!(self, Self::Invalid) {
             bail!("The profile proxy route is invalid. Choose a connection mode before saving or starting.");
         }
+        if matches!(self,Self::Chain{first:FirstHop::System|FirstHop::Proxy{..},second:SecondHop::System}) {
+            bail!("A system proxy as the second choice requires a direct first hop.");
+        }
         if let Some(id) = self.first_proxy_id() {
             if id.trim().is_empty() || id != id.trim() || id.len() > 128 || id.chars().any(char::is_control) {
                 bail!("Select a valid first-hop proxy.");
             }
         }
         Ok(())
+    }
+
+    /// Keep the editor's chain selection, but share the single system route
+    /// when real IP is followed by the system proxy.
+    pub fn normalized(&self) -> Self {
+        match self {
+            Self::Chain{first:FirstHop::Direct,second:SecondHop::System}=>Self::System,
+            route=>route.clone(),
+        }
     }
 
     pub fn requires_assigned(&self) -> bool {
@@ -90,5 +102,37 @@ mod tests {
             let route: ProfileProxyRoute = serde_json::from_value(raw).unwrap();
             assert!(route.validate().is_err(), "unexpected valid route: {route:?}");
         }
+    }
+
+    #[test]
+    fn all_ten_choices_validate_and_only_direct_then_system_aliases_system() {
+        for route in [ProfileProxyRoute::Direct,ProfileProxyRoute::System,ProfileProxyRoute::Proxy] {
+            route.validate().unwrap();
+            assert_eq!(route.normalized(),route);
+        }
+        let first_proxy=FirstHop::Proxy{proxy_id:"selected-first".into()};
+        for first in [FirstHop::Direct,FirstHop::System,first_proxy.clone()] {
+            for second in [SecondHop::Proxy,SecondHop::Direct] {
+                let route=ProfileProxyRoute::Chain{first:first.clone(),second};
+                route.validate().unwrap();
+                let copy:ProfileProxyRoute=serde_json::from_value(serde_json::to_value(&route).unwrap()).unwrap();
+                assert_eq!(copy,route);
+                assert_eq!(route.normalized(),route);
+            }
+        }
+        let alias=ProfileProxyRoute::Chain{first:FirstHop::Direct,second:SecondHop::System};
+        alias.validate().unwrap();
+        assert_eq!(alias.normalized(),ProfileProxyRoute::System);
+        assert!(!alias.requires_assigned());
+        assert!(alias.first_proxy_id().is_none());
+        assert_eq!(serde_json::from_value::<ProfileProxyRoute>(serde_json::to_value(&alias).unwrap()).unwrap(),alias);
+        for first in [FirstHop::System,first_proxy] {
+            let route=ProfileProxyRoute::Chain{first,second:SecondHop::System};
+            assert!(route.validate().is_err());
+            let restored:ProfileProxyRoute=serde_json::from_value(serde_json::to_value(&route).unwrap()).unwrap();
+            assert!(restored.validate().is_err(),"invalid persisted routes must not become direct");
+        }
+        let unknown:ProfileProxyRoute=serde_json::from_value(json!({"mode":"chain","first":{"mode":"direct"},"second":{"mode":"future"}})).unwrap();
+        assert!(unknown.validate().is_err());
     }
 }

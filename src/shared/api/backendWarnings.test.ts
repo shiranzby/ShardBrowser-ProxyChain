@@ -18,6 +18,7 @@ test("each warning is the backend's own format", () => {
   const formats: Record<keyof typeof TEAM_WARNINGS, string> = {
     proxyAssignedFallback: TEAM_WARNINGS.proxyAssignedFallback("{name}"),
     proxySameEndpoint: TEAM_WARNINGS.proxySameEndpoint("{name}"),
+    proxySameExit: TEAM_WARNINGS.proxySameExit("{name}"),
     stale: TEAM_WARNINGS.stale("{}"),
     notSaved: TEAM_WARNINGS.notSaved("{}", "{why}"),
     // The Unsent reason's own format; notSaved wraps it.

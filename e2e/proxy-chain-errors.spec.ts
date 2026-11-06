@@ -58,7 +58,7 @@ test("tagged launch chain error is localized before generic refusal matching", a
   expect(detail).toContain("routing rules");
 });
 
-for (const route of ["first_hop", "assigned_proxy_fallback", "same_proxy_endpoint"] as const) {
+for (const route of ["first_hop", "assigned_proxy_fallback", "same_proxy_endpoint", "same_exit_verified"] as const) {
   test(`settings reports the actual ${route} route without crediting an unused first hop`, async ({ page }, info) => {
     await openApp(page, { section: "settings", theme: "light" });
     await page.getByRole("tablist", { name: "Settings sections" }).getByRole("tab", { name: "Proxy", exact: true }).click();
@@ -90,7 +90,11 @@ for (const route of ["first_hop", "assigned_proxy_fallback", "same_proxy_endpoin
         await expect(result.locator("[data-chain-first-attempt]")).toContainText("routing rules");
       } else {
         await expect(result.locator("[data-chain-stage='system']")).toContainText("Not tested");
-        await expect(result.locator("[data-chain-route]")).toContainText("same endpoint and credentials");
+        await expect(result.locator("[data-chain-route]")).toContainText(route === "same_proxy_endpoint" ? "same endpoint and credentials" : "same exit in this test");
+        if (route === "same_exit_verified") {
+          await expect(result.locator("[data-chain-route]")).toContainText("only the profile’s original assigned proxy");
+          await expect(result.locator("[data-chain-route]")).not.toContainText("same endpoint and credentials");
+        }
         await expect(result.locator("[data-chain-first-attempt]")).toHaveCount(0);
       }
     }
@@ -98,7 +102,7 @@ for (const route of ["first_hop", "assigned_proxy_fallback", "same_proxy_endpoin
   });
 }
 
-for (const route of ["assigned_proxy_fallback", "same_proxy_endpoint"] as const) {
+for (const route of ["assigned_proxy_fallback", "same_proxy_endpoint", "same_exit_verified"] as const) {
   test(`proxy history explains ${route} and keeps successful single-proxy results usable`, async ({ page }, info) => {
     await openApp(page, { section: "proxies", theme: "light" });
     await appModule(page, "/src/entities/proxy/index.ts", "proxyStore");
@@ -114,6 +118,10 @@ for (const route of ["assigned_proxy_fallback", "same_proxy_endpoint"] as const)
     await page.locator("[role='row'][data-proxy-id='px-jp-1'] [data-cell='name']").click();
     const peek = page.locator("aside[data-peek='proxy']");
     await expect(peek.locator(`[data-chain-route='${route}']`)).toBeVisible();
+    if (route === "same_exit_verified") {
+      await expect(peek.locator("[data-chain-route]")).toContainText("same exit in this test");
+      await expect(peek.locator("[data-chain-route]")).not.toContainText("same endpoint and credentials");
+    }
     await expect(peek).not.toContainText("Test route: system proxy chain");
     await expect(peek).toContainText("198.51.100.44");
     await expect(peek).toContainText("TCP 31 ms");
@@ -145,6 +153,7 @@ test("native launcher route warnings arrive as Chinese route toasts without raw 
   for (const [raw, detail, name] of [
     [TEAM_WARNINGS.proxyAssignedFallback("Synthetic HK profile"), "第一层路线未通过，本次已验证并直接连接配置代理；仍经该代理出网。", "assigned-fallback"],
     [TEAM_WARNINGS.proxySameEndpoint("Synthetic HK profile"), "第一层与配置代理的入口及认证一致，本次跳过重复一层，保留配置代理。", "same-endpoint"],
+    [TEAM_WARNINGS.proxySameExit("Synthetic HK profile"), "本次两条路线出口一致，已仅连接原环境代理。", "same-exit"],
   ]) {
     await page.evaluate((text) => (window as any).__shardxMock.emit("launcher-warning", text), raw);
     const toast = page.locator("[data-toast]").filter({ hasText: "“Synthetic HK profile”的代理路线" });

@@ -2,13 +2,14 @@ import { useT } from "../i18n";
 import type { ProxyChainRoute } from "../model/proxyChain";
 import { proxyChainErrorText } from "../lib/proxyChainError";
 
-/** Describes the selected transport, not a guess based on a shared public IP. */
+/** Describes the verified transport without claiming two nodes are identical. */
 export function ChainRouteSummary({ route, firstHopError }: { route?: ProxyChainRoute | null; firstHopError?: string | null }) {
   const t = useT();
   if (!route) return null;
   const description = route === "first_hop" ? t("proxyChain.routeFirstHop")
     : route === "same_proxy_endpoint" ? t("proxyChain.routeSameEndpoint")
-      : route === "assigned_proxy_fallback" ? t("proxyChain.routeAssignedFallback") : null;
+      : route === "same_exit_verified" ? t("proxyChain.routeSameExitVerified")
+        : route === "assigned_proxy_fallback" ? t("proxyChain.routeAssignedFallback") : null;
   if (!description) return null;
   const error = firstHopError ? proxyChainErrorText(t, { code: firstHopError }) : undefined;
   return <div data-chain-route={route} className="flex flex-col gap-2 text-help text-text-sub-600">

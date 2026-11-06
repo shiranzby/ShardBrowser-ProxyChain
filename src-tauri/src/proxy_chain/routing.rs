@@ -44,6 +44,8 @@ async fn system() -> anyhow::Result<PreparedProxy> {
 
 pub async fn prepare_route(route:&ProfileProxyRoute,assigned:Option<&ProxyEntry>,first:Option<&ProxyEntry>,allow_assigned_fallback:bool) -> anyhow::Result<ExplicitRoute> {
     route.validate()?;
+    let normalized=route.normalized();
+    let route=&normalized;
     if is_direct(route) {return Ok(ExplicitRoute{proxy:None,prepared:None});}
     let prepared=match route {
         ProfileProxyRoute::Direct|ProfileProxyRoute::Invalid=>unreachable!("validated direct route handled above"),
@@ -61,8 +63,14 @@ pub async fn prepare_route(route:&ProfileProxyRoute,assigned:Option<&ProxyEntry>
             let attempt=async {
                 let first=match selected {Some(first)=>first,None=>detect_windows::resolve_for(&target).await?.hop};
                 if same_endpoint(assigned,&first)? {return assigned_route(assigned,Route::SameProxyEndpoint,None).await;}
-                let mut prepared=prepare_with_hop(assigned,first).await?;prepared.route=Route::ExplicitChain;
-                if let Err(error)=verify_prepared(&mut prepared).await {let error=preparation_failure(&prepared,error);prepared.tunnel.shutdown().await;return Err(error);}Ok(prepared)
+                let mut prepared=prepare_checked_chain(assigned,first).await.map_err(|mut error|{
+                    if let Some(verified)=error.downcast_mut::<VerifiedRouteFailure>() {
+                        if verified.route==Route::FirstHop {verified.route=Route::ExplicitChain;}
+                    }
+                    error
+                })?;
+                if prepared.route==Route::FirstHop {prepared.route=Route::ExplicitChain;}
+                Ok(prepared)
             }.await;
             match attempt {
                 Ok(prepared)=>prepared,
@@ -77,6 +85,7 @@ pub async fn prepare_route(route:&ProfileProxyRoute,assigned:Option<&ProxyEntry>
             }
         },
         ProfileProxyRoute::Chain{first:FirstHop::Direct,second:SecondHop::Direct}=>unreachable!(),
+        ProfileProxyRoute::Chain{second:SecondHop::System,..}=>unreachable!("validated system alias normalized above"),
     };
     Ok(ExplicitRoute{proxy:Some(prepared.effective.clone()),prepared:Some(prepared)})
 }
@@ -85,7 +94,7 @@ fn record_connected_route(result:&mut TestResult,route:Option<&ProfileProxyRoute
     result.route=Some(actual);result.source=Some(actual.as_str());result.first_hop_error_code=first_error.as_ref().map(|error|error.code);
     let first_only=matches!(route,Some(ProfileProxyRoute::System|ProfileProxyRoute::Chain{second:SecondHop::Direct,..}));
     let first_used=matches!(route,Some(ProfileProxyRoute::System|ProfileProxyRoute::Chain{first:FirstHop::System|FirstHop::Proxy{..},..}));
-    result.system_proxy=if let Some(error)=first_error {Stage::failed(error)} else if actual==Route::SameProxyEndpoint {Stage::pending()} else if first_used || route.is_none()&&actual==Route::FirstHop {Stage::measured(tcp_ms)} else {Stage::pending()};
+    result.system_proxy=if let Some(error)=first_error {Stage::failed(error)} else if matches!(actual,Route::SameProxyEndpoint|Route::SameExitVerified) {Stage::pending()} else if first_used || route.is_none()&&actual==Route::FirstHop {Stage::measured(tcp_ms)} else {Stage::pending()};
     result.profile_proxy=if first_only {Stage::pending()} else {Stage::measured(tcp_ms)};
     if first_only {result.profile_proxy_address=None;}
     if let Some(first)=first.filter(|_|first_used) {result.proxy_address=Some(format!("{}:{}",first.host,first.port));result.proxy_kind=Some(match first.kind {ProxyKind::Http=>"http",ProxyKind::Https=>"https",ProxyKind::Socks5=>"socks5"});}
@@ -96,8 +105,16 @@ fn record_connected_route(result:&mut TestResult,route:Option<&ProfileProxyRoute
 pub async fn test_resolved_route(route:Option<&ProfileProxyRoute>,policy:policy::ChainPolicy,assigned:Option<&ProxyEntry>,first:Option<&ProxyEntry>) -> anyhow::Result<TestResult> {
     policy.validate()?;
     if let Some(route)=route {route.validate()?;}
+    let normalized=route.map(ProfileProxyRoute::normalized);
+    let route=normalized.as_ref();
     let start=Instant::now();
     let mut result=TestResult{kind:"profile".into(),proxy_kind:None,proxy_address:None,source:None,resolved_for:None,profile_proxy_address:assigned.map(|p|format!("{}:{}",p.host,p.port)),route:None,first_hop_error_code:None,system_proxy:Stage::pending(),profile_proxy:Stage::pending(),local_network:None,exit_ip:None,exit_geo:None,exit_error:None,exit_error_code:None,exit_error_details:None,total_ms:0,tested_at:format!("@{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs())};
+    // The selected endpoint is useful evidence even when its handshake fails.
+    // Do not leave the first-hop address dependent on a successful result.
+    if matches!(route,Some(ProfileProxyRoute::Chain{first:FirstHop::Proxy{..},..})) {
+        if let Some(first)=first {result.proxy_address=Some(format!("{}:{}",first.host,first.port));result.proxy_kind=Some(match first.kind {ProxyKind::Http=>"http",ProxyKind::Https=>"https",ProxyKind::Socks5=>"socks5"});}
+    }
+    if matches!(route,Some(ProfileProxyRoute::System|ProfileProxyRoute::Chain{second:SecondHop::Direct,..})) {result.profile_proxy_address=None;}
     if route.is_some_and(is_direct) {
         result.kind="local".into();result.route=Some(Route::ExplicitDirect);result.source=Some("explicit_direct");
         let geo=proxy::geo_check_on_route(None,None).await;

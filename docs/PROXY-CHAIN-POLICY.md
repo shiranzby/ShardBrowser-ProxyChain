@@ -87,12 +87,13 @@ verifies the configured first-hop route to the assigned proxy. If that network
 route fails, it tries a connection from this computer to the same assigned proxy,
 with the same protocol and credentials, and requires both proxy handshake and
 live Geo verification before starting. It never tries a direct website connection.
-The existing `enabled` policy remains strict and has no alternative route.
+The existing `enabled` policy does not allow unconditional assigned-proxy
+fallback. PC11 additionally permits the verified equivalence described below.
 
 When the resolved first-hop endpoint and assigned proxy match in normalized
-host, port, protocol and actual credentials, this explicit policy connects to
-that endpoint once. A matching public exit IP does not prove a matching endpoint
-and is never used for this decision. A local proxy such as `127.0.0.1:7890` does
+host, port, protocol and actual credentials, strict and preferred routes connect
+to that endpoint once. A matching public exit IP does not prove a matching endpoint
+and is never used as endpoint identity. A local proxy such as `127.0.0.1:7890` does
 not expose its internal selected node through HTTP/SOCKS; no private account or
 subscription state is inspected to guess it.
 
@@ -104,13 +105,28 @@ can still affect that app's own connections; the Launcher cannot freeze its
 private node selection.
 
 The `route` field in test results/history reports `first_hop`,
-`assigned_proxy_fallback` or `same_proxy_endpoint`; an alternative route keeps
+`assigned_proxy_fallback`, `same_proxy_endpoint` or `same_exit_verified`; an alternative route keeps
 `first_hop_error_code` when relevant. The interface shows that first attempt
 separately and reports the route after a successful native start. No IP equality
 is labeled as proof of identical proxy nodes. Unknown policy values, corrupt
 settings/credentials, missing proxy bindings and locked-profile authorization
 errors are not eligible for route recovery. Existing saved choices are not
 automatically changed.
+
+For `same_exit_verified`, PC11 compares fresh Geo evidence from the resolved,
+frozen first-hop endpoint with the verified chain exit. Only when they agree
+does it try the original assigned proxy alone. If that single route also
+authenticates and returns the same fresh exit, its already-verified tunnel is
+retained, and the chain is closed. Comparison has a six-second total budget,
+separate from product connection deadlines. An unsuccessful optimisation keeps
+the verified chain. A transport-failed chain can recover only when both fresh
+single-route exits agree; explicit authentication refusal is never hidden.
+Unknown exits, historical IPs and country labels cannot establish equivalence.
+
+This means equal observed exits, not equal node identity. Credentials, proxy
+binding and profile data remain unchanged. The retained route uses the assigned
+proxy, not a mutable system-only connection. Each new test/start resolves and
+checks again; it does not reuse an earlier equivalence decision.
 
 Older pc7 clients treat the new policy as invalid and refuse it. Use pc8 on
 clients editing or starting profiles with this choice; switch back to a supported
@@ -120,7 +136,10 @@ explicit policy in pc8 before returning to pc7. Proxy identity and data stay int
 
 An optional `_meta.proxy_route` selects a single `system`, `proxy` or `direct`
 connection, or a `chain` whose first hop is `system`, a selected library `proxy`,
-or `direct`, and whose second hop is the assigned `proxy` or `direct`. The
+or `direct`, and whose second hop is the assigned `proxy` or `direct`. PC11 also
+allows second-hop `system` only after a `direct` first hop; runtime normalises
+that selection to the single system route while the editor keeps the selection.
+Second-hop `system` after `system` or a selected first proxy is rejected. The
 original `proxy_id` remains the selected final proxy and can be kept while an
 inactive route does not use it. The first selected proxy has its own library ID.
 Missing route data preserves legacy policy inheritance; malformed data refuses.

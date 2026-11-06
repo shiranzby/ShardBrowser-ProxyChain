@@ -6,6 +6,7 @@
 export const TEAM_WARNINGS = {
   proxyAssignedFallback: (name: string) => `Proxy route for “${name}”: using the assigned proxy without the first hop after its route failed.`,
   proxySameEndpoint: (name: string) => `Proxy route for “${name}”: identical first-hop endpoint skipped.`,
+  proxySameExit: (name: string) => `Proxy route for “${name}”: fresh checks found matching exits; using the original assigned proxy once.`,
   /** A team profile's session was saved from another device first (open.rs Outcome::Stale). */
   stale: (name: string) => `${name} was saved from another device while it was open here, so the changes made here were not kept.`,
   /** Its session could not be sent back (Outcome::NotSaved). */

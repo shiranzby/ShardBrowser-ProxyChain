@@ -89,16 +89,18 @@ export function ProxyTab({ draft }: { draft: ProfileFormDraft }) {
         <div className="flex flex-col gap-2" data-profile-first-hop>
           <SelectField label={t("profileRoute.firstLayer")} value={route.first.mode} options={[
             { value: "system" as const, label: t("profileRoute.firstSystem") }, { value: "proxy" as const, label: t("profileRoute.firstProxy") }, { value: "direct" as const, label: t("profileRoute.firstDirect") },
-          ]} onChange={(mode) => change({ ...route, first: mode === "proxy" ? { mode, proxy_id: lastChain.current.first.mode === "proxy" ? lastChain.current.first.proxy_id : "" } : { mode } })} />
+          ]} onChange={(mode) => change({ ...route, first: mode === "proxy" ? { mode, proxy_id: lastChain.current.first.mode === "proxy" ? lastChain.current.first.proxy_id : "" } : { mode },
+            second: route.second.mode === "system" && mode !== "direct" ? { mode: "direct" } : route.second })} />
           {route.first.mode === "proxy" && <SelectField label={t("profileRoute.firstProxyChoice")} value={route.first.proxy_id} options={firstOptions} isSearchable onChange={(proxy_id) => change({ ...route, first: { mode: "proxy", proxy_id } })} />}
           <p className="m-0 text-help text-text-sub-600">{route.first.mode === "system" ? t("profileRoute.systemHelp") : route.first.mode === "direct" ? t("profileRoute.firstDirectHelp") : t("profileRoute.firstProxyHelp")}</p>
         </div>
         <div className="flex flex-col gap-2" data-profile-second-hop>
           <SelectField label={t("profileRoute.secondLayer")} value={route.second.mode} options={[
             { value: "proxy" as const, label: t("profileRoute.secondProxy") }, { value: "direct" as const, label: t("profileRoute.secondDirect") },
+            ...(route.first.mode === "direct" ? [{ value: "system" as const, label: t("profileRoute.secondSystem") }] : []),
           ]} onChange={(mode) => change({ ...route, second: { mode } })} />
           {route.second.mode === "proxy" && proxyPicker}
-          <p className="m-0 text-help text-text-sub-600">{route.second.mode === "direct" ? t("profileRoute.secondDirectHelp") : t("profileRoute.secondProxyHelp")}</p>
+          <p className="m-0 text-help text-text-sub-600">{route.second.mode === "direct" ? t("profileRoute.secondDirectHelp") : route.second.mode === "system" ? t("profileRoute.secondSystemHelp") : t("profileRoute.secondProxyHelp")}</p>
         </div>
         {route.first.mode === "proxy" && route.second.mode === "proxy" && route.first.proxy_id === draft.form.proxy_id && <p data-profile-route-same className="m-0 text-help text-text-sub-600">{t("profileRoute.sameProxyHelp")}</p>}
         {route.second.mode === "proxy" && route.first.mode !== "direct" && <div className="flex flex-col gap-2">
