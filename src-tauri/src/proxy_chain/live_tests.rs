@@ -838,6 +838,10 @@ async fn real_assigned_proxy_preferred_route_detection_and_public_launch() {
                 let first=if expected=="same_proxy_endpoint" {&entry} else {&refused};
                 super::routing::test_resolved_route(Some(route),super::policy::ChainPolicy::PreferFirstHop,Some(&entry),Some(first)).await
             } else {super::test("profile".into(), saved.public(), Some(id.clone())).await}.map_err(|_| "preferred_live_detection_failed")?;
+            report["last_detection"] = json!({"explicit_route":explicit,"expected_route":expected,
+                "actual_route":result.route.map(|route|route.as_str()),"system_state":result.system_proxy.state,
+                "profile_state":result.profile_proxy.state,"profile_error_code":result.profile_proxy.error_code,
+                "exit_error_code":result.exit_error_code});
             check(result.route.is_some_and(|route| route.as_str()==expected), "preferred_live_wrong_route")?;
             check(result.profile_proxy.state == "ok" && result.exit_error.is_none(), "preferred_live_assigned_proxy_failed")?;
             let exit = result.exit_ip.clone().ok_or("preferred_live_exit_missing")?;
