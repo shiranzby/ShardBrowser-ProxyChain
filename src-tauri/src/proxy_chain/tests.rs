@@ -699,13 +699,18 @@ async fn a_refused_first_hop_publishes_its_typed_error_before_loopback_eof() {
     for round in 0..ROUNDS {
         let tunnel = Tunnel::bind(hop(addr, ProxyKind::Http), target()).await.unwrap();
         let mut local = TcpStream::connect(tunnel.addr()).await.unwrap();
-        let closed=within(local.read(&mut [0;1])).await;
+        // Ordering is the contract here, not a three-second scheduler budget.
+        // Allow the product's twelve-second connect deadline to finish too;
+        // a timeout would still fail the required HTTP-refusal code below.
+        let closed=tokio::time::timeout(Duration::from_secs(15),local.read(&mut [0;1])).await
+            .unwrap_or_else(|_|panic!("first-hop refusal round {round}: local stream did not close"));
         assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
         // A retry/eventually here would hide the race this test guards.
         assert_eq!(tunnel.last_error().map(|error| error.code), Some("system_proxy_connect_refused"), "round {round}");
         tunnel.shutdown().await;
     }
-    within(refusing).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(15),refusing).await
+        .expect("first-hop refusal fixture did not complete all rounds").unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
