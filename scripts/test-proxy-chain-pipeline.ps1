@@ -206,6 +206,7 @@ try {
         $listed = @($definitions[0].Right.FindAll({ param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true) | ForEach-Object { $_.Value })
         $required = @('proxy-chain-settings.spec.ts','proxy-chain-errors.spec.ts','proxy-chain-policy.spec.ts','settings-save.spec.ts','settings-secret.spec.ts','profile-password.spec.ts','sidebar-simple.spec.ts','sidebar.spec.ts','personalization.spec.ts','list-order.spec.ts','nested-folders.spec.ts','folders.spec.ts','profile-defaults.spec.ts','tnb-extract.spec.ts','tnb-locations.spec.ts','settings.spec.ts','engine-update.spec.ts','profile-window-maximized.spec.ts','proxyshard-v2.spec.ts','team-created.spec.ts')
         foreach ($name in $required) { Assert ($name -in $listed) "The canonical UI gate omits $name" }
+        foreach ($name in @('profile-route.spec.ts','profile-route-summary.spec.ts')) { Assert ($name -in $listed) "The canonical route UI gate omits $name" }
         Assert (($listed | Sort-Object -Unique).Count -eq $listed.Count) 'The canonical UI test list has duplicates.'
         Assert ($verify.Contains('foreach ($uiTest in $uiTests)') -and $verify.Contains('Test-Path -LiteralPath (Join-Path $candidate "e2e/$uiTest") -PathType Leaf')) 'Every required UI test must be checked before running.'
         Assert ($verify.Contains("Step 'ui-browser' 'npx' (@('playwright','test','--config',`$configPath) + `$uiTests + @('--project=dev'))")) 'Playwright must consume the checked canonical UI test list.'
