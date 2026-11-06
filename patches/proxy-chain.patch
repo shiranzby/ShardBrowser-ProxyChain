@@ -10069,10 +10069,10 @@ index 0000000000000000000000000000000000000000..618826278d962ba00f733700f93d7145
 +}
 diff --git a/src-tauri/src/proxy_chain/tests.rs b/src-tauri/src/proxy_chain/tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..0062289cff07aceb62a3d4104160ebd9c0c87239
+index 0000000000000000000000000000000000000000..287ac354b982cb993e923ae4b36d001423f71153
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tests.rs
-@@ -0,0 +1,895 @@
+@@ -0,0 +1,903 @@
 +//! Synthetic loopback services only. None of these tests reads settings,
 +//! credentials, the system proxy configuration or the user's profiles.
 +
@@ -10801,10 +10801,18 @@ index 0000000000000000000000000000000000000000..0062289cff07aceb62a3d4104160ebd9
 +        // budget immediately. No timer may race against fixture negotiation.
 +        super::tunnel::system_connect(local, Duration::ZERO, resolver, published).await.err().unwrap()
 +    });
-+    let closed=within(client.read(&mut [0;1])).await;
++    // Keep the multithreaded EOF/publication race, but distinguish a stalled
++    // reader from a stalled worker under a busy full-suite runtime. This is a
++    // fixture wait; the system-connect budget above remains zero.
++    let closed=tokio::time::timeout(Duration::from_secs(15),client.read(&mut [0;1])).await
++        .unwrap_or_else(|_|panic!("system timeout publication: local stream did not close; worker_finished={}, published={:?}",
++            worker.is_finished(),error.try_lock().ok().and_then(|error|error.as_ref().map(|error|error.code))));
 +    assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
 +    assert_eq!(error.lock().unwrap().as_ref().map(|error| error.code), Some("system_proxy_timeout"));
-+    assert_eq!(within(worker).await.unwrap().code, "system_proxy_timeout");
++    let completed=tokio::time::timeout(Duration::from_secs(15),worker).await
++        .expect("system timeout publication: worker did not finish")
++        .expect("system timeout publication: worker panicked");
++    assert_eq!(completed.code, "system_proxy_timeout");
 +}
 +
 +#[tokio::test]
