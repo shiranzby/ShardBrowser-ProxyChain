@@ -115,6 +115,8 @@ pub async fn test_resolved_route(route:Option<&ProfileProxyRoute>,policy:policy:
                     if let Some(tcp_ms)=prepared.verified_tcp_ms {
                         record_connected_route(&mut result,route,first,prepared.route,prepared.first_hop_error.clone(),tcp_ms);
                         result.set_exit(Err(error.into()));
+                    } else if error.layer=="system_proxy" || error.layer=="configuration" {
+                        result.system_proxy=Stage::failed(error);
                     } else {result.profile_proxy=Stage::failed(error);}
                     prepared.tunnel.shutdown().await;result.total_ms=start.elapsed().as_millis();return Ok(result);
                 }}

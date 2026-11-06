@@ -620,7 +620,7 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
     crate::profile_defaults::validate_config(&input.stored.config)?;
     let mut s = crate::proxy_chain::saved_settings()?;
     let explicit = input.stored.meta.proxy_route.clone();
-    let chain = if let Some(route) = &explicit {
+    let mut chain = if let Some(route) = &explicit {
         route.validate()?;
         crate::proxy_chain::validate_args(&s.extra_args)?;
         if !crate::proxy_chain::routing::is_direct(route) && input.cdp { anyhow::bail!("Proxy-chain V1 cannot expose raw DevTools or automation proxy controls. Start this profile from the normal profile list without debugging."); }
@@ -644,12 +644,9 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
     }
     crate::proxy_chain::prepare(input.proxy.as_ref(), &s.proxy_chain).await?
     };
-    let chain_geo = if let Some(chain) = &chain {
-        if let Some(geo) = &chain.verified_geo { Some(geo.clone()) }
-        else {
-            proxy::probe_on_route(&chain.effective).await.map_err(|e| crate::proxy_chain::profile_failure(&chain.tunnel, &e))?;
-            Some(proxy::geo_check_on_route(Some(&chain.effective), None).await.map_err(|_| anyhow::anyhow!("The proxy chain connected, but its live exit IP could not be verified. No direct connection was attempted."))?)
-        }
+    let chain_geo = if let Some(chain) = &mut chain {
+        if chain.verified_geo.is_none() { crate::proxy_chain::verify_prepared(chain).await?; }
+        chain.verified_geo.clone()
     } else { None };
     // Read off the engine binary while the proxy is probed; once per engine version.
     let ext_alone = (!input.extensions.is_empty() || input.library.is_some() || crate::startup_page::configured(&input.stored.config).is_some() || crate::startup_page::is_installed(&input.udd)).then(|| {

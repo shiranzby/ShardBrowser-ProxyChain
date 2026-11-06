@@ -100,6 +100,7 @@ async fn socks_exchange(
     username: &str,
     password: &str,
     ip: &str,
+    refuse_probe: bool,
 ) -> std::io::Result<()> {
     if stream.read_u8().await? != 5 {
         return Ok(());
@@ -142,6 +143,12 @@ async fn socks_exchange(
         .lock()
         .unwrap()
         .push(format!("SOCKS {}:{port}", String::from_utf8_lossy(&host)));
+    // This proxy can carry real HTTP traffic while refusing the one host
+    // used by the connectivity probe. It never connects to either target.
+    if refuse_probe && host == b"example.com" && port == 443 {
+        stream.write_all(&[5, 4, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
+        return Ok(());
+    }
     stream.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 0]).await?;
     // Connectivity probes close after CONNECT; only the Geo request has HTTP.
     let head = http_head(stream).await?;
@@ -150,6 +157,10 @@ async fn socks_exchange(
 }
 
 async fn socks_proxy(username: &'static str, password: &'static str, ip: &'static str) -> Service {
+    socks_proxy_with_probe_rule(username, password, ip, false).await
+}
+
+async fn socks_proxy_with_probe_rule(username: &'static str, password: &'static str, ip: &'static str, refuse_probe: bool) -> Service {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -163,7 +174,7 @@ async fn socks_proxy(username: &'static str, password: &'static str, ip: &'stati
                     let (mut stream, _) = connection.unwrap();
                     let record = record.clone();
                     clients.spawn(async move {
-                        let _ = socks_exchange(&mut stream, &record, username, password, ip).await;
+                        let _ = socks_exchange(&mut stream, &record, username, password, ip, refuse_probe).await;
                     });
                 },
             }
@@ -194,6 +205,103 @@ fn assigned(addr: SocketAddr, kind: &str) -> crate::space::proxy::ProxyEntry {
         "proxy_chain_policy":"prefer_first_hop"})).unwrap()
 }
 
+#[tokio::test]
+async fn live_geo_on_the_selected_route_survives_a_probe_target_refusal_on_repeated_tests() {
+    use super::{policy::ChainPolicy,route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,Route};
+    let _root = crate::store::test_root("probe-target-refusal-with-live-exit");
+    crate::settings::save(&crate::settings::Settings { geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
+    let second = socks_proxy_with_probe_rule(SECOND_USER, SECOND_PASS, "198.51.100.88", true).await;
+    let entry = assigned(second.addr, "socks5");
+    let before = serde_json::to_value(&entry).unwrap();
+    let first = http_proxy(Some(second.addr), true).await;
+    let first_entry = assigned(first.addr, "http");
+    let chain = R::Chain { first: FirstHop::Proxy { proxy_id: first_entry.id.clone() }, second: SecondHop::Proxy };
+    for (route, expected) in [(R::Proxy, Route::ExplicitProxy), (chain, Route::ExplicitChain)] {
+        for _ in 0..2 {
+            let result = routing::test_resolved_route(Some(&route), ChainPolicy::Enabled, Some(&entry), Some(&first_entry)).await.unwrap();
+            assert_eq!(result.route, Some(expected), "the live exit must come from the selected route without fallback");
+            assert_eq!(result.profile_proxy.state, "ok");
+            assert_eq!(result.system_proxy.state, if expected == Route::ExplicitChain { "ok" } else { "not_tested" });
+            assert_eq!(result.exit_ip.as_deref(), Some("198.51.100.88"));
+            assert_eq!(result.exit_geo.as_ref().unwrap().provider, "ip-api.com");
+            assert!(result.exit_error.is_none() && result.exit_error_code.is_none() && result.first_hop_error_code.is_none());
+            assert_eq!(serde_json::to_value(&entry).unwrap(), before, "testing must not rewrite the assigned proxy");
+        }
+    }
+    let requests = second.requests.lock().unwrap();
+    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 4, "every probe really received a target refusal");
+    assert_eq!(requests.iter().filter(|r| *r == "SOCKS ip-api.com:80").count(), 4, "every result needs fresh authenticated traffic to the Geo target");
+    assert!(!requests.iter().any(|r| r.contains("MISMATCH") || r.contains("NOT_REMOTE_DNS")));
+    let first_requests = first.requests.lock().unwrap();
+    assert!(first_requests.len() >= 4, "the chained tests use the first hop for both probe and Geo");
+    let fixed_target = format!("CONNECT {}:{} HTTP/1.1", entry.host, entry.port);
+    assert!(first_requests.iter().all(|head| head.starts_with(&fixed_target)), "the first hop may only connect to the assigned proxy");
+}
+
+#[tokio::test]
+async fn legacy_profile_tests_accept_fresh_geo_when_the_probe_target_is_refused() {
+    use super::policy::ChainPolicy;
+    let _root = crate::store::test_root("legacy-probe-target-refusal-with-live-exit");
+    let second = socks_proxy_with_probe_rule(SECOND_USER, SECOND_PASS, "198.51.100.89", true).await;
+    let first = http_proxy(Some(second.addr), true).await;
+    let mut entry = assigned(second.addr, "socks5");
+    entry.proxy_chain_policy = ChainPolicy::Inherit;
+    save_assigned_profile(&entry, "inherit");
+    let before = std::fs::read(crate::store::proxies_path().unwrap()).unwrap();
+    let profile_path = crate::store::profiles_dir().unwrap().join("adaptive-profile.json");
+    let profile_before = std::fs::read(&profile_path).unwrap();
+    for enabled in [false, true] {
+        let mut stored = config(first.addr, "http");
+        stored.enabled = enabled;
+        stored.apply_update(&Default::default()).unwrap();
+        crate::settings::save(&crate::settings::Settings { proxy_chain: stored.clone(), geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
+        for _ in 0..2 {
+            let result = super::test("profile".into(), stored.public(), Some("adaptive-profile".into())).await.unwrap();
+            assert_eq!(result.profile_proxy.state, "ok");
+            assert_eq!(result.system_proxy.state, if enabled { "ok" } else { "not_tested" });
+            assert_eq!(result.exit_ip.as_deref(), Some("198.51.100.89"));
+            assert!(result.exit_error.is_none() && result.first_hop_error_code.is_none());
+            if enabled { assert_eq!(result.route, Some(super::Route::FirstHop), "a probe-only failure must not bypass the first hop"); }
+            assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), before);
+            assert_eq!(std::fs::read(&profile_path).unwrap(), profile_before);
+        }
+    }
+    let requests = second.requests.lock().unwrap();
+    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 4);
+    assert_eq!(requests.iter().filter(|r| *r == "SOCKS ip-api.com:80").count(), 4);
+    assert!(first.requests.lock().unwrap().len() >= 4, "both chained tests carry the probe and Geo through the first hop");
+}
+
+#[tokio::test]
+async fn proxy_list_chain_tests_do_not_mark_a_live_geo_route_failed_for_one_probe_host() {
+    let _root = crate::store::test_root("proxy-list-probe-target-refusal-with-live-exit");
+    let second = socks_proxy_with_probe_rule(SECOND_USER, SECOND_PASS, "198.51.100.90", true).await;
+    let first = http_proxy(Some(second.addr), true).await;
+    let mut entry = assigned(second.addr, "socks5");
+    entry.proxy_chain_policy = super::policy::ChainPolicy::Enabled;
+    entry.country = "ZZ".into();
+    save_assigned_profile(&entry, "inherit");
+    let before = std::fs::read(crate::store::proxies_path().unwrap()).unwrap();
+    let mut stored = config(first.addr, "http");
+    stored.apply_update(&Default::default()).unwrap();
+    crate::settings::save(&crate::settings::Settings { proxy_chain: stored, geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
+    for _ in 0..2 {
+        let snapshot = crate::space::proxy::full_test(&entry).await.unwrap();
+        assert_eq!(snapshot.transport.as_deref(), Some("proxy_chain"));
+        assert_eq!(snapshot.route.as_deref(), Some("first_hop"));
+        assert_eq!(snapshot.ip, "198.51.100.90");
+        assert_eq!(snapshot.provider, "ip-api.com");
+        assert!(snapshot.tcp_ms.is_some(), "authenticated Geo traffic supplies fresh route reachability");
+        assert!(snapshot.chain_error.is_none() && snapshot.geo_error.is_none() && snapshot.first_hop_error_code.is_none());
+        assert_eq!(snapshot.udp_state.as_deref(), Some("unsupported_by_chain"));
+        assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), before);
+    }
+    let requests = second.requests.lock().unwrap();
+    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 2);
+    assert_eq!(requests.iter().filter(|r| *r == "SOCKS ip-api.com:80").count(), 2);
+    assert!(first.requests.lock().unwrap().len() >= 4);
+}
+
 async fn socks_connect_refusal(reply: u8) -> Service {
     let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr=listener.local_addr().unwrap();
@@ -201,9 +309,12 @@ async fn socks_connect_refusal(reply: u8) -> Service {
     let record=requests.clone();
     let task=tokio::spawn(async move {
         while let Ok((mut stream,_))=listener.accept().await {
-            let mut greeting=[0;4];
+            let mut greeting=[0;2];
             if stream.read_exact(&mut greeting).await.is_err() {continue;}
-            assert_eq!(greeting,[5,2,0,2]);
+            assert_eq!(greeting[0],5);
+            let mut methods=vec![0;greeting[1] as usize];
+            stream.read_exact(&mut methods).await.unwrap();
+            assert!(methods.contains(&2));
             stream.write_all(&[5,2]).await.unwrap();
             assert_eq!(stream.read_u8().await.unwrap(),1);
             let mut username=vec![0;stream.read_u8().await.unwrap() as usize];
@@ -249,7 +360,10 @@ async fn explicit_single_proxy_failures_keep_socks_response_details_and_skip_glo
             for secret in [SECOND_USER,SECOND_PASS] {assert!(!dto.to_string().contains(secret));}
         }
         assert_eq!(serde_json::to_value(&entry).unwrap(),before);
-        assert_eq!(&*endpoint.requests.lock().unwrap(),&["example.com:443","example.com:443"]);
+        let requests=endpoint.requests.lock().unwrap();
+        assert_eq!(requests.iter().filter(|target| target.as_str()=="example.com:443").count(),2);
+        assert!(requests.iter().any(|target| target=="ip-api.com:80"),"failed reach probes still check the live exit on this route");
+        assert!(requests.iter().all(|target|matches!(target.as_str(),"example.com:443"|"ip-api.com:80"|"ipapi.co:443"|"ipwho.is:443")));
     }
     let endpoint=socks_proxy(SECOND_USER,"different synthetic secret","198.51.100.88").await;
     let entry=assigned(endpoint.addr,"socks5");
@@ -896,4 +1010,119 @@ fn system_entry_brackets_ipv6_for_geo_urls_and_keeps_credentials_in_memory() {
         );
         assert!(reqwest::Proxy::all(entry.to_proxy_server_arg()).is_ok());
     }
+}
+
+#[tokio::test]
+async fn proxy_list_first_hop_auth_refusal_cannot_be_hidden_by_later_geo_success() {
+    let _root = crate::store::test_root("proxy-list-first-auth-refusal");
+    let second = socks_proxy(SECOND_USER, SECOND_PASS, "198.51.100.91").await;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let record = requests.clone();
+    let destination = second.addr;
+    let first = Service {
+        addr,
+        requests,
+        task: tokio::spawn(async move {
+            let mut clients = JoinSet::new();
+            loop {
+                tokio::select! {
+                    _ = clients.join_next(), if !clients.is_empty() => {},
+                    connection = listener.accept() => {
+                        let (mut stream, _) = connection.unwrap();
+                        let record = record.clone();
+                        clients.spawn(async move {
+                            let Ok(head) = http_head(&mut stream).await else { return; };
+                            let first_request = {
+                                let mut seen = record.lock().unwrap();
+                                seen.push(head);
+                                seen.len() == 1
+                            };
+                            if first_request {
+                                let _ = stream.write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n").await;
+                                return;
+                            }
+                            // A later request could authenticate and return a
+                            // live Geo result. It must never be made after the
+                            // authoritative first-hop authentication refusal.
+                            let Ok(mut remote) = TcpStream::connect(destination).await else { return; };
+                            if stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.is_err() { return; }
+                            let _ = tokio::io::copy_bidirectional(&mut stream, &mut remote).await;
+                        });
+                    },
+                }
+            }
+        }),
+    };
+    let mut entry = assigned(second.addr, "socks5");
+    entry.proxy_chain_policy = super::policy::ChainPolicy::Enabled;
+    entry.country = "ZZ".into();
+    let original = serde_json::to_value(&entry).unwrap();
+    save_assigned_profile(&entry, "inherit");
+    let stored_before = std::fs::read(crate::store::proxies_path().unwrap()).unwrap();
+    let mut stored = config(first.addr, "http");
+    stored.apply_update(&Default::default()).unwrap();
+    crate::settings::save(&crate::settings::Settings {
+        proxy_chain: stored,
+        geo_checker: Some("ip-api.com".into()),
+        ..Default::default()
+    }).unwrap();
+
+    let snapshot = crate::space::proxy::full_test(&entry).await.unwrap();
+    assert_eq!(snapshot.chain_error.as_ref().map(|error| error.code.as_str()), Some("system_proxy_auth_failed"));
+    assert!(snapshot.ip.is_empty() && snapshot.tcp_ms.is_none());
+    assert_eq!(first.requests.lock().unwrap().len(), 1, "an authentication refusal must stop before any Geo connection");
+    assert!(second.requests.lock().unwrap().is_empty(), "the refused first-hop connection must never reach the assigned proxy");
+    assert_eq!(serde_json::to_value(&entry).unwrap(), original);
+    assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), stored_before);
+}
+
+#[tokio::test]
+async fn system_geolocation_proves_route_when_probe_target_refused() {
+    let _root = crate::store::test_root("system-probe-target-refused-with-live-exit");
+    crate::settings::save(&crate::settings::Settings { geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let record = requests.clone();
+    let first = Service {
+        addr,
+        requests,
+        task: tokio::spawn(async move {
+            let mut clients = JoinSet::new();
+            loop {
+                tokio::select! {
+                    _ = clients.join_next(), if !clients.is_empty() => {},
+                    connection = listener.accept() => {
+                        let (mut stream, _) = connection.unwrap();
+                        let record = record.clone();
+                        clients.spawn(async move {
+                            let Ok(head) = http_head(&mut stream).await else { return; };
+                            record.lock().unwrap().push(head.clone());
+                            if head.starts_with("GET http://ip-api.com/") {
+                                let _ = geo_response(&mut stream, "198.51.100.92").await;
+                            } else {
+                                // Only the synthetic Geo URL is accepted; all
+                                // CONNECT targets, including the fixed probe,
+                                // are refused without any external connection.
+                                let _ = stream.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n").await;
+                            }
+                        });
+                    },
+                }
+            }
+        }),
+    };
+    for _ in 0..2 {
+        let result = super::test("system".into(), config(first.addr, "http"), None).await.unwrap();
+        assert_eq!(result.system_proxy.state, "ok", "live traffic on this route proves connectivity despite one blocked probe target");
+        assert_eq!(result.profile_proxy.state, "not_tested");
+        assert_eq!(result.exit_ip.as_deref(), Some("198.51.100.92"));
+        assert_eq!(result.exit_geo.as_ref().unwrap().provider, "ip-api.com");
+        assert!(result.exit_error.is_none() && result.exit_error_code.is_none());
+    }
+    let requests = first.requests.lock().unwrap();
+    assert_eq!(requests.iter().filter(|head| head.starts_with("CONNECT example.com:443 ")).count(), 2);
+    assert_eq!(requests.iter().filter(|head| head.starts_with("GET http://ip-api.com/")).count(), 2, "each system test must obtain its own live Geo response");
 }

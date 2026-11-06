@@ -1,5 +1,26 @@
 # Per-profile route choice and HTTP/HTTPS second hops (pc8)
 
+## Live verification (pc10)
+
+The relay is bound before testing. There is no discarded first-hop CONNECT
+before the actual profile handshake. Preparation, profile tests, proxy-list
+tests and Start use the same relay verification. Each test closes its own
+listener and flows; it cannot close a running Session's relay.
+
+The dedicated `example.com:443` probe is a reachability measurement, not an
+exclusive browsing requirement. If that target fails, a valid fresh Geo
+response through the same relay and credentials proves proxy transport and
+the live exit. The measured Geo round trip supplies the reachability latency
+in this case. It is not a retry of the probe or an alternative route. Explicit
+authentication refusals still stop immediately. When both the probe and Geo
+fail, the original probe error is retained; when only Geo fails, measured
+connectivity remains visible but Start still refuses the unverified exit.
+
+Typed tunnel errors are published before the local socket closes, so the
+caller can identify a failed first hop instead of guessing from loopback EOF.
+The settings-only system test likewise accepts live Geo evidence on the
+resolved system proxy when its separate probe target is unavailable.
+
 Each saved profile `_meta.proxy_chain_policy` and saved proxy
 `proxy_chain_policy` accepts `inherit`, `enabled`, `disabled`, or `prefer_first_hop`. Missing fields
 mean `inherit`. Unknown values are errors, never an unchained fallback.

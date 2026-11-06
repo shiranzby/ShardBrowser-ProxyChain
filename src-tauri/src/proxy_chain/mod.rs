@@ -26,6 +26,8 @@ pub struct PreparedProxy {
     pub route: Route,
     pub first_hop_error: Option<ChainError>,
     pub verified_geo: Option<proxy::GeoInfo>,
+    /// Measured reachability latency. A live Geo response on the same route
+    /// also proves TCP transport when the dedicated probe target is unavailable.
     pub verified_tcp_ms: Option<u128>,
 }
 
@@ -133,18 +135,35 @@ fn effective_entry(entry: &ProxyEntry, tunnel: &Tunnel) -> ProxyEntry {
     effective
 }
 
-async fn verify_prepared(prepared: &mut PreparedProxy) -> Result<(), ChainError> {
+pub(crate) async fn verify_prepared(prepared: &mut PreparedProxy) -> Result<(), ChainError> {
     prepared.verified_tcp_ms=None;
     prepared.verified_geo=None;
-    let tcp_ms = proxy::probe_on_route(&prepared.effective).await.map_err(|e| profile_failure(&prepared.tunnel, &e))?;
-    prepared.verified_tcp_ms = Some(tcp_ms);
-    let geo = proxy::geo_check_on_route(Some(&prepared.effective), None).await.map_err(|cause| {
-        let mut error=ChainError::new("proxy_chain_profile_geo_failed", "exit", "The assigned proxy connected, but its live exit IP could not be verified on this route.");
-        error.geo_failures=cause.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone());
-        error
-    })?;
-    prepared.verified_geo = Some(geo);
-    Ok(())
+    let probe = proxy::probe_on_route(&prepared.effective).await
+        .map_err(|cause| profile_failure(&prepared.tunnel, &cause));
+    if let Err(error) = &probe {
+        // An explicit authentication refusal must never be hidden by another
+        // connection. An unavailable probe destination, however, says nothing
+        // about whether this same proxy can carry a real Geo request.
+        if matches!(error.code, "proxy_chain_profile_auth_failed" | "system_proxy_auth_failed") {
+            return Err(error.clone());
+        }
+    }
+    prepared.verified_tcp_ms=probe.as_ref().ok().copied();
+    let geo_start=Instant::now();
+    match proxy::geo_check_on_route(Some(&prepared.effective), None).await {
+        Ok(geo)=>{
+            // This is fresh traffic through the exact prepared relay, using
+            // its original credentials. It is neither cached nor a new route.
+            prepared.verified_tcp_ms=prepared.verified_tcp_ms.or(Some(geo_start.elapsed().as_millis()));
+            prepared.verified_geo=Some(geo);
+            Ok(())
+        },
+        Err(cause)=>{
+            let mut error=probe.err().unwrap_or_else(||ChainError::new("proxy_chain_profile_geo_failed", "exit", "The assigned proxy connected, but its live exit IP could not be verified on this route."));
+            error.geo_failures=cause.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone());
+            Err(error)
+        },
+    }
 }
 
 async fn assigned_route(entry: &ProxyEntry, route: Route, first_hop_error: Option<ChainError>) -> anyhow::Result<PreparedProxy> {
@@ -170,14 +189,12 @@ async fn assigned_route(entry: &ProxyEntry, route: Route, first_hop_error: Optio
 
 async fn prepare_with_hop(entry: &ProxyEntry, hop: ProxyHop) -> anyhow::Result<PreparedProxy> {
     let target = Target::new(&entry.host, entry.port)?;
-    // Proves the first hop can reach the original upstream before binding.
-    // It is not proof of second-hop authentication; callers also run probe.
+    // Verify through the local relay, not a separate connection that is
+    // discarded before the actual proxy handshake begins.
     let tunnel = if entry.kind == ProxyKind::Https {
         let tls = tls::client()?;
-        drop(tls::connect(&hop, &target, tls.clone(), connector::CONNECT_TIMEOUT).await?);
         Tunnel::bind_tls(hop, target, tls).await?
     } else {
-        drop(connector::connect(&hop, &target).await?);
         Tunnel::bind(hop, target).await?
     };
     let effective = effective_entry(entry, &tunnel);
@@ -244,7 +261,8 @@ pub fn profile_failure(tunnel: &Tunnel, cause: &anyhow::Error) -> ChainError {
     if !text.contains("rejected the username") && !text.contains("login method") {
         if let Some(error) = tunnel.last_error() { return error; }
     }
-    if text.contains("time") || text.contains("never answered") || text.contains("no answer") {
+    if cause.chain().any(|source| source.downcast_ref::<tokio::time::error::Elapsed>().is_some())
+        || text.contains("time") || text.contains("never answered") || text.contains("no answer") {
         ChainError::new("proxy_chain_profile_timeout", "profile", "The profile proxy did not finish its handshake or CONNECT in time.")
     } else if text.contains("username") || text.contains("password") || text.contains("login method") {
         ChainError::new("proxy_chain_profile_auth_failed", "profile", "The profile proxy rejected authentication. Check its credentials and allowed source IPs; system proxy credentials are separate.")
@@ -468,15 +486,10 @@ pub async fn test(
             }
             if !effective.enabled {
                 let entry = entry.as_ref().expect("profile entry loaded");
-                result.profile_proxy_address = Some(format!("{}:{}", entry.host, entry.port));
-                result.source = Some("profile_proxy_without_first_hop");
-                let phase = Instant::now();
-                match proxy::probe_on_route(entry).await {
-                    Ok(_) => { result.profile_proxy = Stage::ok(phase); result.set_exit(proxy::geo_check_on_route(Some(entry), None).await); },
-                    Err(_) => result.profile_proxy = Stage::failed(ChainError::new("proxy_chain_profile_connect_failed", "profile", "The profile proxy failed on the explicitly selected route without the first hop.")),
-                }
-                result.total_ms = start.elapsed().as_millis();
-                return Ok(result);
+                let mut tested=routing::test_resolved_route(Some(&route::ProfileProxyRoute::Proxy),policy::ChainPolicy::Disabled,Some(entry),None).await?;
+                tested.source=Some("profile_proxy_without_first_hop");
+                tested.total_ms=start.elapsed().as_millis();
+                return Ok(tested);
             }
         }
         let target = if let Some(entry) = &entry {
@@ -497,37 +510,55 @@ pub async fn test(
                     "socks5"
                 });
                 result.proxy_address = Some(format!("{}:{}", hop.host, hop.port));
-                match connector::connect(&hop, &target).await {
-                    Err(e) => result.system_proxy = Stage::failed(e),
-                    Ok(stream) => {
-                        drop(stream);
-                        result.system_proxy = Stage::ok(start);
-                        if let Some(entry) = entry.filter(|_| kind == "profile") {
-                            match prepare_with_hop(&entry, hop).await {
-                                Err(e) => {
-                                    result.profile_proxy = Stage::failed(
-                                        e.downcast::<ChainError>().unwrap_or_else(|_| {
-                                            ChainError::new(
-                                                "proxy_chain_profile_failed",
-                                                "profile",
-                                                "Could not prepare this profile proxy.",
-                                            )
-                                        }),
+                if let Some(entry) = entry.filter(|_| kind == "profile") {
+                    match prepare_with_hop(&entry, hop).await {
+                        Err(e) => {
+                            result.profile_proxy = Stage::failed(
+                                e.downcast::<ChainError>().unwrap_or_else(|_| {
+                                    ChainError::new(
+                                        "proxy_chain_profile_failed",
+                                        "profile",
+                                        "Could not prepare this profile proxy.",
                                     )
-                                }
-                                Ok(prepared) => {
-                                    result.route = Some(prepared.route);
-                                    let phase = Instant::now();
-                                    if let Err(error) = proxy::probe_on_route(&prepared.effective).await {
-                                        result.profile_proxy = Stage::failed(profile_failure(&prepared.tunnel, &error));
-                                    } else {
-                                        result.profile_proxy = Stage::ok(phase);
-                                        result.set_exit(proxy::geo_check_on_route(Some(&prepared.effective), None).await);
-                                    }
-                                    prepared.tunnel.shutdown().await;
-                                }
+                                }),
+                            )
+                        }
+                        Ok(mut prepared) => {
+                            result.route = Some(prepared.route);
+                            match verify_prepared(&mut prepared).await {
+                                Ok(())=>{
+                                    let ms=prepared.verified_tcp_ms.expect("route reachability verified");
+                                    result.system_proxy=Stage::measured(ms);
+                                    result.profile_proxy=Stage::measured(ms);
+                                    result.set_exit(Ok(prepared.verified_geo.clone().expect("route exit verified")));
+                                },
+                                Err(error) if prepared.verified_tcp_ms.is_some()=>{
+                                    let ms=prepared.verified_tcp_ms.unwrap();
+                                    result.system_proxy=Stage::measured(ms);
+                                    result.profile_proxy=Stage::measured(ms);
+                                    result.set_exit(Err(error.into()));
+                                },
+                                Err(error)=>{
+                                    if error.layer=="system_proxy" {result.system_proxy=Stage::failed(error);}
+                                    else {result.system_proxy=Stage::ok(start);result.profile_proxy=Stage::failed(error);}
+                                },
                             }
-                        } else {
+                            prepared.tunnel.shutdown().await;
+                        }
+                    }
+                } else {
+                    match connector::connect(&hop, &target).await {
+                        Err(error) if error.code=="system_proxy_auth_failed"=>result.system_proxy=Stage::failed(error),
+                        Err(error)=>{
+                            let entry=system_entry(&hop);
+                            let phase=Instant::now();
+                            let geo=proxy::geo_check_on_route(Some(&entry),None).await;
+                            result.system_proxy=if geo.is_ok(){Stage::ok(phase)}else{Stage::failed(error)};
+                            result.set_exit(geo);
+                        },
+                        Ok(stream)=>{
+                            drop(stream);
+                            result.system_proxy=Stage::ok(start);
                             let entry = system_entry(&hop);
                             result.set_exit(proxy::geo_check_on_route(Some(&entry), None).await);
                         }

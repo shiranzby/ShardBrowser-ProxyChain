@@ -132,20 +132,33 @@ impl Tunnel {
                             let system = system.clone();
                             flows.spawn(async move {
                                 let _slot = slot;
-                                let result = async {
-                                    if let Some(resolver) = system {
-                                        let (local, remote) = system_connect(local, connect_timeout,resolver,error.clone()).await?;
-                                        relay(local, remote, idle_timeout).await
-                                    } else if let Some(tls) = tls {
-                                        let remote: connector::Stream = if let Some(hop) = &hop { Box::new(super::tls::connect(hop, &target, tls, connect_timeout).await?) }
-                                            else { Box::new(super::tls::connect_assigned(&target, tls, connect_timeout).await?) };
-                                        relay(local, remote, idle_timeout).await
-                                    } else {
-                                        let remote: connector::Stream = if let Some(hop) = &hop { connector::connect_with_timeout(hop, &target, connect_timeout).await? }
-                                            else { Box::new(connector::connect_assigned(&target, connect_timeout).await?) };
-                                        relay(local, remote, idle_timeout).await
+                                let result = if let Some(resolver) = system {
+                                    match system_connect(local, connect_timeout,resolver,error.clone()).await {
+                                        Ok((local, remote)) => relay(local, remote, idle_timeout).await,
+                                        Err(_) => return, // system_connect publishes before closing local.
                                     }
-                                }.await;
+                                } else {
+                                    // Keep local outside the dialing future: its EOF must
+                                    // never reach a probe before the typed route error.
+                                    let remote: Result<connector::Stream, ChainError> = async {
+                                        if let Some(tls) = tls {
+                                            if let Some(hop) = &hop { Ok(Box::new(super::tls::connect(hop, &target, tls, connect_timeout).await?) as connector::Stream) }
+                                            else { Ok(Box::new(super::tls::connect_assigned(&target, tls, connect_timeout).await?) as connector::Stream) }
+                                        } else if let Some(hop) = &hop {
+                                            connector::connect_with_timeout(hop, &target, connect_timeout).await
+                                        } else {
+                                            Ok(Box::new(connector::connect_assigned(&target, connect_timeout).await?) as connector::Stream)
+                                        }
+                                    }.await;
+                                    match remote {
+                                        Ok(remote) => relay(local, remote, idle_timeout).await,
+                                        Err(e) => {
+                                            *error.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
+                                            drop(local);
+                                            return;
+                                        }
+                                    }
+                                };
                                 if let Err(e) = result {
                                     *error.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
                                 }
@@ -240,7 +253,7 @@ impl Tunnel {
     }
 }
 
-async fn system_connect(mut local: TcpStream, budget: Duration,resolver:SystemResolver,last_error:Arc<Mutex<Option<ChainError>>>) -> Result<(TcpStream, connector::Stream), ChainError> {
+pub(super) async fn system_connect(mut local: TcpStream, budget: Duration,resolver:SystemResolver,last_error:Arc<Mutex<Option<ChainError>>>) -> Result<(TcpStream, connector::Stream), ChainError> {
     let work = async {
         let failed = || ChainError::new("proxy_chain_local_protocol_failed", "tunnel", "The local system-route SOCKS5 request was invalid or unsupported.");
         if local.read_u8().await.map_err(|_| failed())? != 5 { return Err(failed()); }
@@ -262,11 +275,20 @@ async fn system_connect(mut local: TcpStream, budget: Duration,resolver:SystemRe
         let target=Target::new(host,port)?;
         let remote=async { let resolved=resolver(target.clone()).await?; connector::connect_with_timeout(&resolved.hop,&target,budget).await }.await;
         match remote {
-            Ok(remote) => { local.write_all(&[5,0,0,1,0,0,0,0,0,0]).await.map_err(|_|failed())?; Ok((local,remote)) },
+            Ok(remote) => { local.write_all(&[5,0,0,1,0,0,0,0,0,0]).await.map_err(|_|failed())?; Ok(remote) },
             Err(error) => { *last_error.lock().unwrap_or_else(|e|e.into_inner())=Some(error.clone());let _=local.write_all(&[5,1,0,1,0,0,0,0,0,0]).await; Err(error) },
         }
     };
-    tokio::time::timeout(budget,work).await.map_err(|_|ChainError::new("system_proxy_timeout","system_proxy","The system proxy did not finish resolving or connecting in time."))?
+    let result = tokio::time::timeout(budget,work).await
+        .map_err(|_|ChainError::new("system_proxy_timeout","system_proxy","The system proxy did not finish resolving or connecting in time."))
+        .and_then(|result| result);
+    match result {
+        Ok(remote) => Ok((local, remote)),
+        Err(error) => {
+            *last_error.lock().unwrap_or_else(|e|e.into_inner())=Some(error.clone());
+            Err(error)
+        }
+    }
 }
 
 fn cleanup_timeout() -> ChainError {

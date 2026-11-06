@@ -959,3 +959,62 @@ async fn real_assigned_single_proxy_stability() {
     println!("{}",serde_json::to_string_pretty(&report).unwrap());
     assert!(!root_path.exists());
 }
+
+#[tokio::test]
+#[ignore = "Read-only back-to-back comparison of assigned, system and chained routes using protected input; no browser."]
+async fn real_proxy_route_back_to_back_observation() {
+    use super::route::{FirstHop, ProfileProxyRoute, SecondHop};
+    assert_eq!(std::env::var("SHARD_PROXY_CHAIN_RUN_LIVE").as_deref(), Ok("1"));
+    let _serial = crate::migrate::serial();
+    let root = crate::store::test_root("proxy-route-back-to-back-observation");
+    let root_path = root.path.clone();
+    let cfg = input().expect("protected_input_unavailable");
+    let entry: crate::space::proxy::ProxyEntry = serde_json::from_value(json!({
+        "id":"repeat-observation-assigned", "name":"Synthetic repeated proxy",
+        "kind":cfg.kind, "host":cfg.host, "port":cfg.port,
+        "username":cfg.username, "password":cfg.password
+    })).expect("protected_proxy_fields_invalid");
+    crate::settings::save(&crate::settings::Settings {
+        geo_checker: Some("ip-api.com".into()), ..Default::default()
+    }).expect("isolated_observation_settings_save_failed");
+    let routes = [
+        ("assigned_proxy", ProfileProxyRoute::Proxy),
+        ("system_proxy", ProfileProxyRoute::System),
+        ("system_then_assigned", ProfileProxyRoute::Chain { first: FirstHop::System, second: SecondHop::Proxy }),
+    ];
+    let report_path = std::env::var_os("SHARD_PROXY_CHAIN_REPEAT_REPORT");
+    let mut report = json!({"kind":"proxy-route-back-to-back-observation", "state":"observing",
+        "preferred_geo_provider":"ip-api.com", "samples":[], "browser_started":false,
+        "user_files_written":false, "stability_certified":false});
+    for round in 1..=3 {
+        for (mode, route) in &routes {
+            for in_pair in 1..=2 {
+                let started = Instant::now();
+                let assigned = route.requires_assigned().then_some(&entry);
+                let outcome = super::routing::test_resolved_route(Some(route), super::policy::ChainPolicy::Inherit, assigned, None).await;
+                let sample = match outcome {
+                    Ok(tested) => json!({"round":round, "in_pair":in_pair, "mode":mode,
+                        "route":tested.route.map(|route|route.as_str()), "system_state":tested.system_proxy.state,
+                        "system_error_code":tested.system_proxy.error_code, "profile_state":tested.profile_proxy.state,
+                        "profile_error_code":tested.profile_proxy.error_code, "exit_error_code":tested.exit_error_code,
+                        "exit_ip":tested.exit_ip, "geo_provider":tested.exit_geo.map(|geo|geo.provider),
+                        "total_ms":started.elapsed().as_millis()}),
+                    Err(error) => json!({"round":round, "in_pair":in_pair, "mode":mode,
+                        "route":null, "test_error_code":error.downcast_ref::<ChainError>().map(|error|error.code).unwrap_or("route_test_failed"),
+                        "total_ms":started.elapsed().as_millis()}),
+                };
+                report["samples"].as_array_mut().unwrap().push(sample);
+                if let Some(path) = &report_path {
+                    std::fs::write(path, serde_json::to_string_pretty(&report).unwrap()).expect("safe_repeat_report_write_failed");
+                }
+            }
+        }
+    }
+    drop(root);
+    report["isolated_store_removed"] = json!(!root_path.exists());
+    report["state"] = json!("observed");
+    let body = serde_json::to_string_pretty(&report).unwrap();
+    if let Some(path) = report_path { std::fs::write(path, &body).expect("safe_repeat_report_write_failed"); }
+    println!("{body}");
+    assert!(!root_path.exists(), "repeat_observation_store_cleanup_failed");
+}

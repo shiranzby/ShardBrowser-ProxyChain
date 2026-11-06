@@ -1365,9 +1365,15 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
         crate::proxy_chain::prepare(Some(entry), &config).await
     }.await;
     match prepared {
-        Ok(prepared) => {
+        Ok(mut prepared) => {
+            // Capture this probe's error before another Geo flow can replace
+            // the relay's shared diagnostic. Reuse the verification results
+            // below, including partial connectivity, without another request.
+            let verification_error=if let Some(route)=prepared.as_mut() {
+                if route.verified_geo.is_none() {crate::proxy_chain::verify_prepared(route).await.err()} else {None}
+            } else {None};
             let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
-            let result = measure_on_route(effective, prepared.as_ref()).await;
+            let result = measure_on_route(effective, prepared.as_ref(), verification_error.as_ref()).await;
             if let Some(prepared) = prepared { prepared.tunnel.shutdown().await; }
             result
         }
@@ -1384,7 +1390,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
     }
 }
 
-async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_chain::PreparedProxy>) -> TestSnapshot {
+async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_chain::PreparedProxy>, verification_error: Option<&crate::proxy_chain::error::ChainError>) -> TestSnapshot {
     let now = unix_now();
     let tunnel = prepared.map(|p| &p.tunnel);
     let chained = tunnel.is_some();
@@ -1401,11 +1407,13 @@ async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_cha
     let geo_fut = async {
         let started = std::time::Instant::now();
         let res = if let Some(geo) = prepared.and_then(|p| p.verified_geo.as_ref()) { Ok(geo.clone()) }
+            else if let Some(error)=verification_error {Err(error.clone().into())}
             else { geo_check(entry, None).await };
         (res, started.elapsed().as_millis())
     };
     let tcp_fut = async {
         if let Some(ms) = prepared.and_then(|p| p.verified_tcp_ms) { Ok(ms) }
+        else if let Some(error)=verification_error {Err(error.clone().into())}
         else { probe(entry).await }
     };
     let (tcp_res, udp_res, (geo_res, geo_ms)) =
@@ -1419,7 +1427,8 @@ async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_cha
     // address rather than calling a working proxy dead.
     let chain_error = tunnel.and_then(|tunnel| {
         if let Err(error) = &tcp_res {
-            Some(crate::proxy_chain::profile_failure(tunnel, error).into())
+            Some(error.downcast_ref::<crate::proxy_chain::error::ChainError>().cloned()
+                .unwrap_or_else(||crate::proxy_chain::profile_failure(tunnel,error)).into())
         } else if geo_res.is_err() {
             Some(crate::proxy_chain::error::ChainError::new(
                 "proxy_chain_profile_geo_failed", "exit",
@@ -1783,14 +1792,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chain_measure_geo_success_cannot_hide_a_refused_second_hop_probe() {
+    async fn chain_measure_live_geo_proves_the_route_when_only_the_probe_target_is_refused() {
         let _root = crate::store::test_root("chain-error-second-hop");
         let result = chain_measure_fixture(false, true).await;
         assert_eq!(result.ip, "203.0.113.55", "keep the genuine Geo response");
-        assert!(result.tcp_ms.is_none(), "Geo duration is not a successful TCP probe");
-        let failure = result.chain_error.unwrap();
-        assert_eq!(failure.code, "proxy_chain_profile_connect_failed");
-        assert_eq!(failure.layer, "profile");
+        assert!(result.tcp_ms.is_some(), "the live Geo response measures transport through the same proxy");
+        assert!(result.chain_error.is_none());
         assert!(result.geo_error.is_none());
     }
 

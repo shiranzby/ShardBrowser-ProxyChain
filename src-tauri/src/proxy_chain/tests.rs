@@ -684,6 +684,52 @@ async fn a_failed_first_hop_never_connects_directly_to_the_second_hop() {
     tunnel.shutdown().await;
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_refused_first_hop_publishes_its_typed_error_before_loopback_eof() {
+    const ROUNDS: usize = 32;
+    let first = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = first.local_addr().unwrap();
+    let refusing = tokio::spawn(async move {
+        for _ in 0..ROUNDS {
+            let (mut socket, _) = first.accept().await.unwrap();
+            http_head(&mut socket).await;
+            socket.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await.unwrap();
+        }
+    });
+    for round in 0..ROUNDS {
+        let tunnel = Tunnel::bind(hop(addr, ProxyKind::Http), target()).await.unwrap();
+        let mut local = TcpStream::connect(tunnel.addr()).await.unwrap();
+        let closed=within(local.read(&mut [0;1])).await;
+        assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
+        // A retry/eventually here would hide the race this test guards.
+        assert_eq!(tunnel.last_error().map(|error| error.code), Some("system_proxy_connect_refused"), "round {round}");
+        tunnel.shutdown().await;
+    }
+    within(refusing).await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_system_resolution_timeout_publishes_its_typed_error_before_loopback_eof() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+    let (local, _) = listener.accept().await.unwrap();
+    let error = Arc::new(std::sync::Mutex::new(None));
+    let published = error.clone();
+    let resolver: super::tunnel::SystemResolver = Arc::new(|_| Box::pin(std::future::pending()));
+    let worker = tokio::spawn(async move {
+        super::tunnel::system_connect(local, Duration::from_millis(50), resolver, published).await.err().unwrap()
+    });
+    client.write_all(&[5, 1, 0]).await.unwrap();
+    let mut greeting = [0; 2];
+    within(client.read_exact(&mut greeting)).await.unwrap();
+    assert_eq!(greeting, [5, 0]);
+    client.write_all(&[5, 1, 0, 1, 203, 0, 113, 1, 1, 187]).await.unwrap();
+    let closed=within(client.read(&mut [0;1])).await;
+    assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
+    assert_eq!(error.lock().unwrap().as_ref().map(|error| error.code), Some("system_proxy_timeout"));
+    assert_eq!(within(worker).await.unwrap().code, "system_proxy_timeout");
+}
+
 #[tokio::test]
 async fn quota_counts_pending_handshakes_and_is_released_after_a_flow_ends() {
     async fn at<T>(stage: &str, future: impl Future<Output = T>) -> T {
@@ -834,4 +880,14 @@ async fn a_shared_tunnel_is_fully_closed_before_close_and_wait_returns() {
     closed(&mut browser).await;
     // An exit path and a tracker monitor may both request closure.
     within(tunnel.close_and_wait()).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_greeting_timeout_keeps_its_type_under_the_probe_context() {
+    let first = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let tunnel = Tunnel::bind(hop(first.local_addr().unwrap(), ProxyKind::Http), target()).await.unwrap();
+    let elapsed=tokio::time::timeout(Duration::from_millis(1),std::future::pending::<()>()).await.unwrap_err();
+    let cause=anyhow::Error::new(elapsed).context("the proxy accepted the connection but never greeted us");
+    assert_eq!(super::profile_failure(&tunnel,&cause).code,"proxy_chain_profile_timeout");
+    tunnel.shutdown().await;
 }
