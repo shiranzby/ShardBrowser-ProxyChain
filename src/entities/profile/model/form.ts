@@ -64,6 +64,7 @@ export function fromStored(stored: any): ProfileForm {
   f.rev = stored?._meta?.rev ?? 0;
   f.proxy_id = stored?._meta?.proxy_id ?? null;
   f.proxy_chain_policy = stored?._meta?.proxy_chain_policy ?? "inherit";
+  f.proxy_route = stored?._meta?.proxy_route === undefined ? undefined : structuredClone(stored._meta.proxy_route);
   f.name = stored?.name ?? "";
   f.notes = stored?.notes ?? "";
   f.color = stored?._meta?.color ?? "";
@@ -134,6 +135,7 @@ export function toStored(f: ProfileForm, lib: FingerprintEntry | null, prev?: an
     rev: f.rev,
     proxy_id: f.proxy_id,
     proxy_chain_policy: f.proxy_chain_policy ?? "inherit",
+    ...(f.proxy_route === undefined ? {} : { proxy_route: structuredClone(f.proxy_route) }),
     last_launched_at: null,
     gpu_preset_id: f.gpu_preset_id,
     ...(f.real_gpu ? { real_gpu: true } : {}),

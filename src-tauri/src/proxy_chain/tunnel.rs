@@ -12,6 +12,9 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::Instant;
+use std::{future::Future,pin::Pin};
+
+pub(super) type SystemResolver = Arc<dyn Fn(Target)->Pin<Box<dyn Future<Output=Result<super::detect_windows::ResolvedProxy,ChainError>>+Send>>+Send+Sync>;
 
 const MAX_CONNECTIONS: usize = 64;
 const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
@@ -44,18 +47,29 @@ impl Tunnel {
         idle_timeout: Duration,
         max_connections: usize,
     ) -> Result<Self, ChainError> {
-        Self::bind_transport(Some(hop), target, connect_timeout, idle_timeout, max_connections, None).await
+        Self::bind_transport(Some(hop), target, connect_timeout, idle_timeout, max_connections, None, None).await
     }
 
     pub(crate) async fn bind_tls(hop: ProxyHop, target: Target, tls: Arc<rustls::ClientConfig>) -> Result<Self, ChainError> {
-        Self::bind_transport(Some(hop), target, connector::CONNECT_TIMEOUT, IDLE_TIMEOUT, MAX_CONNECTIONS, Some(tls)).await
+        Self::bind_transport(Some(hop), target, connector::CONNECT_TIMEOUT, IDLE_TIMEOUT, MAX_CONNECTIONS, Some(tls), None).await
     }
 
     pub(crate) async fn bind_assigned(target: Target, tls: Option<Arc<rustls::ClientConfig>>) -> Result<Self, ChainError> {
-        Self::bind_transport(None, target, connector::CONNECT_TIMEOUT, IDLE_TIMEOUT, MAX_CONNECTIONS, tls).await
+        Self::bind_transport(None, target, connector::CONNECT_TIMEOUT, IDLE_TIMEOUT, MAX_CONNECTIONS, tls, None).await
     }
 
-    async fn bind_transport(hop: Option<ProxyHop>, target: Target, connect_timeout: Duration, idle_timeout: Duration, max_connections: usize, tls: Option<Arc<rustls::ClientConfig>>) -> Result<Self, ChainError> {
+    /// A local SOCKS5 entry resolves the Windows proxy for each browser CONNECT
+    /// destination. PAC is never frozen using a different probe destination.
+    pub(crate) async fn bind_system() -> Result<Self, ChainError> {
+        let resolver:SystemResolver=Arc::new(|target|Box::pin(async move {super::detect_windows::resolve_for(&target).await}));
+        Self::bind_system_with_resolver(resolver).await
+    }
+
+    pub(super) async fn bind_system_with_resolver(resolver:SystemResolver) -> Result<Self,ChainError> {
+        Self::bind_transport(None,Target::new("example.com",443)?,connector::CONNECT_TIMEOUT,IDLE_TIMEOUT,MAX_CONNECTIONS,None,Some(resolver)).await
+    }
+
+    async fn bind_transport(hop: Option<ProxyHop>, target: Target, connect_timeout: Duration, idle_timeout: Duration, max_connections: usize, tls: Option<Arc<rustls::ClientConfig>>, system: Option<SystemResolver>) -> Result<Self, ChainError> {
         if let Some(hop) = &hop { connector::validate(hop, &target)?; }
         else { Target::new(&target.host, target.port)?; }
         if max_connections == 0 || connect_timeout.is_zero() || idle_timeout.is_zero() {
@@ -115,16 +129,20 @@ impl Tunnel {
                             let target = target.clone();
                             let error = error.clone();
                             let tls = tls.clone();
+                            let system = system.clone();
                             flows.spawn(async move {
                                 let _slot = slot;
                                 let result = async {
-                                    if let Some(tls) = tls {
-                                        let remote = if let Some(hop) = &hop { super::tls::connect(hop, &target, tls, connect_timeout).await? }
-                                            else { super::tls::connect_assigned(&target, tls, connect_timeout).await? };
+                                    if let Some(resolver) = system {
+                                        let (local, remote) = system_connect(local, connect_timeout,resolver,error.clone()).await?;
+                                        relay(local, remote, idle_timeout).await
+                                    } else if let Some(tls) = tls {
+                                        let remote: connector::Stream = if let Some(hop) = &hop { Box::new(super::tls::connect(hop, &target, tls, connect_timeout).await?) }
+                                            else { Box::new(super::tls::connect_assigned(&target, tls, connect_timeout).await?) };
                                         relay(local, remote, idle_timeout).await
                                     } else {
-                                        let remote = if let Some(hop) = &hop { connector::connect_with_timeout(hop, &target, connect_timeout).await? }
-                                            else { connector::connect_assigned(&target, connect_timeout).await? };
+                                        let remote: connector::Stream = if let Some(hop) = &hop { connector::connect_with_timeout(hop, &target, connect_timeout).await? }
+                                            else { Box::new(connector::connect_assigned(&target, connect_timeout).await?) };
                                         relay(local, remote, idle_timeout).await
                                     }
                                 }.await;
@@ -220,6 +238,35 @@ impl Tunnel {
             }
         }
     }
+}
+
+async fn system_connect(mut local: TcpStream, budget: Duration,resolver:SystemResolver,last_error:Arc<Mutex<Option<ChainError>>>) -> Result<(TcpStream, connector::Stream), ChainError> {
+    let work = async {
+        let failed = || ChainError::new("proxy_chain_local_protocol_failed", "tunnel", "The local system-route SOCKS5 request was invalid or unsupported.");
+        if local.read_u8().await.map_err(|_| failed())? != 5 { return Err(failed()); }
+        let count = local.read_u8().await.map_err(|_| failed())? as usize;
+        if count == 0 { return Err(failed()); }
+        let mut methods=vec![0;count]; local.read_exact(&mut methods).await.map_err(|_| failed())?;
+        if !methods.contains(&0) { let _=local.write_all(&[5,255]).await; return Err(failed()); }
+        local.write_all(&[5,0]).await.map_err(|_| failed())?;
+        let mut head=[0;4]; local.read_exact(&mut head).await.map_err(|_| failed())?;
+        if head[0] != 5 || head[2] != 0 { return Err(failed()); }
+        let host=match head[3] {
+            1 => { let mut v=[0;4]; local.read_exact(&mut v).await.map_err(|_| failed())?; std::net::Ipv4Addr::from(v).to_string() },
+            4 => { let mut v=[0;16]; local.read_exact(&mut v).await.map_err(|_| failed())?; std::net::Ipv6Addr::from(v).to_string() },
+            3 => { let size=local.read_u8().await.map_err(|_| failed())? as usize; if size==0{return Err(failed());} let mut v=vec![0;size];local.read_exact(&mut v).await.map_err(|_| failed())?;String::from_utf8(v).map_err(|_|failed())? },
+            _ => return Err(failed()),
+        };
+        let port=local.read_u16().await.map_err(|_|failed())?;
+        if head[1] != 1 {let _=local.write_all(&[5,7,0,1,0,0,0,0,0,0]).await;return Err(failed());}
+        let target=Target::new(host,port)?;
+        let remote=async { let resolved=resolver(target.clone()).await?; connector::connect_with_timeout(&resolved.hop,&target,budget).await }.await;
+        match remote {
+            Ok(remote) => { local.write_all(&[5,0,0,1,0,0,0,0,0,0]).await.map_err(|_|failed())?; Ok((local,remote)) },
+            Err(error) => { *last_error.lock().unwrap_or_else(|e|e.into_inner())=Some(error.clone());let _=local.write_all(&[5,1,0,1,0,0,0,0,0,0]).await; Err(error) },
+        }
+    };
+    tokio::time::timeout(budget,work).await.map_err(|_|ChainError::new("system_proxy_timeout","system_proxy","The system proxy did not finish resolving or connecting in time."))?
 }
 
 fn cleanup_timeout() -> ChainError {

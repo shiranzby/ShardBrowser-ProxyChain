@@ -8,6 +8,7 @@ import { useProxy, type ProxyEntry } from "../proxy";
 import { planTierOf, usePsPlans } from "../proxyshard";
 import { tagsOf, useTags, type Tag } from "../tag";
 import { useMinuteClock } from "../../shared/lib/useNow";
+import { routeExitProxyId } from "../../shared/lib/profileRoute";
 import { computeSignals, testedCountry, type Signal, type SignalInput, type SignalKind } from "./signals";
 import { isHidden, pruneHidden, useHiddenSignals } from "./hidden";
 import { readLocales, useProfileLocales } from "./locales";
@@ -23,7 +24,7 @@ function usedProxyIds(): string[] {
   const { profiles, proxies } = useProfile.getState();
   const known = new Set(proxies.map((x) => x.id));
   const used = new Set<string>();
-  for (const p of profiles) if (p.proxy_id && known.has(p.proxy_id)) used.add(p.proxy_id);
+  for (const p of profiles) { const id = routeExitProxyId(p); if (id && known.has(id)) used.add(id); }
   return [...used];
 }
 
@@ -41,13 +42,13 @@ function judgedIds(): string[] {
   const { profiles, proxies } = useProfile.getState();
   const known = new Set(proxies.map((x) => x.id));
   const snapshots = useProxy.getState().snapshots;
-  return profiles.filter((p) => p.proxy_id && known.has(p.proxy_id) && testedCountry(snapshots[p.proxy_id]) !== null).map((p) => p.id);
+  return profiles.filter((p) => { const id = routeExitProxyId(p); return !p.proxy_route && id && known.has(id) && testedCountry(snapshots[id]) !== null; }).map((p) => p.id);
 }
 
 /** The residential tiers the profiles' proxies draw on. */
 function usedTiers() {
   const { profiles, proxies } = useProfile.getState();
-  const used = new Set(profiles.map((p) => p.proxy_id));
+  const used = new Set(profiles.map(routeExitProxyId));
   return [...new Set(proxies.filter((x) => used.has(x.id)).map(planTierOf).filter((x) => x !== null))];
 }
 

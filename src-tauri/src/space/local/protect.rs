@@ -23,6 +23,8 @@ const SEALED: &str = "sealed";
 /// What the lock hides: the fingerprint, the proxy binding, and the rest that names the device.
 #[derive(Serialize, Deserialize, Default)]
 struct Secret {
+    #[serde(default)]
+    proxy_route: Option<crate::proxy_chain::route::ProfileProxyRoute>,
     config: serde_json::Map<String, serde_json::Value>,
     proxy_id: Option<String>,
     inline_proxy: Option<super::proxy::ProxyEntry>,
@@ -45,6 +47,7 @@ pub(in crate::space) fn shows_secrets(stored: &StoredProfile) -> bool {
         || m.proxy_id.is_some()
         || m.inline_proxy.is_some()
         || !m.proxy_chain_policy.is_inherit()
+        || m.proxy_route.is_some()
         || m.gpu_preset_id.is_some()
         || !m.extensions.is_empty()
         || m.screen_custom
@@ -79,6 +82,7 @@ fn stub_of(full: &StoredProfile, key: &DataKey, lock: &seal::Lock) -> Result<Sto
     let mut config = full.config.clone();
     let name = config.remove("name");
     let secret = Secret {
+        proxy_route: full.meta.proxy_route.clone(),
         config,
         proxy_id: full.meta.proxy_id.clone(),
         inline_proxy: full.meta.inline_proxy.clone(),
@@ -90,6 +94,7 @@ fn stub_of(full: &StoredProfile, key: &DataKey, lock: &seal::Lock) -> Result<Sto
     };
     let blob = seal::seal_blob(&full.meta.id, key, "profile", &serde_json::to_vec(&secret)?)?;
     let meta = StoredMeta {
+        proxy_route: None,
         proxy_id: None,
         inline_proxy: None,
         proxy_chain_policy: Default::default(),
@@ -117,6 +122,7 @@ fn full_of(stub: &StoredProfile, key: &DataKey) -> Result<StoredProfile> {
         config.insert("name".into(), n.clone());
     }
     let meta = StoredMeta {
+        proxy_route: secret.proxy_route,
         proxy_id: secret.proxy_id,
         inline_proxy: secret.inline_proxy,
         proxy_chain_policy: secret.proxy_chain_policy,
@@ -194,7 +200,7 @@ pub(in crate::space) fn save_full(full: &StoredProfile, key: &DataKey) -> Result
     next.meta.total_runtime_ms = existing.meta.total_runtime_ms;
     let before = full_of(&existing, key)?;
     next.meta.rev = if before.config == next.config && before.meta.proxy_id == next.meta.proxy_id
-        && before.meta.proxy_chain_policy == next.meta.proxy_chain_policy {
+        && before.meta.proxy_chain_policy == next.meta.proxy_chain_policy && before.meta.proxy_route == next.meta.proxy_route {
         existing.meta.rev
     } else {
         existing.meta.rev.wrapping_add(1)
@@ -362,5 +368,34 @@ mod tests {
         assert_eq!(again.meta.proxy_id, p.meta.proxy_id);
         unprotect("policy-lock", "long enough").unwrap();
         assert_eq!(profile::load_raw("policy-lock").unwrap().meta.proxy_chain_policy, ChainPolicy::PreferFirstHop);
+    }
+
+    #[test]
+    fn protected_explicit_route_is_sealed_and_route_only_edits_move_the_revision() {
+        use crate::proxy_chain::route::{FirstHop, ProfileProxyRoute, SecondHop};
+        let _root = store::test_root("protected-explicit-route");
+        let mut p = plain("route-lock");
+        let route = ProfileProxyRoute::Chain { first: FirstHop::Proxy { proxy_id: "private-first-proxy".into() }, second: SecondHop::Proxy };
+        p.meta.proxy_route = Some(route.clone());
+        profile::write_raw(&p).unwrap();
+        protect("route-lock", "long enough").unwrap();
+        let path = store::profiles_dir().unwrap().join("route-lock.json");
+        let bytes = fs::read(&path).unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("private-first-proxy"));
+        let mut stub = profile::load_raw("route-lock").unwrap();
+        assert!(stub.meta.proxy_route.is_none());
+        stub.meta.proxy_route = Some(ProfileProxyRoute::Direct);
+        assert_eq!(profile::save_raw(&mut stub).unwrap_err().to_string(), PASSWORD_REQUIRED);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        let (mut full, key) = unlock("route-lock", "long enough").unwrap();
+        assert_eq!(full.meta.proxy_route, Some(route));
+        let rev = full.meta.rev;
+        full.meta.proxy_route = Some(ProfileProxyRoute::System);
+        save_full(&full, &key).unwrap();
+        let (again, _) = unlock("route-lock", "long enough").unwrap();
+        assert_eq!(again.meta.proxy_route, Some(ProfileProxyRoute::System));
+        assert_eq!(again.meta.proxy_id, p.meta.proxy_id);
+        assert_eq!(again.meta.rev, rev.wrapping_add(1));
+        assert!(profile::load_raw("route-lock").unwrap().meta.proxy_route.is_none());
     }
 }

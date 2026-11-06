@@ -1,5 +1,5 @@
 import { invoke as tauriInvoke, type InvokeArgs, type InvokeOptions } from "@tauri-apps/api/core";
-import { EPOCH_WRITES, SPACE_REFUSALS } from "./epochWrites";
+import { EPOCH_READS, EPOCH_WRITES, SPACE_REFUSALS } from "./epochWrites";
 import { epochForWrite, setSpaceEpoch, spaceEpoch } from "./edition";
 
 export { onSpaceMoved, setSpaceEpoch, spaceEpoch, withEpoch } from "./edition";
@@ -40,7 +40,7 @@ export async function invoke<T>(cmd: string, args?: InvokeArgs, options?: Invoke
       if (asked === undefined || asked === spaceEpoch() || tries >= 2) return got;
     }
   }
-  if (!EPOCH_WRITES.has(cmd)) return tauriInvoke<T>(cmd, args, options);
+  if (!EPOCH_WRITES.has(cmd) && !EPOCH_READS.has(cmd)) return tauriInvoke<T>(cmd, args, options);
   // Read before any wait: a write `withEpoch` pinned carries the space it was asked in.
   const epoch = epochForWrite() ?? (await readEdition());
   const sent = epoch === undefined ? args : { ...(args as Record<string, unknown> | undefined), epoch };

@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { flushSync } from "react-dom";
 import { focusCellButton, focusProfileRow } from "../../shared/lib/focusRow";
@@ -9,6 +9,7 @@ import { StatusPill } from "../../shared/ui/StatusPill";
 import { CellEditButton } from "../../shared/ui/CellEditButton";
 import { useLang, useT, type Lang } from "../../shared/i18n";
 import { HOST_OS, stampMs } from "../../shared/lib/utils";
+import { profileRouteLabel, routeProxyIds } from "../../shared/lib/profileRoute";
 import { fmtDuration } from "../../shared/lib/format";
 import { slideDelayOf } from "../../shared/lib/arrival";
 import { useReducedMotion } from "../../shared/hooks/useReducedMotion";
@@ -36,6 +37,7 @@ import type { ListReorder } from "../../shared/hooks/useListReorder";
  *  subscribes to none of them (speed lane 2026-10-02: a scroll mounts two
  *  rows a frame, and each subscription is a hook to build and take down). */
 const ui = () => useProfileUi.getState();
+const NO_ROUTE_PROXIES: ProxyEntry[] = [];
 const store = () => useProfile.getState();
 
 /// One 36 px line of the Profiles list. Positioned by the list (`top`); the
@@ -89,8 +91,11 @@ export const ProfileRow = memo(function ProfileRow({ profile, proxy, top, column
   ] as const));
   // `proxy` is the bound proxy from the list's map: none for a bound id means it was deleted,
   // or, on a team's row, that this member may not see it (it comes with the session).
-  const hidden = !!p.proxy_id && !proxy && p.origin === "team";
-  const missing = !!p.proxy_id && !proxy && !hidden;
+  const routeProxies = useProfile((s) => p.proxy_route ? s.proxies : NO_ROUTE_PROXIES);
+  const absent = p.proxy_route ? routeProxyIds(p).some(id => !routeProxies.some(x => x.id === id)) : !!p.proxy_id && !proxy;
+  const hidden = absent && p.origin === "team";
+  const missing = absent && !hidden;
+  const routeLabel = p.proxy_route && !p.protected ? profileRouteLabel(p, routeProxies, t) : null;
   const proxyNamed = !!proxy?.name && proxy.name !== `${proxy.host}:${proxy.port}`;
   const saving = useSaving((s) => s.ids.has(p.id));
   const status = profileStatus(p, { starting: isStarting, cancelled, stopping, runningSince, failedAt, saving, now, lang, proxyMissing: missing });
@@ -132,6 +137,12 @@ export const ProfileRow = memo(function ProfileRow({ profile, proxy, top, column
   // P's picker stays mounted through its exit (FEEL-01): hooks only, no DOM
   // while closed, so the memoized row stays cheap.
   const proxyLife = useDialogLife(editing === "proxy");
+  useEffect(() => {
+    if (editing === "proxy" && p.proxy_route) {
+      ui().stopEdit();
+      openProfileForm({ mode: "edit", id: p.id, tab: "proxy" });
+    }
+  }, [editing, p.id, p.proxy_route]);
   // Fix round 1 (M1): `FolderChip` is pure now, so the row reads the
   // Folder's look and passes its color in.
   const folderLook = useFolderLook(p.folder);
@@ -228,7 +239,7 @@ export const ProfileRow = memo(function ProfileRow({ profile, proxy, top, column
         );
       case "proxy":
         if (locked) return null;
-        return <CellEditButton lead={lead} tone={tone} decorated={built} tabIndex={tabIndex} label={t("cellEdit.editProxy", { name: p.name })} onEdit={() => ui().startEdit(p.id, "proxy")} />;
+        return <CellEditButton lead={lead} tone={tone} decorated={built} tabIndex={tabIndex} label={t("cellEdit.editProxy", { name: p.name })} onEdit={() => p.proxy_route ? openProfileForm({ mode: "edit", id: p.id, tab: "proxy" }) : ui().startEdit(p.id, "proxy")} />;
       case "notes":
         if (locked) return null;
         return (
@@ -257,7 +268,8 @@ export const ProfileRow = memo(function ProfileRow({ profile, proxy, top, column
       case "name": return () => openProfileForm({ mode: "edit", id: p.id });
       case "folder": return () => { ui().setActive(p.id); setFolderMenu(true); };
       case "tags": return () => ui().setTagPicker({ profileIds: [p.id], from: "list" });
-      case "proxy": case "notes": return locked ? () => {} : () => ui().startEdit(p.id, id);
+      case "proxy": return locked ? () => {} : () => p.proxy_route ? openProfileForm({ mode: "edit", id: p.id, tab: "proxy" }) : ui().startEdit(p.id, "proxy");
+      case "notes": return locked ? () => {} : () => ui().startEdit(p.id, id);
       // Any other cell: its click opened Peek, and the second press does
       // nothing more (it never lands on what slid under the pointer).
       default: return () => {};
@@ -436,7 +448,11 @@ export const ProfileRow = memo(function ProfileRow({ profile, proxy, top, column
             >
               {/* The edit button sits right after what the cell shows (CellEditButton). */}
               <span className="relative flex min-w-0 items-center">
-                {proxy ? (
+                {routeLabel ? (
+                  <Tooltip content={routeLabel} warm={false} delay={700}>
+                    <span data-profile-route className="truncate text-secondary text-text-sub-600">{routeLabel}</span>
+                  </Tooltip>
+                ) : proxy ? (
                   // The proxy's name, as Proxies and Peek show it (CRAFT-13); an
                   // unnamed one (or one named by its address, as a pasted line
                   // is) shows its host, cut before the port, never after
@@ -748,7 +764,7 @@ export const ProfileRow = memo(function ProfileRow({ profile, proxy, top, column
       {/* Anchored at the Proxy cell (it can't be hidden), and never mounted
           without one (fix round 1, Important 3). */}
       {proxyLife.mounted && proxyCell.current && (
-        <ProxyCellPopover key={proxyLife.session} open={editing === "proxy"} profile={p} anchorRef={proxyCell} onClose={() => endEdit(!editingKeyed ? proxyCell : undefined)} />
+        !p.proxy_route && <ProxyCellPopover key={proxyLife.session} open={editing === "proxy"} profile={p} anchorRef={proxyCell} onClose={() => endEdit(!editingKeyed ? proxyCell : undefined)} />
       )}
       {folderMenu && <FolderCellMenu profile={p} anchorRef={folderCell} onClose={() => { setFolderMenu(false); focusCellButton(folderCell, p.id); }} />}
     </div>

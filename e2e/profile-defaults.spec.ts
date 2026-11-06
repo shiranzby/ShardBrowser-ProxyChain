@@ -83,6 +83,8 @@ test("an invalid startup URL blocks a pasted proxy before any save and can be co
   await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Corrected startup");
   await dialog.getByRole("textbox", { name: "Startup URL", exact: true }).fill("javascript:alert(1)");
   await dialog.getByRole("tab", { name: "Proxy", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "Connection", exact: true }).click();
+  await page.getByRole("option", { name: "Choose proxy", exact: true }).click();
   await dialog.locator("[data-property='proxy'] button").click();
   await page.getByRole("button", { name: "Add a new proxy", exact: true }).click();
   await page.getByRole("textbox", { name: "Proxy line", exact: true }).fill("203.0.113.111:1081:user:pass");

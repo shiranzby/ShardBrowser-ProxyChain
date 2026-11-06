@@ -194,6 +194,99 @@ fn assigned(addr: SocketAddr, kind: &str) -> crate::space::proxy::ProxyEntry {
         "proxy_chain_policy":"prefer_first_hop"})).unwrap()
 }
 
+#[tokio::test]
+async fn explicit_proxy_routes_ignore_global_chain_and_preserve_their_selected_binding() {
+    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing};
+    let _root=crate::store::test_root("explicit-proxy-route");
+    let server=socks_proxy(SECOND_USER,SECOND_PASS,"198.51.100.85").await;
+    let assigned=assigned(server.addr,"socks5");
+    let before=serde_json::to_value(&assigned).unwrap();
+    crate::settings::save(&crate::settings::Settings{proxy_chain:ProxyChainSettings{enabled:true,invalid:true,..Default::default()},..Default::default()}).unwrap();
+    for route in [R::Proxy,R::Chain{first:FirstHop::Direct,second:SecondHop::Proxy},R::Chain{first:FirstHop::Proxy{proxy_id:assigned.id.clone()},second:SecondHop::Direct}] {
+        let prepared=routing::prepare_route(&route,Some(&assigned),Some(&assigned),false).await.unwrap().prepared.unwrap();
+        assert_eq!(prepared.verified_geo.as_ref().unwrap().ip,"198.51.100.85");
+        assert_eq!(prepared.effective.password,SECOND_PASS);
+        assert_eq!(serde_json::to_value(&assigned).unwrap(),before);
+        prepared.tunnel.shutdown().await;
+    }
+    for route in [R::Direct,R::Chain{first:FirstHop::Direct,second:SecondHop::Direct}] {
+        let ready=routing::prepare_route(&route,None,None,false).await.unwrap();
+        assert!(ready.proxy.is_none()&&ready.prepared.is_none());
+    }
+}
+
+#[tokio::test]
+async fn explicit_chains_deduplicate_only_identical_entries_and_fallback_only_when_requested() {
+    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,Route};
+    let _root=crate::store::test_root("explicit-chain-route");
+    let second=socks_proxy(SECOND_USER,SECOND_PASS,"198.51.100.86").await;
+    let entry=assigned(second.addr,"socks5");
+    let route=R::Chain{first:FirstHop::Proxy{proxy_id:entry.id.clone()},second:SecondHop::Proxy};
+    let same=routing::prepare_route(&route,Some(&entry),Some(&entry),false).await.unwrap().prepared.unwrap();
+    assert_eq!(same.route,Route::SameProxyEndpoint);same.tunnel.shutdown().await;
+    let detected=routing::test_resolved_route(Some(&route),super::policy::ChainPolicy::Enabled,Some(&entry),Some(&entry)).await.unwrap();
+    assert_eq!(detected.route,Some(Route::SameProxyEndpoint));
+    assert_eq!(detected.system_proxy.state,"not_tested","the duplicate first hop was skipped, not tested successfully");
+    assert_eq!(detected.profile_proxy.state,"ok");
+    let first=http_proxy(None,true).await;
+    let first_entry=assigned(first.addr,"http");
+    assert!(routing::prepare_route(&route,Some(&entry),Some(&first_entry),false).await.is_err());
+    let fallback=routing::prepare_route(&route,Some(&entry),Some(&first_entry),true).await.unwrap().prepared.unwrap();
+    assert_eq!(fallback.route,Route::AssignedProxyFallback);
+    assert!(fallback.first_hop_error.is_some());assert_eq!(fallback.verified_geo.as_ref().unwrap().ip,"198.51.100.86");
+    fallback.tunnel.shutdown().await;
+    assert!(routing::prepare_route(&route,Some(&entry),None,true).await.is_err());
+    assert!(routing::prepare_route(&R::Proxy,None,None,true).await.is_err());
+}
+
+#[tokio::test]
+async fn explicit_route_failure_detection_keeps_both_failed_routes_and_the_first_error() {
+    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,policy::ChainPolicy};
+    let _root=crate::store::test_root("explicit-double-failure-stages");
+    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let first_addr=listener.local_addr().unwrap();
+    let requests=Arc::new(Mutex::new(Vec::new()));
+    let record=requests.clone();
+    let first=Service {addr:first_addr,requests,task:tokio::spawn(async move {
+        while let Ok((mut socket,_))=listener.accept().await {
+            if let Ok(head)=http_head(&mut socket).await { record.lock().unwrap().push(head); }
+            let _=socket.write_all(b"HTTP/1.1 403 Synthetic refusal\r\nContent-Length: 0\r\n\r\n").await;
+        }
+    })};
+    let second=socks_proxy(SECOND_USER,SECOND_PASS,"198.51.100.87").await;
+    let mut entry=assigned(second.addr,"socks5");
+    entry.password="wrong synthetic password".into();
+    let first_entry=assigned(first.addr,"http");
+    let route=R::Chain {first:FirstHop::Proxy {proxy_id:first_entry.id.clone()},second:SecondHop::Proxy};
+    let result=routing::test_resolved_route(Some(&route),ChainPolicy::PreferFirstHop,Some(&entry),Some(&first_entry)).await.unwrap();
+    assert_eq!(result.first_hop_error_code,Some("system_proxy_connect_refused"));
+    assert_eq!(result.system_proxy.state,"failed");
+    assert_eq!(result.system_proxy.error_code,Some("system_proxy_connect_refused"));
+    assert_eq!(result.profile_proxy.state,"failed");
+    assert_eq!(result.profile_proxy.error_code,Some("proxy_chain_routes_failed"));
+    assert!(result.exit_ip.is_none()&&result.exit_geo.is_none());
+    assert!(!first.requests.lock().unwrap().is_empty());
+    assert!(second.requests.lock().unwrap().iter().any(|r|r=="AUTHENTICATION_MISMATCH"));
+    let safe=serde_json::to_string(&result).unwrap();
+    for secret in [SECOND_PASS,"wrong synthetic password"] {assert!(!safe.contains(secret));}
+}
+
+#[tokio::test]
+async fn explicit_route_failure_detection_does_not_claim_an_identical_failed_endpoint_passed() {
+    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,policy::ChainPolicy};
+    let _root=crate::store::test_root("explicit-identical-failure-stages");
+    let second=http_proxy(None,false).await;
+    let entry=assigned(second.addr,"http");
+    let route=R::Chain {first:FirstHop::Proxy {proxy_id:entry.id.clone()},second:SecondHop::Proxy};
+    let result=routing::test_resolved_route(Some(&route),ChainPolicy::Enabled,Some(&entry),Some(&entry)).await.unwrap();
+    assert_ne!(result.system_proxy.state,"ok");
+    assert_eq!(result.profile_proxy.state,"failed");
+    assert_eq!(result.profile_proxy.error_code,Some("proxy_chain_same_proxy_failed"));
+    assert!(result.first_hop_error_code.is_none());
+    assert!(result.exit_ip.is_none()&&result.exit_geo.is_none());
+    assert!(!second.requests.lock().unwrap().iter().any(|head|head.starts_with(&format!("CONNECT {}:{} ",entry.host,entry.port))));
+}
+
 fn prefer(config: &ProxyChainSettings) -> ProxyChainSettings {
     super::policy::effective(config, super::policy::ChainPolicy::PreferFirstHop, Default::default()).unwrap()
 }

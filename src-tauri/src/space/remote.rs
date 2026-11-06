@@ -143,6 +143,7 @@ fn open_on(lease: &Lease, device_id: &str) -> OpenOn {
 /// A row as the profile list shows it; the settings fill in what only they know.
 pub fn meta(team: &str, row: &ProfileRow, detail: Option<&StoredProfile>, device_id: &str) -> ProfileMeta {
     ProfileMeta {
+        proxy_route: detail.and_then(|p| p.meta.proxy_route.clone()),
         proxy_chain_policy: detail.map(|p| p.meta.proxy_chain_policy).unwrap_or_default(),
         id: row.id.clone(),
         name: row.name.clone(),
@@ -445,6 +446,11 @@ pub async fn read_profile(c: &TeamClient, id: &str) -> Result<ProfileWithData, T
     c.get(&path_of("profiles", id)?).await
 }
 
+/// A proxy's current settings, with its server-side read permission checked now.
+pub async fn read_proxy(c: &TeamClient, id: &str) -> Result<ProxyWithData, TeamError> {
+    c.get(&path_of("proxies", id)?).await
+}
+
 async fn put_profile(c: &TeamClient, id: &str, folder: &str, f: &ProfileFields<'_>, base: u64) -> Result<Written, TeamError> {
     let mut body = json!({ "name": f.name, "folder": folder, "data": f.data, "base_revision": base });
     if let Some(card) = f.card {
@@ -676,6 +682,19 @@ mod tests {
         assert_eq!(shown["origin"], "team");
         assert_eq!(shown["open_on"]["this_device"], false);
         assert_eq!(shown["rights"]["take_out"], false);
+    }
+
+    #[test]
+    fn explicit_route_stays_in_authorized_team_settings_and_out_of_public_cards() {
+        let route = json!({"mode":"chain", "first":{"mode":"proxy","proxy_id":"private-hop"}, "second":{"mode":"direct"}});
+        let blob = b64(json!({"name":"Route", "_meta":{"proxy_route":route}}));
+        let s = stored(&row("route-team"), Some(&blob));
+        assert_eq!(serde_json::to_value(&s.meta.proxy_route).unwrap(), route);
+        let public = serde_json::to_value(meta("t1", &row("route-team"), None, "")).unwrap();
+        assert!(public.get("proxy_route").is_none());
+        let detailed = serde_json::to_value(meta("t1", &row("route-team"), Some(&s), "")).unwrap();
+        assert_eq!(detailed["proxy_route"], route);
+        assert!(!serde_json::to_string(&row("route-team").card).unwrap().contains("private-hop"));
     }
 
     #[test]

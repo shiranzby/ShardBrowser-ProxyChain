@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { ACCENT_HEX, AUTO_LANG, AUTO_TZ, LABEL_COLORS, LOCALES, OS_OPTIONS, osIdFor } from "../../../shared/constants";
 import { AlertIcon } from "../../../shared/icons";
 import { HOST_OS } from "../../../shared/lib/utils";
+import { profileRouteLabel } from "../../../shared/lib/profileRoute";
 import { CountryFlag } from "../../../shared/ui/CountryFlag";
 import { FolderChip } from "../../../shared/ui/FolderChip";
 import { MULTICOLOR } from "../../../shared/ui/AccentRadios";
@@ -123,10 +124,11 @@ function ProxyDetail({ profile }: { profile: ProfileMeta }) {
   const proxy = profile.proxy_id ? proxies.find((p) => p.id === profile.proxy_id) : undefined;
   const missing = proxyMissing(profile, proxies);
   const hidden = proxyHidden(profile, proxies);
+  const routeLabel = !isProtected(profile) ? profileRouteLabel(profile, proxies, t) : null;
   return (
     <PropertyRow id="proxy" label={t("peek.proxy")}>
       {(labelId) => (
-        <Link labelId={labelId} id={profile.id} tab="proxy" empty={!profile.proxy_id}>
+        <Link labelId={labelId} id={profile.id} tab="proxy" empty={!profile.proxy_id && !profile.proxy_route}>
           {isProtected(profile) ? (
             <Locked />
           ) : missing ? (
@@ -136,6 +138,8 @@ function ProxyDetail({ profile }: { profile: ProfileMeta }) {
             </>
           ) : hidden ? (
             <span data-proxy-hidden className="truncate">{t("profileRow.proxyHidden")}</span>
+          ) : routeLabel ? (
+            <span data-profile-route className="min-w-0 [overflow-wrap:anywhere]">{routeLabel}</span>
           ) : proxy ? (
             <>
               {proxy.country && <CountryFlag cc={proxy.country} height={14} />}

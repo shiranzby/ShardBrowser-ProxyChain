@@ -6,7 +6,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::fmt;
 use std::net::IpAddr;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
@@ -15,7 +15,15 @@ const MAX_HTTP_HEAD: usize = 16 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProxyKind {
     Http,
+    Https,
     Socks5,
+}
+
+pub trait ProxyStream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> ProxyStream for T {}
+pub type Stream = Box<dyn ProxyStream>;
+impl fmt::Debug for dyn ProxyStream {
+    fn fmt(&self, f:&mut fmt::Formatter<'_>)->fmt::Result {f.write_str("ProxyStream [redacted]")}
 }
 
 #[derive(Clone)]
@@ -119,7 +127,7 @@ pub fn validate(hop: &ProxyHop, target: &Target) -> Result<(), ChainError> {
             "Proxy credentials cannot exceed 4096 bytes in total.",
         ));
     }
-    if hop.kind == ProxyKind::Http && hop.username.contains(':') {
+    if matches!(hop.kind, ProxyKind::Http | ProxyKind::Https) && hop.username.contains(':') {
         return Err(bad_config("An HTTP Basic username cannot contain a colon."));
     }
     if hop.kind == ProxyKind::Socks5 {
@@ -147,7 +155,7 @@ fn protocol_error(message: &'static str) -> ChainError {
     ChainError::new("system_proxy_protocol_error", "system_proxy", message)
 }
 
-pub async fn connect(hop: &ProxyHop, target: &Target) -> Result<TcpStream, ChainError> {
+pub async fn connect(hop: &ProxyHop, target: &Target) -> Result<Stream, ChainError> {
     connect_with_timeout(hop, target, CONNECT_TIMEOUT).await
 }
 
@@ -164,12 +172,16 @@ pub(super) async fn connect_with_timeout(
     hop: &ProxyHop,
     target: &Target,
     budget: Duration,
-) -> Result<TcpStream, ChainError> {
+) -> Result<Stream, ChainError> {
+    connect_with_tls_config(hop,target,budget,None).await
+}
+
+pub(super) async fn connect_with_tls_config(hop:&ProxyHop,target:&Target,budget:Duration,tls:Option<std::sync::Arc<rustls::ClientConfig>>) -> Result<Stream,ChainError> {
     validate(hop, target)?;
     let host = normal_host(&hop.host)?;
     let target = Target::new(target.host.clone(), target.port)?;
     tokio::time::timeout(budget, async {
-        let mut stream = TcpStream::connect((host.as_str(), hop.port))
+        let stream = TcpStream::connect((host.as_str(), hop.port))
             .await
             .map_err(|_| {
                 ChainError::new(
@@ -179,8 +191,12 @@ pub(super) async fn connect_with_timeout(
                 )
             })?;
         let _ = stream.set_nodelay(true);
+        let mut stream: Stream = if hop.kind == ProxyKind::Https {
+            let name = rustls::pki_types::ServerName::try_from(host.clone()).map_err(|_| first_tls_error())?;
+            Box::new(tokio_rustls::TlsConnector::from(match tls {Some(tls)=>tls,None=>super::tls::client()?}).connect(name, stream).await.map_err(|_| first_tls_error())?)
+        } else { Box::new(stream) };
         match hop.kind {
-            ProxyKind::Http => http_connect(&mut stream, hop, &target).await?,
+            ProxyKind::Http | ProxyKind::Https => http_connect(&mut stream, hop, &target).await?,
             ProxyKind::Socks5 => socks_connect(&mut stream, hop, &target).await?,
         }
         Ok(stream)
@@ -195,8 +211,12 @@ pub(super) async fn connect_with_timeout(
     })?
 }
 
+fn first_tls_error() -> ChainError {
+    ChainError::new("system_proxy_tls_failed", "system_proxy", "TLS to the first-hop HTTPS proxy failed. Its certificate must match the proxy host; no HTTP downgrade or certificate bypass was used.")
+}
+
 async fn http_connect(
-    stream: &mut TcpStream,
+    stream: &mut Stream,
     hop: &ProxyHop,
     target: &Target,
 ) -> Result<(), ChainError> {
@@ -257,7 +277,7 @@ async fn http_connect(
 }
 
 async fn socks_connect(
-    stream: &mut TcpStream,
+    stream: &mut Stream,
     hop: &ProxyHop,
     target: &Target,
 ) -> Result<(), ChainError> {

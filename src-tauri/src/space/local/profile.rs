@@ -52,6 +52,8 @@ fn write_atomic(path: &Path, body: &[u8]) -> Result<()> {
 /// Launcher-side view of a profile (wraps raw FingerprintConfig JSON).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_route: Option<crate::proxy_chain::route::ProfileProxyRoute>,
     #[serde(default)]
     pub proxy_chain_policy: crate::proxy_chain::policy::ChainPolicy,
     pub id: String,
@@ -133,6 +135,8 @@ pub struct StoredProfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StoredMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_route: Option<crate::proxy_chain::route::ProfileProxyRoute>,
     #[serde(default)]
     pub id: String,
     #[serde(default)]
@@ -184,6 +188,16 @@ pub struct StoredMeta {
     /// Present on a password-protected profile (#127): what unlocks its sealed part.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lock: Option<super::seal::Lock>,
+}
+
+pub(crate) fn validate_proxy_route(meta: &StoredMeta) -> Result<()> {
+    if let Some(route) = &meta.proxy_route {
+        route.validate()?;
+        if route.requires_assigned() && meta.inline_proxy.is_none() && meta.proxy_id.as_deref().is_none_or(|id| id.trim().is_empty()) {
+            anyhow::bail!("Select a proxy for this profile route.");
+        }
+    }
+    Ok(())
 }
 
 /// Does the profile name a window of its own? A block with no usable size is
@@ -296,6 +310,7 @@ pub(in crate::space) fn list_all() -> Result<Vec<ProfileMeta>> {
             .unwrap_or("")
             .to_string();
         out.push(ProfileMeta {
+            proxy_route: stored.meta.proxy_route.clone(),
             proxy_chain_policy: stored.meta.proxy_chain_policy,
             id: stored.meta.id,
             name,
@@ -464,6 +479,7 @@ pub(in crate::space) fn fill_missing_window(id: &str, window: serde_json::Value)
 }
 
 pub(in crate::space) fn save_raw(stored: &mut StoredProfile) -> Result<()> {
+    validate_proxy_route(&stored.meta)?;
     stored.meta.proxy_chain_policy.validate()?;
     if let Some(proxy) = &stored.meta.inline_proxy { proxy.proxy_chain_policy.validate()?; }
     let _guard = file_lock();
@@ -482,6 +498,7 @@ fn save_raw_new_locked(stored: &mut StoredProfile, id: String) -> Result<()> {
 /// Body of `save_raw` for callers already holding the lock. It reloads the file
 /// itself, so a caller that loaded first must hold the lock across both halves.
 fn save_raw_locked(stored: &mut StoredProfile) -> Result<()> {
+    validate_proxy_route(&stored.meta)?;
     stored.meta.proxy_chain_policy.validate()?;
     let is_new = stored.meta.id.is_empty();
     if is_new {
@@ -521,7 +538,8 @@ fn save_raw_locked(stored: &mut StoredProfile) -> Result<()> {
             // writes the runtime total — neither is something an open editor
             // is in conflict with, and bumping for them refused the operator's
             // own save with a message blaming an API nobody had called.
-            stored.meta.rev = if stored.config == existing.config {
+            stored.meta.rev = if stored.config == existing.config && stored.meta.proxy_id == existing.meta.proxy_id
+                && stored.meta.proxy_chain_policy == existing.meta.proxy_chain_policy && stored.meta.proxy_route == existing.meta.proxy_route {
                 existing.meta.rev
             } else {
                 existing.meta.rev.wrapping_add(1)
@@ -630,6 +648,7 @@ pub(in crate::space) fn clone_profile(id: &str) -> Result<ProfileMeta> {
     let new_id = std::mem::take(&mut src.meta.id);
     save_raw_new_locked(&mut src, new_id)?;
     Ok(ProfileMeta {
+        proxy_route: src.meta.proxy_route.clone(),
         proxy_chain_policy: src.meta.proxy_chain_policy,
         id: src.meta.id,
         name,

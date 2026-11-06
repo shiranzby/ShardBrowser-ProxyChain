@@ -5,6 +5,8 @@ pub mod credentials;
 pub mod detect_windows;
 pub mod error;
 pub mod policy;
+pub mod route;
+pub mod routing;
 #[cfg(test)]
 mod tests;
 pub mod tunnel;
@@ -29,9 +31,9 @@ pub struct PreparedProxy {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Route { FirstHop, AssignedProxyFallback, SameProxyEndpoint }
+pub enum Route { FirstHop, AssignedProxyFallback, SameProxyEndpoint, ExplicitDirect, ExplicitSystem, ExplicitProxy, ExplicitChain }
 impl Route {
-    pub fn as_str(self) -> &'static str { match self { Self::FirstHop => "first_hop", Self::AssignedProxyFallback => "assigned_proxy_fallback", Self::SameProxyEndpoint => "same_proxy_endpoint" } }
+    pub fn as_str(self) -> &'static str { match self { Self::FirstHop => "first_hop", Self::AssignedProxyFallback => "assigned_proxy_fallback", Self::SameProxyEndpoint => "same_proxy_endpoint", Self::ExplicitDirect => "explicit_direct", Self::ExplicitSystem => "explicit_system", Self::ExplicitProxy => "explicit_proxy", Self::ExplicitChain => "explicit_chain" } }
 }
 
 pub fn saved_settings() -> anyhow::Result<crate::settings::Settings> {
@@ -95,7 +97,7 @@ fn safe_prepare_error(error: anyhow::Error) -> ChainError {
 }
 
 fn same_endpoint(entry: &ProxyEntry, hop: &ProxyHop) -> Result<bool, ChainError> {
-    let same_protocol = matches!((&entry.kind, hop.kind), (ProxyKind::Http, connector::ProxyKind::Http) | (ProxyKind::Socks5, connector::ProxyKind::Socks5));
+    let same_protocol = matches!((&entry.kind, hop.kind), (ProxyKind::Http, connector::ProxyKind::Http) | (ProxyKind::Https, connector::ProxyKind::Https) | (ProxyKind::Socks5, connector::ProxyKind::Socks5));
     Ok(same_protocol && Target::new(&entry.host, entry.port)? == Target::new(&hop.host, hop.port)?
         && entry.username == hop.username && entry.password == hop.password)
 }
@@ -323,6 +325,7 @@ fn system_entry(hop: &ProxyHop) -> ProxyEntry {
         name: String::new(),
         kind: match hop.kind {
             connector::ProxyKind::Http => ProxyKind::Http,
+            connector::ProxyKind::Https => ProxyKind::Https,
             connector::ProxyKind::Socks5 => ProxyKind::Socks5,
         },
         host,
@@ -400,7 +403,7 @@ pub async fn test(
                 match prepare_with_saved(Some(entry), &effective, &saved.proxy_chain).await {
                     Ok(Some(prepared)) => {
                         result.route = Some(prepared.route);
-                        result.source = Some(match prepared.route { Route::FirstHop => "preferred_first_hop", Route::AssignedProxyFallback => "assigned_proxy_fallback", Route::SameProxyEndpoint => "same_proxy_endpoint" });
+                        result.source = Some(match prepared.route { Route::FirstHop => "preferred_first_hop", route => route.as_str() });
                         result.first_hop_error_code = prepared.first_hop_error.as_ref().map(|e| e.code);
                         result.system_proxy = match prepared.first_hop_error.clone() { Some(error) => Stage::failed(error), None if prepared.route == Route::FirstHop => Stage::ok(start), None => Stage::pending() };
                         result.profile_proxy = Stage::ok(start);

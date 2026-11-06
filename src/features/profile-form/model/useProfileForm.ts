@@ -6,6 +6,7 @@ import { onSpaceMoved } from "../../../shared/api/invoke";
 import { explainError } from "../../../shared/lib/errors";
 import { isStartupUrl } from "../../../shared/lib/startupUrl";
 import { HOST_OS } from "../../../shared/lib/utils";
+import { routeUsesAssignedProxy } from "../../../shared/model/proxyChain";
 import { hostScreen, type HostScreen } from "../../../shared/lib/hostScreen";
 import { matchesOs } from "../../../shared/constants";
 import { defaultProfileDefaults, settingsGet } from "../../../entities/settings";
@@ -97,7 +98,7 @@ const sameTags = (a: ProfileFormDraft, b: ProfileFormDraft) =>
   JSON.stringify([[...a.tagIds].sort(), [...a.newTags].sort()]) === JSON.stringify([[...b.tagIds].sort(), [...b.newTags].sort()]);
 
 const BASICS = new Set<keyof ProfileForm>(["name", "color", "notes", "startup_url"]);
-const PROXY = new Set<keyof ProfileForm>(["proxy_id"]);
+const PROXY = new Set<keyof ProfileForm>(["proxy_id", "proxy_chain_policy", "proxy_route"]);
 const EXTENSIONS = new Set<keyof ProfileForm>(["extensions"]);
 /** Not the person's to change: never counted as a change. */
 const OWN = new Set<keyof ProfileForm>(["id", "rev", "cookies_file"]);
@@ -125,11 +126,15 @@ export function changedTabs(s: Pick<ProfileFormState, "draft" | "saved"> & Parti
 }
 
 /** Why the form cannot be saved as it is, per field; empty when it can. */
-export function problemsOf(d: ProfileFormDraft | null): { name?: string; startup_url?: string } {
+export function problemsOf(d: ProfileFormDraft | null): { name?: string; startup_url?: string; proxy_route?: string } {
   if (!d) return {};
-  const problems: { name?: string; startup_url?: string } = {};
+  const problems: { name?: string; startup_url?: string; proxy_route?: string } = {};
   if (!d.form.name.trim()) problems.name = t("profileForm.nameRequired");
   if (!isStartupUrl(d.form.startup_url ?? "")) problems.startup_url = t("profileForm.startupUrlInvalid");
+  const route = d.form.proxy_route;
+  if (route?.mode === "invalid") problems.proxy_route = t("profileRoute.invalid");
+  if (route && routeUsesAssignedProxy(route) && !d.form.proxy_id && !d.newProxyLine.trim()) problems.proxy_route = t("profileRoute.proxyRequired");
+  if (route?.mode === "chain" && route.first.mode === "proxy" && !route.first.proxy_id) problems.proxy_route = t("profileRoute.firstProxyRequired");
   return problems;
 }
 
@@ -245,7 +250,7 @@ async function loadCreate(session: number, proxyId: string | null, preset?: Part
   };
   const folder = useProfileUi.getState().folder;
   show({
-    form: { ...base, id: "", rev: 0, name: nextName(), proxy_id: proxyId, ...preset, gpu_preset_id: fp.id },
+    form: { ...base, id: "", rev: 0, name: nextName(), proxy_id: proxyId, proxy_route: { mode: proxyId ? "proxy" : "direct" }, ...preset, gpu_preset_id: fp.id },
     // The Folder the list shows; none from All profiles.
     folder: folder !== "all" ? folder : "",
     tagIds: [],
@@ -428,7 +433,8 @@ export async function saveProfileForm(): Promise<boolean> {
   if (!s.open || !s.draft || s.status === "saving") return false;
   // Recheck before any proxy or profile write, including callers that bypass
   // the disabled Save button (keyboard, unsaved-changes actions, retries).
-  if (Object.keys(problemsOf(s.draft)).length > 0) { set({ tried: true, tab: "basics" }); return false; }
+  const problems = problemsOf(s.draft);
+  if (Object.keys(problems).length > 0) { set({ tried: true, tab: problems.proxy_route ? "proxy" : "basics" }); return false; }
   // A number field shows text that is not a number: it is on screen, so nothing is saved behind it.
   if (s.badFields.length > 0) return false;
   if (passwordProblemOf(s)) { set({ tried: true, tab: "basics" }); return false; }

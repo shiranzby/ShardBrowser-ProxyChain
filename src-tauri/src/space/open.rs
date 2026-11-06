@@ -352,7 +352,11 @@ pub async fn open_team(team: &str, start: &Granted<Start>, cdp: bool) -> Result<
     // From here a start that stops short gives the lease back and wipes the copy.
     let hand = Handoff(Some(session.clone()));
     let front = session.begin().await?;
-    let proxy = bound_proxy(id, &front)?;
+    let proxy = if stored.meta.proxy_route.as_ref().is_some_and(|route| !route.requires_assigned()) {
+        None
+    } else {
+        bound_proxy(id, &front)?
+    };
     session.unpack(front.size).await?;
     Ok(Opened { stored, proxy, udd: session.udd(), ext: session.work.join("ext"), hand })
 }

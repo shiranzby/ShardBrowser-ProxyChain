@@ -34,6 +34,75 @@ fn target() -> Target {
     Target::new("remote-proxy.invalid", 1080).unwrap()
 }
 
+#[tokio::test]
+async fn explicit_system_listener_resolves_each_actual_connect_and_refuses_udp_and_direct_pac() {
+    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let first_addr=listener.local_addr().unwrap();
+    let requests=Arc::new(std::sync::Mutex::new(Vec::new()));
+    let received=requests.clone();
+    let worker=tokio::spawn(async move {
+        let mut clients=JoinSet::new();
+        loop {tokio::select! {
+            _=clients.join_next(),if !clients.is_empty()=>{},
+            accepted=listener.accept()=>{let (mut socket,_)=accepted.unwrap();let received=received.clone();clients.spawn(async move{
+                let head=http_head(&mut socket).await;received.lock().unwrap().push(String::from_utf8(head).unwrap());
+                socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
+                let mut byte=[0];if socket.read_exact(&mut byte).await.is_ok(){socket.write_all(&byte).await.unwrap();}
+            });}
+        }}
+    });
+    let resolved=Arc::new(std::sync::Mutex::new(Vec::new()));let seen=resolved.clone();
+    let resolver:super::tunnel::SystemResolver=Arc::new(move |target|{
+        seen.lock().unwrap().push(target);
+        Box::pin(async move {Ok(super::detect_windows::ResolvedProxy::manual(hop(first_addr,ProxyKind::Http)))})
+    });
+    let tunnel=Tunnel::bind_system_with_resolver(resolver).await.unwrap();
+    let proxy=hop(tunnel.addr(),ProxyKind::Socks5);
+    for name in ["first-destination.invalid","other-destination.invalid"] {
+        let target=Target::new(name,443).unwrap();
+        let mut stream=within(connector::connect(&proxy,&target)).await.unwrap();
+        stream.write_all(b"x").await.unwrap();let mut echo=[0];stream.read_exact(&mut echo).await.unwrap();assert_eq!(&echo,b"x");
+    }
+    assert_eq!(resolved.lock().unwrap().iter().map(|t|t.host.clone()).collect::<Vec<_>>(),["first-destination.invalid","other-destination.invalid"]);
+    assert!(requests.lock().unwrap()[1].starts_with("CONNECT other-destination.invalid:443 "));
+    let mut udp=TcpStream::connect(tunnel.addr()).await.unwrap();udp.write_all(&[5,1,0]).await.unwrap();let mut accepted=[0;2];udp.read_exact(&mut accepted).await.unwrap();
+    udp.write_all(&[5,3,0,1,127,0,0,1,0,1]).await.unwrap();let mut refused=[0;10];udp.read_exact(&mut refused).await.unwrap();assert_eq!(refused[1],7);
+    assert_eq!(resolved.lock().unwrap().len(),2,"UDP cannot trigger a system route");
+    tunnel.shutdown().await;worker.abort();let _=worker.await;
+    let destination=TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let resolver:super::tunnel::SystemResolver=Arc::new(|_|Box::pin(async {Err(super::error::ChainError::new("proxy_chain_auto_direct_refused","system_proxy","PAC returned DIRECT; explicit system routing requires a proxy."))}));
+    let tunnel=Tunnel::bind_system_with_resolver(resolver).await.unwrap();
+    assert!(within(connector::connect(&hop(tunnel.addr(),ProxyKind::Socks5),&Target::new("127.0.0.1",destination.local_addr().unwrap().port()).unwrap())).await.is_err());
+    assert!(tokio::time::timeout(Duration::from_millis(100),destination.accept()).await.is_err(),"system refusal never dials the website directly");
+    tunnel.shutdown().await;
+}
+
+#[tokio::test]
+async fn explicit_https_first_hop_verifies_certificate_and_original_host() {
+    use rustls::pki_types::PrivatePkcs8KeyDer;
+    let certified=rcgen::generate_simple_self_signed(vec!["127.0.0.1".into()]).unwrap();
+    let cert=certified.cert.der().clone();let provider=Arc::new(rustls::crypto::ring::default_provider());
+    let server=rustls::ServerConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().unwrap().with_no_client_auth()
+        .with_single_cert(vec![cert.clone()],PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der()).into()).unwrap();
+    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();let addr=listener.local_addr().unwrap();
+    let calls=Arc::new(AtomicUsize::new(0));let received=calls.clone();
+    let task=tokio::spawn(async move {let acceptor=tokio_rustls::TlsAcceptor::from(Arc::new(server));let mut clients=JoinSet::new();loop {tokio::select!{
+        _=clients.join_next(),if !clients.is_empty()=>{},
+        accepted=listener.accept()=>{let (raw,_)=accepted.unwrap();let acceptor=acceptor.clone();let received=received.clone();clients.spawn(async move{
+            let Ok(mut stream)=acceptor.accept(raw).await else{return;};let mut head=Vec::new();while !head.ends_with(b"\r\n\r\n"){let Ok(b)=stream.read_u8().await else{return;};head.push(b);}
+            assert!(head.starts_with(b"CONNECT remote-proxy.invalid:1080 HTTP/1.1"));received.fetch_add(1,Ordering::SeqCst);stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
+        });}
+    }}});
+    let first=hop(addr,ProxyKind::Https);
+    assert_eq!(within(connector::connect(&first,&target())).await.err().unwrap().code,"system_proxy_tls_failed");
+    let mut roots=rustls::RootCertStore::empty();roots.add(cert).unwrap();
+    let client=Arc::new(rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth());
+    let mut wrong=first.clone();wrong.host="localhost".into();
+    assert_eq!(within(connector::connect_with_tls_config(&wrong,&target(),SHORT,Some(client.clone()))).await.err().unwrap().code,"system_proxy_tls_failed");
+    drop(within(connector::connect_with_tls_config(&first,&target(),SHORT,Some(client))).await.unwrap());
+    assert_eq!(calls.load(Ordering::SeqCst),1,"only trusted matching TLS sends CONNECT");task.abort();let _=task.await;
+}
+
 async fn http_head(stream: &mut TcpStream) -> Vec<u8> {
     let mut bytes = Vec::new();
     while !bytes.ends_with(b"\r\n\r\n") {

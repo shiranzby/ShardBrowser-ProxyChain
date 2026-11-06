@@ -1,5 +1,6 @@
 import type { ProxyEntry } from "../../proxy";
 import { stampMs } from "../../../shared/lib/utils";
+import { routeExitProxyId, routeProxyIds, routeUsesProxy, routeUsesRealIp } from "../../../shared/lib/profileRoute";
 import type { ProfileMeta } from "../model/types";
 import { insideFolder, NO_FOLDER_PARENTS, type FolderParents } from "./folderTree.ts";
 
@@ -212,14 +213,14 @@ export function folderNamesOf(profiles: ProfileMeta[], registry: string[]): stri
  *  connection, and the backend would start it on this computer's own IP
  *  (backend B1). A team's row is never so: its proxy may be one this member
  *  cannot see, which comes with the session (`proxyHidden`). */
-export function proxyMissing(p: { proxy_id: string | null; origin?: ProfileMeta["origin"] }, proxies: readonly { id: string }[]): boolean {
-  return !!p.proxy_id && p.origin !== "team" && !proxies.some((x) => x.id === p.proxy_id);
+export function proxyMissing(p: Pick<ProfileMeta, "proxy_id" | "proxy_route" | "origin">, proxies: readonly { id: string }[]): boolean {
+  return p.origin !== "team" && routeProxyIds(p).some(id => !proxies.some(x => x.id === id));
 }
 
 /** A team profile bound to a proxy not on this member's list: the server sends it
  *  with the session on Start (team-server api.rs); one gone the start refuses. */
-export function proxyHidden(p: { proxy_id: string | null; origin?: ProfileMeta["origin"] }, proxies: readonly { id: string }[]): boolean {
-  return !!p.proxy_id && p.origin === "team" && !proxies.some((x) => x.id === p.proxy_id);
+export function proxyHidden(p: Pick<ProfileMeta, "proxy_id" | "proxy_route" | "origin">, proxies: readonly { id: string }[]): boolean {
+  return p.origin === "team" && routeProxyIds(p).some(id => !proxies.some(x => x.id === id));
 }
 
 /** The proxies two or more of `list` are on (a proxy that is gone is none):
@@ -228,9 +229,10 @@ export function sharedProxyIds(list: readonly ProfileMeta[], proxies: ReadonlyMa
   const seen = new Set<string>();
   const shared = new Set<string>();
   for (const p of list) {
-    if (!p.proxy_id || !proxies.has(p.proxy_id)) continue;
-    if (seen.has(p.proxy_id)) shared.add(p.proxy_id);
-    else seen.add(p.proxy_id);
+    const exit = routeExitProxyId(p);
+    if (!exit || !proxies.has(exit)) continue;
+    if (seen.has(exit)) shared.add(exit);
+    else seen.add(exit);
   }
   return shared;
 }
@@ -278,7 +280,8 @@ export function makeProfileFilter(
     if (folder !== "all" && !insideFolder(p.folder, folder, parents)) return false;
     if (q) {
       const text = searchText?.get(p.id);
-      const bound = p.proxy_id ? byId.get(p.proxy_id) : undefined;
+      const exit = routeExitProxyId(p);
+      const bound = exit ? byId.get(exit) : undefined;
       const found = text !== undefined
         ? text.includes(q)
         : p.name.toLowerCase().includes(q) || (p.notes ?? "").toLowerCase().includes(q)
@@ -292,14 +295,15 @@ export function makeProfileFilter(
     if (!lastRunMatches(p.last_launched_at, filters.lastRun, now, p.created_at)) return false;
     // A proxy that is gone counts as none: the "No proxy" View and filter show the
     // profiles that would run on this computer's own IP (IFACE-01).
-    const bound = !!p.proxy_id && byId.has(p.proxy_id);
-    if (filters.proxy === "bound" && !bound) return false;
+    const exit = routeExitProxyId(p);
+    const bound = !!exit && byId.has(exit);
+    if (filters.proxy === "bound" && !(p.proxy_route ? routeUsesProxy(p) : bound)) return false;
     // A protected row's proxy is unknown while it is locked: not one with none.
-    if (filters.proxy === "direct" && (bound || p.protected)) return false;
-    if (onId !== null && !(bound && p.proxy_id === onId)) return false;
-    if (shared && !(bound && shared.has(p.proxy_id!))) return false;
+    if (filters.proxy === "direct" && (p.proxy_route ? !routeUsesRealIp(p) : bound || p.protected)) return false;
+    if (onId !== null && !(bound && exit === onId)) return false;
+    if (shared && !(bound && shared.has(exit!))) return false;
     if (filters.country) {
-      const cc = p.proxy_id ? byId.get(p.proxy_id)?.country ?? "" : "";
+      const cc = exit ? byId.get(exit)?.country ?? "" : "";
       if (cc.toUpperCase() !== filters.country.toUpperCase()) return false;
     }
     if (filters.status !== "all") {

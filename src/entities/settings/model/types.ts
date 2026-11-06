@@ -79,7 +79,7 @@ export type ProxyChainTestResult = {
   kind: ProxyChainTestKind;
   route?: ProxyChainRoute | null;
   first_hop_error_code?: string | null;
-  proxy_kind?: "http" | "socks5" | null;
+  proxy_kind?: "http" | "https" | "socks5" | null;
   proxy_address?: string | null;
   source?: string | null;
   resolved_for?: string | null;

@@ -1,5 +1,5 @@
 import type { ProfileSync } from "../../sync/model/types";
-import type { ChainPolicy } from "../../../shared/model/proxyChain";
+import type { ChainPolicy, ProfileProxyRoute } from "../../../shared/model/proxyChain";
 
 export type NoiseMode = "real" | "auto";
 export type WebRtcMode = "auto" | "tcp_only" | "block";
@@ -7,6 +7,7 @@ export type GeoMode = "auto" | "manual";
 export type UiLanguage = "system" | "profile";
 
 export type ProfileMeta = {
+  proxy_route?: ProfileProxyRoute;
   proxy_chain_policy?: ChainPolicy;
   id: string;
   name: string;
@@ -56,6 +57,7 @@ export type ProfileRight = keyof ProfileRights;
 export type OpenOn = { device_name: string; member_name: string; this_device: boolean; since: number; until: number };
 
 export type ProfileForm = {
+  proxy_route?: ProfileProxyRoute;
   proxy_chain_policy?: ChainPolicy;
   id: string;
   /** The file's version when the editor opened it; a save carries it back. */

@@ -3,6 +3,7 @@ import { tagsOf, type TagStore } from "../../tag";
 import type { ProfileMeta } from "../model/types";
 import type { FolderParents } from "./folderTree";
 import { orderItems } from "../../../shared/lib/listOrder";
+import { routeExitProxyId } from "../../../shared/lib/profileRoute";
 import { makeProfileFilter, searchTextOf, sortProfiles, type ProfileFilters, type ProfileSort } from "./listing";
 
 /** Everything the Profiles list's rows depend on. */
@@ -91,7 +92,10 @@ export function computeVisible(inputs: VisibleInputs): Visible {
       const byId = new Map(inputs.proxies.map((x) => [x.id, x]));
       texts = {
         profiles, tags, byProfile, proxies: inputs.proxies, proxyIps: inputs.proxyIps,
-        out: new Map(profiles.map((p) => [p.id, searchTextOf(p, tagsOfId(p.id).map((t) => t.name), p.proxy_id ? byId.get(p.proxy_id) : null, p.proxy_id ? inputs.proxyIps[p.proxy_id] : undefined)])),
+        out: new Map(profiles.map((p) => {
+          const exit = routeExitProxyId(p);
+          return [p.id, searchTextOf(p, tagsOfId(p.id).map((t) => t.name), exit ? byId.get(exit) : null, exit ? inputs.proxyIps[exit] : undefined)];
+        })),
       };
     }
     text = texts.out;

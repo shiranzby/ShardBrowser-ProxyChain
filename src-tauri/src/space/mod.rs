@@ -79,12 +79,18 @@ impl Ticket {
 
     /// Still the space in use: asked again right before anything is written.
     pub fn still(&self) -> Result<(), CmdError> {
-        if switching() || crate::team::space_epoch() != self.epoch || team_now() != self.team {
-            return Err(CmdError::SpaceChanged);
-        }
+        self.read_current()?;
         // A write to the person's own files is on its way: sync goes once it settles.
         if self.team.is_none() {
             sync::touched();
+        }
+        Ok(())
+    }
+
+    /// Read-only operations keep their captured space without marking sync dirty.
+    pub fn read_current(&self) -> Result<(), CmdError> {
+        if switching() || crate::team::space_epoch() != self.epoch || team_now() != self.team {
+            return Err(CmdError::SpaceChanged);
         }
         Ok(())
     }
@@ -421,6 +427,10 @@ pub mod profile {
 
     /// Saves a profile built whole (the editor, the API); new when its id is empty.
     pub async fn save(door: Door, t: &Ticket, stored: StoredProfile, opts: SaveOpts) -> Result<ProfileMeta> {
+        local::validate_proxy_route(&stored.meta)?;
+        if let Some(id) = stored.meta.proxy_route.as_ref().and_then(|route| route.first_proxy_id()) {
+            super::proxy::for_route(t.team(), id).await?;
+        }
         stored.meta.proxy_chain_policy.validate()?;
         if let Some(proxy) = &stored.meta.inline_proxy { proxy.proxy_chain_policy.validate()?; }
         match t.team() {
@@ -435,6 +445,7 @@ pub mod profile {
     /// This machine's own save. An editor's rev is checked against the file:
     /// a save on top of a change made elsewhere would revert it.
     pub fn save_here(mut stored: StoredProfile, opts: SaveOpts) -> Result<ProfileMeta> {
+        local::validate_proxy_route(&stored.meta)?;
         personal_only()?;
         // A lock is bound to its profile's id and data: a copy or an import of one opens nothing.
         if stored.meta.id.is_empty() && stored.meta.lock.is_some() {
@@ -478,6 +489,7 @@ pub mod profile {
     fn meta_of(stored: &StoredProfile) -> ProfileMeta {
         let text = |k: &str, or: &str| stored.config.get(k).and_then(|v| v.as_str()).unwrap_or(or).to_string();
         ProfileMeta {
+            proxy_route: stored.meta.proxy_route.clone(),
             proxy_chain_policy: stored.meta.proxy_chain_policy,
             id: stored.meta.id.clone(),
             name: text("name", "(unnamed)"),
@@ -752,6 +764,23 @@ pub mod proxy {
             Some(team) => Ok(cache::proxy(&team, id)),
             None => local::get(id),
         }
+    }
+
+    /// Resolve a route's named proxy in its captured space. A missing or unreadable
+    /// proxy is a refusal, never a reason to use a different space or a direct route.
+    pub async fn for_route(team: Option<&str>, id: &str) -> Result<ProxyEntry> {
+        let entry = match team {
+            Some(team) => {
+                let client = super::client::TeamClient::for_team(team)?;
+                let data = super::remote::read_proxy(&client, id).await?;
+                super::remote::proxy(&data.row, Some(&data.data))
+            }
+            None => local::get(id)?.ok_or_else(|| anyhow::anyhow!("The selected proxy no longer exists."))?,
+        };
+        if entry.host.trim().is_empty() || entry.port == 0 {
+            anyhow::bail!("The selected proxy is unavailable or cannot be read in this space.");
+        }
+        Ok(entry)
     }
 
     /// Adds the proxy, or changes the one with its id.

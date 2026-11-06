@@ -360,6 +360,7 @@ const RULES: &[(&str, Need)] = &[
     ("mcp_download", Machine),
     ("proxy_chain_detect", Machine),
     ("proxy_chain_test", Machine), // profile test separately requires Start before reading its proxy
+    ("proxy_route_test", Machine), // draft checks profile edit/password and each named proxy in its captured space
     ("proxy_chain_set_enabled", Machine),
     ("runtime::runtime_status", Machine),
     ("runtime::runtime_install", Machine),

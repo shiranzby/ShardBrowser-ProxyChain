@@ -14,7 +14,7 @@ import { alreadyInLibrary, extProfileClosed, extUpdateHandlers, importSame } fro
 import { teamNew, teamSave } from "./teamProjects";
 import { openSessions, resendUnsent, sessionEnded } from "./teamSessions";
 import { intoTeamTrash, teamTrashHandlers } from "./teamTrash";
-import { launchCheck, lockHandlers, refuseLocked, saveStub, stubOf } from "./locks";
+import { checkPassword, launchCheck, lockHandlers, refuseLocked, saveStub, stubOf } from "./locks";
 import { LOCK_REFUSALS } from "../../shared/api/lockRefusals";
 import { AUTOMATION_REFUSALS } from "../../shared/api/automationRefusals";
 import { NOT_IN_TEAM, profileFromFingerprint, settle, spaceStateOf, teamInUse, teamUnreachable, told } from "./spaces";
@@ -525,6 +525,32 @@ export const handlers: Record<string, Handler> = {
       exit_error_code: null,
       total_ms: kind === "profile" && profile ? 100 : null, tested_at: now,
       ...((window as { __shardxMockChainResult?: Record<string, unknown> }).__shardxMockChainResult ?? {}),
+    };
+  },
+  proxy_route_test: ({ route, policy, proxyId, newProxyLine, profileId, password }, { state }) => {
+    const saved = profileId ? profile(state, profileId) : null;
+    if (saved?._meta.lock) checkPassword(saved, password);
+    const assigned = state.proxies.find((p) => p.id === proxyId);
+    const chain = route?.mode === "chain";
+    const direct = route?.mode === "direct" || (chain && route.first.mode === "direct" && route.second.mode === "direct")
+      || (!route && !assigned && !String(newProxyLine ?? "").trim() && policy !== "enabled" && policy !== "prefer_first_hop" && (policy === "disabled" || !state.settings.proxy_chain?.enabled));
+    const finalProxy = !direct && (route?.mode === "proxy" || (chain && route.second.mode === "proxy") || !route);
+    if (finalProxy && !assigned && !String(newProxyLine ?? "").trim()) throw new Error("profile_route_proxy_missing");
+    const first = chain && route.first.mode === "proxy" ? state.proxies.find((p) => p.id === route.first.proxy_id) : null;
+    if (chain && route.first.mode === "proxy" && !first) throw new Error("profile_route_first_proxy_missing");
+    const same = first && finalProxy && assigned && ["kind", "host", "port", "username", "password"].every(key => first[key as keyof typeof first] === assigned[key as keyof typeof assigned]);
+    const system = !same && (route?.mode === "system" || (chain && route.first.mode !== "direct"));
+    const ip = direct ? "192.0.2.18" : finalProxy ? "203.0.113.42" : "198.51.100.24";
+    return { kind: "profile", source: "profile_route_draft", proxy_kind: system ? first?.kind ?? "http" : null,
+      proxy_address: system ? first ? `${first.host}:${first.port}` : "127.0.0.1:7890" : null,
+      profile_proxy_address: finalProxy ? assigned ? `${assigned.host}:${assigned.port}` : "draft-proxy.example:1080" : null,
+      profile_name: saved?.name ?? null, local_network: direct ? { state: "ok", latency_ms: 8 } : null,
+      system_proxy: { state: system ? "ok" : "not_tested", latency_ms: system ? 12 : null },
+      profile_proxy: { state: finalProxy ? "ok" : "not_tested", latency_ms: finalProxy ? 88 : null },
+      ...(same ? { route: "same_proxy_endpoint" } : {}),
+      exit_ip: ip, exit_geo: { ip, country: "Singapore", country_code: "SG", region: "Singapore", city: "Singapore", isp: "Mock network", timezone: "Asia/Singapore", latitude: 1.29, longitude: 103.85, provider: "mock-only.example" },
+      exit_error: null, exit_error_code: null, total_ms: 100, tested_at: nowStamp(),
+      ...((window as { __shardxMockRouteResult?: Record<string, unknown> }).__shardxMockRouteResult ?? {}),
     };
   },
   api_info: (_a, { state }) => state.api,

@@ -156,7 +156,7 @@ export function sameMeta(a: ProfileMeta, b: ProfileMeta): boolean {
     const y = b[k];
     if (x === y) return true;
     // A fresh read brings new objects every time.
-    if (k === "sync" || k === "rights" || k === "open_on") return sameJson(x, y);
+    if (k === "sync" || k === "rights" || k === "open_on" || k === "proxy_route") return sameJson(x, y);
     return Array.isArray(x) && Array.isArray(y) && x.length === y.length && x.every((v, i) => v === y[i]);
   });
 }

@@ -96,6 +96,7 @@ export function ProfileFormDialog() {
     value,
     label: labels[value],
     badge: value === "basics" && (problems.name || problems.startup_url || (passwordProblem && s.tried)) ? <TabState error text={t("profileForm.tabError")} />
+      : value === "proxy" && problems.proxy_route ? <TabState error text={t("profileForm.tabError")} />
       : changed.has(value) ? <TabState text={t("profileForm.tabChanged")} />
       : undefined,
   }));
@@ -114,6 +115,7 @@ export function ProfileFormDialog() {
     : saving || !draft ? null
     : problems.name ? t("profileForm.nameRequired")
     : problems.startup_url ? problems.startup_url
+    : problems.proxy_route ? problems.proxy_route
     : passwordProblem ? <span data-password-problem>{passwordProblem}</span>
     : refused ? <span data-rights-problem>{refused}</span>
     : s.badFields.length > 0 ? t("profileForm.numberInvalid")

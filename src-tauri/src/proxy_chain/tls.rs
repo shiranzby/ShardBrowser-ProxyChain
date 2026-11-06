@@ -31,7 +31,7 @@ pub(crate) async fn connect(
     target: &Target,
     config: Arc<rustls::ClientConfig>,
     deadline: Duration,
-) -> Result<TlsStream<TcpStream>, ChainError> {
+) -> Result<TlsStream<connector::Stream>, ChainError> {
     let name =
         rustls::pki_types::ServerName::try_from(target.host.clone()).map_err(|_| failed())?;
     tokio::time::timeout(deadline, async {

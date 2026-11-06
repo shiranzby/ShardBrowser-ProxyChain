@@ -278,6 +278,7 @@ pub struct LaunchInput {
     stored: profile::StoredProfile,
     udd: PathBuf,
     proxy: Option<proxy::ProxyEntry>,
+    first_proxy: Option<proxy::ProxyEntry>,
     extensions: Vec<PathBuf>,
     /// The folder they live in: a new engine keeps unloaded what it holds that is not passed.
     library: Option<PathBuf>,
@@ -330,6 +331,8 @@ pub fn launch_input(start: &Granted<Start>, cdp: Option<&Granted<Cookies>>, pass
     }
 
     let proxy = bound_proxy(&stored, profile_id, proxy::get)?;
+    let first_proxy = stored.meta.proxy_route.as_ref().and_then(|r| r.first_proxy_id())
+        .map(|id| proxy::get(id)?.ok_or_else(|| anyhow::anyhow!("The selected first-hop proxy no longer exists."))).transpose()?;
     // Extensions from the library; an id the library no longer has is skipped.
     let (ext_ids, extensions) = stored
         .meta
@@ -351,6 +354,7 @@ pub fn launch_input(start: &Granted<Start>, cdp: Option<&Granted<Cookies>>, pass
         stored,
         udd,
         proxy,
+        first_proxy,
         extensions,
         library: crate::store::extensions_dir().ok().filter(|d| d.is_dir()),
         ext_ids,
@@ -368,6 +372,10 @@ fn bound_proxy(
     profile_id: &str,
     get: impl FnOnce(&str) -> Result<Option<proxy::ProxyEntry>>,
 ) -> Result<Option<proxy::ProxyEntry>> {
+    if let Some(route) = &stored.meta.proxy_route {
+        route.validate()?;
+        if !route.requires_assigned() { return Ok(None); }
+    }
     let Some(id) = stored.meta.proxy_id.as_deref().filter(|id| !id.trim().is_empty()) else {
         return Ok(stored.meta.inline_proxy.clone());
     };
@@ -565,11 +573,15 @@ async fn team_input(team: &str, start: &Granted<Start>, cdp: Option<&Granted<Coo
     let id = start.profile_id();
     let name = opened.stored.config.get("name").and_then(|v| v.as_str()).filter(|n| !n.trim().is_empty()).unwrap_or(id);
     let extensions = extensions::unpack_for_team(team, (id, name), &opened.stored.meta.extensions, &opened.ext).await;
+    let first_proxy = if let Some(id) = opened.stored.meta.proxy_route.as_ref().and_then(|r|r.first_proxy_id()) {
+        Some(proxy::for_route(Some(team),id).await?)
+    } else {None};
     Ok(LaunchInput {
         profile_id: start.profile_id().to_string(),
         stored: opened.stored,
         udd: opened.udd,
         proxy: opened.proxy,
+        first_proxy,
         extensions,
         library: Some(opened.ext).filter(|d| d.is_dir()),
         // Unpacked into the team copy, not the library.
@@ -607,6 +619,16 @@ struct Ready<'a> {
 async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>) -> Result<LaunchOutcome> {
     crate::profile_defaults::validate_config(&input.stored.config)?;
     let mut s = crate::proxy_chain::saved_settings()?;
+    let explicit = input.stored.meta.proxy_route.clone();
+    let chain = if let Some(route) = &explicit {
+        route.validate()?;
+        crate::proxy_chain::validate_args(&s.extra_args)?;
+        if !crate::proxy_chain::routing::is_direct(route) && input.cdp { anyhow::bail!("Proxy-chain V1 cannot expose raw DevTools or automation proxy controls. Start this profile from the normal profile list without debugging."); }
+        let resolved=crate::proxy_chain::routing::prepare_route(route,input.proxy.as_ref(),input.first_proxy.as_ref(),input.stored.meta.proxy_chain_policy==crate::proxy_chain::policy::ChainPolicy::PreferFirstHop).await?;
+        input.proxy=resolved.proxy;
+        s.proxy_chain.enabled=resolved.prepared.is_some();
+        resolved.prepared
+    } else {
     s.proxy_chain = crate::proxy_chain::policy::effective(&s.proxy_chain, input.stored.meta.proxy_chain_policy, input.proxy.as_ref().map(|p| p.proxy_chain_policy).unwrap_or_default())?;
     // All later checks for this start use the same resolved choice, including
     // the original route's UDP/Geo wrappers. Never persist this temporary copy.
@@ -620,7 +642,8 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
         // engine, bypassing Rust guards. Refuse that unsupported combination.
         if input.cdp { anyhow::bail!("Proxy-chain V1 cannot expose raw DevTools or automation proxy controls. Start this profile from the normal profile list without debugging."); }
     }
-    let chain = crate::proxy_chain::prepare(input.proxy.as_ref(), &s.proxy_chain).await?;
+    crate::proxy_chain::prepare(input.proxy.as_ref(), &s.proxy_chain).await?
+    };
     let chain_geo = if let Some(chain) = &chain {
         if let Some(geo) = &chain.verified_geo { Some(geo.clone()) }
         else {
@@ -820,7 +843,7 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
         match chain.route {
             crate::proxy_chain::Route::AssignedProxyFallback => Some(format!("Proxy route for “{name}”: using the assigned proxy without the first hop after its route failed.")),
             crate::proxy_chain::Route::SameProxyEndpoint => Some(format!("Proxy route for “{name}”: identical first-hop endpoint skipped.")),
-            crate::proxy_chain::Route::FirstHop => None,
+            _ => None,
         }
     });
     let LaunchInput { profile_id, udd, exit, cdp: enable_cdp, ext_ids, .. } = input;
@@ -971,6 +994,9 @@ fn command_line(
             args.push("--disable-quic".into());
             eprintln!("[launcher] QUIC disabled: proxy {} has no working UDP relay", p.host);
         }
+    }
+    if input.stored.meta.proxy_route.as_ref().is_some_and(crate::proxy_chain::routing::is_direct) {
+        args.push("--no-proxy-server".into());
     }
 
     // WebRTC IP policy: block / tcp_only / auto (auto = relay if UDP, else tcp_only).
@@ -1706,6 +1732,7 @@ mod tests {
             profile_id: stored.meta.id.clone(),
             udd: PathBuf::from(format!("/data/user-data/{}", stored.meta.id)),
             proxy: proxy.map(|p| serde_json::from_value(p).unwrap()),
+            first_proxy: None,
             extensions: stored.meta.extensions.iter().map(|id| PathBuf::from(format!("/data/extensions/{id}"))).collect(),
             library: Some(PathBuf::from("/data/extensions")),
             ext_ids: Vec::new(),
@@ -1719,6 +1746,19 @@ mod tests {
 
     fn settings() -> crate::settings::Settings {
         crate::settings::Settings { helper_enabled: true, camera_enabled: true, show_profile_name: true, ..Default::default() }
+    }
+
+    #[test]
+    fn explicit_real_ip_route_forces_no_system_proxy_and_does_not_resolve_an_unused_binding() {
+        use crate::proxy_chain::route::{FirstHop,ProfileProxyRoute,SecondHop};
+        for route in [ProfileProxyRoute::Direct,ProfileProxyRoute::Chain{first:FirstHop::Direct,second:SecondHop::Direct}] {
+            let p=input(json!({"_meta":{"id":"direct-route","proxy_id":"kept-but-unused","proxy_route":route}}),None);
+            let found=super::bound_proxy(&p.stored,"direct-route",|_|panic!("unused binding must not be read")).unwrap();
+            assert!(found.is_none());
+            let args=argv(&p,&UI,&settings());
+            assert!(args.iter().any(|a|a=="--no-proxy-server"));
+            assert!(!args.iter().any(|a|a.starts_with("--proxy-server=")));
+        }
     }
 
     /// As launched on an engine from before patch 0092's second part.

@@ -1,5 +1,6 @@
 import { useDeferredValue, useMemo } from "react";
 import { t } from "../../../shared/i18n";
+import { routeExitProxyId } from "../../../shared/lib/profileRoute";
 import type { ProxyEntry } from "../../proxy";
 import { applyProfileFilters, emptyFilters, folderNamesOf, makeProfileFilter, type ProfileFilters } from "./listing";
 import type { ProfileMeta } from "../model/types";
@@ -202,7 +203,8 @@ export function useProfileCountries() {
     const byId = new Map(proxies.map((p) => [p.id, p]));
     const set = new Set<string>();
     for (const p of profiles) {
-      const cc = p.proxy_id ? byId.get(p.proxy_id)?.country ?? "" : "";
+      const exit = routeExitProxyId(p);
+      const cc = exit ? byId.get(exit)?.country ?? "" : "";
       if (cc) set.add(cc.toUpperCase());
     }
     return [...set].sort();

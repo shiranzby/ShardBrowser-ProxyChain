@@ -27,6 +27,7 @@ export const DEFAULT_BLOCKED_PORTS = [3389, 5900, 5901, 5800, 7070, 6568, 5938, 
  *  own fields; the rest is the FingerprintConfig the engine consumes. */
 export type StoredProfile = {
   _meta: {
+    proxy_route?: ProfileMeta["proxy_route"];
     proxy_chain_policy?: ProfileMeta["proxy_chain_policy"];
     id: string;
     rev: number;
@@ -303,7 +304,9 @@ export function metaOf(p: StoredProfile): ProfileMeta {
   const row = metaOpen(p, ua, sync);
   // Sealed: what it holds is unknown until it is unlocked (#127 contract). `protected`
   // is left out for an open one, so every other test's rows stay as they were.
-  return p._meta.lock ? { ...row, protected: true, notes: null, proxy_id: null, mobile: false, extensions: [] } : row;
+  if (!p._meta.lock) return row;
+  delete row.proxy_route;
+  return { ...row, protected: true, notes: null, proxy_id: null, mobile: false, extensions: [] };
 }
 
 function metaOpen(p: StoredProfile, ua: string, sync: ProfileSync | undefined): ProfileMeta {
@@ -312,6 +315,7 @@ function metaOpen(p: StoredProfile, ua: string, sync: ProfileSync | undefined): 
     name: p.name,
     notes: p.notes,
     proxy_id: p._meta.proxy_id,
+    ...(p._meta.proxy_route ? { proxy_route: structuredClone(p._meta.proxy_route) } : {}),
     last_launched_at: p._meta.last_launched_at,
     created_at: p._meta.created_at,
     pinned: p._meta.pinned,

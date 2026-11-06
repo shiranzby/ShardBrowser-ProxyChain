@@ -5,6 +5,7 @@ import { fmtDuration } from "../../shared/lib/format";
 import { tagChipsWidth } from "../../shared/lib/measureText";
 import { formatRelativeRun, type ProfileColumnId, type ProfileMeta } from "../../entities/profile";
 import type { ProxyEntry } from "../../entities/proxy";
+import { profileRouteLabel, routeProxyIds } from "../../shared/lib/profileRoute";
 
 // The px ProfileRow's cells draw beside their text. Keep in step with it.
 /** A pinned name's pin, or a synced one's cloud: the 14 px glyph and the cell's 6 px gap (`gap-1.5`). */
@@ -40,6 +41,10 @@ function proxyFit(proxyOf: (id: string) => ProxyEntry | undefined, clip: (s: str
   const locked = t("profileRow.locked");
   return (p, m) => {
     if (p.protected) return m(locked, "secondary");
+    if (p.proxy_route) {
+      const proxies = routeProxyIds(p).flatMap(id => { const x = proxyOf(id); return x ? [x] : []; });
+      return m(clip(profileRouteLabel(p, proxies, t) ?? ""), "secondary");
+    }
     if (!p.proxy_id) return m(direct, "secondary");
     const x = proxyOf(p.proxy_id);
     if (!x) return m(p.origin === "team" ? hidden : missing, "secondary");

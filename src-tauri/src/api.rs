@@ -209,6 +209,7 @@ async fn list_profiles() -> ApiResult {
                 "notes": m.notes,
                 "proxy_id": m.proxy_id,
                 "proxy_chain_policy": m.proxy_chain_policy,
+                "proxy_route": m.proxy_route,
                 "last_launched_at": m.last_launched_at,
                 "created_at": m.created_at,
                 "pinned": m.pinned,
@@ -262,6 +263,7 @@ async fn new_fingerprint_impl(platform: Option<String>) -> ApiResult {
 
 #[derive(Deserialize)]
 struct CreateReq {
+    proxy_route: Option<crate::proxy_chain::route::ProfileProxyRoute>,
     proxy_chain_policy: Option<crate::proxy_chain::policy::ChainPolicy>,
     name: Option<String>,
     notes: Option<String>,
@@ -280,6 +282,13 @@ struct CreateReq {
 
 /// Persist verbatim (enrich=false); proxy_id binds, proxy string upserts+tests.
 async fn persist_created(door: Door, t: &Ticket, folder_override: Option<String>, body: CreateReq) -> ApiResult {
+    if let Some(route) = &body.proxy_route {
+        route.validate().map_err(fail(StatusCode::BAD_REQUEST))?;
+        if route.requires_assigned() && body.proxy_id.as_deref().is_none_or(|id| id.trim().is_empty()) && body.proxy.is_none() {
+            return Err(err(StatusCode::BAD_REQUEST, "Select a proxy for this profile route."));
+        }
+        if let Some(id) = route.first_proxy_id() { space::proxy::for_route(t.team(), id).await.map_err(fail(StatusCode::BAD_REQUEST))?; }
+    }
     let mut cfg = body
         .fingerprint
         .as_object()
@@ -312,6 +321,7 @@ async fn persist_created(door: Door, t: &Ticket, folder_override: Option<String>
         meta["extensions"] = json!(ids);
     }
     if let Some(choice) = body.proxy_chain_policy { choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?; meta["proxy_chain_policy"] = json!(choice); }
+    if let Some(route) = body.proxy_route { meta["proxy_route"] = json!(route); }
     let mut inline_proxy = false;
     if let Some(pid) = body.proxy_id.as_ref() {
         meta["proxy_id"] = json!(pid);
@@ -489,6 +499,9 @@ async fn delete_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>)
 
 #[derive(Deserialize)]
 struct EditReq {
+    /// Omitted keeps the current route; null restores legacy inheritance.
+    #[serde(default, deserialize_with = "deserialize_route_patch")]
+    proxy_route: Option<Option<crate::proxy_chain::route::ProfileProxyRoute>>,
     proxy_chain_policy: Option<crate::proxy_chain::policy::ChainPolicy>,
     name: Option<String>,
     notes: Option<String>,
@@ -511,6 +524,10 @@ struct EditReq {
     password: Option<String>,
     /// The `_meta.rev` read: refused as stale (409) once the profile moved past it.
     rev: Option<u64>,
+}
+
+fn deserialize_route_patch<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Option<Option<crate::proxy_chain::route::ProfileProxyRoute>>, D::Error> {
+    Option::<crate::proxy_chain::route::ProfileProxyRoute>::deserialize(d).map(Some)
 }
 
 /// Reject unknown ids rather than writing a profile that launches without them.
@@ -538,7 +555,7 @@ fn validate_extension_ids(ids: &[String]) -> Result<(), ApiError> {
 /// Edit profile; only provided fields change. Returns the updated profile.
 async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, Json(body): Json<EditReq>) -> ApiResult {
     let door = Door("PATCH /profiles/:id");
-    if body.proxy_chain_policy.is_some() && body.password.is_none() && space::profile::is_protected(&id) {
+    if (body.proxy_chain_policy.is_some() || body.proxy_route.is_some()) && body.password.is_none() && space::profile::is_protected(&id) {
         return Err(err(StatusCode::UNAUTHORIZED, space::profile::PASSWORD_REQUIRED));
     }
     let mut stored = match body.password.as_deref() {
@@ -549,6 +566,14 @@ async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, J
         _ => space::profile::fetch_for_edit(&t, &id).await.map_err(fail(StatusCode::NOT_FOUND))?,
     };
     let mut inline_proxy = false;
+
+    if let Some(route) = &body.proxy_route {
+        if let Some(route) = route {
+            route.validate().map_err(fail(StatusCode::BAD_REQUEST))?;
+            if let Some(first) = route.first_proxy_id() { space::proxy::for_route(t.team(), first).await.map_err(fail(StatusCode::BAD_REQUEST))?; }
+        }
+        stored.meta.proxy_route = route.clone();
+    }
 
     if let Some(fp) = body.fingerprint {
         let mut cfg = fp
@@ -1467,6 +1492,82 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         let (_, _, after) = authed("GET", &path, None).await;
         assert_eq!(after, before);
+    }
+
+    #[tokio::test]
+    async fn api_explicit_route_roundtrips_and_invalid_edits_preserve_the_profile() {
+        let _serial = crate::migrate::serial();
+        let _root = crate::store::test_root("api-explicit-route").with_config();
+        let (status, _, made) = authed("POST", "/profiles", Some(json!({"name":"Route", "fingerprint":{}, "proxy_route":{"mode":"direct"}}))).await;
+        assert_eq!(status, StatusCode::OK, "{made}");
+        let path = format!("/profiles/{}", made["id"].as_str().unwrap());
+        let (_, _, loaded) = authed("GET", &path, None).await;
+        assert_eq!(loaded["_meta"]["proxy_route"], json!({"mode":"direct"}));
+        let rev = loaded["_meta"]["rev"].as_u64().unwrap();
+        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_route":{"mode":"system"}}))).await;
+        assert_eq!(status, StatusCode::OK);
+        let (_, _, before) = authed("GET", &path, None).await;
+        assert_eq!(before["_meta"]["proxy_route"], json!({"mode":"system"}));
+        assert_eq!(before["_meta"]["rev"].as_u64().unwrap(), rev + 1);
+        for route in [json!({"mode":"future"}), json!({"mode":"chain", "first":{"mode":"proxy","proxy_id":"missing"},"second":{"mode":"direct"}})] {
+            let (status, _, _) = authed("PATCH", &path, Some(json!({"name":"Must not write", "proxy_route":route}))).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(authed("GET", &path, None).await.2, before);
+        }
+        let (status, _, _) = authed("POST", "/profiles", Some(json!({"name":"Missing", "fingerprint":{}, "proxy_route":{"mode":"proxy"}}))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let id = made["id"].as_str().unwrap();
+        crate::space::profile::protect(id, "synthetic password").unwrap();
+        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_route":{"mode":"direct"}}))).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_route":{"mode":"direct"},"password":"wrong password"}))).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(crate::space::profile::unlock(id, "synthetic password").unwrap().meta.proxy_route, Some(crate::proxy_chain::route::ProfileProxyRoute::System));
+    }
+
+    #[tokio::test]
+    async fn api_explicit_route_null_restores_legacy_but_omission_and_refused_edits_keep_the_route() {
+        use crate::proxy_chain::route::ProfileProxyRoute;
+        let _serial=crate::migrate::serial();
+        let _root=crate::store::test_root("api-explicit-route-null").with_config();
+        let (status,_,made)=authed("POST","/profiles",Some(json!({"name":"Route null", "fingerprint":{}, "proxy_route":{"mode":"system"},"proxy_chain_policy":"disabled"}))).await;
+        assert_eq!(status,StatusCode::OK,"{made}");
+        let id=made["id"].as_str().unwrap();
+        let path=format!("/profiles/{id}");
+        let file=crate::store::profiles_dir().unwrap().join(format!("{id}.json"));
+        let (status,_,_)=authed("PATCH",&path,Some(json!({"name":"Route renamed"}))).await;
+        assert_eq!(status,StatusCode::OK);
+        assert_eq!(crate::space::profile::load_raw(id).unwrap().meta.proxy_route,Some(ProfileProxyRoute::System));
+        let before=std::fs::read(&file).unwrap();
+        for route in [json!(false),json!({"mode":"future"}),json!({"mode":"direct","unexpected":"must refuse"})] {
+            let (status,_,_)=authed("PATCH",&path,Some(json!({"name":"Must not write","proxy_route":route}))).await;
+            assert_eq!(status,StatusCode::BAD_REQUEST);
+            assert_eq!(std::fs::read(&file).unwrap(),before);
+        }
+        let prior_rev=crate::space::profile::load_raw(id).unwrap().meta.rev;
+        let (status,_,_)=authed("PATCH",&path,Some(json!({"proxy_route":null}))).await;
+        assert_eq!(status,StatusCode::OK);
+        let cleared=crate::space::profile::load_raw(id).unwrap();
+        assert!(cleared.meta.proxy_route.is_none(),"explicit null must restore legacy inheritance");
+        assert_eq!(cleared.meta.rev,prior_rev+1);
+        assert_eq!(cleared.meta.proxy_chain_policy,crate::proxy_chain::policy::ChainPolicy::Disabled);
+        let (status,_,_)=authed("PATCH",&path,Some(json!({"proxy_route":{"mode":"system"}}))).await;
+        assert_eq!(status,StatusCode::OK);
+        crate::space::profile::protect(id,"synthetic password").unwrap();
+        let sealed=std::fs::read(&file).unwrap();
+        for password in [None,Some("wrong password")] {
+            let mut body=json!({"proxy_route":null});
+            if let Some(password)=password {body["password"]=json!(password);}
+            let (status,_,_)=authed("PATCH",&path,Some(body)).await;
+            assert_eq!(status,StatusCode::UNAUTHORIZED);
+            assert_eq!(std::fs::read(&file).unwrap(),sealed);
+        }
+        assert_eq!(crate::space::profile::unlock(id,"synthetic password").unwrap().meta.proxy_route,Some(ProfileProxyRoute::System));
+        let (status,_,_)=authed("PATCH",&path,Some(json!({"proxy_route":null,"password":"synthetic password"}))).await;
+        assert_eq!(status,StatusCode::OK);
+        let full=crate::space::profile::unlock(id,"synthetic password").unwrap();
+        assert!(full.meta.proxy_route.is_none());
+        assert!(full.meta.lock.is_some(),"clearing the route must preserve password protection");
     }
 
     #[tokio::test]

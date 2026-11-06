@@ -2111,6 +2111,59 @@ async fn proxy_chain_test(kind: String, config: proxy_chain::config::ProxyChainS
     proxy_chain::test(kind, config, profile_id).await.map_err(|e| e.to_string())
 }
 
+/// Test the form's current route without saving its profile or a pasted proxy.
+#[tauri::command]
+async fn proxy_route_test(
+    route: Option<proxy_chain::route::ProfileProxyRoute>,
+    policy: Option<proxy_chain::policy::ChainPolicy>,
+    proxy_id: Option<String>,
+    new_proxy_line: Option<String>,
+    profile_id: Option<String>,
+    password: Option<String>,
+    epoch: Option<u64>,
+) -> Result<proxy_chain::TestResult, String> {
+    proxy_route_test_core(route, policy.unwrap_or_default(), proxy_id, new_proxy_line, profile_id, password, epoch).await.map_err(|e| e.to_string())
+}
+
+async fn proxy_route_test_core(
+    route: Option<proxy_chain::route::ProfileProxyRoute>,
+    policy: proxy_chain::policy::ChainPolicy,
+    proxy_id: Option<String>,
+    new_proxy_line: Option<String>,
+    profile_id: Option<String>,
+    password: Option<String>,
+    epoch: Option<u64>,
+) -> anyhow::Result<proxy_chain::TestResult> {
+    let t = space::window_ticket(epoch)?;
+    t.read_current()?;
+    if let Some(route) = &route { route.validate()?; }
+    policy.validate()?;
+    if let Some(id) = profile_id.as_deref().filter(|id| !id.is_empty()) {
+        space::profile::check_edit(space::Door("profile_save"), &t, id, false)?;
+        if space::profile::is_protected(id) {
+            let password = password.as_deref().ok_or_else(|| anyhow::anyhow!(space::profile::PASSWORD_REQUIRED))?;
+            space::profile::unlock(id, password)?;
+        } else {
+            space::profile::fetch_for_edit(&t, id).await?;
+        }
+    }
+    let needs_assigned = route.as_ref().is_none_or(|route| route.requires_assigned());
+    let assigned = if !needs_assigned { None }
+    else if let Some(line) = new_proxy_line.as_deref().filter(|line| !line.trim().is_empty()) {
+        Some(space::proxy::parse_single(line).ok_or_else(|| anyhow::anyhow!("The proxy line could not be parsed."))?)
+    } else if let Some(id) = proxy_id.as_deref().filter(|id| !id.trim().is_empty()) {
+        Some(space::proxy::for_route(t.team(), id).await?)
+    } else { None };
+    let first = match route.as_ref().and_then(|route| route.first_proxy_id()) {
+        Some(id) => Some(space::proxy::for_route(t.team(), id).await?),
+        None => None,
+    };
+    t.read_current()?;
+    let result = proxy_chain::routing::test_resolved_route(route.as_ref(), policy, assigned.as_ref(), first.as_ref()).await?;
+    t.read_current()?;
+    Ok(result)
+}
+
 /// The toolbar changes only the saved switch; credentials and other settings
 /// are read here, never round-tripped through a stale page snapshot.
 #[tauri::command]
@@ -2125,6 +2178,37 @@ fn proxy_chain_set_enabled(enabled: bool) -> Result<proxy_chain::config::ProxyCh
 
 #[cfg(test)]
 mod proxy_chain_toolbar_tests {
+    #[tokio::test]
+    async fn draft_route_test_refuses_invalid_inputs_without_saving_a_profile_or_proxy() {
+        let _serial = crate::migrate::serial();
+        let _root = crate::store::test_root("draft-route-no-writes").with_config();
+        let route = Some(crate::proxy_chain::route::ProfileProxyRoute::Invalid);
+        assert!(super::proxy_route_test_core(route, Default::default(), None, Some("socks5://synthetic:secret@127.0.0.1:9".into()), None, None, None).await.is_err());
+        assert!(crate::space::profile::list_all().unwrap().is_empty());
+        assert!(crate::space::proxy::list().unwrap().is_empty());
+        let route = Some(crate::proxy_chain::route::ProfileProxyRoute::Proxy);
+        let error = super::proxy_route_test_core(route, Default::default(), None, Some("unparseable synthetic proxy".into()), None, None, None).await.err().unwrap();
+        assert_eq!(error.to_string(), "The proxy line could not be parsed.");
+        assert!(crate::space::profile::list_all().unwrap().is_empty());
+        assert!(crate::space::proxy::list().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn draft_route_test_requires_the_protected_profiles_password_before_network_use() {
+        let _serial = crate::migrate::serial();
+        let _root = crate::store::test_root("draft-route-protected").with_config();
+        let stored = serde_json::from_value(serde_json::json!({"name":"Synthetic protected route", "_meta":{"id":""}})).unwrap();
+        let row = crate::space::profile::save_here(stored, Default::default()).unwrap();
+        crate::space::profile::protect(&row.id, "synthetic password").unwrap();
+        let path = crate::store::profiles_dir().unwrap().join(format!("{}.json", row.id));
+        let before = std::fs::read(&path).unwrap();
+        for password in [None, Some("wrong password".into())] {
+            let result = super::proxy_route_test_core(Some(crate::proxy_chain::route::ProfileProxyRoute::Direct), Default::default(), None, None, Some(row.id.clone()), password, None).await;
+            assert!(result.is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
+    }
+
     #[test]
     fn proxy_chain_quick_toggle_preserves_other_settings_and_credential() {
         let _serial = crate::migrate::serial();
@@ -2925,6 +3009,7 @@ pub fn run() {
             settings_get,
             proxy_chain_detect,
             proxy_chain_test,
+            proxy_route_test,
             proxy_chain_set_enabled,
             settings_save,
             settings_load_error,

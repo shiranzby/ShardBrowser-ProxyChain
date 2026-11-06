@@ -23,6 +23,8 @@ export function proxyChainErrorText(t: (key: string) => string, error?: ChainErr
     case "proxy_chain_settings_unreadable": return t("proxyChain.errorSettings");
     case "proxy_chain_credentials_unavailable": return t("proxyChain.errorCredentials");
     case "system_proxy_connect_failed": return t("proxyChain.errorFirstConnect");
+    case "system_proxy_tls_failed":
+    case "system_proxy_tls_timeout": return t("proxyChain.errorFirstTls");
     case "system_proxy_connect_refused": return t("proxyChain.errorFirstRefused");
     case "system_proxy_auth_failed": return t("proxyChain.errorFirstAuth");
     case "system_proxy_timeout": return t("proxyChain.errorFirstTimeout");

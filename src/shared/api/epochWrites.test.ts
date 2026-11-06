@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { EPOCH_WRITES, SPACE_REFUSALS } from "./epochWrites.ts";
+import { EPOCH_READS, EPOCH_WRITES, SPACE_REFUSALS } from "./epochWrites.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const rust = (path: string) => readFileSync(join(ROOT, "src-tauri/src", path), "utf8");
@@ -29,11 +29,13 @@ function commandsTakingEpoch(): string[] {
   return out.sort();
 }
 
-test("the list is every backend command that takes epoch, and no other", () => {
+test("the read and write lists cover every backend command that takes epoch, and no other", () => {
   const backend = commandsTakingEpoch();
   // The parse must see the real list, or an empty one would pass.
   assert.ok(backend.length > 20 && backend.includes("profile_save") && backend.includes("tag_save"), String(backend));
-  assert.deepEqual([...EPOCH_WRITES].sort(), backend);
+  assert.deepEqual([...EPOCH_WRITES, ...EPOCH_READS].sort(), backend);
+  assert.ok([...EPOCH_READS].every((cmd) => !EPOCH_WRITES.has(cmd)));
+  assert.ok(EPOCH_READS.has("proxy_route_test") && !EPOCH_WRITES.has("proxy_route_test"));
 });
 
 test("the refusals are the backend's own words", () => {
@@ -59,7 +61,7 @@ test("every call of a write that carries the edition goes through the wrapper", 
   for (const file of files) {
     if (file.endsWith(join("shared", "api", "invoke.ts"))) continue;
     const src = readFileSync(file, "utf8");
-    const writes = [...src.matchAll(call)].map((m) => m[1]).filter((c) => EPOCH_WRITES.has(c));
+    const writes = [...src.matchAll(call)].map((m) => m[1]).filter((c) => EPOCH_WRITES.has(c) || EPOCH_READS.has(c));
     seen += writes.length;
     if (writes.length && !viaWrapper.test(src)) stray.push(`${file.slice(SRC.length + 1)}: ${writes.join(", ")}`);
   }

@@ -32,6 +32,7 @@ import {
   moveEdits, newPlaceholderId, resolveId, revertOf, sameJson, sameMeta, shareRows, trackCreation, type Edit,
 } from "./optimistic";
 import { useDirectStart } from "../../../shared/model/directStart";
+import { routeUsesRealIp } from "../../../shared/lib/profileRoute";
 import { listOrder, useListOrderStore } from "../../../shared/model/listOrder";
 import { HOST_OS } from "../../../shared/lib/utils";
 import { matchesOs, osIdFor } from "../../../shared/constants";
@@ -566,7 +567,7 @@ export async function confirmDirect(
   opts?: { allowSkip?: boolean },
 ): Promise<"start" | "skip" | "assign" | "cancel"> {
   // A protected row's proxy is unknown while it is locked: never asked about.
-  const direct = targets.filter((p) => !p.proxy_id && !isProtected(p));
+  const direct = targets.filter(routeUsesRealIp);
   if (direct.length === 0 || get().proxies.length === 0 || !useDirectStart.getState().ask) return "start";
   const allowSkip = opts?.allowSkip ?? true;
   const one = targets.length === 1;
@@ -813,7 +814,7 @@ export const useProfile = create<ProfileStore>((set, get) => ({
     // The list shows Peek's name, notes, proxy and color as the save starts (PERF-13);
     // a protected row only what it shows while locked.
     const edit = before
-      ? beginEdit(draft.id, locked ? { name: draft.name, color: draft.color || null } : { name: draft.name, notes: draft.notes, proxy_id: draft.proxy_id, color: draft.color || null }, before)
+      ? beginEdit(draft.id, locked ? { name: draft.name, color: draft.color || null } : { name: draft.name, notes: draft.notes, proxy_id: draft.proxy_id, proxy_route: draft.proxy_route, proxy_chain_policy: draft.proxy_chain_policy, color: draft.color || null }, before)
       : null;
     if (edit) showLocal(set, get);
     try {
@@ -1369,7 +1370,7 @@ export const useProfile = create<ProfileStore>((set, get) => ({
     const choice = await confirmDirect(get, startable);
     if (choice === "assign") { onAssign?.(startable.map((p) => p.id)); return false; }
     if (choice === "cancel") return false;
-    const ok = (choice === "skip" ? startable.filter((p) => p.proxy_id || isProtected(p)) : startable).map((p) => p.id);
+    const ok = (choice === "skip" ? startable.filter((p) => !routeUsesRealIp(p)) : startable).map((p) => p.id);
     if (ok.length < 2) return false; // nothing left to synchronise
     // Per launch, not fixed: two fleets must not share session files.
     const group = `fleet-${Date.now().toString(36)}`;
@@ -1421,7 +1422,7 @@ export const useProfile = create<ProfileStore>((set, get) => ({
     if (choice === "assign") onAssign?.(startable.map((p) => p.id));
     if (choice === "cancel" || choice === "assign") return [...failed, ...startable.map((p) => p.id)];
     // "Start the others" leaves the ones with no proxy as they are.
-    const todo = startable.filter((p) => choice !== "skip" || !!p.proxy_id || isProtected(p));
+    const todo = startable.filter((p) => choice !== "skip" || !routeUsesRealIp(p));
     for (const p of startable) if (!todo.includes(p)) failed.push(p.id);
     if (todo.length === 0) return failed;
     // One toast for the whole batch instead of one per profile (IFACE-06):

@@ -4,6 +4,7 @@ import { planTierOf, type PlanUsage } from "../proxyshard/lib/planTier";
 import { proxyStatus } from "../proxy/lib/status";
 import { localeCountry, zoneCountry } from "../../shared/lib/geo";
 import { stampMs } from "../../shared/lib/utils";
+import { routeExitProxyId, routeUsesRealIp } from "../../shared/lib/profileRoute";
 
 /// What needs the user on the Profiles page: one pure function over the data
 /// the page has, so the problem cards, their counts and their tests read the
@@ -97,7 +98,7 @@ export function computeSignals(input: SignalInput): Signal[] {
   const { profiles, scopeIds, running, proxies, snapshots, locales, startFailed, failReasons, plans, now } = input;
   const scope = profiles.filter((p) => scopeIds.has(p.id));
   const byId = new Map(proxies.map((x) => [x.id, x]));
-  const boundTo = (p: ProfileMeta) => (p.proxy_id && byId.has(p.proxy_id) ? p.proxy_id : null);
+  const boundTo = (p: ProfileMeta) => { const id = routeExitProxyId(p); return id && byId.has(id) ? id : null; };
   const out: Signal[] = [];
 
   // Location leak. (a) No proxy, or one that is gone: the list's Direct rule.
@@ -105,9 +106,12 @@ export function computeSignals(input: SignalInput): Signal[] {
   // the country its proxy's last good test saw; a profile whose proxy never
   // passed a test, or whose settings are not read yet, is not judged.
   // A protected row's proxy is unknown while it is locked: never judged.
-  const direct = scope.filter((p) => boundTo(p) === null && !p.protected).map(nameOf);
+  const direct = scope.filter((p) => p.proxy_route ? routeUsesRealIp(p) : boundTo(p) === null && !p.protected).map(nameOf);
   const mismatch: LeakDetail["mismatch"] = [];
   for (const p of scope) {
+    // A library proxy's historical test may have used a different first hop.
+    // Explicit routes are judged by their own live connection test instead.
+    if (p.proxy_route) continue;
     const px = boundTo(p);
     const ip = px ? testedCountry(snapshots[px]) : null;
     const locale = locales[p.id];
@@ -165,6 +169,7 @@ export function computeSignals(input: SignalInput): Signal[] {
   starts.sort((a, b) => b.at - a.at);
   const on = new Map<string, string[]>();
   for (const p of scope) {
+    if (p.proxy_route) continue;
     const px = boundTo(p);
     if (px && proxyStatus(snapshots[px]) === "failed") on.set(px, [...(on.get(px) ?? []), p.id]);
   }

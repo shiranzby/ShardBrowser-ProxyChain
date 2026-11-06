@@ -791,8 +791,6 @@ async fn real_assigned_proxy_preferred_route_detection_and_public_launch() {
         crate::space::profile::save_here(stored, Default::default()).map_err(|_| "preferred_live_store_failed")?;
         let fingerprint = crate::space::profile::load_raw(id).map_err(|_| "preferred_live_store_failed")?.config;
         let proxy_path = crate::store::proxies_path().map_err(|_| "preferred_live_store_failed")?;
-        std::fs::write(&proxy_path, json!({"proxies":[entry]}).to_string()).map_err(|_| "preferred_live_store_failed")?;
-        let proxy_hash = hash_file(&proxy_path)?;
         // This local responder intentionally refuses CONNECT. No system proxy
         // settings or daily application data are changed for the failure case.
         let refusing = TcpListener::bind("127.0.0.1:0").await.map_err(|_| "preferred_live_fixture_bind_failed")?;
@@ -814,16 +812,30 @@ async fn real_assigned_proxy_preferred_route_detection_and_public_launch() {
         struct StopTask(tokio::task::JoinHandle<()>);
         impl Drop for StopTask { fn drop(&mut self) { self.0.abort(); } }
         let _refusal = StopTask(refusal_task);
+        let refused: crate::space::proxy::ProxyEntry = serde_json::from_value(json!({"id":"preferred-refused-first", "name":"Synthetic refused first",
+            "kind":"http","host":"127.0.0.1","port":refused_addr.port()})).map_err(|_| "preferred_live_entry_invalid")?;
+        std::fs::write(&proxy_path, json!({"proxies":[entry,refused]}).to_string()).map_err(|_| "preferred_live_store_failed")?;
+        let proxy_hash = hash_file(&proxy_path)?;
         let configs = [
             ("same_proxy_endpoint", ProxyChainSettings { enabled:true, mode:cfg.kind.clone(), host:cfg.host.clone(), port:cfg.port,
                 username:cfg.username.clone(), password:super::config::PasswordUpdate::Replace(cfg.password.clone()), ..Default::default() }),
             ("assigned_proxy_fallback", ProxyChainSettings { enabled:true, mode:"http".into(),host:"127.0.0.1".into(),port:refused_addr.port(), ..Default::default() }),
         ];
-        for (expected, config) in configs {
+        for (explicit, expected, config) in configs.iter().flat_map(|(expected, config)| [(false,*expected,config.clone()),(true,*expected,config.clone())]) {
             report["stage"] = json!(expected);
+            let route = explicit.then(|| super::route::ProfileProxyRoute::Chain {
+                first: super::route::FirstHop::Proxy { proxy_id: if expected=="same_proxy_endpoint" {entry.id.clone()} else {refused.id.clone()} },
+                second: super::route::SecondHop::Proxy,
+            });
+            let mut stored = crate::space::profile::load_raw(id).map_err(|_| "preferred_live_store_failed")?;
+            stored.meta.proxy_route=route.clone();
+            crate::space::profile::save_here(stored,Default::default()).map_err(|_| "preferred_live_store_failed")?;
             let mut saved = config.clone(); saved.apply_update(&Default::default()).map_err(|_| "preferred_live_settings_failed")?;
             write_settings(&engine, saved.clone())?;
-            let result = super::test("profile".into(), saved.public(), Some(id.clone())).await.map_err(|_| "preferred_live_detection_failed")?;
+            let result = if let Some(route)=&route {
+                let first=if expected=="same_proxy_endpoint" {&entry} else {&refused};
+                super::routing::test_resolved_route(Some(route),super::policy::ChainPolicy::PreferFirstHop,Some(&entry),Some(first)).await
+            } else {super::test("profile".into(), saved.public(), Some(id.clone())).await}.map_err(|_| "preferred_live_detection_failed")?;
             check(result.route.is_some_and(|route| route.as_str()==expected), "preferred_live_wrong_route")?;
             check(result.profile_proxy.state == "ok" && result.exit_error.is_none(), "preferred_live_assigned_proxy_failed")?;
             let exit = result.exit_ip.clone().ok_or("preferred_live_exit_missing")?;
@@ -834,7 +846,7 @@ async fn real_assigned_proxy_preferred_route_detection_and_public_launch() {
             check(TcpStream::connect(("127.0.0.1", port)).await.is_err(), "preferred_live_listener_not_closed")?;
             check(hash_file(&proxy_path)?==proxy_hash, "preferred_live_proxy_changed")?;
             check(crate::space::profile::load_raw(id).map_err(|_| "preferred_live_store_failed")?.config==fingerprint, "preferred_live_fingerprint_changed")?;
-            report["samples"].as_array_mut().unwrap().push(json!({"route":expected,"exit_ip":exit,"country_code":result.exit_geo.map(|g|g.country_code),
+            report["samples"].as_array_mut().unwrap().push(json!({"explicit_route":explicit,"route":expected,"exit_ip":exit,"country_code":result.exit_geo.map(|g|g.country_code),
                 "first_hop_error_code":result.first_hop_error_code,"public_launch_protected":active_protected,"listener_closed":true,
                 "saved_proxy_bytes_unchanged":true,"fingerprint_unchanged":true,"no_raw_cdp":true}));
         }

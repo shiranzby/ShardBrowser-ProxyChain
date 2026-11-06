@@ -1,5 +1,12 @@
 import { invoke } from "../../../shared/api/invoke";
 import type { ProfileMeta } from "./types";
+import type { ChainPolicy, ProfileProxyRoute } from "../../../shared/model/proxyChain";
+import type { ProxyChainTestResult } from "../../settings/model/types";
+import { spaceEpoch } from "../../../shared/api/invoke";
+
+/** Tests the editor's draft without saving the profile or a pasted proxy. */
+export const profileRouteTest = (draft: { route?: ProfileProxyRoute; proxyId: string | null; newProxyLine: string; policy?: ChainPolicy; profileId?: string; password?: string }) =>
+  invoke<ProxyChainTestResult>("proxy_route_test", { ...draft, epoch: spaceEpoch() });
 
 export const profileList = () => invoke<ProfileMeta[]>("profile_list");
 export const profileGet = (id: string) => invoke<any>("profile_get", { id });

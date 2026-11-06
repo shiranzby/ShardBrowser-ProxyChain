@@ -95,6 +95,29 @@ Older pc7 clients treat the new policy as invalid and refuse it. Use pc8 on
 clients editing or starting profiles with this choice; switch back to a supported
 explicit policy in pc8 before returning to pc7. Proxy identity and data stay intact.
 
+## Explicit per-profile connections (pc8)
+
+An optional `_meta.proxy_route` selects a single `system`, `proxy` or `direct`
+connection, or a `chain` whose first hop is `system`, a selected library `proxy`,
+or `direct`, and whose second hop is the assigned `proxy` or `direct`. The
+original `proxy_id` remains the selected final proxy and can be kept while an
+inactive route does not use it. The first selected proxy has its own library ID.
+Missing route data preserves legacy policy inheritance; malformed data refuses.
+
+These explicit choices override the global chain switch. A direct connection
+disables Chromium's explicit proxy but cannot bypass OS VPN/TUN routing. With a
+direct second hop, the first proxy remains the website exit. System-only routes
+resolve the Windows proxy/PAC for every CONNECT target and reject PAC DIRECT;
+changing Windows settings affects later connections. Selected proxy routes keep
+their startup endpoint. Both proxy routes use tracked TCP-only tunnels, validated
+TLS and runtime proxy-control restrictions. No failure chooses website direct.
+
+The profile editor tests its unsaved route without saving a proxy or profile.
+Its result belongs to that draft, not a library proxy's historical test. Routes
+are sealed with protected profile settings and omitted from public team cards.
+Using a selected first hop in a team requires access to that proxy; unavailable
+or unauthorized entries refuse the route.
+
 ## Startup tab reuse
 
 Profiles with a startup URL load a local tabs-only helper. Its temporary page

@@ -1,5 +1,5 @@
-/// The writes that carry the space's edition: each backend command taking `epoch: Option<u64>`
-/// (epochWrites.test.ts checks). No imports, so node tests and the mock read it as it is.
+/// Writes that carry the space's edition. Together with EPOCH_READS these are
+/// every backend command taking `epoch: Option<u64>` (epochWrites.test.ts checks).
 export const EPOCH_WRITES: ReadonlySet<string> = new Set([
   "automation_create", "automation_delete", "automation_duplicate", "automation_import", "automation_save",
   "bookmark_delete", "bookmark_delete_many", "bookmark_save",
@@ -13,6 +13,10 @@ export const EPOCH_WRITES: ReadonlySet<string> = new Set([
   "tag_assign", "tag_delete", "tag_import", "tag_save",
   "trash_empty", "trash_purge", "trash_restore",
 ]);
+
+/// Read-only diagnostics use one captured space too. They do not mark sync
+/// dirty or enter the mock's write permission/side-effect handling.
+export const EPOCH_READS: ReadonlySet<string> = new Set(["proxy_route_test"]);
 
 /// The backend's words when a write cannot be placed in a space.
 export const SPACE_REFUSALS = {

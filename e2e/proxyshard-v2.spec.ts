@@ -93,16 +93,23 @@ test("narrow, the Residential tile takes the full row above the two small tiles"
   expect(b3.width).toBeGreaterThan(b1.width + b2.width);
 });
 
-test("the page spans the window: tiles, Usage, Orders and the header's actions share the body's right edge (owner, 2026-10-23)", async ({ page }) => {
+test("the page spans the window and header actions keep clear of caption controls", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openApp(page, { section: "proxyshard" });
   const edges = () => page.evaluate(() => {
     const body = document.querySelector<HTMLElement>("[data-page-body]")!;
-    const end = body.getBoundingClientRect().right - parseFloat(getComputedStyle(body).paddingRight) * (parseFloat(getComputedStyle(document.documentElement).zoom) || 1);
+    const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    const end = body.getBoundingClientRect().right - parseFloat(getComputedStyle(body).paddingRight) * zoom;
+    // Windows/Linux reserve room for the shell's caption buttons. The
+    // actions align to that header content edge, not underneath the captions.
+    const header = document.querySelector<HTMLElement>("main header")!;
+    const headerEnd = header.getBoundingClientRect().right - parseFloat(getComputedStyle(header).paddingRight) * zoom;
     const right = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().right;
     const actions = [...document.querySelectorAll("main header button")].map((b) => b.getBoundingClientRect().right);
-    return [right("[data-ps-tiles]"), right("[data-ps-usage]"), right("[data-ps-card='orders']"), right("[data-ps-card='orders'] [role='treegrid']"), Math.max(...actions)]
-      .map((r) => Math.round(Math.abs(r - end)));
+    const captions = document.querySelector("[data-captions]");
+    if (captions && Math.max(...actions) > captions.getBoundingClientRect().left) throw new Error("Header actions overlap caption controls");
+    return [...[right("[data-ps-tiles]"), right("[data-ps-usage]"), right("[data-ps-card='orders']"), right("[data-ps-card='orders'] [role='treegrid']")]
+      .map((r) => Math.round(Math.abs(r - end))), Math.round(Math.abs(Math.max(...actions) - headerEnd))];
   });
   expect(await edges()).toEqual([0, 0, 0, 0, 0]);
   // 1280 as before the cap went: the body's 992 px.
