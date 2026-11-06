@@ -3603,7 +3603,7 @@
   "settings.newProfileDefaultsTitle": "新建配置默认值",
   "settings.newProfileDefaultsHelp": "仅在新建配置时应用。已有配置、导入和副本保留各自保存的值。",
   "settings.startupUrlTitle": "启动网址",
-  "settings.startupUrlHelp": "填写 HTTP 或 HTTPS 地址、about:blank，留空则使用通常的新标签页。",
+  "settings.startupUrlHelp": "填写 HTTP 或 HTTPS 地址、about:blank，留空则使用通常的新标签页。已打开相同网址时复用该标签，不重复新建。",
   "settings.defaultLocaleTitle": "语言与隐私",
   "settings.defaultsLoadFailed": "无法读取新建配置默认值",
   "folderTree.parent": "父文件夹",

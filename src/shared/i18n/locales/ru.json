@@ -3603,7 +3603,7 @@
   "settings.newProfileDefaultsTitle": "Настройки новых профилей",
   "settings.newProfileDefaultsHelp": "Применяются при создании профилей. Существующие, импортированные профили и копии сохраняют свои значения.",
   "settings.startupUrlTitle": "Адрес при запуске",
-  "settings.startupUrlHelp": "Адрес HTTP или HTTPS, about:blank; оставьте пустым для обычной новой вкладки.",
+  "settings.startupUrlHelp": "Адрес HTTP или HTTPS, about:blank; оставьте пустым для обычной новой вкладки. Если такой адрес уже открыт, используется существующая вкладка.",
   "settings.defaultLocaleTitle": "Язык и конфиденциальность",
   "settings.defaultsLoadFailed": "Не удалось загрузить настройки новых профилей",
   "folderTree.parent": "Родительская папка",

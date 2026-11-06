@@ -94,3 +94,19 @@ automatically changed.
 Older pc7 clients treat the new policy as invalid and refuse it. Use pc8 on
 clients editing or starting profiles with this choice; switch back to a supported
 explicit policy in pc8 before returning to pc7. Proxy identity and data stay intact.
+
+## Startup tab reuse
+
+Profiles with a startup URL load a local tabs-only helper. Its temporary page
+checks restored/open tabs, including pending navigation URLs, and reuses an exact
+normalized URL match. If absent, it navigates its own temporary tab to the saved
+URL. It does not close other websites or remove pre-existing duplicate user tabs.
+Query strings and fragments remain part of the match. Multiple restored helper
+pages serialize their decisions with an origin-scoped Web Lock.
+
+The helper has no host permissions, content scripts, background worker or network
+requests. It uses no product DevTools port and does not change proxy protections.
+Its files live in each profile's user-data directory, separate from user-installed
+extensions. Clearing the startup URL retires its saved target. Browser session
+restore preferences stay unchanged. If the helper cannot query tabs, its page
+offers Retry instead of blindly opening another target.

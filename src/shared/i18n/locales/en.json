@@ -3603,7 +3603,7 @@
   "settings.newProfileDefaultsTitle": "New profile defaults",
   "settings.newProfileDefaultsHelp": "Applied when creating profiles. Existing profiles, imports and copies keep their saved values.",
   "settings.startupUrlTitle": "Startup URL",
-  "settings.startupUrlHelp": "An HTTP or HTTPS address, about:blank, or empty for the usual new tab.",
+  "settings.startupUrlHelp": "An HTTP or HTTPS address, about:blank, or empty for the usual new tab. An existing tab with the same URL is reused instead of opening another.",
   "settings.defaultLocaleTitle": "Language and privacy",
   "settings.defaultsLoadFailed": "Could not load new profile defaults",
   "folderTree.parent": "Parent folder",

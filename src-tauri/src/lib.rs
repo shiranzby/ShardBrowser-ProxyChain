@@ -2,6 +2,7 @@
 
 mod profile_icon;
 mod profile_defaults;
+mod startup_page;
 mod api;
 mod fingerprints;
 mod gpu_caps;

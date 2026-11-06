@@ -629,7 +629,7 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
         }
     } else { None };
     // Read off the engine binary while the proxy is probed; once per engine version.
-    let ext_alone = (!input.extensions.is_empty() || input.library.is_some()).then(|| {
+    let ext_alone = (!input.extensions.is_empty() || input.library.is_some() || crate::startup_page::configured(&input.stored.config).is_some() || crate::startup_page::is_installed(&input.udd)).then(|| {
         let bin = bin.to_path_buf();
         tokio::task::spawn_blocking(move || crate::runtime::engine_loads_extensions_alone(&bin))
     });
@@ -794,6 +794,10 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
         Some(asked) => asked.await.unwrap_or(false),
         None => false,
     };
+
+    if let Some(helper) = crate::startup_page::install(&input.udd, crate::startup_page::configured(&input.stored.config))? {
+        input.extensions.push(helper);
+    }
 
     let args = command_line(
         &input,
@@ -1062,10 +1066,10 @@ fn command_line(
 
     // Operator's own switches, last so they win a repeat.
     args.extend(extra);
-    // A dedicated profile value, passed as one URL argument rather than a
-    // switch in extra_args. Old profiles without this field open as before.
-    if let Some(url) = input.stored.config.get("startup_url").and_then(|v| v.as_str()).map(str::trim).filter(|url| !url.is_empty()) {
-        args.push(url.to_owned());
+    // The local bootstrap reuses a restored target tab instead of appending
+    // the target unconditionally. It needs no externally accessible CDP port.
+    if crate::startup_page::configured(&input.stored.config).is_some() {
+        args.push(crate::startup_page::url());
     }
     args
 }
@@ -1773,14 +1777,14 @@ mod tests {
     }
 
     #[test]
-    fn startup_url_uses_the_saved_profile_value_as_one_argument() {
+    fn startup_url_uses_a_local_bootstrap_without_appending_duplicate_target() {
         let url = "https://www.browserscan.net/zh/?label=one two&next=1";
         let p = input(json!({ "_meta": { "id": "start-url" }, "startup_url": url }), None);
         let mut s = settings();
         s.profile_defaults.startup_url = "https://different.example/".into();
         let args = argv(&p, &UI, &s);
-        assert_eq!(args.last().map(String::as_str), Some(url));
-        assert_eq!(args.iter().filter(|v| *v == url).count(), 1);
+        assert_eq!(args.last(), Some(&crate::startup_page::url()));
+        assert!(!args.iter().any(|v| v == url));
         assert!(!args.iter().any(|v| v == "https://different.example/"));
         for value in [json!({}), json!({"startup_url":""})] {
             let mut raw = value.as_object().unwrap().clone();
