@@ -40,7 +40,8 @@ $uiTests = @(
     'settings-save.spec.ts', 'settings-secret.spec.ts', 'profile-password.spec.ts',
     'sidebar-simple.spec.ts', 'sidebar.spec.ts', 'personalization.spec.ts',
     'list-order.spec.ts', 'nested-folders.spec.ts', 'folders.spec.ts',
-    'profile-defaults.spec.ts', 'tnb-extract.spec.ts', 'tnb-locations.spec.ts', 'settings.spec.ts'
+    'profile-defaults.spec.ts', 'tnb-extract.spec.ts', 'tnb-locations.spec.ts', 'settings.spec.ts',
+    'engine-update.spec.ts', 'profile-window-maximized.spec.ts', 'proxyshard-v2.spec.ts', 'team-created.spec.ts'
 )
 foreach ($uiTest in $uiTests) {
     if (-not (Test-Path -LiteralPath (Join-Path $candidate "e2e/$uiTest") -PathType Leaf)) { throw "Required browser test is missing: $uiTest" }
