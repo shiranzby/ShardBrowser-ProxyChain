@@ -46,11 +46,32 @@ index 0000000000000000000000000000000000000000..69a55d6c36b1f4318d13d6902d0ae3ce
 +定向验证：Rust 创建/显式覆盖、设置旧 JSON 缺省、克隆/导入不覆盖与启动 argv；Playwright 新建默认、修改保存重载、旧配置编辑保留。原生 Engine 页面导航由候选产物验收另行确认。
 diff --git a/docs/PROXY-CHAIN-POLICY.md b/docs/PROXY-CHAIN-POLICY.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..a2fa5ee6c92e5b8773ac341926c92bd85bc0759b
+index 0000000000000000000000000000000000000000..74a09577caaed8337be0799b87c2951a13366cde
 --- /dev/null
 +++ b/docs/PROXY-CHAIN-POLICY.md
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,156 @@
 +# Per-profile route choice and HTTP/HTTPS second hops (pc8)
++
++## Live verification (pc10)
++
++The relay is bound before testing. There is no discarded first-hop CONNECT
++before the actual profile handshake. Preparation, profile tests, proxy-list
++tests and Start use the same relay verification. Each test closes its own
++listener and flows; it cannot close a running Session's relay.
++
++The dedicated `example.com:443` probe is a reachability measurement, not an
++exclusive browsing requirement. If that target fails, a valid fresh Geo
++response through the same relay and credentials proves proxy transport and
++the live exit. The measured Geo round trip supplies the reachability latency
++in this case. It is not a retry of the probe or an alternative route. Explicit
++authentication refusals still stop immediately. When both the probe and Geo
++fail, the original probe error is retained; when only Geo fails, measured
++connectivity remains visible but Start still refuses the unverified exit.
++
++Typed tunnel errors are published before the local socket closes, so the
++caller can identify a failed first hop instead of guessing from loopback EOF.
++The settings-only system test likewise accepts live Geo evidence on the
++resolved system proxy when its separate probe target is unavailable.
 +
 +Each saved profile `_meta.proxy_chain_policy` and saved proxy
 +`proxy_chain_policy` accepts `inherit`, `enabled`, `disabled`, or `prefer_first_hop`. Missing fields
@@ -3053,7 +3074,7 @@ index 10be256ee963d34d5dd952626b4e67dcbe73fdb8..c0af4c720b0ce2eb0994008bf25077f1
      let page = s.page().ok_or_else(|| anyhow!("no page attached"))?;
      s.call(method, params, Some(&page)).await
 diff --git a/src-tauri/src/launch.rs b/src-tauri/src/launch.rs
-index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884a6074eb8 100644
+index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..97d0a5d897a98d9c7cc9ce2f97a43ee76141741f 100644
 --- a/src-tauri/src/launch.rs
 +++ b/src-tauri/src/launch.rs
 @@ -278,6 +278,7 @@ pub struct LaunchInput {
@@ -3137,7 +3158,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
      fp_file: &'a Path,
      icon: Option<&'a Path>,
      /// The profile as the engine reads it: no `_meta`, "auto" resolved.
-@@ -589,14 +616,50 @@ struct Ready<'a> {
+@@ -589,14 +616,47 @@ struct Ready<'a> {
      ext_alone: bool,
  }
  
@@ -3146,7 +3167,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
 +    crate::profile_defaults::validate_config(&input.stored.config)?;
 +    let mut s = crate::proxy_chain::saved_settings()?;
 +    let explicit = input.stored.meta.proxy_route.clone();
-+    let chain = if let Some(route) = &explicit {
++    let mut chain = if let Some(route) = &explicit {
 +        route.validate()?;
 +        crate::proxy_chain::validate_args(&s.extra_args)?;
 +        if !crate::proxy_chain::routing::is_direct(route) && input.cdp { anyhow::bail!("Proxy-chain V1 cannot expose raw DevTools or automation proxy controls. Start this profile from the normal profile list without debugging."); }
@@ -3170,12 +3191,9 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
 +    }
 +    crate::proxy_chain::prepare(input.proxy.as_ref(), &s.proxy_chain).await?
 +    };
-+    let chain_geo = if let Some(chain) = &chain {
-+        if let Some(geo) = &chain.verified_geo { Some(geo.clone()) }
-+        else {
-+            proxy::probe_on_route(&chain.effective).await.map_err(|e| crate::proxy_chain::profile_failure(&chain.tunnel, &e))?;
-+            Some(proxy::geo_check_on_route(Some(&chain.effective), None).await.map_err(|_| anyhow::anyhow!("The proxy chain connected, but its live exit IP could not be verified. No direct connection was attempted."))?)
-+        }
++    let chain_geo = if let Some(chain) = &mut chain {
++        if chain.verified_geo.is_none() { crate::proxy_chain::verify_prepared(chain).await?; }
++        chain.verified_geo.clone()
 +    } else { None };
      // Read off the engine binary while the proxy is probed; once per engine version.
 -    let ext_alone = (!input.extensions.is_empty() || input.library.is_some()).then(|| {
@@ -3191,7 +3209,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
          if matches!(p.kind, proxy::ProxyKind::Socks5) {
              match proxy::probe_udp(p).await {
                  Ok(ms) => {
-@@ -626,7 +689,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -626,7 +686,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
                          );
                          true
                      } else {
@@ -3200,7 +3218,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
                          eprintln!(
                              "[launcher] UDP probe failed for proxy {} ({e}) while this \
                               process CAN send UDP, so the proxy has no relay; cached={cached}",
-@@ -647,13 +710,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -647,13 +707,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      // Win/Linux profile whose resolution the operator picked in the editor is
      // left out of it, or the switch would report the host's screen over exactly
      // the one they asked for.
@@ -3215,7 +3233,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
      // The proxy probe and the geo lookup are the slow part: a cancel made
      // while they ran stops here, before anything is written.
      check_cancel(&input.profile_id)?;
-@@ -739,10 +801,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -739,10 +798,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      }
  
      // Live geo for ICE-candidate spoofing, cached snapshot as fallback.
@@ -3230,7 +3248,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
                  .map(|s| s.ip)
                  .filter(|ip| !ip.is_empty()),
          }
-@@ -754,9 +818,14 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -754,9 +815,14 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
          None => false,
      };
  
@@ -3245,7 +3263,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
              fp_file: &fp_file,
              icon: icon.as_deref(),
              raw: &raw,
-@@ -769,6 +838,14 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -769,6 +835,14 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
          opts,
          &s,
      );
@@ -3260,7 +3278,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
      let LaunchInput { profile_id, udd, exit, cdp: enable_cdp, ext_ids, .. } = input;
      let remote = exit.session();
      // A team's profile has no launch count of its own here.
-@@ -798,7 +875,8 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -798,7 +872,8 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
          Some(_) => process::spawn_tied(cmd).await.context("start the ShardBrowser engine")?,
          None => (cmd.spawn().context("start the ShardBrowser engine")?, process::Tie::default()),
      };
@@ -3270,7 +3288,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
  
      if let Some(s) = &remote {
          s.spawned(tie, pid);
-@@ -839,6 +917,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -839,6 +914,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
  fn engine_config(stored: &profile::StoredProfile) -> serde_json::Map<String, serde_json::Value> {
      let mut raw = stored.config.clone();
      raw.remove("_meta");
@@ -3278,7 +3296,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
      if raw.get("ui_language").and_then(|v| v.as_str()) != Some("profile") {
          raw.remove("ui_language");
      }
-@@ -900,8 +979,9 @@ fn command_line(
+@@ -900,8 +976,9 @@ fn command_line(
          args.push("--hide-crash-restore-bubble".into());
      }
  
@@ -3289,7 +3307,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
  
          // QUIC: enable only when proxy UDP relay verified; rely on Alt-Svc upgrade path.
          if ready.proxy_udp_ok {
-@@ -915,6 +995,9 @@ fn command_line(
+@@ -915,6 +992,9 @@ fn command_line(
              eprintln!("[launcher] QUIC disabled: proxy {} has no working UDP relay", p.host);
          }
      }
@@ -3299,7 +3317,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
  
      // WebRTC IP policy: block / tcp_only / auto (auto = relay if UDP, else tcp_only).
      let webrtc_mode = ready.raw.get("webrtc").and_then(|v| v.as_str()).unwrap_or("auto");
-@@ -1009,6 +1092,11 @@ fn command_line(
+@@ -1009,6 +1089,11 @@ fn command_line(
  
      // Operator's own switches, last so they win a repeat.
      args.extend(extra);
@@ -3311,7 +3329,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
      args
  }
  
-@@ -1045,6 +1133,7 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
+@@ -1045,6 +1130,7 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
  async fn resolve_auto_fields(
      cfg: &mut serde_json::Map<String, serde_json::Value>,
      proxy_opt: Option<&proxy::ProxyEntry>,
@@ -3319,7 +3337,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
  ) {
      let want_tz_auto = cfg.get("timezone").and_then(|v| v.as_str()) == Some("auto");
      let want_lang_auto = cfg
-@@ -1071,13 +1160,16 @@ async fn resolve_auto_fields(
+@@ -1071,13 +1157,16 @@ async fn resolve_auto_fields(
  
      // ---- geo source ----
      let mut source = "";
@@ -3338,7 +3356,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
                          if !snap.country_code.is_empty() || !snap.timezone.is_empty() {
                              source = "cached-snapshot";
                              Some(proxy::GeoInfo {
-@@ -1123,7 +1215,7 @@ async fn resolve_auto_fields(
+@@ -1123,7 +1212,7 @@ async fn resolve_auto_fields(
                  }
              }
          }
@@ -3347,7 +3365,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
  
      let host_warn = || {
          if proxy_opt.is_some() {
-@@ -1640,6 +1732,7 @@ mod tests {
+@@ -1640,6 +1729,7 @@ mod tests {
              profile_id: stored.meta.id.clone(),
              udd: PathBuf::from(format!("/data/user-data/{}", stored.meta.id)),
              proxy: proxy.map(|p| serde_json::from_value(p).unwrap()),
@@ -3355,7 +3373,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
              extensions: stored.meta.extensions.iter().map(|id| PathBuf::from(format!("/data/extensions/{id}"))).collect(),
              library: Some(PathBuf::from("/data/extensions")),
              ext_ids: Vec::new(),
-@@ -1655,6 +1748,19 @@ mod tests {
+@@ -1655,6 +1745,19 @@ mod tests {
          crate::settings::Settings { helper_enabled: true, camera_enabled: true, show_profile_name: true, ..Default::default() }
      }
  
@@ -3375,7 +3393,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
      /// As launched on an engine from before patch 0092's second part.
      fn argv(input: &LaunchInput, opts: &LaunchOpts, s: &crate::settings::Settings) -> Vec<String> {
          argv_on(false, input, opts, s)
-@@ -1667,6 +1773,7 @@ mod tests {
+@@ -1667,6 +1770,7 @@ mod tests {
          let fp = PathBuf::from(format!("{}/fingerprint.json", input.udd.display()));
          let icon = PathBuf::from(format!("/runtime/profile-icons/{}.png", input.profile_id));
          let ready = Ready {
@@ -3383,7 +3401,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..ffa3384d120ece8625c5fd4df8e35884
              fp_file: &fp,
              icon: Some(&icon),
              raw: &raw,
-@@ -1709,6 +1816,23 @@ mod tests {
+@@ -1709,6 +1813,23 @@ mod tests {
          );
      }
  
@@ -5613,10 +5631,10 @@ index 0000000000000000000000000000000000000000..b53e5b910df49df61865567902df08b9
 +}
 diff --git a/src-tauri/src/proxy_chain/detection_tests.rs b/src-tauri/src/proxy_chain/detection_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..51a9c878ad9a2151c158f8de2eb54e4f49af86b1
+index 0000000000000000000000000000000000000000..32bc3609016b31c298568f42f4afd689066e790d
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detection_tests.rs
-@@ -0,0 +1,899 @@
+@@ -0,0 +1,1128 @@
 +//! Detection uses real loopback proxy protocols. Fixtures answer Geo requests
 +//! themselves; they never resolve or connect to any external destination.
 +
@@ -5719,6 +5737,7 @@ index 0000000000000000000000000000000000000000..51a9c878ad9a2151c158f8de2eb54e4f
 +    username: &str,
 +    password: &str,
 +    ip: &str,
++    refuse_probe: bool,
 +) -> std::io::Result<()> {
 +    if stream.read_u8().await? != 5 {
 +        return Ok(());
@@ -5761,6 +5780,12 @@ index 0000000000000000000000000000000000000000..51a9c878ad9a2151c158f8de2eb54e4f
 +        .lock()
 +        .unwrap()
 +        .push(format!("SOCKS {}:{port}", String::from_utf8_lossy(&host)));
++    // This proxy can carry real HTTP traffic while refusing the one host
++    // used by the connectivity probe. It never connects to either target.
++    if refuse_probe && host == b"example.com" && port == 443 {
++        stream.write_all(&[5, 4, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
++        return Ok(());
++    }
 +    stream.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 0]).await?;
 +    // Connectivity probes close after CONNECT; only the Geo request has HTTP.
 +    let head = http_head(stream).await?;
@@ -5769,6 +5794,10 @@ index 0000000000000000000000000000000000000000..51a9c878ad9a2151c158f8de2eb54e4f
 +}
 +
 +async fn socks_proxy(username: &'static str, password: &'static str, ip: &'static str) -> Service {
++    socks_proxy_with_probe_rule(username, password, ip, false).await
++}
++
++async fn socks_proxy_with_probe_rule(username: &'static str, password: &'static str, ip: &'static str, refuse_probe: bool) -> Service {
 +    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 +    let addr = listener.local_addr().unwrap();
 +    let requests = Arc::new(Mutex::new(Vec::new()));
@@ -5782,7 +5811,7 @@ index 0000000000000000000000000000000000000000..51a9c878ad9a2151c158f8de2eb54e4f
 +                    let (mut stream, _) = connection.unwrap();
 +                    let record = record.clone();
 +                    clients.spawn(async move {
-+                        let _ = socks_exchange(&mut stream, &record, username, password, ip).await;
++                        let _ = socks_exchange(&mut stream, &record, username, password, ip, refuse_probe).await;
 +                    });
 +                },
 +            }
@@ -5813,6 +5842,103 @@ index 0000000000000000000000000000000000000000..51a9c878ad9a2151c158f8de2eb54e4f
 +        "proxy_chain_policy":"prefer_first_hop"})).unwrap()
 +}
 +
++#[tokio::test]
++async fn live_geo_on_the_selected_route_survives_a_probe_target_refusal_on_repeated_tests() {
++    use super::{policy::ChainPolicy,route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,Route};
++    let _root = crate::store::test_root("probe-target-refusal-with-live-exit");
++    crate::settings::save(&crate::settings::Settings { geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
++    let second = socks_proxy_with_probe_rule(SECOND_USER, SECOND_PASS, "198.51.100.88", true).await;
++    let entry = assigned(second.addr, "socks5");
++    let before = serde_json::to_value(&entry).unwrap();
++    let first = http_proxy(Some(second.addr), true).await;
++    let first_entry = assigned(first.addr, "http");
++    let chain = R::Chain { first: FirstHop::Proxy { proxy_id: first_entry.id.clone() }, second: SecondHop::Proxy };
++    for (route, expected) in [(R::Proxy, Route::ExplicitProxy), (chain, Route::ExplicitChain)] {
++        for _ in 0..2 {
++            let result = routing::test_resolved_route(Some(&route), ChainPolicy::Enabled, Some(&entry), Some(&first_entry)).await.unwrap();
++            assert_eq!(result.route, Some(expected), "the live exit must come from the selected route without fallback");
++            assert_eq!(result.profile_proxy.state, "ok");
++            assert_eq!(result.system_proxy.state, if expected == Route::ExplicitChain { "ok" } else { "not_tested" });
++            assert_eq!(result.exit_ip.as_deref(), Some("198.51.100.88"));
++            assert_eq!(result.exit_geo.as_ref().unwrap().provider, "ip-api.com");
++            assert!(result.exit_error.is_none() && result.exit_error_code.is_none() && result.first_hop_error_code.is_none());
++            assert_eq!(serde_json::to_value(&entry).unwrap(), before, "testing must not rewrite the assigned proxy");
++        }
++    }
++    let requests = second.requests.lock().unwrap();
++    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 4, "every probe really received a target refusal");
++    assert_eq!(requests.iter().filter(|r| *r == "SOCKS ip-api.com:80").count(), 4, "every result needs fresh authenticated traffic to the Geo target");
++    assert!(!requests.iter().any(|r| r.contains("MISMATCH") || r.contains("NOT_REMOTE_DNS")));
++    let first_requests = first.requests.lock().unwrap();
++    assert!(first_requests.len() >= 4, "the chained tests use the first hop for both probe and Geo");
++    let fixed_target = format!("CONNECT {}:{} HTTP/1.1", entry.host, entry.port);
++    assert!(first_requests.iter().all(|head| head.starts_with(&fixed_target)), "the first hop may only connect to the assigned proxy");
++}
++
++#[tokio::test]
++async fn legacy_profile_tests_accept_fresh_geo_when_the_probe_target_is_refused() {
++    use super::policy::ChainPolicy;
++    let _root = crate::store::test_root("legacy-probe-target-refusal-with-live-exit");
++    let second = socks_proxy_with_probe_rule(SECOND_USER, SECOND_PASS, "198.51.100.89", true).await;
++    let first = http_proxy(Some(second.addr), true).await;
++    let mut entry = assigned(second.addr, "socks5");
++    entry.proxy_chain_policy = ChainPolicy::Inherit;
++    save_assigned_profile(&entry, "inherit");
++    let before = std::fs::read(crate::store::proxies_path().unwrap()).unwrap();
++    let profile_path = crate::store::profiles_dir().unwrap().join("adaptive-profile.json");
++    let profile_before = std::fs::read(&profile_path).unwrap();
++    for enabled in [false, true] {
++        let mut stored = config(first.addr, "http");
++        stored.enabled = enabled;
++        stored.apply_update(&Default::default()).unwrap();
++        crate::settings::save(&crate::settings::Settings { proxy_chain: stored.clone(), geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
++        for _ in 0..2 {
++            let result = super::test("profile".into(), stored.public(), Some("adaptive-profile".into())).await.unwrap();
++            assert_eq!(result.profile_proxy.state, "ok");
++            assert_eq!(result.system_proxy.state, if enabled { "ok" } else { "not_tested" });
++            assert_eq!(result.exit_ip.as_deref(), Some("198.51.100.89"));
++            assert!(result.exit_error.is_none() && result.first_hop_error_code.is_none());
++            if enabled { assert_eq!(result.route, Some(super::Route::FirstHop), "a probe-only failure must not bypass the first hop"); }
++            assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), before);
++            assert_eq!(std::fs::read(&profile_path).unwrap(), profile_before);
++        }
++    }
++    let requests = second.requests.lock().unwrap();
++    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 4);
++    assert_eq!(requests.iter().filter(|r| *r == "SOCKS ip-api.com:80").count(), 4);
++    assert!(first.requests.lock().unwrap().len() >= 4, "both chained tests carry the probe and Geo through the first hop");
++}
++
++#[tokio::test]
++async fn proxy_list_chain_tests_do_not_mark_a_live_geo_route_failed_for_one_probe_host() {
++    let _root = crate::store::test_root("proxy-list-probe-target-refusal-with-live-exit");
++    let second = socks_proxy_with_probe_rule(SECOND_USER, SECOND_PASS, "198.51.100.90", true).await;
++    let first = http_proxy(Some(second.addr), true).await;
++    let mut entry = assigned(second.addr, "socks5");
++    entry.proxy_chain_policy = super::policy::ChainPolicy::Enabled;
++    entry.country = "ZZ".into();
++    save_assigned_profile(&entry, "inherit");
++    let before = std::fs::read(crate::store::proxies_path().unwrap()).unwrap();
++    let mut stored = config(first.addr, "http");
++    stored.apply_update(&Default::default()).unwrap();
++    crate::settings::save(&crate::settings::Settings { proxy_chain: stored, geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
++    for _ in 0..2 {
++        let snapshot = crate::space::proxy::full_test(&entry).await.unwrap();
++        assert_eq!(snapshot.transport.as_deref(), Some("proxy_chain"));
++        assert_eq!(snapshot.route.as_deref(), Some("first_hop"));
++        assert_eq!(snapshot.ip, "198.51.100.90");
++        assert_eq!(snapshot.provider, "ip-api.com");
++        assert!(snapshot.tcp_ms.is_some(), "authenticated Geo traffic supplies fresh route reachability");
++        assert!(snapshot.chain_error.is_none() && snapshot.geo_error.is_none() && snapshot.first_hop_error_code.is_none());
++        assert_eq!(snapshot.udp_state.as_deref(), Some("unsupported_by_chain"));
++        assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), before);
++    }
++    let requests = second.requests.lock().unwrap();
++    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 2);
++    assert_eq!(requests.iter().filter(|r| *r == "SOCKS ip-api.com:80").count(), 2);
++    assert!(first.requests.lock().unwrap().len() >= 4);
++}
++
 +async fn socks_connect_refusal(reply: u8) -> Service {
 +    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
 +    let addr=listener.local_addr().unwrap();
@@ -5820,9 +5946,12 @@ index 0000000000000000000000000000000000000000..51a9c878ad9a2151c158f8de2eb54e4f
 +    let record=requests.clone();
 +    let task=tokio::spawn(async move {
 +        while let Ok((mut stream,_))=listener.accept().await {
-+            let mut greeting=[0;4];
++            let mut greeting=[0;2];
 +            if stream.read_exact(&mut greeting).await.is_err() {continue;}
-+            assert_eq!(greeting,[5,2,0,2]);
++            assert_eq!(greeting[0],5);
++            let mut methods=vec![0;greeting[1] as usize];
++            stream.read_exact(&mut methods).await.unwrap();
++            assert!(methods.contains(&2));
 +            stream.write_all(&[5,2]).await.unwrap();
 +            assert_eq!(stream.read_u8().await.unwrap(),1);
 +            let mut username=vec![0;stream.read_u8().await.unwrap() as usize];
@@ -5868,7 +5997,10 @@ index 0000000000000000000000000000000000000000..51a9c878ad9a2151c158f8de2eb54e4f
 +            for secret in [SECOND_USER,SECOND_PASS] {assert!(!dto.to_string().contains(secret));}
 +        }
 +        assert_eq!(serde_json::to_value(&entry).unwrap(),before);
-+        assert_eq!(&*endpoint.requests.lock().unwrap(),&["example.com:443","example.com:443"]);
++        let requests=endpoint.requests.lock().unwrap();
++        assert_eq!(requests.iter().filter(|target| target.as_str()=="example.com:443").count(),2);
++        assert!(requests.iter().any(|target| target=="ip-api.com:80"),"failed reach probes still check the live exit on this route");
++        assert!(requests.iter().all(|target|matches!(target.as_str(),"example.com:443"|"ip-api.com:80"|"ipapi.co:443"|"ipwho.is:443")));
 +    }
 +    let endpoint=socks_proxy(SECOND_USER,"different synthetic secret","198.51.100.88").await;
 +    let entry=assigned(endpoint.addr,"socks5");
@@ -6516,6 +6648,121 @@ index 0000000000000000000000000000000000000000..51a9c878ad9a2151c158f8de2eb54e4f
 +        assert!(reqwest::Proxy::all(entry.to_proxy_server_arg()).is_ok());
 +    }
 +}
++
++#[tokio::test]
++async fn proxy_list_first_hop_auth_refusal_cannot_be_hidden_by_later_geo_success() {
++    let _root = crate::store::test_root("proxy-list-first-auth-refusal");
++    let second = socks_proxy(SECOND_USER, SECOND_PASS, "198.51.100.91").await;
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = listener.local_addr().unwrap();
++    let requests = Arc::new(Mutex::new(Vec::new()));
++    let record = requests.clone();
++    let destination = second.addr;
++    let first = Service {
++        addr,
++        requests,
++        task: tokio::spawn(async move {
++            let mut clients = JoinSet::new();
++            loop {
++                tokio::select! {
++                    _ = clients.join_next(), if !clients.is_empty() => {},
++                    connection = listener.accept() => {
++                        let (mut stream, _) = connection.unwrap();
++                        let record = record.clone();
++                        clients.spawn(async move {
++                            let Ok(head) = http_head(&mut stream).await else { return; };
++                            let first_request = {
++                                let mut seen = record.lock().unwrap();
++                                seen.push(head);
++                                seen.len() == 1
++                            };
++                            if first_request {
++                                let _ = stream.write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n").await;
++                                return;
++                            }
++                            // A later request could authenticate and return a
++                            // live Geo result. It must never be made after the
++                            // authoritative first-hop authentication refusal.
++                            let Ok(mut remote) = TcpStream::connect(destination).await else { return; };
++                            if stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.is_err() { return; }
++                            let _ = tokio::io::copy_bidirectional(&mut stream, &mut remote).await;
++                        });
++                    },
++                }
++            }
++        }),
++    };
++    let mut entry = assigned(second.addr, "socks5");
++    entry.proxy_chain_policy = super::policy::ChainPolicy::Enabled;
++    entry.country = "ZZ".into();
++    let original = serde_json::to_value(&entry).unwrap();
++    save_assigned_profile(&entry, "inherit");
++    let stored_before = std::fs::read(crate::store::proxies_path().unwrap()).unwrap();
++    let mut stored = config(first.addr, "http");
++    stored.apply_update(&Default::default()).unwrap();
++    crate::settings::save(&crate::settings::Settings {
++        proxy_chain: stored,
++        geo_checker: Some("ip-api.com".into()),
++        ..Default::default()
++    }).unwrap();
++
++    let snapshot = crate::space::proxy::full_test(&entry).await.unwrap();
++    assert_eq!(snapshot.chain_error.as_ref().map(|error| error.code.as_str()), Some("system_proxy_auth_failed"));
++    assert!(snapshot.ip.is_empty() && snapshot.tcp_ms.is_none());
++    assert_eq!(first.requests.lock().unwrap().len(), 1, "an authentication refusal must stop before any Geo connection");
++    assert!(second.requests.lock().unwrap().is_empty(), "the refused first-hop connection must never reach the assigned proxy");
++    assert_eq!(serde_json::to_value(&entry).unwrap(), original);
++    assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), stored_before);
++}
++
++#[tokio::test]
++async fn system_geolocation_proves_route_when_probe_target_refused() {
++    let _root = crate::store::test_root("system-probe-target-refused-with-live-exit");
++    crate::settings::save(&crate::settings::Settings { geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = listener.local_addr().unwrap();
++    let requests = Arc::new(Mutex::new(Vec::new()));
++    let record = requests.clone();
++    let first = Service {
++        addr,
++        requests,
++        task: tokio::spawn(async move {
++            let mut clients = JoinSet::new();
++            loop {
++                tokio::select! {
++                    _ = clients.join_next(), if !clients.is_empty() => {},
++                    connection = listener.accept() => {
++                        let (mut stream, _) = connection.unwrap();
++                        let record = record.clone();
++                        clients.spawn(async move {
++                            let Ok(head) = http_head(&mut stream).await else { return; };
++                            record.lock().unwrap().push(head.clone());
++                            if head.starts_with("GET http://ip-api.com/") {
++                                let _ = geo_response(&mut stream, "198.51.100.92").await;
++                            } else {
++                                // Only the synthetic Geo URL is accepted; all
++                                // CONNECT targets, including the fixed probe,
++                                // are refused without any external connection.
++                                let _ = stream.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n").await;
++                            }
++                        });
++                    },
++                }
++            }
++        }),
++    };
++    for _ in 0..2 {
++        let result = super::test("system".into(), config(first.addr, "http"), None).await.unwrap();
++        assert_eq!(result.system_proxy.state, "ok", "live traffic on this route proves connectivity despite one blocked probe target");
++        assert_eq!(result.profile_proxy.state, "not_tested");
++        assert_eq!(result.exit_ip.as_deref(), Some("198.51.100.92"));
++        assert_eq!(result.exit_geo.as_ref().unwrap().provider, "ip-api.com");
++        assert!(result.exit_error.is_none() && result.exit_error_code.is_none());
++    }
++    let requests = first.requests.lock().unwrap();
++    assert_eq!(requests.iter().filter(|head| head.starts_with("CONNECT example.com:443 ")).count(), 2);
++    assert_eq!(requests.iter().filter(|head| head.starts_with("GET http://ip-api.com/")).count(), 2, "each system test must obtain its own live Geo response");
++}
 diff --git a/src-tauri/src/proxy_chain/error.rs b/src-tauri/src/proxy_chain/error.rs
 new file mode 100644
 index 0000000000000000000000000000000000000000..1b144f9bc3fc6633ff8913d2ef1546ef08fda06f
@@ -6578,10 +6825,10 @@ index 0000000000000000000000000000000000000000..1b144f9bc3fc6633ff8913d2ef1546ef
 +impl std::error::Error for ChainError {}
 diff --git a/src-tauri/src/proxy_chain/integration_tests.rs b/src-tauri/src/proxy_chain/integration_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..48f303852f4e8fc9f72738335c3bc0cfb4d25a8b
+index 0000000000000000000000000000000000000000..6a9413e7ade058eb1cea1f1b90a02a30f9a26ce3
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/integration_tests.rs
-@@ -0,0 +1,757 @@
+@@ -0,0 +1,840 @@
 +//! Product integration invariants, using only isolated profile files and
 +//! synthetic loopback services. No system settings or remote proxies are read.
 +
@@ -6691,7 +6938,7 @@ index 0000000000000000000000000000000000000000..48f303852f4e8fc9f72738335c3bc0cf
 +    let client = Arc::new(rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth());
 +    let wrong = Target::new("wrong.test", addr.port()).unwrap();
 +    assert_eq!(super::tls::connect(&hop, &wrong, client.clone(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
-+    // A later connection can fail TLS after the initial preflight succeeded.
++    // A later relay connection can fail TLS after the first direct check.
 +    // Its loopback EOF is not an HTTP status and must preserve the TLS cause.
 +    let rejected = Tunnel::bind_tls(hop.clone(), wrong, client.clone()).await.unwrap();
 +    let mut probe = entry("tls-refusal", rejected.addr());
@@ -6818,8 +7065,9 @@ index 0000000000000000000000000000000000000000..48f303852f4e8fc9f72738335c3bc0cf
 +                    clients.spawn(async move {
 +                        if reject_auth {
 +                            let mut header = [0; 2];
-+                            // The connectivity-only preflight opens and closes
-+                            // without greeting; the profile probe follows later.
++                            // The local relay's first connection carries the
++                            // actual profile handshake; there is no separate
++                            // connectivity-only preflight.
 +                            if stream.read_exact(&mut header).await.is_err() { return; }
 +                            let mut methods = vec![0; header[1] as usize];
 +                            if stream.read_exact(&mut methods).await.is_err() { return; }
@@ -7162,7 +7410,11 @@ index 0000000000000000000000000000000000000000..48f303852f4e8fc9f72738335c3bc0cf
 +    assert_eq!(error.downcast_ref::<ChainError>().map(|e| e.code), Some("proxy_chain_routes_failed"));
 +    assert!(!marker.exists());
 +    assert!(!crate::process::Tracker::shared().is_running("preferred-failed-profile"));
-+    assert!(second.accepted.load(Ordering::SeqCst) >= 3, "first-hop preflight, chain authentication and assigned authentication were attempted");
++    assert_eq!(
++        second.accepted.load(Ordering::SeqCst),
++        2,
++        "one chained relay attempt and one assigned-proxy fallback were attempted"
++    );
 +    assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), saved);
 +    assert_eq!(std::fs::read(profile_path).unwrap(), before);
 +}
@@ -7198,9 +7450,10 @@ index 0000000000000000000000000000000000000000..48f303852f4e8fc9f72738335c3bc0cf
 +    );
 +    assert!(!marker.exists());
 +    assert!(!crate::process::Tracker::shared().is_running("bad-b-profile"));
-+    assert!(
-+        a.accepted.load(Ordering::SeqCst) >= 2,
-+        "first-hop preflight and actual profile probe both use A"
++    assert_eq!(
++        a.accepted.load(Ordering::SeqCst),
++        1,
++        "the actual profile probe uses the first hop without a preflight"
 +    );
 +    assert_eq!(
 +        std::fs::read(crate::store::proxies_path().unwrap()).unwrap(),
@@ -7338,6 +7591,83 @@ index 0000000000000000000000000000000000000000..48f303852f4e8fc9f72738335c3bc0cf
 +        assert!(*signal.borrow(), "original listener outlived its session");
 +        closed(browser).await;
 +    }
++}
++
++/// A synthetic HTTP proxy: it only acknowledges the fixed probe target and
++/// never resolves or connects to an external host.
++async fn http_probe_only_proxy() -> Service {
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = listener.local_addr().unwrap();
++    let accepted = Arc::new(AtomicUsize::new(0));
++    let count = accepted.clone();
++    let task = tokio::spawn(async move {
++        let mut clients = JoinSet::new();
++        loop {
++            tokio::select! {
++                _ = clients.join_next(), if !clients.is_empty() => {},
++                connection = listener.accept() => {
++                    let (mut stream, _) = connection.unwrap();
++                    count.fetch_add(1, Ordering::SeqCst);
++                    clients.spawn(async move {
++                        let Ok(head) = http_head(&mut stream).await else { return; };
++                        assert!(head.starts_with(b"CONNECT example.com:443 HTTP/1.1\r\n"));
++                        let _ = stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await;
++                    });
++                },
++            }
++        }
++    });
++    Service { addr, accepted, task }
++}
++
++#[tokio::test]
++async fn repeated_preparation_dials_only_for_the_actual_relay_probe() {
++    let second = http_probe_only_proxy().await;
++    let first = first_hop(second.addr).await;
++    let mut proxy = entry("repeat-relay-probe", second.addr);
++    proxy.kind = crate::space::proxy::ProxyKind::Http;
++    let hop = chain(first.addr).hop(&Default::default()).unwrap();
++    for completed in 0..3 {
++        let prepared = super::prepare_with_hop(&proxy, hop.clone()).await.unwrap();
++        // The old eager preflight had already opened and dropped an upstream
++        // connection before returning from prepare_with_hop.
++        tokio::time::sleep(Duration::from_millis(100)).await;
++        assert_eq!(first.accepted.load(Ordering::SeqCst), completed, "preparation must not dial the first hop");
++        assert_eq!(second.accepted.load(Ordering::SeqCst), completed, "preparation must not leave an unused second-hop connection");
++        crate::space::proxy::probe_on_route(&prepared.effective).await.unwrap();
++        assert_eq!(first.accepted.load(Ordering::SeqCst), completed + 1, "one probe must use one first-hop CONNECT");
++        assert_eq!(second.accepted.load(Ordering::SeqCst), completed + 1);
++        let stopped = prepared.tunnel.closed_signal();
++        prepared.tunnel.shutdown().await;
++        assert!(*stopped.borrow(), "a repeated test must wait for the previous relay to close");
++    }
++}
++
++#[tokio::test]
++async fn concurrently_prepared_relays_probe_independently_without_preflight_connections() {
++    let second = http_probe_only_proxy().await;
++    let first = first_hop(second.addr).await;
++    let mut proxy = entry("concurrent-relay-probe", second.addr);
++    proxy.kind = crate::space::proxy::ProxyKind::Http;
++    let hop = chain(first.addr).hop(&Default::default()).unwrap();
++    let (a, b) = tokio::join!(super::prepare_with_hop(&proxy, hop.clone()), super::prepare_with_hop(&proxy, hop));
++    let (a, b) = (a.unwrap(), b.unwrap());
++    assert_ne!(a.tunnel.addr(), b.tunnel.addr());
++    tokio::time::sleep(Duration::from_millis(100)).await;
++    assert_eq!(first.accepted.load(Ordering::SeqCst), 0, "binding independent relays must not open upstream connections");
++    let (left, right) = tokio::join!(crate::space::proxy::probe_on_route(&a.effective), crate::space::proxy::probe_on_route(&b.effective));
++    left.unwrap(); right.unwrap();
++    assert_eq!(first.accepted.load(Ordering::SeqCst), 2);
++    assert_eq!(second.accepted.load(Ordering::SeqCst), 2);
++    let a_stopped = a.tunnel.closed_signal();
++    a.tunnel.shutdown().await;
++    assert!(*a_stopped.borrow());
++    crate::space::proxy::probe_on_route(&b.effective).await.unwrap();
++    assert_eq!(first.accepted.load(Ordering::SeqCst), 3, "closing one relay must not affect the other probe");
++    assert_eq!(second.accepted.load(Ordering::SeqCst), 3);
++    let b_stopped = b.tunnel.closed_signal();
++    b.tunnel.shutdown().await;
++    assert!(*b_stopped.borrow());
 +}
 diff --git a/src-tauri/src/proxy_chain/live_geo_tests.rs b/src-tauri/src/proxy_chain/live_geo_tests.rs
 new file mode 100644
@@ -7717,10 +8047,10 @@ index 0000000000000000000000000000000000000000..203a12f803c249967e51e0350210711d
 +}
 diff --git a/src-tauri/src/proxy_chain/live_tests.rs b/src-tauri/src/proxy_chain/live_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..2007ecd2929d6fe1139aeec01c32c0c8ae509d89
+index 0000000000000000000000000000000000000000..792264a6ffc94427960aac0493aea1ab7fc6481f
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/live_tests.rs
-@@ -0,0 +1,961 @@
+@@ -0,0 +1,1020 @@
 +//! Explicitly opt-in Windows acceptance of the public product launch path.
 +//! This test never reads the user's profiles. Its only secret input is a
 +//! current-user DPAPI file outside the checkout. The encrypted JSON has the
@@ -8682,12 +9012,71 @@ index 0000000000000000000000000000000000000000..2007ecd2929d6fe1139aeec01c32c0c8
 +    println!("{}",serde_json::to_string_pretty(&report).unwrap());
 +    assert!(!root_path.exists());
 +}
++
++#[tokio::test]
++#[ignore = "Read-only back-to-back comparison of assigned, system and chained routes using protected input; no browser."]
++async fn real_proxy_route_back_to_back_observation() {
++    use super::route::{FirstHop, ProfileProxyRoute, SecondHop};
++    assert_eq!(std::env::var("SHARD_PROXY_CHAIN_RUN_LIVE").as_deref(), Ok("1"));
++    let _serial = crate::migrate::serial();
++    let root = crate::store::test_root("proxy-route-back-to-back-observation");
++    let root_path = root.path.clone();
++    let cfg = input().expect("protected_input_unavailable");
++    let entry: crate::space::proxy::ProxyEntry = serde_json::from_value(json!({
++        "id":"repeat-observation-assigned", "name":"Synthetic repeated proxy",
++        "kind":cfg.kind, "host":cfg.host, "port":cfg.port,
++        "username":cfg.username, "password":cfg.password
++    })).expect("protected_proxy_fields_invalid");
++    crate::settings::save(&crate::settings::Settings {
++        geo_checker: Some("ip-api.com".into()), ..Default::default()
++    }).expect("isolated_observation_settings_save_failed");
++    let routes = [
++        ("assigned_proxy", ProfileProxyRoute::Proxy),
++        ("system_proxy", ProfileProxyRoute::System),
++        ("system_then_assigned", ProfileProxyRoute::Chain { first: FirstHop::System, second: SecondHop::Proxy }),
++    ];
++    let report_path = std::env::var_os("SHARD_PROXY_CHAIN_REPEAT_REPORT");
++    let mut report = json!({"kind":"proxy-route-back-to-back-observation", "state":"observing",
++        "preferred_geo_provider":"ip-api.com", "samples":[], "browser_started":false,
++        "user_files_written":false, "stability_certified":false});
++    for round in 1..=3 {
++        for (mode, route) in &routes {
++            for in_pair in 1..=2 {
++                let started = Instant::now();
++                let assigned = route.requires_assigned().then_some(&entry);
++                let outcome = super::routing::test_resolved_route(Some(route), super::policy::ChainPolicy::Inherit, assigned, None).await;
++                let sample = match outcome {
++                    Ok(tested) => json!({"round":round, "in_pair":in_pair, "mode":mode,
++                        "route":tested.route.map(|route|route.as_str()), "system_state":tested.system_proxy.state,
++                        "system_error_code":tested.system_proxy.error_code, "profile_state":tested.profile_proxy.state,
++                        "profile_error_code":tested.profile_proxy.error_code, "exit_error_code":tested.exit_error_code,
++                        "exit_ip":tested.exit_ip, "geo_provider":tested.exit_geo.map(|geo|geo.provider),
++                        "total_ms":started.elapsed().as_millis()}),
++                    Err(error) => json!({"round":round, "in_pair":in_pair, "mode":mode,
++                        "route":null, "test_error_code":error.downcast_ref::<ChainError>().map(|error|error.code).unwrap_or("route_test_failed"),
++                        "total_ms":started.elapsed().as_millis()}),
++                };
++                report["samples"].as_array_mut().unwrap().push(sample);
++                if let Some(path) = &report_path {
++                    std::fs::write(path, serde_json::to_string_pretty(&report).unwrap()).expect("safe_repeat_report_write_failed");
++                }
++            }
++        }
++    }
++    drop(root);
++    report["isolated_store_removed"] = json!(!root_path.exists());
++    report["state"] = json!("observed");
++    let body = serde_json::to_string_pretty(&report).unwrap();
++    if let Some(path) = report_path { std::fs::write(path, &body).expect("safe_repeat_report_write_failed"); }
++    println!("{body}");
++    assert!(!root_path.exists(), "repeat_observation_store_cleanup_failed");
++}
 diff --git a/src-tauri/src/proxy_chain/mod.rs b/src-tauri/src/proxy_chain/mod.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..47d92195440048bdb3362d239ff4a02aa10b2076
+index 0000000000000000000000000000000000000000..c31f6c642c1335d7156f1c118f12104061afbea7
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/mod.rs
-@@ -0,0 +1,568 @@
+@@ -0,0 +1,599 @@
 +//! Windows system proxy -> original profile proxy. Never fall back to direct.
 +pub mod config;
 +pub mod connector;
@@ -8716,6 +9105,8 @@ index 0000000000000000000000000000000000000000..47d92195440048bdb3362d239ff4a02a
 +    pub route: Route,
 +    pub first_hop_error: Option<ChainError>,
 +    pub verified_geo: Option<proxy::GeoInfo>,
++    /// Measured reachability latency. A live Geo response on the same route
++    /// also proves TCP transport when the dedicated probe target is unavailable.
 +    pub verified_tcp_ms: Option<u128>,
 +}
 +
@@ -8823,18 +9214,35 @@ index 0000000000000000000000000000000000000000..47d92195440048bdb3362d239ff4a02a
 +    effective
 +}
 +
-+async fn verify_prepared(prepared: &mut PreparedProxy) -> Result<(), ChainError> {
++pub(crate) async fn verify_prepared(prepared: &mut PreparedProxy) -> Result<(), ChainError> {
 +    prepared.verified_tcp_ms=None;
 +    prepared.verified_geo=None;
-+    let tcp_ms = proxy::probe_on_route(&prepared.effective).await.map_err(|e| profile_failure(&prepared.tunnel, &e))?;
-+    prepared.verified_tcp_ms = Some(tcp_ms);
-+    let geo = proxy::geo_check_on_route(Some(&prepared.effective), None).await.map_err(|cause| {
-+        let mut error=ChainError::new("proxy_chain_profile_geo_failed", "exit", "The assigned proxy connected, but its live exit IP could not be verified on this route.");
-+        error.geo_failures=cause.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone());
-+        error
-+    })?;
-+    prepared.verified_geo = Some(geo);
-+    Ok(())
++    let probe = proxy::probe_on_route(&prepared.effective).await
++        .map_err(|cause| profile_failure(&prepared.tunnel, &cause));
++    if let Err(error) = &probe {
++        // An explicit authentication refusal must never be hidden by another
++        // connection. An unavailable probe destination, however, says nothing
++        // about whether this same proxy can carry a real Geo request.
++        if matches!(error.code, "proxy_chain_profile_auth_failed" | "system_proxy_auth_failed") {
++            return Err(error.clone());
++        }
++    }
++    prepared.verified_tcp_ms=probe.as_ref().ok().copied();
++    let geo_start=Instant::now();
++    match proxy::geo_check_on_route(Some(&prepared.effective), None).await {
++        Ok(geo)=>{
++            // This is fresh traffic through the exact prepared relay, using
++            // its original credentials. It is neither cached nor a new route.
++            prepared.verified_tcp_ms=prepared.verified_tcp_ms.or(Some(geo_start.elapsed().as_millis()));
++            prepared.verified_geo=Some(geo);
++            Ok(())
++        },
++        Err(cause)=>{
++            let mut error=probe.err().unwrap_or_else(||ChainError::new("proxy_chain_profile_geo_failed", "exit", "The assigned proxy connected, but its live exit IP could not be verified on this route."));
++            error.geo_failures=cause.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone());
++            Err(error)
++        },
++    }
 +}
 +
 +async fn assigned_route(entry: &ProxyEntry, route: Route, first_hop_error: Option<ChainError>) -> anyhow::Result<PreparedProxy> {
@@ -8860,14 +9268,12 @@ index 0000000000000000000000000000000000000000..47d92195440048bdb3362d239ff4a02a
 +
 +async fn prepare_with_hop(entry: &ProxyEntry, hop: ProxyHop) -> anyhow::Result<PreparedProxy> {
 +    let target = Target::new(&entry.host, entry.port)?;
-+    // Proves the first hop can reach the original upstream before binding.
-+    // It is not proof of second-hop authentication; callers also run probe.
++    // Verify through the local relay, not a separate connection that is
++    // discarded before the actual proxy handshake begins.
 +    let tunnel = if entry.kind == ProxyKind::Https {
 +        let tls = tls::client()?;
-+        drop(tls::connect(&hop, &target, tls.clone(), connector::CONNECT_TIMEOUT).await?);
 +        Tunnel::bind_tls(hop, target, tls).await?
 +    } else {
-+        drop(connector::connect(&hop, &target).await?);
 +        Tunnel::bind(hop, target).await?
 +    };
 +    let effective = effective_entry(entry, &tunnel);
@@ -8934,7 +9340,8 @@ index 0000000000000000000000000000000000000000..47d92195440048bdb3362d239ff4a02a
 +    if !text.contains("rejected the username") && !text.contains("login method") {
 +        if let Some(error) = tunnel.last_error() { return error; }
 +    }
-+    if text.contains("time") || text.contains("never answered") || text.contains("no answer") {
++    if cause.chain().any(|source| source.downcast_ref::<tokio::time::error::Elapsed>().is_some())
++        || text.contains("time") || text.contains("never answered") || text.contains("no answer") {
 +        ChainError::new("proxy_chain_profile_timeout", "profile", "The profile proxy did not finish its handshake or CONNECT in time.")
 +    } else if text.contains("username") || text.contains("password") || text.contains("login method") {
 +        ChainError::new("proxy_chain_profile_auth_failed", "profile", "The profile proxy rejected authentication. Check its credentials and allowed source IPs; system proxy credentials are separate.")
@@ -9158,15 +9565,10 @@ index 0000000000000000000000000000000000000000..47d92195440048bdb3362d239ff4a02a
 +            }
 +            if !effective.enabled {
 +                let entry = entry.as_ref().expect("profile entry loaded");
-+                result.profile_proxy_address = Some(format!("{}:{}", entry.host, entry.port));
-+                result.source = Some("profile_proxy_without_first_hop");
-+                let phase = Instant::now();
-+                match proxy::probe_on_route(entry).await {
-+                    Ok(_) => { result.profile_proxy = Stage::ok(phase); result.set_exit(proxy::geo_check_on_route(Some(entry), None).await); },
-+                    Err(_) => result.profile_proxy = Stage::failed(ChainError::new("proxy_chain_profile_connect_failed", "profile", "The profile proxy failed on the explicitly selected route without the first hop.")),
-+                }
-+                result.total_ms = start.elapsed().as_millis();
-+                return Ok(result);
++                let mut tested=routing::test_resolved_route(Some(&route::ProfileProxyRoute::Proxy),policy::ChainPolicy::Disabled,Some(entry),None).await?;
++                tested.source=Some("profile_proxy_without_first_hop");
++                tested.total_ms=start.elapsed().as_millis();
++                return Ok(tested);
 +            }
 +        }
 +        let target = if let Some(entry) = &entry {
@@ -9187,37 +9589,55 @@ index 0000000000000000000000000000000000000000..47d92195440048bdb3362d239ff4a02a
 +                    "socks5"
 +                });
 +                result.proxy_address = Some(format!("{}:{}", hop.host, hop.port));
-+                match connector::connect(&hop, &target).await {
-+                    Err(e) => result.system_proxy = Stage::failed(e),
-+                    Ok(stream) => {
-+                        drop(stream);
-+                        result.system_proxy = Stage::ok(start);
-+                        if let Some(entry) = entry.filter(|_| kind == "profile") {
-+                            match prepare_with_hop(&entry, hop).await {
-+                                Err(e) => {
-+                                    result.profile_proxy = Stage::failed(
-+                                        e.downcast::<ChainError>().unwrap_or_else(|_| {
-+                                            ChainError::new(
-+                                                "proxy_chain_profile_failed",
-+                                                "profile",
-+                                                "Could not prepare this profile proxy.",
-+                                            )
-+                                        }),
++                if let Some(entry) = entry.filter(|_| kind == "profile") {
++                    match prepare_with_hop(&entry, hop).await {
++                        Err(e) => {
++                            result.profile_proxy = Stage::failed(
++                                e.downcast::<ChainError>().unwrap_or_else(|_| {
++                                    ChainError::new(
++                                        "proxy_chain_profile_failed",
++                                        "profile",
++                                        "Could not prepare this profile proxy.",
 +                                    )
-+                                }
-+                                Ok(prepared) => {
-+                                    result.route = Some(prepared.route);
-+                                    let phase = Instant::now();
-+                                    if let Err(error) = proxy::probe_on_route(&prepared.effective).await {
-+                                        result.profile_proxy = Stage::failed(profile_failure(&prepared.tunnel, &error));
-+                                    } else {
-+                                        result.profile_proxy = Stage::ok(phase);
-+                                        result.set_exit(proxy::geo_check_on_route(Some(&prepared.effective), None).await);
-+                                    }
-+                                    prepared.tunnel.shutdown().await;
-+                                }
++                                }),
++                            )
++                        }
++                        Ok(mut prepared) => {
++                            result.route = Some(prepared.route);
++                            match verify_prepared(&mut prepared).await {
++                                Ok(())=>{
++                                    let ms=prepared.verified_tcp_ms.expect("route reachability verified");
++                                    result.system_proxy=Stage::measured(ms);
++                                    result.profile_proxy=Stage::measured(ms);
++                                    result.set_exit(Ok(prepared.verified_geo.clone().expect("route exit verified")));
++                                },
++                                Err(error) if prepared.verified_tcp_ms.is_some()=>{
++                                    let ms=prepared.verified_tcp_ms.unwrap();
++                                    result.system_proxy=Stage::measured(ms);
++                                    result.profile_proxy=Stage::measured(ms);
++                                    result.set_exit(Err(error.into()));
++                                },
++                                Err(error)=>{
++                                    if error.layer=="system_proxy" {result.system_proxy=Stage::failed(error);}
++                                    else {result.system_proxy=Stage::ok(start);result.profile_proxy=Stage::failed(error);}
++                                },
 +                            }
-+                        } else {
++                            prepared.tunnel.shutdown().await;
++                        }
++                    }
++                } else {
++                    match connector::connect(&hop, &target).await {
++                        Err(error) if error.code=="system_proxy_auth_failed"=>result.system_proxy=Stage::failed(error),
++                        Err(error)=>{
++                            let entry=system_entry(&hop);
++                            let phase=Instant::now();
++                            let geo=proxy::geo_check_on_route(Some(&entry),None).await;
++                            result.system_proxy=if geo.is_ok(){Stage::ok(phase)}else{Stage::failed(error)};
++                            result.set_exit(geo);
++                        },
++                        Ok(stream)=>{
++                            drop(stream);
++                            result.system_proxy=Stage::ok(start);
 +                            let entry = system_entry(&hop);
 +                            result.set_exit(proxy::geo_check_on_route(Some(&entry), None).await);
 +                        }
@@ -9487,10 +9907,10 @@ index 0000000000000000000000000000000000000000..5deb3d3764ee04eb8d7626e574624463
 +}
 diff --git a/src-tauri/src/proxy_chain/routing.rs b/src-tauri/src/proxy_chain/routing.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..309db5edfd331c7983749da64e0e9160c8f00ca0
+index 0000000000000000000000000000000000000000..618826278d962ba00f733700f93d7145b1cbd223
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/routing.rs
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,156 @@
 +//! Explicit routes are resolved once per launch. The assigned profile binding
 +//! stays untouched; neither the global switch nor a failed hop can change it.
 +use super::{*, route::{FirstHop, ProfileProxyRoute, SecondHop}};
@@ -9608,6 +10028,8 @@ index 0000000000000000000000000000000000000000..309db5edfd331c7983749da64e0e9160
 +                    if let Some(tcp_ms)=prepared.verified_tcp_ms {
 +                        record_connected_route(&mut result,route,first,prepared.route,prepared.first_hop_error.clone(),tcp_ms);
 +                        result.set_exit(Err(error.into()));
++                    } else if error.layer=="system_proxy" || error.layer=="configuration" {
++                        result.system_proxy=Stage::failed(error);
 +                    } else {result.profile_proxy=Stage::failed(error);}
 +                    prepared.tunnel.shutdown().await;result.total_ms=start.elapsed().as_millis();return Ok(result);
 +                }}
@@ -9647,10 +10069,10 @@ index 0000000000000000000000000000000000000000..309db5edfd331c7983749da64e0e9160
 +}
 diff --git a/src-tauri/src/proxy_chain/tests.rs b/src-tauri/src/proxy_chain/tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..da12ce585c473edb47a209855e059e2f97bb3ed7
+index 0000000000000000000000000000000000000000..d90888eb8e4436ee3503741aeba57574ddb71c96
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tests.rs
-@@ -0,0 +1,837 @@
+@@ -0,0 +1,893 @@
 +//! Synthetic loopback services only. None of these tests reads settings,
 +//! credentials, the system proxy configuration or the user's profiles.
 +
@@ -10337,6 +10759,52 @@ index 0000000000000000000000000000000000000000..da12ce585c473edb47a209855e059e2f
 +    tunnel.shutdown().await;
 +}
 +
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn a_refused_first_hop_publishes_its_typed_error_before_loopback_eof() {
++    const ROUNDS: usize = 32;
++    let first = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = first.local_addr().unwrap();
++    let refusing = tokio::spawn(async move {
++        for _ in 0..ROUNDS {
++            let (mut socket, _) = first.accept().await.unwrap();
++            http_head(&mut socket).await;
++            socket.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await.unwrap();
++        }
++    });
++    for round in 0..ROUNDS {
++        let tunnel = Tunnel::bind(hop(addr, ProxyKind::Http), target()).await.unwrap();
++        let mut local = TcpStream::connect(tunnel.addr()).await.unwrap();
++        let closed=within(local.read(&mut [0;1])).await;
++        assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
++        // A retry/eventually here would hide the race this test guards.
++        assert_eq!(tunnel.last_error().map(|error| error.code), Some("system_proxy_connect_refused"), "round {round}");
++        tunnel.shutdown().await;
++    }
++    within(refusing).await.unwrap();
++}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn a_system_resolution_timeout_publishes_its_typed_error_before_loopback_eof() {
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let mut client = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
++    let (local, _) = listener.accept().await.unwrap();
++    let error = Arc::new(std::sync::Mutex::new(None));
++    let published = error.clone();
++    let resolver: super::tunnel::SystemResolver = Arc::new(|_| Box::pin(std::future::pending()));
++    let worker = tokio::spawn(async move {
++        super::tunnel::system_connect(local, Duration::from_millis(50), resolver, published).await.err().unwrap()
++    });
++    client.write_all(&[5, 1, 0]).await.unwrap();
++    let mut greeting = [0; 2];
++    within(client.read_exact(&mut greeting)).await.unwrap();
++    assert_eq!(greeting, [5, 0]);
++    client.write_all(&[5, 1, 0, 1, 203, 0, 113, 1, 1, 187]).await.unwrap();
++    let closed=within(client.read(&mut [0;1])).await;
++    assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
++    assert_eq!(error.lock().unwrap().as_ref().map(|error| error.code), Some("system_proxy_timeout"));
++    assert_eq!(within(worker).await.unwrap().code, "system_proxy_timeout");
++}
++
 +#[tokio::test]
 +async fn quota_counts_pending_handshakes_and_is_released_after_a_flow_ends() {
 +    async fn at<T>(stage: &str, future: impl Future<Output = T>) -> T {
@@ -10488,6 +10956,16 @@ index 0000000000000000000000000000000000000000..da12ce585c473edb47a209855e059e2f
 +    // An exit path and a tracker monitor may both request closure.
 +    within(tunnel.close_and_wait()).await.unwrap();
 +}
++
++#[tokio::test]
++async fn a_greeting_timeout_keeps_its_type_under_the_probe_context() {
++    let first = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let tunnel = Tunnel::bind(hop(first.local_addr().unwrap(), ProxyKind::Http), target()).await.unwrap();
++    let elapsed=tokio::time::timeout(Duration::from_millis(1),std::future::pending::<()>()).await.unwrap_err();
++    let cause=anyhow::Error::new(elapsed).context("the proxy accepted the connection but never greeted us");
++    assert_eq!(super::profile_failure(&tunnel,&cause).code,"proxy_chain_profile_timeout");
++    tunnel.shutdown().await;
++}
 diff --git a/src-tauri/src/proxy_chain/tls.rs b/src-tauri/src/proxy_chain/tls.rs
 new file mode 100644
 index 0000000000000000000000000000000000000000..eee9e3c079c29e50aad74cb41b3f655bb6137ba7
@@ -10549,10 +11027,10 @@ index 0000000000000000000000000000000000000000..eee9e3c079c29e50aad74cb41b3f655b
 +}
 diff --git a/src-tauri/src/proxy_chain/tunnel.rs b/src-tauri/src/proxy_chain/tunnel.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..94d4d48b8e11798899cb57626eccd9799b051656
+index 0000000000000000000000000000000000000000..a866128e181ca73c25590134659e26c4e4436b33
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tunnel.rs
-@@ -0,0 +1,370 @@
+@@ -0,0 +1,392 @@
 +//! A per-profile transparent TCP entry. It never accepts a destination from
 +//! the browser: every connection goes through the first hop to one target.
 +
@@ -10687,20 +11165,33 @@ index 0000000000000000000000000000000000000000..94d4d48b8e11798899cb57626eccd979
 +                            let system = system.clone();
 +                            flows.spawn(async move {
 +                                let _slot = slot;
-+                                let result = async {
-+                                    if let Some(resolver) = system {
-+                                        let (local, remote) = system_connect(local, connect_timeout,resolver,error.clone()).await?;
-+                                        relay(local, remote, idle_timeout).await
-+                                    } else if let Some(tls) = tls {
-+                                        let remote: connector::Stream = if let Some(hop) = &hop { Box::new(super::tls::connect(hop, &target, tls, connect_timeout).await?) }
-+                                            else { Box::new(super::tls::connect_assigned(&target, tls, connect_timeout).await?) };
-+                                        relay(local, remote, idle_timeout).await
-+                                    } else {
-+                                        let remote: connector::Stream = if let Some(hop) = &hop { connector::connect_with_timeout(hop, &target, connect_timeout).await? }
-+                                            else { Box::new(connector::connect_assigned(&target, connect_timeout).await?) };
-+                                        relay(local, remote, idle_timeout).await
++                                let result = if let Some(resolver) = system {
++                                    match system_connect(local, connect_timeout,resolver,error.clone()).await {
++                                        Ok((local, remote)) => relay(local, remote, idle_timeout).await,
++                                        Err(_) => return, // system_connect publishes before closing local.
 +                                    }
-+                                }.await;
++                                } else {
++                                    // Keep local outside the dialing future: its EOF must
++                                    // never reach a probe before the typed route error.
++                                    let remote: Result<connector::Stream, ChainError> = async {
++                                        if let Some(tls) = tls {
++                                            if let Some(hop) = &hop { Ok(Box::new(super::tls::connect(hop, &target, tls, connect_timeout).await?) as connector::Stream) }
++                                            else { Ok(Box::new(super::tls::connect_assigned(&target, tls, connect_timeout).await?) as connector::Stream) }
++                                        } else if let Some(hop) = &hop {
++                                            connector::connect_with_timeout(hop, &target, connect_timeout).await
++                                        } else {
++                                            Ok(Box::new(connector::connect_assigned(&target, connect_timeout).await?) as connector::Stream)
++                                        }
++                                    }.await;
++                                    match remote {
++                                        Ok(remote) => relay(local, remote, idle_timeout).await,
++                                        Err(e) => {
++                                            *error.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
++                                            drop(local);
++                                            return;
++                                        }
++                                    }
++                                };
 +                                if let Err(e) = result {
 +                                    *error.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
 +                                }
@@ -10795,7 +11286,7 @@ index 0000000000000000000000000000000000000000..94d4d48b8e11798899cb57626eccd979
 +    }
 +}
 +
-+async fn system_connect(mut local: TcpStream, budget: Duration,resolver:SystemResolver,last_error:Arc<Mutex<Option<ChainError>>>) -> Result<(TcpStream, connector::Stream), ChainError> {
++pub(super) async fn system_connect(mut local: TcpStream, budget: Duration,resolver:SystemResolver,last_error:Arc<Mutex<Option<ChainError>>>) -> Result<(TcpStream, connector::Stream), ChainError> {
 +    let work = async {
 +        let failed = || ChainError::new("proxy_chain_local_protocol_failed", "tunnel", "The local system-route SOCKS5 request was invalid or unsupported.");
 +        if local.read_u8().await.map_err(|_| failed())? != 5 { return Err(failed()); }
@@ -10817,11 +11308,20 @@ index 0000000000000000000000000000000000000000..94d4d48b8e11798899cb57626eccd979
 +        let target=Target::new(host,port)?;
 +        let remote=async { let resolved=resolver(target.clone()).await?; connector::connect_with_timeout(&resolved.hop,&target,budget).await }.await;
 +        match remote {
-+            Ok(remote) => { local.write_all(&[5,0,0,1,0,0,0,0,0,0]).await.map_err(|_|failed())?; Ok((local,remote)) },
++            Ok(remote) => { local.write_all(&[5,0,0,1,0,0,0,0,0,0]).await.map_err(|_|failed())?; Ok(remote) },
 +            Err(error) => { *last_error.lock().unwrap_or_else(|e|e.into_inner())=Some(error.clone());let _=local.write_all(&[5,1,0,1,0,0,0,0,0,0]).await; Err(error) },
 +        }
 +    };
-+    tokio::time::timeout(budget,work).await.map_err(|_|ChainError::new("system_proxy_timeout","system_proxy","The system proxy did not finish resolving or connecting in time."))?
++    let result = tokio::time::timeout(budget,work).await
++        .map_err(|_|ChainError::new("system_proxy_timeout","system_proxy","The system proxy did not finish resolving or connecting in time."))
++        .and_then(|result| result);
++    match result {
++        Ok(remote) => Ok((local, remote)),
++        Err(error) => {
++            *last_error.lock().unwrap_or_else(|e|e.into_inner())=Some(error.clone());
++            Err(error)
++        }
++    }
 +}
 +
 +fn cleanup_timeout() -> ChainError {
@@ -11648,7 +12148,7 @@ index 0b822fb2e3f1c6aa20d8e6881e8daa295bb210b9..0dec4b34bf41bc979e16b1a4fca8cb46
 +    }
  }
 diff --git a/src-tauri/src/space/local/proxy.rs b/src-tauri/src/space/local/proxy.rs
-index 63d3972b4adf061dbddbd0a79026b32912897e64..9d3c0c6b766754f69c69884997b0a14603e563dd 100644
+index 63d3972b4adf061dbddbd0a79026b32912897e64..acc278bf6e855df532e8f10f506af89b5a2840fd 100644
 --- a/src-tauri/src/space/local/proxy.rs
 +++ b/src-tauri/src/space/local/proxy.rs
 @@ -32,6 +32,8 @@ pub struct ProxyEntry {
@@ -12010,7 +12510,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..9d3c0c6b766754f69c69884997b0a146
              snap.first_seen = last.first_seen.clone();
              *last = snap.clone();
              return snap;
-@@ -1226,10 +1359,38 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
+@@ -1226,10 +1359,44 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
  /// other: the reach test, the relay test and the address the world sees are
  /// three separate questions to the same proxy.
  pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
@@ -12020,9 +12520,15 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..9d3c0c6b766754f69c69884997b0a146
 +        crate::proxy_chain::prepare(Some(entry), &config).await
 +    }.await;
 +    match prepared {
-+        Ok(prepared) => {
++        Ok(mut prepared) => {
++            // Capture this probe's error before another Geo flow can replace
++            // the relay's shared diagnostic. Reuse the verification results
++            // below, including partial connectivity, without another request.
++            let verification_error=if let Some(route)=prepared.as_mut() {
++                if route.verified_geo.is_none() {crate::proxy_chain::verify_prepared(route).await.err()} else {None}
++            } else {None};
 +            let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
-+            let result = measure_on_route(effective, prepared.as_ref()).await;
++            let result = measure_on_route(effective, prepared.as_ref(), verification_error.as_ref()).await;
 +            if let Some(prepared) = prepared { prepared.tunnel.shutdown().await; }
 +            result
 +        }
@@ -12039,7 +12545,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..9d3c0c6b766754f69c69884997b0a146
 +    }
 +}
 +
-+async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_chain::PreparedProxy>) -> TestSnapshot {
++async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_chain::PreparedProxy>, verification_error: Option<&crate::proxy_chain::error::ChainError>) -> TestSnapshot {
      let now = unix_now();
 +    let tunnel = prepared.map(|p| &p.tunnel);
 +    let chained = tunnel.is_some();
@@ -12050,17 +12556,19 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..9d3c0c6b766754f69c69884997b0a146
              Some(probe_udp(entry).await)
          } else {
              None
-@@ -1239,11 +1400,16 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1239,11 +1406,18 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      // else still shows how long a round trip through it takes.
      let geo_fut = async {
          let started = std::time::Instant::now();
 -        let res = geo_check(entry, None).await;
 +        let res = if let Some(geo) = prepared.and_then(|p| p.verified_geo.as_ref()) { Ok(geo.clone()) }
++            else if let Some(error)=verification_error {Err(error.clone().into())}
 +            else { geo_check(entry, None).await };
          (res, started.elapsed().as_millis())
      };
 +    let tcp_fut = async {
 +        if let Some(ms) = prepared.and_then(|p| p.verified_tcp_ms) { Ok(ms) }
++        else if let Some(error)=verification_error {Err(error.clone().into())}
 +        else { probe(entry).await }
 +    };
      let (tcp_res, udp_res, (geo_res, geo_ms)) =
@@ -12069,14 +12577,15 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..9d3c0c6b766754f69c69884997b0a146
  
      // An answer from a geo service IS the proxy working: the request went out
      // through it and came back. So its address is kept whenever it arrived,
-@@ -1251,11 +1417,25 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1251,11 +1425,26 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      // probe asks for and carry everything else. The other way round, a probe
      // that reached a host is proof too, and the test then says so with no
      // address rather than calling a working proxy dead.
 -    let geo_error = match (&tcp_res, &geo_res) {
 +    let chain_error = tunnel.and_then(|tunnel| {
 +        if let Err(error) = &tcp_res {
-+            Some(crate::proxy_chain::profile_failure(tunnel, error).into())
++            Some(error.downcast_ref::<crate::proxy_chain::error::ChainError>().cloned()
++                .unwrap_or_else(||crate::proxy_chain::profile_failure(tunnel,error)).into())
 +        } else if geo_res.is_err() {
 +            Some(crate::proxy_chain::error::ChainError::new(
 +                "proxy_chain_profile_geo_failed", "exit",
@@ -12097,7 +12606,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..9d3c0c6b766754f69c69884997b0a146
      let (ip, country_code, country, region, city, isp, tz, lat, lng, provider) = match &geo_res {
          Ok(g) => (
              g.ip.clone(), g.country_code.clone(), g.country.clone(),
-@@ -1268,6 +1448,11 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1268,6 +1457,11 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      };
  
      TestSnapshot {
@@ -12109,7 +12618,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..9d3c0c6b766754f69c69884997b0a146
          first_seen: String::new(),
          last_seen: now,
          ip,
-@@ -1282,7 +1467,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1282,7 +1476,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
          // Set whenever the proxy carried something, so "reached" always comes
          // with a time: the probe's own round trip, or the geo request's when
          // only that one got through.
@@ -12118,7 +12627,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..9d3c0c6b766754f69c69884997b0a146
          udp_ms: udp_res
              .as_ref()
              .and_then(|r| r.as_ref().ok().copied()),
-@@ -1347,6 +1532,280 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
+@@ -1347,6 +1541,278 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
  mod tests {
      use super::*;
  
@@ -12373,14 +12882,12 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..9d3c0c6b766754f69c69884997b0a146
 +    }
 +
 +    #[tokio::test]
-+    async fn chain_measure_geo_success_cannot_hide_a_refused_second_hop_probe() {
++    async fn chain_measure_live_geo_proves_the_route_when_only_the_probe_target_is_refused() {
 +        let _root = crate::store::test_root("chain-error-second-hop");
 +        let result = chain_measure_fixture(false, true).await;
 +        assert_eq!(result.ip, "203.0.113.55", "keep the genuine Geo response");
-+        assert!(result.tcp_ms.is_none(), "Geo duration is not a successful TCP probe");
-+        let failure = result.chain_error.unwrap();
-+        assert_eq!(failure.code, "proxy_chain_profile_connect_failed");
-+        assert_eq!(failure.layer, "profile");
++        assert!(result.tcp_ms.is_some(), "the live Geo response measures transport through the same proxy");
++        assert!(result.chain_error.is_none());
 +        assert!(result.geo_error.is_none());
 +    }
 +

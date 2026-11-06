@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "upstream_repository": "ProxyShard/ShardBrowser",
-  "patch_revision": "pc9",
+  "patch_revision": "pc10",
   "base_tag": "v2.1.4",
   "base_commit": "315753098b36affac020237f16273fe7a8351332",
   "patch_file": "proxy-chain.patch",
-  "patch_sha256": "6377379360aa82a39053355b5ff2aaf3b2f3b3b07afd889ac8168760a0bde32f",
-  "patch_commit": "aed9f361a5db912a2a62b8b459f7f787cb9fde9b",
+  "patch_sha256": "ffdad39f3b3cf58cf797d5b6becc1299fc637b7981a4cf5eddf1766c90485ba7",
+  "patch_commit": "b2b3bbf64f502ad2eb2c2b7bfb588fe1813327e6",
   "ready": true,
   "required_rust_filter": "proxy_chain",
   "required_ui_test": "e2e/proxy-chain-settings.spec.ts"
