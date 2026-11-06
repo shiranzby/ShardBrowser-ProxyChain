@@ -10069,10 +10069,10 @@ index 0000000000000000000000000000000000000000..618826278d962ba00f733700f93d7145
 +}
 diff --git a/src-tauri/src/proxy_chain/tests.rs b/src-tauri/src/proxy_chain/tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..d4664e10dad5edf9a9f204706919973207b6dda6
+index 0000000000000000000000000000000000000000..0062289cff07aceb62a3d4104160ebd9c0c87239
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tests.rs
-@@ -0,0 +1,890 @@
+@@ -0,0 +1,895 @@
 +//! Synthetic loopback services only. None of these tests reads settings,
 +//! credentials, the system proxy configuration or the user's profiles.
 +
@@ -10774,13 +10774,18 @@ index 0000000000000000000000000000000000000000..d4664e10dad5edf9a9f2047069199732
 +    for round in 0..ROUNDS {
 +        let tunnel = Tunnel::bind(hop(addr, ProxyKind::Http), target()).await.unwrap();
 +        let mut local = TcpStream::connect(tunnel.addr()).await.unwrap();
-+        let closed=within(local.read(&mut [0;1])).await;
++        // Ordering is the contract here, not a three-second scheduler budget.
++        // Allow the product's twelve-second connect deadline to finish too;
++        // a timeout would still fail the required HTTP-refusal code below.
++        let closed=tokio::time::timeout(Duration::from_secs(15),local.read(&mut [0;1])).await
++            .unwrap_or_else(|_|panic!("first-hop refusal round {round}: local stream did not close"));
 +        assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
 +        // A retry/eventually here would hide the race this test guards.
 +        assert_eq!(tunnel.last_error().map(|error| error.code), Some("system_proxy_connect_refused"), "round {round}");
 +        tunnel.shutdown().await;
 +    }
-+    within(refusing).await.unwrap();
++    tokio::time::timeout(Duration::from_secs(15),refusing).await
++        .expect("first-hop refusal fixture did not complete all rounds").unwrap();
 +}
 +
 +#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
