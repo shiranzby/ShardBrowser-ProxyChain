@@ -14,13 +14,17 @@ import { tagsOf, useTags } from "../../tag";
 import { useMinuteClock } from "../../../shared/lib/useNow";
 import { computeVisible, needsRunning, NO_RUNNING, readsClock, type Visible } from "./visible";
 import { useActionsTail } from "./actionsWidth";
+import { useFolderMeta } from "./folderMeta";
+import { useListOrder } from "../../../shared/model/listOrder";
+import { orderedIds } from "../../../shared/lib/listOrder";
 
 /// Folder tabs derived from profile assignments + the persisted registry of
 /// empty folders. Sorted; "all" is rendered separately as the first tab.
 export function useFolders() {
+  const saved = useListOrder("folders");
   const profiles = useProfile((s) => s.profiles);
   const folderRegistry = useProfile((s) => s.folderRegistry);
-  return useMemo(() => folderNamesOf(profiles, folderRegistry), [profiles, folderRegistry]);
+  return useMemo(() => orderedIds(folderNamesOf(profiles, folderRegistry), saved), [profiles, folderRegistry, saved]);
 }
 
 /** The Folders, tags and proxies there are now, for `viewQuery`. */
@@ -100,6 +104,7 @@ export function currentQuery(): ViewQuery {
 
 /** How many profiles each View shows (the search left out), by View id. */
 export function useViewCounts(views: ProfileView[]): Record<string, number> {
+  const parents = useFolderMeta((s) => s.parents);
   const profiles = useProfile((s) => s.profiles);
   const proxies = useProfile((s) => s.proxies);
   const running = useProfile((s) => s.running);
@@ -111,10 +116,10 @@ export function useViewCounts(views: ProfileView[]): Record<string, number> {
     const out: Record<string, number> = {};
     for (const v of views) {
       const q = viewQuery(v, columns, known);
-      out[v.id] = applyProfileFilters(profiles, proxies, "", q.folder, q.filters, running, "added", (id) => tagsOf(id, { tags, byProfile })).length;
+      out[v.id] = applyProfileFilters(profiles, proxies, "", q.folder, q.filters, running, "added", (id) => tagsOf(id, { tags, byProfile }), Date.now(), parents).length;
     }
     return out;
-  }, [views, profiles, proxies, running, tags, byProfile, columns, known]);
+  }, [views, profiles, proxies, running, tags, byProfile, columns, known, parents]);
 }
 
 /// The search the Profiles list renders from. While typing, a beat behind the
@@ -131,6 +136,8 @@ export function useListSearch(): string {
 /// The list the Profiles table paints, with its ids and index (PERF-04), from
 /// `useListSearch`.
 export function useVisible(): Visible {
+  const parents = useFolderMeta((s) => s.parents);
+  const manualOrder = useListOrder("profiles");
   const profiles = useProfile((s) => s.profiles);
   const proxies = useProfile((s) => s.proxies);
   const search = useListSearch();
@@ -152,8 +159,8 @@ export function useVisible(): Visible {
   const now = useMinuteClock((m) => (readsTime ? m : 0));
   const only = useProfileUi((s) => s.only?.ids ?? null);
   return useMemo(
-    () => computeVisible({ profiles, proxies, search, folder, filters, running, sort, tags, byProfile, proxyIps, now, only }),
-    [profiles, proxies, search, folder, filters, running, sort, tags, byProfile, proxyIps, now, only],
+    () => computeVisible({ profiles, proxies, search, folder, parents, filters, running, sort, tags, byProfile, proxyIps, now, only, manualOrder }),
+    [profiles, proxies, search, folder, parents, filters, running, sort, tags, byProfile, proxyIps, now, only, manualOrder],
   );
 }
 
@@ -164,6 +171,7 @@ const NO_FILTERS = emptyFilters();
 /// stay (the View is the list). Counted with the shared predicate, not
 /// `computeVisible`, so the table's two cached answers stay in the cache.
 export function useListTotal(): number {
+  const parents = useFolderMeta((s) => s.parents);
   const profiles = useProfile((s) => s.profiles);
   const proxies = useProfile((s) => s.proxies);
   const folder = useProfileUi((s) => s.folder);
@@ -174,11 +182,11 @@ export function useListTotal(): number {
   const tags = useTags((s) => s.tags);
   const byProfile = useTags((s) => s.byProfile);
   return useMemo(() => {
-    const keep = makeProfileFilter(proxies, "", folder, base, running, (id) => tagsOf(id, { tags, byProfile }), Date.now(), undefined, profiles);
+    const keep = makeProfileFilter(proxies, "", folder, base, running, (id) => tagsOf(id, { tags, byProfile }), Date.now(), undefined, profiles, parents);
     let n = 0;
     for (const p of profiles) if (keep(p)) n++;
     return n;
-  }, [profiles, proxies, folder, base, running, tags, byProfile]);
+  }, [profiles, proxies, folder, base, running, tags, byProfile, parents]);
 }
 
 /// Profiles filtered by the folder tab, the search query and the filter bar.
@@ -225,6 +233,7 @@ export function useRunningCount() {
 /// so typing in the search never moves a column. In no order: a width
 /// doesn't depend on it.
 export function useSizingRows(): ProfileMeta[] {
+  const parents = useFolderMeta((s) => s.parents);
   const profiles = useProfile((s) => s.profiles);
   const proxies = useProfile((s) => s.proxies);
   const folder = useProfileUi((s) => s.folder);
@@ -233,9 +242,9 @@ export function useSizingRows(): ProfileMeta[] {
   const tags = useTags((s) => s.tags);
   const byProfile = useTags((s) => s.byProfile);
   return useMemo(() => {
-    const keep = makeProfileFilter(proxies, "", folder, filters, running, (id) => tagsOf(id, { tags, byProfile }), Date.now());
+    const keep = makeProfileFilter(proxies, "", folder, filters, running, (id) => tagsOf(id, { tags, byProfile }), Date.now(), undefined, profiles, parents);
     return profiles.filter(keep);
-  }, [profiles, proxies, folder, filters, running, tags, byProfile]);
+  }, [profiles, proxies, folder, filters, running, tags, byProfile, parents]);
 }
 
 /// The Profiles list's columns and their grid (owner feature 2026-09-26):
@@ -253,7 +262,10 @@ export function useProfileLayout(): TableLayout<ProfileColumnId> {
   const full = useProfileUi((s) => s.fullWidths);
   const floor = useProfileUi((s) => s.floorWidths);
   const available = useProfileUi((s) => s.listWidth);
-  const inFolder = useProfileUi((s) => s.folder !== "all" && s.viewId === null);
+  const folder = useProfileUi((s) => s.folder);
+  const inView = useProfileUi((s) => s.viewId !== null);
+  const hasChildren = useFolderMeta((s) => Object.values(s.parents).includes(folder));
+  const inFolder = folder !== "all" && !inView && !hasChildren;
   // Tags holds 96 to 190 px before any tag exists (CRAFT-14): chosen, but left
   // out until the first tag is made.
   const noTags = useTags((s) => s.tags.length === 0);

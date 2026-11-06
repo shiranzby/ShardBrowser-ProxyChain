@@ -5,11 +5,13 @@ import {
   ProfileDisplayMenu,
   SaveAsViewButton,
 } from "../../features/manage-profiles";
+import { ProxyQuickControl } from "./ProxyQuickControl";
 
 /// Filters and Display act on rows; with none they are noise (LAYOUT-20).
 export function ProfileToolbar({ empty = false }: { empty?: boolean }) {
   return (
     <div className="flex items-center flex-none gap-2">
+      <ProxyQuickControl />
       {!empty && <SaveAsViewButton />}
       {/* One box for the tour to point at: Filters and Display. */}
       {!empty && (

@@ -30,6 +30,7 @@ import { menuItemsFor, profileRowSubject } from "../../features/commands";
 import { pointerMoved } from "../../shared/lib/pointer";
 import { rowFill } from "../../shared/ui/rowFill";
 import { writeProfileDrag } from "../../shared/lib/profileDrag";
+import type { ListReorder } from "../../shared/hooks/useListReorder";
 
 /** The stores' actions, read when used: they never change, so a row
  *  subscribes to none of them (speed lane 2026-10-02: a scroll mounts two
@@ -40,7 +41,8 @@ const store = () => useProfile.getState();
 /// One 36 px line of the Profiles list. Positioned by the list (`top`); the
 /// open inline editor is drawn by the list, under the row.
 /// Memoized: a row renders again only when its own props or store values change (PERF-02).
-export const ProfileRow = memo(function ProfileRow({ profile, proxy, top, columns, order, tagsWidth, now, rowIndex, active, inPeek, tabbable, onMenu }: {
+export const ProfileRow = memo(function ProfileRow({ profile, proxy, top, columns, order, tagsWidth, now, rowIndex, active, inPeek, tabbable, onMenu, reorder }: {
+  reorder: ListReorder;
   profile: ProfileMeta;
   proxy: ProxyEntry | null;
   /** Offset from the top of the rows box, in px. */
@@ -189,7 +191,7 @@ export const ProfileRow = memo(function ProfileRow({ profile, proxy, top, column
   const openMenu = (e: React.MouseEvent) => {
     const subject = profileRowSubject(p.id);
     const heading = subject.ids.length > 1 ? t("commands.nProfiles", { n: subject.ids.length }) : p.name;
-    onMenu(e, menuItemsFor("rowMenu", "profiles", subject), { heading });
+    onMenu(e, [...reorder.menu(p.id), ...menuItemsFor("rowMenu", "profiles", subject)], { heading });
   };
 
   // A team profile without Edit is read-only here: no cell edits it.
@@ -698,8 +700,12 @@ export const ProfileRow = memo(function ProfileRow({ profile, proxy, top, column
           if (edit) swallowFollowUpClick(e, { onFollow: edit });
         }
       }}
+      {...(!editing ? reorder.bind(p.id) : {})}
       draggable={!editing}
       onDragStart={(e) => {
+        if (editing) { e.preventDefault(); return; }
+        reorder.bind(p.id).onDragStart?.(e);
+        if (e.defaultPrevented) return;
         // A selected row carries the whole selection, the one the bar counts
         // (IFACE-05); any other row, itself. The chip says which.
         const { selected } = useProfileUi.getState();

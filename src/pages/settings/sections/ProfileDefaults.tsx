@@ -1,12 +1,61 @@
-import { Switch, Textarea } from "@proxyshard/shardx-ui-kit";
+import { Input, Switch, Textarea } from "@proxyshard/shardx-ui-kit";
+import { useEffect } from "react";
+import { defaultProfileDefaults, type ProfileDefaults } from "../../../entities/settings";
+import { AUTO_LANG, AUTO_TZ, LOCALES, TIMEZONES } from "../../../shared/constants";
 import { useT } from "../../../shared/i18n";
 import { riskyLaunchArgs, type LaunchArgRisk } from "../../../shared/lib/launchArgs";
 import { SelectField } from "../../../shared/ui/SelectField";
 import { SettingRow, SettingsGroup, type SettingsProps } from "../SettingRow";
+import { holdSave } from "../useSettingsDraft";
+import { isStartupUrl } from "../../../shared/lib/startupUrl";
 
-export function ProfileDefaultsSection({ s, setS, p, setP }: SettingsProps) {
+export function ProfileDefaultsSection({ s, setS, p, setP, saving }: SettingsProps) {
   const t = useT();
+  const d = { ...defaultProfileDefaults(), ...s.profile_defaults };
+  const urlError = isStartupUrl(d.startup_url) ? null : t("profileForm.startupUrlInvalid");
+  useEffect(() => {
+    holdSave("profile-default-startup-url", urlError);
+    return () => holdSave("profile-default-startup-url", null);
+  }, [urlError]);
+  const setDefault = <K extends keyof ProfileDefaults>(key: K, value: ProfileDefaults[K]) => setS({ ...s, profile_defaults: { ...d, [key]: value } });
   return (
+    <>
+    <SettingsGroup title={t("settings.newProfileDefaultsTitle")} help={t("settings.newProfileDefaultsHelp")}>
+      <SettingRow
+        id="default-startup-url"
+        title={t("settings.startupUrlTitle")}
+        help={t("settings.startupUrlHelp")}
+        below={<Input aria-label={t("settings.startupUrlTitle")} value={d.startup_url} error={urlError ?? undefined} disabled={saving} onChange={(e) => setDefault("startup_url", e.target.value)} />}
+      />
+      <SettingRow
+        id="default-locale"
+        title={t("settings.defaultLocaleTitle")}
+        below={<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <SelectField label={t("inlineEditor.languageLabel")} value={d.language} disabled={saving} isSearchable onChange={(v) => setDefault("language", v)} options={LOCALES.map((l) => ({ value: l.code, label: l.code === AUTO_LANG ? t("inlineEditor.languageAuto") : l.label }))} />
+          <SelectField label={t("inlineEditor.timezoneLabel")} value={d.timezone} disabled={saving} isSearchable onChange={(v) => setDefault("timezone", v)} options={TIMEZONES.map((tz) => ({ value: tz, label: tz === AUTO_TZ ? t("inlineEditor.timezoneAuto") : tz }))} />
+          <SelectField<ProfileDefaults["ui_language"]> label={t("inlineEditor.uiLanguageLabel")} value={d.ui_language} disabled={saving} onChange={(v) => setDefault("ui_language", v)} options={[
+            { value: "system", label: t("inlineEditor.uiLanguageSystem") }, { value: "profile", label: t("inlineEditor.uiLanguageProfile") },
+          ]} />
+          <SelectField<ProfileDefaults["webrtc"]> label={t("inlineEditor.webrtcLabel")} value={d.webrtc} disabled={saving} onChange={(v) => setDefault("webrtc", v)} options={[
+            { value: "auto", label: t("inlineEditor.webrtcAuto") }, { value: "tcp_only", label: t("inlineEditor.webrtcTcpOnly") }, { value: "block", label: t("inlineEditor.webrtcBlock") },
+          ]} />
+        </div>}
+      />
+      <SettingRow
+        id="default-noise"
+        title={t("inlineEditor.noiseHeading")}
+        help={t("profileForm.noiseHelp")}
+        below={<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {([
+            ["noise_canvas", "inlineEditor.noiseCanvas"], ["noise_webgl", "inlineEditor.noiseWebgl"],
+            ["noise_audio", "inlineEditor.noiseAudio"], ["noise_client_rects", "inlineEditor.noiseClientRects"],
+            ["noise_sensors", "inlineEditor.noiseSensors"], ["noise_fonts", "inlineEditor.noiseFonts"],
+          ] as const).map(([key, label]) => <SelectField<"real" | "auto"> key={key} label={t(label)} value={d[key]} disabled={saving} onChange={(v) => setDefault(key, v)} options={[
+            { value: "real", label: t("inlineEditor.noiseReal") }, { value: "auto", label: t("inlineEditor.noiseAuto") },
+          ]} />)}
+        </div>}
+      />
+    </SettingsGroup>
     <SettingsGroup>
       <SettingRow
         id="geo"
@@ -105,6 +154,7 @@ export function ProfileDefaultsSection({ s, setS, p, setP }: SettingsProps) {
         }
       />
     </SettingsGroup>
+    </>
   );
 }
 

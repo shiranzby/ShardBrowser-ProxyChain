@@ -1,11 +1,10 @@
 import type { Theme } from "@proxyshard/shardx-ui-kit";
 import { savedLang, useLang, type Lang } from "../../shared/i18n";
-import { analyticsEnabled, setAnalyticsEnabled } from "../../shared/lib/analytics";
 import { savedInterfaceSize, useInterfaceSize, type InterfaceSizeChoice } from "../../shared/model/interfaceSize";
 import { useDirectStart } from "../../shared/model/directStart";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
 import { savedMotion, useMotion } from "../../shared/model/motion";
-import { useSimpleNavigation } from "../../shared/model/simpleNavigation";
+import { useSimpleNavigation, type CollapsiblePage } from "../../shared/model/simpleNavigation";
 import { currentTheme, previewThemeFromSettings, setThemeFromCommand } from "../../shared/model/theme";
 
 /// The preferences this window keeps in its own storage rather than in
@@ -19,8 +18,8 @@ export type LocalPrefs = {
   size: InterfaceSizeChoice;
   reduceMotion: boolean;
   simpleNavigation: boolean;
+  collapsedPages: CollapsiblePage[];
   singleKeys: boolean;
-  analytics: boolean;
   askDirect: boolean;
 };
 export type PrefKey = keyof LocalPrefs;
@@ -69,7 +68,10 @@ const PREFS: { [K in PrefKey]: Pref<LocalPrefs[K]> } = {
     stored: () => useSimpleNavigation.getState().enabled,
     commit: (v) => useSimpleNavigation.getState().setEnabled(v),
   },
-  analytics: { stored: analyticsEnabled, commit: setAnalyticsEnabled },
+  collapsedPages: {
+    stored: () => useSimpleNavigation.getState().items,
+    commit: (v) => useSimpleNavigation.getState().setItems(v),
+  },
   askDirect: {
     stored: () => useDirectStart.getState().ask,
     commit: (v) => useDirectStart.getState().setAsk(v),

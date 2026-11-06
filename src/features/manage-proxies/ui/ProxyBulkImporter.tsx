@@ -7,7 +7,8 @@ import { WindowedRows } from "../../../shared/ui/WindowedRows";
 import { toast } from "../../../shared/model/toast";
 import { useT } from "../../../shared/i18n";
 import type { ProxyEntry, BulkRowState } from "../../../entities/proxy";
-import { proxyBulkParse, proxyBulkSave, proxyFullTest, proxyStatus, sameProxy, useProxy } from "../../../entities/proxy";
+import { proxyBulkParse, proxyBulkSave, proxyFullTest, proxyStatus, sameProxy, tnbProxyExtract, useProxy, type TnbExtractResult } from "../../../entities/proxy";
+import { newTnbDraft, TnbExtractForm, tnbErrorText, tnbRequest } from "./TnbExtractForm";
 
 /// `onClose` gets the id of the proxy saved when it was the only one, for the
 /// page to open in Peek (or not, when the setup checklist opened the importer).
@@ -17,12 +18,34 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
   const [kind, setKind] = useState<ProxyEntry["kind"]>("socks5");
   const [rows, setRows] = useState<BulkRowState[]>([]);
   const [busy, setBusy] = useState(false);
+  const [source, setSource] = useState("custom");
+  const [tnb, setTnb] = useState(newTnbDraft);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [extracted, setExtracted] = useState<TnbExtractResult | null>(null);
+  const extraction = useRef(false);
   // A second press while the first is saving would save it again.
   const adding = useRef(false);
   // Closed while Add saved (Esc, the backdrop, Cancel): the proxies are
   // still added, but no Peek opens for a dialog the person already left.
   const openRef = useRef(open);
   openRef.current = open;
+
+  const extract = async () => {
+    if (extraction.current) return;
+    const request = tnbRequest(tnb);
+    if (!request) { setExtractError(t("tnb.errorInvalid")); return; }
+    extraction.current = true;
+    setExtracting(true);
+    setExtractError(null);
+    try {
+      const result = await tnbProxyExtract(request);
+      if (result.entries.length === 0) { setExtractError(t("tnb.errorEmpty")); return; }
+      setExtracted(result);
+      setRows(result.entries.map((entry) => ({ entry, selected: true, status: "idle" })));
+    } catch (e) { setExtractError(tnbErrorText(t, e)); }
+    finally { extraction.current = false; setExtracting(false); }
+  };
 
   const parse = async () => {
     if (!text.trim()) { toast.err(t("proxyBulkImporter.nothingToParse")); return; }
@@ -130,21 +153,21 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
   return (
     <Modal
       open={open}
-      onClose={() => onClose()}
+      onClose={() => { if (!extraction.current) onClose(); }}
       title={t("proxyBulkImporter.title")}
       size="lg"
       // Pasted lines or parsed rows: Esc and the backdrop ask first (IFACE-08).
-      dirty={text.trim() !== "" || rows.length > 0}
+      dirty={text.trim() !== "" || rows.length > 0 || source === "tnb"}
       footer={
         <div className="flex items-center justify-end gap-2">
           {/* Cancel cannot stop a save that has started (Esc and the backdrop close without a Peek). */}
-          <Button variant="neutral" mode="stroke" size="xsmall" disabled={busy && rows.length === 0} onClick={() => onClose()}>{t("proxyBulkImporter.cancel")}</Button>
+          <Button variant="neutral" mode="stroke" size="xsmall" disabled={extracting || (busy && rows.length === 0)} onClick={() => onClose()}>{t("proxyBulkImporter.cancel")}</Button>
           {rows.length === 0 ? (
-            <Button variant="primary" mode="filled" size="xsmall" disabled={busy} onClick={parse}>
-              {t("proxyBulkImporter.parse")}
+            <Button variant="primary" mode="filled" size="xsmall" aria-label={source === "tnb" ? t("tnb.extract") : t("proxyBulkImporter.parse")} disabled={busy || extracting} isLoading={extracting} onClick={source === "tnb" ? extract : parse}>
+              {source === "tnb" ? t("tnb.extract") : t("proxyBulkImporter.parse")}
             </Button>
           ) : (
-            <Button variant="primary" mode="filled" size="xsmall" onClick={saveSelected}>
+            <Button variant="primary" mode="filled" size="xsmall" disabled={busy || selCount === 0} onClick={saveSelected}>
               {selCount === 1 ? t("proxyBulkImporter.importCountOne") : t("proxyBulkImporter.importCount", { n: selCount })}
             </Button>
           )}
@@ -154,6 +177,8 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
       <div className="flex min-h-0 flex-col gap-3">
         {rows.length === 0 ? (
           <>
+            <Select label={t("tnb.source")} size="xsmall" value={source} disabled={extracting} onChange={setSource} options={[{ value: "custom", label: t("tnb.custom") }, { value: "tnb", label: t("tnb.provider") }]} />
+            {source === "tnb" ? <TnbExtractForm value={tnb} onChange={(next) => { setTnb(next); setExtractError(null); }} disabled={extracting} error={extractError} /> : <>
             <Select
               label={t("proxyBulkImporter.defaultTypeLabel")}
               size="xsmall"
@@ -176,9 +201,11 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
             <p className="m-0 text-secondary text-text-soft-400">
               {t("proxyBulkImporter.duplicatesNote")}
             </p>
+            </>}
           </>
         ) : (
           <>
+            {source === "tnb" && extracted && <p className="m-0 text-secondary text-text-sub-600" data-tnb-preview>{t("tnb.preview", { n: rows.length, route: extracted.route === "first_hop" ? t("tnb.firstHop") : t("tnb.direct") })}</p>}
             <div className="flex items-center gap-3 pb-1.5">
               <Checkbox
                 checked={allSel}
@@ -188,7 +215,7 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
                 }
               />
               <div className="ml-auto flex gap-1.5">
-                <Button variant="neutral" mode="stroke" size="3xsmall" onClick={() => setRows([])}>{t("proxyBulkImporter.back")}</Button>
+                <Button variant="neutral" mode="stroke" size="3xsmall" disabled={busy} onClick={() => setRows([])}>{t("proxyBulkImporter.back")}</Button>
                 <Button
                   variant="neutral"
                   mode="stroke"

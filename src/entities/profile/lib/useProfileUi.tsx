@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { listOrder } from "../../../shared/model/listOrder";
 import type { ProfileMeta } from "../model/types";
 import {
   applyProfileFilters, emptyFilters, folderNamesOf, loadSort, persistSort, proxyIdOf,
@@ -22,6 +23,7 @@ import { onSpaceMoved } from "../../../shared/api/invoke";
 import { computeVisible, needsRunning, NO_RUNNING, type Visible } from "./visible";
 import { resolveId } from "./optimistic";
 import type { AssignFrom } from "./assignment";
+import { useFolderMeta } from "./folderMeta";
 
 /** A cell being edited in place. `keyed`: a row key (P) started it, not a
  *  click on the cell or its edit button — the amended focus-return ruling
@@ -35,7 +37,7 @@ export type FolderPickerTarget = { profileIds: string[]; from: "list" | "bar" };
 /** The Folder dialog: a new Folder, or the look and name of an existing one.
  *  A new Folder may come prefilled with a name typed in the folder picker;
  *  `moveIds` move into it once it exists (one place makes a Folder). */
-export type FolderDialogTarget = { mode: "create"; name?: string; moveIds?: string[] } | { mode: "edit"; name: string };
+export type FolderDialogTarget = { mode: "create"; name?: string; parent?: string; moveIds?: string[] } | { mode: "edit"; name: string };
 /** The View dialog: save the list as a new View, or rename one. */
 export type ViewDialogTarget = { mode: "save" } | { mode: "rename"; id: string };
 /** The tag picker, the profiles it acts on, and who opened it: the list (`T`)
@@ -196,8 +198,10 @@ export function selectVisible(ui: ProfileUiStore = useProfileUi.getState()): Vis
   const g = useTags.getState();
   return computeVisible({
     profiles: d.profiles, proxies: d.proxies, search: ui.search, folder: ui.folder, filters: ui.filters,
+    parents: useFolderMeta.getState().parents,
     running: needsRunning(ui.filters, ui.sort) ? d.running : NO_RUNNING, sort: ui.sort,
     tags: g.tags, byProfile: g.byProfile, proxyIps: d.proxyIps, now: minuteNow(), only: ui.only?.ids ?? null,
+    manualOrder: listOrder("profiles"),
   });
 }
 
@@ -611,6 +615,9 @@ useProfile.subscribe((s, prev) => {
   const statusFiltered = ui.filters.status !== "all";
   if (s.profiles !== prev.profiles || (statusFiltered && s.running !== prev.running)) pruneSelection();
 });
+// Moving a whole subtree can hide its profiles without changing their own
+// folder names. Hidden rows must leave the bulk selection too.
+useFolderMeta.subscribe((s, prev) => { if (s.parents !== prev.parents) pruneSelection(); });
 // A tag taken off (or renamed) can hide a row a search or the Tag filter found
 // by its tags. A deleted tag stops filtering: no row could ever match it. That
 // holds for the list's own query kept under a View too.

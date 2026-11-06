@@ -22,7 +22,7 @@ import {
   profileList, profileGet, profileSave, profileDelete, profileClone,
   profileSetPin, profileSetFolder, profileBindProxy, profileImport,
   processList, processKill, launch, launchCancel, syncLaunch, profileUnlock,
-  folderAdd, folderDelete, folderRename, cookiesExportToFile, cookiesImport, enrichPicksForPreset,
+  folderAdd, folderDelete, folderList, folderRename, cookiesExportToFile, cookiesImport, enrichPicksForPreset,
 } from "../model/api";
 import { fromStored, toStored } from "../model/form";
 import { proxyMissing } from "./listing";
@@ -32,6 +32,7 @@ import {
   moveEdits, newPlaceholderId, resolveId, revertOf, sameJson, sameMeta, shareRows, trackCreation, type Edit,
 } from "./optimistic";
 import { useDirectStart } from "../../../shared/model/directStart";
+import { listOrder, useListOrderStore } from "../../../shared/model/listOrder";
 import { HOST_OS } from "../../../shared/lib/utils";
 import { matchesOs, osIdFor } from "../../../shared/constants";
 import { useGpuCompat, verdictsLoaded as loadGpuVerdicts } from "../../../shared/model/gpuCompat";
@@ -1117,13 +1118,16 @@ export const useProfile = create<ProfileStore>((set, get) => ({
     const team = inTeam();
     const inFolder = get().profiles.filter((p) => p.folder === f).map((p) => p.id);
     const count = inFolder.length;
+    const parents = useFolderMeta.getState().parents;
+    const children = Object.entries(parents).filter(([, parent]) => parent === f).map(([name]) => name);
+    const parent = Object.prototype.hasOwnProperty.call(parents, f) ? parents[f] : "";
     const choice = await confirmModal({
       title: t("useProfile.deleteFolderTitle", { f }),
-      message:
+      message: (
         count === 0 ? t("useProfile.deleteEmptyFolder")
         : team ? (count === 1 ? t("useProfile.deleteTeamFolderWithOneProfile") : t("useProfile.deleteTeamFolderWithProfiles", { count }))
         : count === 1 ? t("useProfile.deleteFolderWithOneProfile")
-        : t("useProfile.deleteFolderWithProfiles", { count }),
+        : t("useProfile.deleteFolderWithProfiles", { count })) + (children.length ? ` ${t("folderTree.deleteChildrenKept")}` : ""),
       buttons:
         count > 0
           ? [
@@ -1136,6 +1140,12 @@ export const useProfile = create<ProfileStore>((set, get) => ({
               { label: t("useProfile.deleteEmptyFolderConfirm"), value: "keep", danger: true },
             ],
     });
+    // This flow may send individual profiles to Trash before folder_delete.
+    // A broken on-disk hierarchy must stop that first mutation as well.
+    if (!team && (choice === "keep" || choice === "trash")) {
+      try { await folderList(); }
+      catch (e) { toast.fail({ title: t("useProfile.deleteFolderFailed", { f }), detail: e }); return; }
+    }
     if (choice === "keep") {
       try {
         const n = await folderDelete(f, false);
@@ -1220,6 +1230,16 @@ export const useProfile = create<ProfileStore>((set, get) => ({
       () => {
         get().rememberFolder(f);
         if (look) useFolderMeta.getState().setMeta(f, look);
+        // Restore only edges this deletion changed; children moved again by
+        // the person stay where they deliberately put them.
+        sendFolders(async () => {
+          await useFolderMeta.getState().setParent(f, parent);
+          for (const child of children) {
+            const now = useFolderMeta.getState().parents;
+            const p = Object.prototype.hasOwnProperty.call(now, child) ? now[child] : "";
+            if (p === parent && get().folderRegistry.includes(child)) await useFolderMeta.getState().setParent(child, f);
+          }
+        });
         void get().restoreMany(moved);
       },
     );
@@ -1243,6 +1263,8 @@ export const useProfile = create<ProfileStore>((set, get) => ({
       }
       // Views, and the list showing it, follow the name first.
       useViews.getState().renameFolder(from, next);
+      const order = listOrder("folders");
+      if (order.includes(from)) useListOrderStore.getState().save("folders", order.map((name) => name === from ? next : name));
       onFolderRenamed?.(from, next);
       set({ folderRegistry: registry });
       useFolderMeta.getState().renameMeta(from, next);

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, DataList, DialogModal, EmptyState, Input, Tooltip, useLatched, type MenuItem } from "@proxyshard/shardx-ui-kit";
+import { useListOrder } from "../../shared/model/listOrder";
+import { orderItems } from "../../shared/lib/listOrder";
+import { useListReorder } from "../../shared/hooks/useListReorder";
 import { PageBody, PageHeader } from "../../widgets/PageHeader";
 import { AddExtensionMenu, LinkStoreDialog, UpdateConfirmDialog, UpdateStatus, stopAndUpdate } from "../../features/manage-extensions";
 import { useStoreChanged } from "../../shared/hooks/useStoreChanged";
@@ -216,13 +219,16 @@ export function ExtensionsPage() {
   const anyLinked = Object.values(updates).some((u) => u.state !== "unlinked");
   const updatable = items.filter((e) => canUpdate(updates[e.id])).length;
 
+  const order = useListOrder("extensions");
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
+    const ordered = orderItems(items, order, (e) => e.id);
+    if (!q) return ordered;
+    return ordered.filter(
       (e) => extensionName(e).toLowerCase().includes(q) || e.description.toLowerCase().includes(q),
     );
-  }, [items, search]);
+  }, [items, search, order]);
+  const reorder = useListReorder({ kind: "extensions", allIds: items.map((e) => e.id), visibleIds: shown.map((e) => e.id) });
   // Counted over every extension, not the search: two copies stay two while one is filtered out.
   const counts = useMemo(() => installCounts(items), [items]);
 
@@ -290,6 +296,7 @@ export function ExtensionsPage() {
           scrollRef={scrollRef}
           aria-label={t("extensions.title")}
           items={shown}
+          dragProps={(e) => reorder.bind(e.id)}
           getId={(e) => e.id}
           getName={extensionName}
           labels={{ selectAll: t("dataList.selectAll"), select: (name) => t("dataList.select", { name }), more: t("pageHeader.more"), actions: t("profileTable.colActions") }}
@@ -311,6 +318,7 @@ export function ExtensionsPage() {
             const swapping = updates[e.id]?.state === "downloading" || updates[e.id]?.state === "applying";
             const noRemove = noDelete ?? (swapping ? t("extensions.removeWhileUpdating") : null);
             return [
+              ...reorder.menu(e.id),
               ...first,
               ...(first.length > 0 ? [{ type: "separator" as const }] : []),
               { label: t("extensions.removeItem"), icon: rowActionIcons.trash({ className: "size-3.5" }), danger: true, disabled: !!noRemove, hint: noRemove ?? undefined, onSelect: () => void remove(e) },

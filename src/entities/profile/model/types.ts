@@ -103,6 +103,8 @@ export type ProfileForm = {
   platform_version: string;
 
   timezone: string;
+  /// Absent on legacy profiles; an empty value keeps the normal new tab.
+  startup_url?: string;
   language: string;
   /// The browser's own menus: this computer's language, or the profile's.
   /// Stored as top-level `ui_language: "profile"` only when chosen.

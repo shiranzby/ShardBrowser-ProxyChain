@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Badge, CopyButton, CountRoll, IconButton, Kbd, NavItem, Popover, Tooltip, cn, useContextMenu, useRovingFocus, type MenuItem } from "@proxyshard/shardx-ui-kit";
 import {
   FolderAddIconApp,
+  ChevronRightIcon,
   FOLDER_ICON_GLYPHS,
   MoreIcon,
   NavAutomationIcon,
@@ -27,14 +28,15 @@ import { useRailKey } from "./useRailKey";
 import { LABEL_COLORS, labelColor, type LabelColorId } from "../../shared/constants";
 import { titleBarOnMouseDown } from "../../shared/lib/dragWindow";
 import { useNarrowWindow } from "../../shared/hooks/useNarrowWindow";
+import { useListReorder } from "../../shared/hooks/useListReorder";
 import type { RtUpdate, Section } from "../../shared/types";
 import { useNav } from "../../shared/model/navigation";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
-import { useSimpleNavigation } from "../../shared/model/simpleNavigation";
+import { COLLAPSIBLE_PAGES, useSimpleNavigation, type CollapsiblePage } from "../../shared/model/simpleNavigation";
 import { useWhatsNew } from "../../shared/model/whatsNew";
 import { useLang, useT } from "../../shared/i18n";
 import {
-  leaveList, profileStatus, proxyMissing, useAllViews, useFolderLook, useFolders, useProfile, useProfileUi, useRunningCount, useSaving,
+  folderPath, folderTree, insideFolder, leaveList, profileStatus, proxyMissing, useAllViews, useFolderLook, useFolderMeta, useFolders, useProfile, useProfileUi, useRunningCount, useSaving,
   useViewCounts, useViews, viewName,
 } from "../../entities/profile";
 import { useProxy } from "../../entities/proxy";
@@ -133,6 +135,12 @@ function useDropTarget(key: string, onDropProfiles: (ids: string[]) => void) {
     onDrop: (e: React.DragEvent) => {
       e.preventDefault();
       setDropTarget(null);
+      // A folder named like a profile id must never turn a reorder drag into
+      // a profile move through the text/plain fallback.
+      try {
+        const order = JSON.parse(e.dataTransfer.getData("application/x-shardx-list-order") || "null") as { kind?: string } | null;
+        if (order && order.kind !== "profiles") return;
+      } catch { /* unrelated drag */ }
       // Only profiles we have: a dragged piece of foreign text (the text/plain
       // fallback) never becomes a Folder name's "profile".
       const known = new Set(useProfile.getState().profiles.map((p) => p.id));
@@ -246,17 +254,30 @@ function ExtensionsItem({ compact }: { compact: boolean }) {
 function SecondaryPages({ compact }: { compact: boolean }) {
   const t = useT();
   const simple = useSimpleNavigation((s) => s.enabled);
+  const items = useSimpleNavigation((s) => s.items);
   const current = useNav((s) => s.section);
   const updates = useExtensionUpdates((s) => updatableCount(s.byId));
   const [open, setOpen] = useState(false);
   const controls = useId();
-  useEffect(() => { setOpen(false); }, [simple]);
-  const shown = (id: Section) => !simple || open || current === id;
-  const showUpdates = !open && current !== "extensions" && updates > 0;
+  useEffect(() => { setOpen(false); }, [simple, items]);
+  const folded = (id: CollapsiblePage) => simple && items.includes(id);
+  const showUpdates = folded("extensions") && !open && current !== "extensions" && updates > 0;
   const label = open ? t("sidebar.fewerPages") : t("sidebar.morePages");
   const updateLabel = t(updates === 1 ? "sidebar.extensionUpdatesOne" : "sidebar.extensionUpdatesMany", { n: updates });
+  const renderPage = (id: CollapsiblePage) => {
+    if (id === "extensions") return <ExtensionsItem key={id} compact={compact} />;
+    const pages = {
+      proxies: { label: t("sidebar.navProxies"), icon: <RouteIcon className="size-3.5" /> },
+      fingerprints: { label: t("sidebar.navFingerprints"), icon: <NavFingerprintsIcon className="size-3.5" /> },
+      bookmarks: { label: t("sidebar.navBookmarks"), icon: <NavBookmarksIcon className="size-3.5" /> },
+      automation: { label: t("sidebar.navProjects"), icon: <NavAutomationIcon className="size-3.5" /> },
+      proxyshard: { label: t("sidebar.navAccountShop"), icon: <NavShopIcon className="size-3.5" /> },
+    };
+    return <PageItem key={id} id={id} {...pages[id]} compact={compact} />;
+  };
   return <>
-    {simple && <NavItem
+    {COLLAPSIBLE_PAGES.filter((id) => !folded(id)).map(renderPage)}
+    {simple && items.length > 0 && <NavItem
       size="small" data-nav="more" icon={compact && showUpdates ? <span className="relative flex">
         <MoreIcon className="size-3.5" />
         <Badge data-update-count aria-hidden="true" color="warning" size="small" shape="pill" className="absolute -top-2 left-2 min-w-[14px] px-[3px]! leading-none">{updates}</Badge>
@@ -267,10 +288,7 @@ function SecondaryPages({ compact }: { compact: boolean }) {
       badgeLabel={showUpdates ? updateLabel : undefined}
     />}
     <div id={controls} data-secondary-pages className="flex flex-col gap-0.5">
-      {shown("extensions") && <ExtensionsItem compact={compact} />}
-      {shown("bookmarks") && <PageItem id="bookmarks" label={t("sidebar.navBookmarks")} icon={<NavBookmarksIcon className="size-3.5" />} compact={compact} />}
-      {shown("automation") && <PageItem id="automation" label={t("sidebar.navProjects")} icon={<NavAutomationIcon className="size-3.5" />} compact={compact} />}
-      {shown("proxyshard") && <PageItem id="proxyshard" label={t("sidebar.navAccountShop")} icon={<NavShopIcon className="size-3.5" />} compact={compact} />}
+      {COLLAPSIBLE_PAGES.filter((id) => folded(id) && (open || current === id)).map(renderPage)}
     </div>
   </>;
 }
@@ -372,6 +390,10 @@ function FoldersGroup({ compact }: { compact: boolean }) {
   const followFolderRename = useProfileUi((s) => s.followFolderRename);
   const setFolderDialog = useProfileUi((s) => s.setFolderDialog);
   const folders = useFolders();
+  const parents = useFolderMeta((s) => s.parents);
+  const folded = useSidebarPrefs((s) => s.foldedFolders);
+  const toggleFolder = useSidebarPrefs((s) => s.toggleFolder);
+  const reorder = useListReorder({ kind: "folders", allIds: folders, visibleIds: folders, dragHandle: "[data-folder-handle]", groupOf: (name) => Object.prototype.hasOwnProperty.call(parents, name) ? parents[name] : "" });
   const ready = useProfile((s) => s.status === "ready");
   // In a team only its admin makes a folder: the button says so and does nothing.
   useRightsChange();
@@ -383,9 +405,17 @@ function FoldersGroup({ compact }: { compact: boolean }) {
   // One pass for every Folder's count, only when the list changes (PERF-20).
   const folderCounts = useMemo(() => {
     const m = new Map<string, number>();
-    for (const p of profiles) if (p.folder) m.set(p.folder, (m.get(p.folder) ?? 0) + 1);
+    for (const p of profiles) if (p.folder) {
+      const seen = new Set<string>();
+      let name = p.folder;
+      while (name && !seen.has(name)) {
+        seen.add(name);
+        m.set(name, (m.get(name) ?? 0) + 1);
+        name = Object.prototype.hasOwnProperty.call(parents, name) ? parents[name] : "";
+      }
+    }
     return m;
-  }, [profiles]);
+  }, [profiles, parents]);
 
   // A deleted or emptied Folder cannot stay selected: the list (or its View)
   // shows every Folder instead.
@@ -400,9 +430,11 @@ function FoldersGroup({ compact }: { compact: boolean }) {
     });
   };
   const current = section === "profiles" && !inView ? folder : null;
-  const capped = !open && folders.length > FOLDER_CAP;
-  const shown = capped ? folders.filter((f, i) => i < FOLDER_CAP || f === current) : folders;
-  const hidden = folders.length - shown.length;
+  const tree = folderTree(folders, parents);
+  const visible = compact ? tree : tree.filter((node) => (current && insideFolder(current, node.name, parents)) || !folded.some((f) => node.name !== f && insideFolder(node.name, f, parents)));
+  const capped = !open && visible.length > FOLDER_CAP;
+  const shown = capped ? visible.filter((node, i) => i < FOLDER_CAP || (current && insideFolder(current, node.name, parents))) : visible;
+  const hidden = visible.length - shown.length;
 
   return (
     <Group
@@ -425,22 +457,30 @@ function FoldersGroup({ compact }: { compact: boolean }) {
         />
       }
     >
-      {shown.map((f) => (
+      {shown.map(({ name: f, depth, children }) => (
         <FolderItem
           key={f}
           name={f}
           count={ready ? folderCounts.get(f) ?? 0 : undefined}
           compact={compact}
+          depth={depth}
+          path={folderPath(f, parents)}
+          reorderBind={reorder.bind(f)}
+          expanded={children ? !folded.includes(f) : undefined}
+          onToggle={() => {
+            if (!folded.includes(f) && current && current !== f && insideFolder(current, f, parents)) openFolder(f, false);
+            toggleFolder(f);
+          }}
           active={current === f}
           onOpen={(e) => openFolder(f, e.detail === 0)}
           onDropProfiles={(ids) => moveDropped(ids, f)}
           // The registry's Folder commands, as the palette lists them (A11Y-13).
-          onContextMenu={(e) => ctx.open(e, menuItemsFor("rowMenu", "folders", { ids: [f] }), { heading: f })}
+          onContextMenu={(e) => ctx.open(e, [...reorder.menu(f), ...menuItemsFor("rowMenu", "folders", { ids: [f] })], { heading: f })}
         />
       ))}
       {/* One control in one place, so it keeps the keyboard focus as the
           list grows and shrinks around it (Pair 5 review). */}
-      {(open ? folders.length > FOLDER_CAP : hidden > 0) && (
+      {(open ? visible.length > FOLDER_CAP : hidden > 0) && (
         <NavItem
           size="small"
           {...(open ? { "data-show-less": "" } : { "data-show-more": "" })}
@@ -642,8 +682,13 @@ function countProfilesWords(t: ReturnType<typeof useT>, n: number): string {
   return n === 1 ? t("sidebar.countProfilesOne") : t("sidebar.countProfiles", { n });
 }
 
-function FolderItem({ name, count, compact, active, onOpen, onDropProfiles, onContextMenu }: {
+function FolderItem({ name, count, compact, active, depth, path, expanded, reorderBind, onToggle, onOpen, onDropProfiles, onContextMenu }: {
   name: string;
+  depth: number;
+  path: string;
+  expanded?: boolean;
+  reorderBind: ReturnType<ReturnType<typeof useListReorder>["bind"]>;
+  onToggle: () => void;
   /** Loading or failed: no number at all (A8, LQ-10). */
   count?: number;
   compact: boolean;
@@ -661,9 +706,18 @@ function FolderItem({ name, count, compact, active, onOpen, onDropProfiles, onCo
   // Folder gets a color (LAYOUT-10).
   const color = labelColor(look.color ?? (compact ? defaultFolderColor(name) : null));
   return (
+    <div {...reorderBind} className="flex min-w-0 items-center" data-folder-depth={depth} style={!compact && depth ? { paddingInlineStart: Math.min(depth, 4) * 12 } : undefined}>
+    {!compact && expanded !== undefined && <IconButton
+      label={expanded ? t("folderTree.collapse", { name }) : t("folderTree.expand", { name })}
+      aria-expanded={expanded} size="3xsmall" className="shrink-0"
+      icon={<ChevronRightIcon className={cn("size-3.5", expanded && "rotate-90")} />}
+      onClick={onToggle}
+    />}
     <NavItem
       size="small"
       data-folder={name}
+      data-folder-handle=""
+      className="min-w-0 flex-1"
       icon={
         // The color through a class, never an inline one: the current Folder
         // in a Windows contrast theme draws its icon in HighlightText
@@ -676,7 +730,8 @@ function FolderItem({ name, count, compact, active, onOpen, onDropProfiles, onCo
           <Glyph className="size-3.5" />
         </span>
       }
-      label={name}
+      label={compact ? path : name}
+      title={path}
       collapsed={compact}
       active={active}
       onClick={onOpen}
@@ -685,6 +740,7 @@ function FolderItem({ name, count, compact, active, onOpen, onDropProfiles, onCo
       badgeLabel={count !== undefined ? countProfilesWords(t, count) : undefined}
       {...drop}
     />
+    </div>
   );
 }
 
@@ -1086,8 +1142,6 @@ export function Sidebar() {
             badge={<Kbd aria-hidden="true">{capOf(command("app.palette"))}</Kbd>}
           />
           <AllProfilesItem compact={compact} />
-          <PageItem id="proxies" label={t("sidebar.navProxies")} icon={<RouteIcon className="size-3.5" />} compact={compact} />
-          <PageItem id="fingerprints" label={t("sidebar.navFingerprints")} icon={<NavFingerprintsIcon className="size-3.5" />} compact={compact} />
           <SecondaryPages compact={compact} />
         </div>
         {/* The lists that grow with the user's data scroll on their own. */}

@@ -228,6 +228,7 @@ pub fn proxy(row: &ProxyRow, login: Option<&str>) -> ProxyEntry {
 pub fn folders(rows: &[FolderRow]) -> FolderState {
     FolderState {
         registry: rows.iter().map(|f| f.name.clone()).collect(),
+        parents: Default::default(),
         meta: rows
             .iter()
             .filter(|f| !f.color.is_empty())

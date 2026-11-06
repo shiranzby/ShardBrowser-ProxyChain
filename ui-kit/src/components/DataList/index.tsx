@@ -77,6 +77,8 @@ type Common<T> = {
   onDelete?: (ids: string[]) => void
   rowActions?: (item: T) => ReactNode
   menuItems?: (item: T) => MenuItem[]
+  /** Optional row/card drag handlers; controls and keyboard navigation keep their behavior. */
+  dragProps?: (item: T) => React.HTMLAttributes<HTMLDivElement>
   /** Where a row menu's heading (the item's name) is cut when it is wider
    *  than the menu: `middle` keeps its end visible (an address). */
   menuHeadingTruncate?: 'end' | 'middle'
@@ -578,6 +580,7 @@ export default function DataList<T>(props: DataListProps<T>) {
                     )}
                     onFocus={(e) => { if (e.target === e.currentTarget && activeId !== id) setActive(id) }}
                     {...press}
+                    {...props.dragProps?.(item)}
                   >
                     {/* An arriving card plays slide-in on this inner layer,
                         never on the tile itself (its ring and fill stay put). */}
@@ -711,6 +714,7 @@ export default function DataList<T>(props: DataListProps<T>) {
                     style={{ top: offsetOf(i), height: rowHeight, gridTemplateColumns: template }}
                     onFocus={(e) => { if (e.target === e.currentTarget && !active) setActive(id) }}
                     {...pointer(item)}
+                    {...props.dragProps?.(item)}
                   >
                     {selectable && (
                       <div role="gridcell" data-cell="checkbox" className={cn('relative flex items-center self-stretch', pin?.lead)}>

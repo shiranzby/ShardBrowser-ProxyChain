@@ -8,6 +8,9 @@ import { useLang, useT, type Lang, type T } from "../../shared/i18n";
 import { ListColumn } from "../../shared/ui/ListColumn";
 import { LoadError, LoadingCards } from "../../shared/ui/ListStates";
 import { runPhrase } from "./RunSettingsButton";
+import { useListOrder } from "../../shared/model/listOrder";
+import { orderItems } from "../../shared/lib/listOrder";
+import { useListReorder } from "../../shared/hooks/useListReorder";
 
 /** The step chain's most icons before "+N". */
 const CHAIN_MAX = 6;
@@ -150,13 +153,16 @@ export function ProjectsList({ projects, loading, failed, loadError, onRetry, ru
   onDelete: (p: Project) => void;
 }) {
   const t = useT();
-  const newest = useMemo(() => [...projects].sort((a, b) => b.updated_at - a.updated_at), [projects]);
+  const order = useListOrder("projects");
+  const newest = useMemo(() => orderItems([...projects].sort((a, b) => b.updated_at - a.updated_at), order, (p) => p.id), [projects, order]);
+  const reorder = useListReorder({ kind: "projects", allIds: projects.map((p) => p.id), visibleIds: newest.map((p) => p.id) });
   const byId = new Map(projects.map((p) => [p.id, p]));
   // A team's projects: each item needs its right in the team, and says so when closed.
   useRightsChange();
   const closed = (why: string | null) => (why ? { disabled: true, hint: why } : {});
   const noCreate = teamRefusal("create");
   const menuItems = (p: Project): MenuItem[] => [
+    ...reorder.menu(p.id),
     { label: t("automation.rename"), icon: <RenameIcon className="size-3.5" />, onSelect: () => onRename(p), ...closed(teamRefusal("edit")) },
     { label: t("automation.duplicate"), icon: <CopyIcon className="size-3.5" />, disabled: busy === p.id, onSelect: () => onDuplicate(p), ...closed(noCreate) },
     { label: t("projectEditor.export"), icon: <DownloadIcon className="size-3.5" />, onSelect: () => onExport(p), ...closed(teamRefusal("take_out")) },
@@ -171,6 +177,7 @@ export function ProjectsList({ projects, loading, failed, loadError, onRetry, ru
         minCardWidth={CARD_MIN_WIDTH}
         aria-label={t("automation.tabProjects")}
         items={newest}
+        dragProps={(p) => reorder.bind(p.id)}
         getId={(p) => p.id}
         getName={(p) => p.name}
         labels={{ selectAll: t("dataList.selectAll"), select: (name) => t("dataList.select", { name }), more: t("pageHeader.more"), actions: t("profileTable.colActions") }}

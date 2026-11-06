@@ -1486,11 +1486,12 @@ mod tests {
     }
 
     /// Files that talk HTTP or open sockets for something other than a team.
-    const OTHER_TRAFFIC: [(&str, &str); 16] = [
+    const OTHER_TRAFFIC: [(&str, &str); 17] = [
         ("process/close.rs", "Stop's Browser.close on a launched browser's own devtools"),
         ("live_e2e.rs", "the live end-to-end harness, run by hand: a test site, a proxy, CDP, the server raw"),
         ("runtime.rs", "engine and launcher downloads"),
         ("psapi.rs", "the ProxyShard billing API"),
+        ("tnbproxy.rs", "explicit IP-allowlisted TNB extraction through the selected route; never uses team credentials"),
         ("mcp_setup.rs", "the MCP server download"),
         ("gpu_caps.rs", "the engine's own devtools on localhost"),
         ("cdp.rs", "CDP to the launched browsers"),

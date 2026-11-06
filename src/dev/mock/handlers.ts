@@ -91,6 +91,7 @@ function renameFolder(s: MockFolders, old: string, next: string) {
   if (!to) { s.registry = s.registry.filter((f) => f !== old); delete s.meta[old]; return; }
   s.registry = [...new Set(s.registry.map((f) => (f === old ? to : f)))];
   if (Object.prototype.hasOwnProperty.call(s.meta, old)) { s.meta[to] = s.meta[old]; delete s.meta[old]; }
+  if (s.parents) s.parents = Object.fromEntries(Object.entries(s.parents).map(([name, parent]) => [name === old ? to : name, parent === old ? to : parent]));
 }
 
 function stopProcess(state: MockState, id: string): boolean {
@@ -494,6 +495,15 @@ export const handlers: Record<string, Handler> = {
   settings_load_error: () => (window as { __shardxMockSettingsLoadError?: string }).__shardxMockSettingsLoadError ?? null,
   proxy_chain_detect: () => (window as { __shardxMockChainDetection?: Record<string, unknown> }).__shardxMockChainDetection
     ?? { state: "ok", kind: "http", host: "127.0.0.1", port: 7890, source: "mock Windows Internet Settings", has_bypass: false },
+  proxy_chain_set_enabled: ({ enabled }, ctx) => {
+    const chain = ctx.state.settings.proxy_chain ?? { enabled: false, mode: "auto", host: "127.0.0.1", port: 7890, username: "", password_saved: false };
+    if (enabled && chain.invalid) throw new Error("proxy_chain_invalid_config");
+    ctx.state.settings.proxy_chain = { ...chain, enabled: Boolean(enabled) };
+    ctx.save();
+    const result = { ...ctx.state.settings.proxy_chain };
+    delete result.password;
+    return result;
+  },
   proxy_chain_test: ({ kind, profileId }, { state }) => {
     const profile = profileId ? state.profiles[String(profileId)] : undefined;
     const now = `@${Math.floor(Date.now() / 1000)}`;
@@ -813,7 +823,13 @@ export const handlers: Record<string, Handler> = {
     }
     // As folders.rs: a folder never kept makes no file.
     const f = ctx.state.folders;
-    if (f) { f.registry = f.registry.filter((x) => x !== folder); delete f.meta[String(folder)]; }
+    if (f) {
+      f.registry = f.registry.filter((x) => x !== folder); delete f.meta[String(folder)];
+      if (f.parents) {
+        const parent = Object.prototype.hasOwnProperty.call(f.parents, folder) ? f.parents[folder] : "";
+        f.parents = Object.fromEntries(Object.entries(f.parents).filter(([name, p]) => name !== folder && (p !== folder || parent)).map(([name, p]) => [name, p === folder ? parent : p]));
+      }
+    }
     // As the backend: store-changed is for API writes only.
     ctx.save();
     return ids.length;
@@ -888,6 +904,29 @@ export const handlers: Record<string, Handler> = {
     ctx.save();
     return null;
   },
+  folder_set_parent: ({ name, parent, meta }, ctx) => {
+    personalOnly(ctx.state);
+    if (!String(name ?? "").trim()) throw "a folder needs a name";
+    const f = foldersOf(ctx.state);
+    const known = [...f.registry, ...Object.values(ctx.state.profiles).map((p) => p._meta.folder)];
+    if (parent && !known.includes(parent)) throw "the parent folder no longer exists";
+    const parents = f.parents ?? {};
+    let at = parent;
+    const seen = new Set<string>();
+    while (at) {
+      if (at === name || seen.has(at)) throw "a folder cannot be inside itself or its descendants";
+      seen.add(at);
+      at = Object.prototype.hasOwnProperty.call(parents, at) ? parents[at] : "";
+    }
+    if (!f.registry.includes(name)) f.registry.push(name);
+    if (parent) {
+      if (!f.registry.includes(parent)) f.registry.push(parent);
+      f.parents = { ...parents, [name]: parent };
+    } else if (f.parents) delete f.parents[name];
+    if (meta) f.meta[name] = { color: meta.color ?? null, icon: meta.icon ?? "folder" };
+    ctx.save();
+    return null;
+  },
   folder_import: ({ state: given }, ctx) => {
     personalOnly(ctx.state);
     if (ctx.state.folders) return false;
@@ -944,6 +983,26 @@ export const handlers: Record<string, Handler> = {
   proxy_last_test: ({ id }, { state }) => { const h = state.snapshots[id]; return h?.length ? h[h.length - 1] : null; },
   proxy_history: ({ id }, { state }) => state.snapshots[id] ?? [],
   proxy_bulk_parse: ({ text, kind }) => parseProxyLines(String(text ?? ""), kind),
+  tnbproxy_locations: ({ request }) => {
+    let server: URL;
+    try { server = new URL(request?.server ?? ""); } catch { throw "tnb_locations_invalid_request"; }
+    const supported = server.hostname === "tnbproxy.com" || server.hostname.endsWith(".tnbproxy.com");
+    // A small deterministic fixture; production lists come from TNB's metadata service.
+    const codes = !supported ? [] : request.level === "country" ? ["EG", "US"]
+      : request.level === "state" && request.country === "EG" ? ["AlQahirah", "Cairo"]
+        : request.level === "city" && request.country === "EG" && request.state === "Cairo" ? ["AlQahirahalJadidah", "Badr", "Cairo", "ElShorouk", "HadaiqalQubbah", "Helwan", "MadinatanNasr", "NewCairo"] : [];
+    return { supported, source: supported ? "https://server.tnbproxy.com/api/regions/list" : "", items: codes.map((code) => ({ code, label: code })) };
+  },
+  tnbproxy_extract: ({ request }) => {
+    if (!request || !Number.isInteger(request.count) || request.count < 1 || request.count > 1000 || !Number.isInteger(request.ttl) || request.ttl < 0 || request.ttl > 180 || !["http", "socks5"].includes(request.kind) || !["direct", "first_hop"].includes(request.route)) throw "tnb_invalid_request";
+    // Synthetic preview only: extraction never adds to the proxy store.
+    const entries: ProxyEntry[] = Array.from({ length: request.count }, (_, i) => ({
+      id: `tnb-${newId()}`, name: `TNB ${i + 1}`, kind: request.kind,
+      host: `tnb-${i + 1}.proxy.example`, port: 10000 + i, username: "synthetic-session", password: "synthetic-password",
+      country: String(request.geo ?? "").split("_")[0].toUpperCase(), notes: `TNB ${request.plan_name}`,
+    }));
+    return { entries, route: request.route, server: request.server, requested_count: request.count };
+  },
   proxy_bulk_save: ({ entries }, ctx) => addProxies(entries as ProxyEntry[], ctx),
   proxy_bulk_import: ({ text, kind }, ctx) => addProxies(parseProxyLines(String(text ?? ""), kind), ctx),
 

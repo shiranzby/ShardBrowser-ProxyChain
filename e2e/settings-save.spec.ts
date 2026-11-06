@@ -375,16 +375,16 @@ test("the language previews at once, the draft survives the rebuild, and Don't s
   expect(await local(page, "shardx.lang")).toBe("en");
 });
 
-test("usage statistics and single keys change nothing until Save, and count as unsaved", async ({ page }) => {
+test("simple navigation and single keys change nothing until Save, and count as unsaved", async ({ page }) => {
   await openApp(page, { section: "settings" });
   // The two live on different tabs now; a draft spans them both.
-  await tab(page, "Other").click();
-  await page.getByLabel("Share usage statistics").uncheck();
+  await tab(page, "Appearance").click();
+  await page.getByRole("switch", { name: "Simple navigation", exact: true }).check();
   await tab(page, "General").click();
   await page.getByRole("switch", { name: "Single-key shortcuts" }).uncheck();
   await expect(bar(page)).toBeVisible();
   await page.waitForTimeout(300);
-  expect(await local(page, "shardx.analytics")).toBeNull();
+  expect(await local(page, "shardx.simpleNavigation")).toBeNull();
   expect(await local(page, "shardx.singleKeys")).toBeNull();
   // The guard counts them.
   await nav(page, "proxies");
@@ -392,7 +392,7 @@ test("usage statistics and single keys change nothing until Save, and count as u
   await expect(page.locator("main")).toHaveAttribute("data-section", "settings");
   await saveButton(page).click();
   await expect(toast(page, "Settings saved")).toBeVisible();
-  expect(await local(page, "shardx.analytics")).toBe("off");
+  expect(await local(page, "shardx.simpleNavigation")).toBe("true");
   expect(await local(page, "shardx.singleKeys")).toBe("false");
   await expect(bar(page)).toHaveCount(0);
 });

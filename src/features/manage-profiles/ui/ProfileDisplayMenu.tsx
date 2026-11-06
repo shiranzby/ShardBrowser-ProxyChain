@@ -55,6 +55,7 @@ export function ProfileDisplayMenu() {
           value={sort}
           onChange={(v) => setSort(v as ProfileSort)}
           options={[
+            { value: "manual", label: t("listOrder.manual") },
             { value: "added", label: t("profileFilterBar.orderAdded") },
             { value: "name-asc", label: t("profileFilterBar.orderNameAsc") },
             { value: "name-desc", label: t("profileFilterBar.orderNameDesc") },

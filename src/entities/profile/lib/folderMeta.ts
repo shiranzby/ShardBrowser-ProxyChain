@@ -7,7 +7,8 @@ import { writeQueue } from "../../../shared/lib/writeQueue";
 import { onSpaceMoved } from "../../../shared/api/invoke";
 import { toast } from "../../../shared/model/toast";
 import { t } from "../../../shared/i18n";
-import { folderImport, folderList, folderMetaSet } from "../model/api";
+import { folderAdd, folderImport, folderList, folderMetaSet, folderSetParent } from "../model/api";
+import { forgetFolderParent, NO_FOLDER_PARENTS, renameFolderParents, type FolderParents } from "./folderTree";
 import { fromLegacy, LEGACY_META, LEGACY_REGISTRY, looks, names } from "./folderStored";
 
 export type FolderIcon = keyof typeof FOLDER_ICON_GLYPHS;
@@ -32,7 +33,7 @@ let queue: ReturnType<typeof writeQueue> | null = null;
 
 async function read() {
   const s = await folderList();
-  useFolderMeta.setState({ byName: looks(s.meta, KNOWN) });
+  useFolderMeta.setState({ byName: looks(s.meta, KNOWN), parents: s.parents ?? NO_FOLDER_PARENTS });
   applyRegistry(names(s.registry));
   // A change made while this read was out shows again after it is sent.
   queue?.shown();
@@ -61,7 +62,7 @@ export async function reloadFolders(): Promise<void> {
 // Another space: none of the old folders' looks or kept folders show while its own are read.
 onSpaceMoved(() => {
   if (!loading) return;
-  useFolderMeta.setState({ byName: {} });
+  useFolderMeta.setState({ byName: {}, parents: NO_FOLDER_PARENTS });
   applyRegistry([]);
   void reloadFolders();
 });
@@ -72,8 +73,24 @@ export function sendFolders(call: () => Promise<unknown>) {
   void queue(call);
 }
 
+/** The dialog waits for actual persistence before reporting success. Its writes
+ *  share the existing queue and the space edition with legacy folder changes. */
+export async function saveFolderDetails(name: string, meta: FolderMeta, parent: string, team: boolean): Promise<boolean> {
+  queue ??= writeQueue(loadFolders(), (e) => toast.fail({ title: t("folderMeta.saveFailed"), detail: e }), read);
+  let saved = false;
+  await queue(async () => {
+    if (team) { await folderAdd(name); await folderMetaSet(name, meta); }
+    else await folderSetParent(name, parent, meta);
+    saved = true;
+  });
+  try { await read(); } catch (e) { toast.fail({ title: t("folderMeta.loadFailed"), detail: e }); return false; }
+  return saved;
+}
+
 type FolderMetaState = {
   byName: Record<string, FolderMeta>;
+  parents: FolderParents;
+  setParent: (name: string, parent: string) => Promise<void>;
   setMeta: (name: string, meta: FolderMeta) => void;
   /** Moves a Folder's look to its new name here: `folder_rename` moved it in the backend. */
   renameMeta: (from: string, to: string) => void;
@@ -83,6 +100,14 @@ type FolderMetaState = {
 
 export const useFolderMeta = create<FolderMetaState>((set, get) => ({
   byName: {},
+  parents: NO_FOLDER_PARENTS,
+  setParent: async (name, parent) => {
+    await folderSetParent(name, parent);
+    const parents = { ...get().parents };
+    if (parent) parents[name] = parent; else delete parents[name];
+    set({ parents });
+    await read();
+  },
   setMeta: (name, meta) => {
     set({ byName: { ...get().byName, [name]: meta } });
     sendFolders(() => folderMetaSet(name, meta));
@@ -90,12 +115,12 @@ export const useFolderMeta = create<FolderMetaState>((set, get) => ({
   renameMeta: (from, to) => {
     const byName = { ...get().byName };
     if (hasOwn(byName, from)) { byName[to] = byName[from]; delete byName[from]; }
-    set({ byName });
+    set({ byName, parents: renameFolderParents(get().parents, from, to) });
   },
   dropMeta: (name) => {
     const byName = { ...get().byName };
     delete byName[name];
-    set({ byName });
+    set({ byName, parents: forgetFolderParent(get().parents, name) });
   },
 }));
 

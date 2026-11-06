@@ -9,6 +9,7 @@ import { rowActionIcons } from "../../shared/ui/rowActionIcons";
 import { useNewProfileFrom } from "../FingerprintPeek";
 import { useScrollMemory } from "../../shared/model/scrollMemory";
 import { toast } from "../../shared/model/toast";
+import { useListReorder } from "../../shared/hooks/useListReorder";
 
 // Structural icons are neutral: an orange Android glyph read as a warning next
 // to the orange "GPU mismatch" badge (UI-38). An unknown platform is a
@@ -67,6 +68,11 @@ export function FingerprintLibrary({ loading }: { loading: boolean }) {
   const groups = useVisibleFingerprintGroups();
   // The groups' order, flattened: the grid draws them group by group.
   const shown = useMemo(() => groups.flatMap(([, list]) => list), [groups]);
+  const byId = new Map(items.map((e) => [e.id, e]));
+  const reorder = useListReorder({
+    kind: "fingerprints", allIds: items.map((e) => e.id), visibleIds: shown.map((e) => e.id),
+    groupOf: (id) => fingerprintOs(byId.get(id)!) || "Other",
+  });
   // An imported fingerprint slides in once.
   const arrived = useArrivedIds(items.map((e) => e.id), status === "ready");
   // Each pick of the menu's New profile from this starts its own run.
@@ -95,6 +101,7 @@ export function FingerprintLibrary({ loading }: { loading: boolean }) {
         scrollRef={scrollRef}
         aria-label={t("fingerprints.title")}
         items={shown}
+        dragProps={(e) => reorder.bind(e.id)}
         getId={(e) => e.id}
         getName={(e) => e.label}
         labels={{ selectAll: t("dataList.selectAll"), select: (name) => t("dataList.select", { name }), more: t("pageHeader.more"), actions: t("profileTable.colActions") }}
@@ -126,6 +133,7 @@ export function FingerprintLibrary({ loading }: { loading: boolean }) {
         currentId={peekId}
         renderCard={(e) => <FingerprintCard entry={e} inPeek={e.id === peekId} />}
         menuItems={(e) => [
+          ...reorder.menu(e.id),
           { label: t("fingerprintPeek.newProfile"), icon: <AddIcon className="size-3.5" />, onSelect: () => setNewFrom((p) => ({ entry: e, n: (p?.n ?? 0) + 1 })) },
           { type: "separator" },
           // A built-in one says why it can't go (as Peek's menu does).

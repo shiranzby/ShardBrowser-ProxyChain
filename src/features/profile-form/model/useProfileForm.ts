@@ -4,9 +4,11 @@ import { toast } from "../../../shared/model/toast";
 import { storeBus } from "../../../shared/lib/storeBus";
 import { onSpaceMoved } from "../../../shared/api/invoke";
 import { explainError } from "../../../shared/lib/errors";
+import { isStartupUrl } from "../../../shared/lib/startupUrl";
 import { HOST_OS } from "../../../shared/lib/utils";
 import { hostScreen, type HostScreen } from "../../../shared/lib/hostScreen";
-import { AUTO_LANG, AUTO_TZ, matchesOs } from "../../../shared/constants";
+import { matchesOs } from "../../../shared/constants";
+import { defaultProfileDefaults, settingsGet } from "../../../entities/settings";
 import { useGpuCompat, verdictsLoaded } from "../../../shared/model/gpuCompat";
 import { inFolder, teamRefusal } from "../../../entities/space";
 import {
@@ -94,7 +96,7 @@ const key = (d: ProfileFormDraft) => JSON.stringify({
 const sameTags = (a: ProfileFormDraft, b: ProfileFormDraft) =>
   JSON.stringify([[...a.tagIds].sort(), [...a.newTags].sort()]) === JSON.stringify([[...b.tagIds].sort(), [...b.newTags].sort()]);
 
-const BASICS = new Set<keyof ProfileForm>(["name", "color", "notes"]);
+const BASICS = new Set<keyof ProfileForm>(["name", "color", "notes", "startup_url"]);
 const PROXY = new Set<keyof ProfileForm>(["proxy_id"]);
 const EXTENSIONS = new Set<keyof ProfileForm>(["extensions"]);
 /** Not the person's to change: never counted as a change. */
@@ -123,9 +125,12 @@ export function changedTabs(s: Pick<ProfileFormState, "draft" | "saved"> & Parti
 }
 
 /** Why the form cannot be saved as it is, per field; empty when it can. */
-export function problemsOf(d: ProfileFormDraft | null): { name?: string } {
+export function problemsOf(d: ProfileFormDraft | null): { name?: string; startup_url?: string } {
   if (!d) return {};
-  return d.form.name.trim() ? {} : { name: t("profileForm.nameRequired") };
+  const problems: { name?: string; startup_url?: string } = {};
+  if (!d.form.name.trim()) problems.name = t("profileForm.nameRequired");
+  if (!isStartupUrl(d.form.startup_url ?? "")) problems.startup_url = t("profileForm.startupUrlInvalid");
+  return problems;
 }
 
 /** Why the new password is not taken yet, in words; null when there is none or it is fine. */
@@ -211,9 +216,8 @@ async function loadCreate(session: number, proxyId: string | null, preset?: Part
   }
   const fp = chosen ?? pickFingerprint(useProfile.getState().fingerprints);
   if (!fp) { set({ status: "error", error: t("useProfile.noFingerprints") }); return; }
-  // Every field as the template has it, as the backend's create from a
-  // template makes it: timezone, language and location follow the proxy
-  // at launch (lib.rs `merge_library_fingerprint`).
+  // Hardware comes from the template; creation choices come from the saved
+  // defaults, as in the backend's library/API creation path.
   // Cores, memory and platform version drawn for this computer from the same
   // tables the backend uses (lib.rs `enrich_picks_for_preset`), as a GPU pick
   // in the form does. The template's own values would give every profile made
@@ -221,6 +225,12 @@ async function loadCreate(session: number, proxyId: string | null, preset?: Part
   let picks: { hardware_concurrency?: number; device_memory?: number; platform_version?: string } = {};
   try { picks = await enrichPicksForPreset(fp.id); } catch { /* the template's own values */ }
   const host = await hostScreen();
+  let defaults;
+  try { defaults = { ...defaultProfileDefaults(), ...(await settingsGet()).profile_defaults }; }
+  catch (error) {
+    if (get().session === session) set({ status: "error", error: t("settings.defaultsLoadFailed"), errorDetail: explainError(error) ?? null });
+    return;
+  }
   if (get().session !== session) return;
   set({ host });
   const templated = fromStored({ ...structuredClone(fp.payload ?? {}), _meta: { gpu_preset_id: fp.id } });
@@ -229,7 +239,7 @@ async function loadCreate(session: number, proxyId: string | null, preset?: Part
     hardware_concurrency: picks.hardware_concurrency ?? templated.hardware_concurrency,
     device_memory: picks.device_memory ?? templated.device_memory,
     platform_version: picks.platform_version ?? templated.platform_version,
-    timezone: AUTO_TZ, language: AUTO_LANG, geo_mode: "auto" as const,
+    ...defaults, geo_mode: "auto" as const,
     // This computer's screen or the template's own, which the backend fits to this display.
     ...screenFor(fp, host),
   };
@@ -378,7 +388,7 @@ export function rightsProblem(s: Pick<ProfileFormState, "mode" | "id" | "draft" 
 
 /** True when Save or Create profile can run now. */
 export function canSave(s: ProfileFormState = get()): boolean {
-  if (!s.open || !s.draft || s.status === "saving" || problemsOf(s.draft).name || s.badFields.length > 0 || passwordProblemOf(s)) return false;
+  if (!s.open || !s.draft || s.status === "saving" || Object.keys(problemsOf(s.draft)).length > 0 || s.badFields.length > 0 || passwordProblemOf(s)) return false;
   if (rightsProblem(s)) return false;
   return s.mode === "create" || isDirty(s);
 }
@@ -416,7 +426,9 @@ async function protectNew(id: string, name: string, password: string): Promise<v
 export async function saveProfileForm(): Promise<boolean> {
   const s = get();
   if (!s.open || !s.draft || s.status === "saving") return false;
-  if (problemsOf(s.draft).name) { set({ tried: true, tab: "basics" }); return false; }
+  // Recheck before any proxy or profile write, including callers that bypass
+  // the disabled Save button (keyboard, unsaved-changes actions, retries).
+  if (Object.keys(problemsOf(s.draft)).length > 0) { set({ tried: true, tab: "basics" }); return false; }
   // A number field shows text that is not a number: it is on screen, so nothing is saved behind it.
   if (s.badFields.length > 0) return false;
   if (passwordProblemOf(s)) { set({ tried: true, tab: "basics" }); return false; }

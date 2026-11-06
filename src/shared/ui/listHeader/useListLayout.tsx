@@ -112,7 +112,7 @@ export function useListLayout<Id extends string, Row>({ storageKey, defs, items,
   /** The header row's height, px: `LIST_HEADER_HEIGHT` unless the list's
    *  own was shorter before Phase B (owner: nothing grows). */
   headerHeight?: number;
-}): { columns: DataListColumn<Row>[]; layout: DataListLayout; items: readonly Row[] } {
+}): { columns: DataListColumn<Row>[]; layout: DataListLayout; items: readonly Row[]; sortedAll: readonly Row[]; hasSort: boolean; resetSort: () => void } {
   const t = useT();
   const [saved, setSaved] = useState(() => load(storageKey, defs));
   // The latest choices (every change goes through `save`), so two widths set
@@ -158,6 +158,12 @@ export function useListLayout<Id extends string, Row>({ storageKey, defs, items,
     const k = saved.sort.dir === "ascending" ? 1 : -1;
     return [...items].sort((a, b) => k * d.compare!(a, b));
   }, [items, saved.sort, byId]);
+  const sortedAll = useMemo(() => {
+    const d = saved.sort ? byId.get(saved.sort.id) : undefined;
+    if (!saved.sort || !d?.compare) return sizingRows;
+    const k = saved.sort.dir === "ascending" ? 1 : -1;
+    return [...sizingRows].sort((a, b) => k * d.compare!(a, b));
+  }, [sizingRows, saved.sort, byId]);
 
   const api: ColumnsApi<Id> = {
     defs,
@@ -222,5 +228,5 @@ export function useListLayout<Id extends string, Row>({ storageKey, defs, items,
     pin: { lead: "list-pin-check", first: pinsName ? "list-pin-name" : undefined, end: "list-pin-end" },
   };
 
-  return { columns, layout, items: sorted };
+  return { columns, layout, items: sorted, sortedAll, hasSort: saved.sort !== null, resetSort: () => save({ ...latest.current, sort: null }) };
 }

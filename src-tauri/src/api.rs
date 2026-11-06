@@ -292,6 +292,8 @@ async fn persist_created(door: Door, t: &Ticket, folder_override: Option<String>
     if let Some(n) = body.notes.as_ref() {
         cfg.insert("notes".into(), json!(n));
     }
+    crate::settings::load().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?.profile_defaults.apply_missing(&mut cfg);
+    crate::profile_defaults::validate_config(&cfg).map_err(fail(StatusCode::BAD_REQUEST))?;
 
     let folder = folder_override.or(body.folder).unwrap_or_default();
     // The profile's own door first: a refused one stores no proxy either.
@@ -554,6 +556,7 @@ async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, J
             .cloned()
             .ok_or_else(|| err(StatusCode::BAD_REQUEST, "`fingerprint` must be an object"))?;
         cfg.remove("_meta");
+        crate::profile_defaults::validate_config(&cfg).map_err(fail(StatusCode::BAD_REQUEST))?;
         stored.config = cfg;
     }
     if let Some(n) = body.name.as_ref() {
@@ -1422,6 +1425,29 @@ mod tests {
         assert_eq!(router().oneshot(req).await.unwrap().status(), StatusCode::CONFLICT);
         let (_, _, all) = authed("GET", "/profiles", None).await;
         assert_eq!(all, json!([]));
+    }
+
+    #[tokio::test]
+    async fn api_profile_defaults_apply_only_to_omitted_creation_fields() {
+        let _serial = crate::migrate::serial();
+        let _root = crate::store::test_root("api-profile-defaults").with_config();
+        let mut settings = crate::settings::load().unwrap();
+        settings.profile_defaults.startup_url = "https://example.com/start".into();
+        settings.profile_defaults.noise_fonts = "auto".into();
+        crate::settings::save(&settings).unwrap();
+        for explicit in [false, true] {
+            let fingerprint = if explicit { json!({"startup_url":"", "navigator":{"language":"auto"}, "ui_language":"system", "noise":{"fonts":{"enabled":false,"seed":77}}}) } else { json!({}) };
+            let (status, _, made) = authed("POST", "/profiles", Some(json!({"name":"Defaults", "fingerprint":fingerprint}))).await;
+            assert_eq!(status, StatusCode::OK, "{made}");
+            let (_, _, got) = authed("GET", &format!("/profiles/{}", made["id"].as_str().unwrap()), None).await;
+            assert_eq!(got["startup_url"], if explicit { "" } else { "https://example.com/start" });
+            assert_eq!(got["navigator"]["language"], if explicit { "auto" } else { "zh-CN" });
+            assert_eq!(got["ui_language"], if explicit { "system" } else { "profile" });
+            assert_eq!(got["noise"]["fonts"]["enabled"], !explicit);
+        }
+        let (status, _, _) = authed("POST", "/profiles", Some(json!({"name":"Invalid", "fingerprint":{"startup_url":"--no-sandbox"}}))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(crate::space::profile::list_all().unwrap().len(), 2);
     }
 
     #[tokio::test]

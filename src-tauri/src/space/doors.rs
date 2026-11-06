@@ -168,6 +168,7 @@ const RULES: &[(&str, Need)] = &[
     ("folder_meta_set", ADMIN),
     // The interface's old copy belongs to the personal space only.
     ("folder_import", Off),
+    ("folder_set_parent", Off),
     ("profile_focus_window", Nothing),
     // Starting and running.
     ("launch", START),
@@ -264,6 +265,8 @@ const RULES: &[(&str, Need)] = &[
     ("proxy_bulk_import", CREATE_T),
     ("proxy_bulk_save", CREATE_T),
     ("proxy_bulk_parse", Machine),
+    ("tnbproxy_extract", Machine),
+    ("tnbproxy_locations", Machine),
     ("ps_import_order", CREATE_T),
     // Data folder and reset.
     ("data_root_get", Machine),
@@ -357,6 +360,7 @@ const RULES: &[(&str, Need)] = &[
     ("mcp_download", Machine),
     ("proxy_chain_detect", Machine),
     ("proxy_chain_test", Machine), // profile test separately requires Start before reading its proxy
+    ("proxy_chain_set_enabled", Machine),
     ("runtime::runtime_status", Machine),
     ("runtime::runtime_install", Machine),
     ("runtime::launcher_update_check", Machine),

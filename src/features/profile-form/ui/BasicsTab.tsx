@@ -19,7 +19,9 @@ export function BasicsTab({ draft, nameRef }: { draft: ProfileFormDraft; nameRef
   const tried = useProfileForm((s) => s.tried);
   // Said under the field once it was left, or Save was pressed: never while typing the first letter.
   const [blurred, setBlurred] = useState(false);
-  const problem = problemsOf(draft).name;
+  const [urlBlurred, setUrlBlurred] = useState(false);
+  const problems = problemsOf(draft);
+  const problem = problems.name;
   const f = draft.form;
   // A team's: its profiles take no cookies file yet, and a new tag needs Create in the team.
   const team = useInTeam();
@@ -45,6 +47,16 @@ export function BasicsTab({ draft, nameRef }: { draft: ProfileFormDraft; nameRef
           onBlur={() => setBlurred(true)}
         />
       </div>
+      <Input
+        label={t("settings.startupUrlTitle")}
+        hint={t("settings.startupUrlHelp")}
+        inputSize="xsmall"
+        value={f.startup_url ?? ""}
+        error={problems.startup_url && (urlBlurred || tried) ? problems.startup_url : undefined}
+        aria-invalid={!!problems.startup_url || undefined}
+        onChange={(e) => patchForm({ startup_url: e.target.value })}
+        onBlur={() => setUrlBlurred(true)}
+      />
       <PropertySheet>
         {/* 2 px between 32 px rows, as Peek's sheet. */}
         <div className="flex flex-col gap-[2px]">

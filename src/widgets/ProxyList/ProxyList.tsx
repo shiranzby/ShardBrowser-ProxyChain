@@ -5,7 +5,7 @@ import { buyProxies } from "../../features/manage-proxies";
 import { AddIcon, FilterIcon, NavProxiesIcon, SearchIcon } from "../../shared/icons";
 import { ListStateCenter, LoadError, LoadingRows } from "../../shared/ui/ListStates";
 import { useLang, useT } from "../../shared/i18n";
-import { PROXY_COLUMNS, countActiveProxyFilters, useFilteredProxies, useProfileCountByProxy, useProxy, useProxyColumns, useProxyColumnsApi, useProxyLayout } from "../../entities/proxy";
+import { PROXY_COLUMNS, countActiveProxyFilters, sortProxies, useFilteredProxies, useProfileCountByProxy, useProxy, useProxyColumns, useProxyColumnsApi, useProxyLayout } from "../../entities/proxy";
 import { ProxyListRow } from "./ProxyListRow";
 import { useProxyListKeys } from "./useProxyListKeys";
 import { focusProxyRow } from "../../shared/lib/focusRow";
@@ -17,6 +17,7 @@ import { refocusPageFilter } from "../../shared/lib/focus";
 import { useListEndRoom } from "../../shared/ui/ListColumn";
 import { LIST_HEADER_HEIGHT, LIST_ROW_HEIGHT } from "../../shared/ui/listMetrics";
 import { useSelectionMode } from "../../shared/lib/selectionMode";
+import { useListReorder } from "../../shared/hooks/useListReorder";
 
 const NO_ROWS: never[] = [];
 const ROW_HEIGHT = LIST_ROW_HEIGHT;
@@ -68,7 +69,16 @@ export function ProxyList({ loading }: { loading: boolean }) {
   // Columns size themselves to their content until a person resizes them
   // (owner, 2026-09-30), over every proxy, the search left out.
   const proxies = useProxy((s) => s.proxies);
+  const sort = useProxy((s) => s.sort);
   const snapshots = useProxy((s) => s.snapshots);
+  const allSorted = useMemo(() => sort === "manual" ? proxies : sortProxies(proxies, sort, snapshots, counts), [proxies, sort, snapshots, counts]);
+  const allIds = useMemo(() => allSorted.map((p) => p.id), [allSorted]);
+  const visibleIds = useMemo(() => visible.map((p) => p.id), [visible]);
+  const onReorder = useCallback(() => useProxy.getState().setSort("manual"), []);
+  const reorder = useListReorder({
+    kind: "proxies", allIds, visibleIds, selected, resetSavedOrder: sort !== "manual",
+    onReorder,
+  });
   // `lang`: Test result's words are measured in the app's language.
   const lang = useLang((s) => s.lang);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `lang` changes the words `proxyFits` reads
@@ -182,6 +192,7 @@ export function ProxyList({ loading }: { loading: boolean }) {
               <ProxyListRow
                 key={p.id}
                 proxy={p}
+                reorder={reorder}
                 profileCount={counts[p.id] ?? 0}
                 top={offsetOf(i)}
                 columns={columns}

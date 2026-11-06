@@ -81,7 +81,7 @@ export function mockLock(password: string, salt = Math.random().toString(36).sli
 export const MOCK_LOCKED_PASSWORD = "vault-pass-1";
 
 export type MockTags = { tags: { id: string; name: string; color: string }[]; by_profile: Record<string, string[]> };
-export type MockFolders = { registry: string[]; meta: Record<string, { color: string | null; icon: string }> };
+export type MockFolders = { registry: string[]; meta: Record<string, { color: string | null; icon: string }>; parents?: Record<string, string> };
 
 export type MockState = {
   version: number;

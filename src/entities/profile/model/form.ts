@@ -82,6 +82,7 @@ export function fromStored(stored: any): ProfileForm {
   f.keep_focus = stored?.window?.keep_focus === true;
   f.device_memory = stored?.navigator?.device_memory ?? 16;
   f.timezone = stored?.timezone ?? AUTO_TZ;
+  f.startup_url = typeof stored?.startup_url === "string" ? stored.startup_url : undefined;
   f.language = stored?.navigator?.language ?? AUTO_LANG;
   f.ui_language = stored?.ui_language === "profile" ? "profile" : "system";
   f.webrtc = (stored?.webrtc === "replace" ? "tcp_only" : stored?.webrtc) ?? "auto";
@@ -154,11 +155,13 @@ export function toStored(f: ProfileForm, lib: FingerprintEntry | null, prev?: an
   }
   base.name = f.name || "untitled";
   base.notes = f.notes;
+  if (f.startup_url !== undefined) base.startup_url = f.startup_url.trim();
+  else delete base.startup_url;
   // "auto" sentinel: resolver replaces at launch; persists across edits.
   base.timezone = f.timezone;
   base.icu_locale = f.language === AUTO_LANG ? null : f.language;
   // Absent = this computer's language, as before; only the opt-in is written.
-  if (f.ui_language === "profile") base.ui_language = "profile";
+  if (f.ui_language === "profile" || !f.id) base.ui_language = f.ui_language;
   else delete base.ui_language;
   base.webrtc = f.webrtc;
 

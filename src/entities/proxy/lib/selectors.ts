@@ -1,9 +1,11 @@
 import { useMemo } from "react";
 import { filterProxies, sortProxies, useProxy, usedByProxy } from "./useProxy";
+import { useListOrder } from "../../../shared/model/listOrder";
 
 /// The proxies the list shows, in Display's order: the search (name, host,
 /// port, country, notes, user, geo snapshot) and the Filters menu.
 export function useFilteredProxies() {
+    const manualOrder = useListOrder("proxies");
     const proxies = useProxy((s) => s.proxies);
     const snapshots = useProxy((s) => s.snapshots);
     const search = useProxy((s) => s.search);
@@ -11,8 +13,8 @@ export function useFilteredProxies() {
     const sort = useProxy((s) => s.sort);
     const used = useProfileCountByProxy();
     return useMemo(
-        () => sortProxies(filterProxies(proxies, snapshots, search, filters, used), sort, snapshots, used),
-        [proxies, snapshots, search, filters, sort, used],
+        () => sortProxies(filterProxies(proxies, snapshots, search, filters, used), sort, snapshots, used, manualOrder),
+        [proxies, snapshots, search, filters, sort, used, manualOrder],
     );
 }
 

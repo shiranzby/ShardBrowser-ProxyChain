@@ -10,6 +10,7 @@ export * from "./lib/overviewFolds";
 export * from "./lib/views";
 export * from "./lib/status";
 export * from "./lib/folderMeta";
+export * from "./lib/folderTree";
 export * from "./lib/assignment";
 export * from "./lib/selectors";
 export * from "./lib/rights";

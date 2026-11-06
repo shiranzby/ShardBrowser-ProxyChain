@@ -6,11 +6,12 @@ import { onRadioKeys } from "../../../shared/lib/radioKeys";
 import { hasOwn } from "../../../shared/lib/utils";
 import { useDialogLife } from "../../../shared/lib/useDialogLife";
 import { ColorRadios } from "../../../shared/ui/ColorRadios";
+import { SelectField } from "../../../shared/ui/SelectField";
 import { useT } from "../../../shared/i18n";
 import { toast } from "../../../shared/model/toast";
 import { adminRefusal, useInTeam } from "../../../entities/space";
 import {
-  DEFAULT_FOLDER_META, leaveList, useFolderMeta, useFolders, useProfile, useProfileUi,
+  DEFAULT_FOLDER_META, folderPath, insideFolder, leaveList, saveFolderDetails, useFolderMeta, useFolders, useProfile, useProfileUi,
   type FolderIcon,
 } from "../../../entities/profile";
 
@@ -44,28 +45,30 @@ function FolderDialogBody({ target, open }: { target: FolderTarget; open: boolea
   const setFolderDialog = useProfileUi((s) => s.setFolderDialog);
   const setFolder = useProfileUi((s) => s.setFolder);
   const folders = useFolders();
-  const rememberFolder = useProfile((s) => s.rememberFolder);
   const renameFolder = useProfile((s) => s.renameFolder);
-  const setMeta = useFolderMeta((s) => s.setMeta);
+  const parents = useFolderMeta((s) => s.parents);
   const team = useInTeam();
   const original = target.mode === "edit" ? target.name : "";
+  const [persistedName, setPersistedName] = useState(original);
   // `original` may be a Folder named like an inherited property ("constructor",
   // "toString"): only an own key on `byName` is a real, previously-set look
   // (SEC-14 review; the store's other own-key lookups use the same helper).
   const start = useFolderMeta((s) => (original && hasOwn(s.byName, original) ? s.byName[original] : undefined)) ?? DEFAULT_FOLDER_META;
 
   // What it opened with: a field that differs from this is an unsaved change.
-  const [opening] = useState(() => ({ name: target.mode === "edit" ? target.name : target.name ?? "", color: start.color, icon: start.icon }));
+  const [opening] = useState(() => ({ name: target.mode === "edit" ? target.name : target.name ?? "", color: start.color, icon: start.icon,
+    parent: target.mode === "create" ? target.parent ?? "" : Object.prototype.hasOwnProperty.call(parents, original) ? parents[original] : "" }));
   const [name, setName] = useState(opening.name);
   const [color, setColor] = useState<LabelColorId | null>(opening.color);
   const [icon, setIcon] = useState<FolderIcon>(opening.icon);
+  const [parent, setParent] = useState(opening.parent);
   const [busy, setBusy] = useState(false);
-  const dirty = name !== opening.name || color !== opening.color || icon !== opening.icon;
+  const dirty = name !== opening.name || color !== opening.color || icon !== opening.icon || parent !== opening.parent;
 
   const trimmed = name.trim();
   // Not while it leaves: a saved name is in the list by then, and the fade
   // would show it as taken.
-  const taken = open && trimmed !== original && folders.includes(trimmed);
+  const taken = open && trimmed !== persistedName && folders.includes(trimmed);
   const close = () => setFolderDialog(null);
 
   const submit = async () => {
@@ -75,8 +78,8 @@ function FolderDialogBody({ target, open }: { target: FolderTarget; open: boolea
     if (adminOnly) { toast.fail({ title: t("folderMeta.saveFailed"), detail: adminOnly }); return; }
     setBusy(true);
     if (target.mode === "create") {
-      rememberFolder(trimmed);
-      setMeta(trimmed, { color, icon });
+      const saved = await saveFolderDetails(trimmed, { color, icon }, parent, team);
+      if (!saved) { setBusy(false); return; }
       // Made from the folder picker: the profiles move in, and the list stays
       // where it is, with the selection as it was (owner rule). A new Folder
       // from the sidebar opens it instead, after the guard of an unsaved Edit
@@ -84,12 +87,14 @@ function FolderDialogBody({ target, open }: { target: FolderTarget; open: boolea
       if (target.moveIds?.length) void useProfile.getState().moveMany(target.moveIds, trimmed);
       else void leaveList(() => setFolder(trimmed));
     } else {
-      if (trimmed !== original) {
+      if (trimmed !== persistedName) {
         // The list (or its View) showing it follows the name.
-        const ok = await renameFolder(original, trimmed);
+        const ok = await renameFolder(persistedName, trimmed);
         if (!ok) { setBusy(false); return; }
+        setPersistedName(trimmed);
       }
-      setMeta(trimmed, { color, icon });
+      const saved = await saveFolderDetails(trimmed, { color, icon }, parent, team);
+      if (!saved) { setBusy(false); return; }
     }
     setBusy(false);
     toast.saved(target.mode === "create" ? t("folderDialog.created", { name: trimmed }) : t("folderDialog.saved", { name: trimmed }));
@@ -99,8 +104,10 @@ function FolderDialogBody({ target, open }: { target: FolderTarget; open: boolea
   return (
     <DialogModal
       open={open}
-      onClose={close}
-      dirty={dirty}
+      onClose={() => { if (!busy) close(); }}
+      dirty={dirty && !busy}
+      showClose={!busy}
+      hideCancel={busy}
       icon={<FolderIconGlyph className="size-3.5" />}
       title={target.mode === "create" ? t("folderDialog.createTitle") : t("folderDialog.editTitle")}
       confirmLabel={target.mode === "create" ? t("folderDialog.create") : t("folderDialog.save")}
@@ -108,9 +115,9 @@ function FolderDialogBody({ target, open }: { target: FolderTarget; open: boolea
       isLoading={busy}
       isDisabled={!trimmed || taken}
       cancelLabel={t("folderDialog.cancel")}
-      onCancel={close}
+      onCancel={() => { if (!busy) close(); }}
     >
-      <div className="flex flex-col gap-4 py-4">
+      <fieldset disabled={busy} className="m-0 flex min-w-0 flex-col gap-4 border-0 px-0 py-4">
         <Input
           aria-label={t("folderDialog.name")}
           label={t("folderDialog.name")}
@@ -121,6 +128,14 @@ function FolderDialogBody({ target, open }: { target: FolderTarget; open: boolea
           error={taken ? t("folderModal.duplicateError", { name: trimmed }) : undefined}
           onChange={(e) => setName(e.target.value)}
         />
+
+        {!team && <div className="flex flex-col gap-1.5">
+          <SelectField label={t("folderTree.parent")} value={parent} onChange={setParent} disabled={busy}
+            options={[{ value: "", label: t("folderTree.topLevel") }, ...folders
+              .filter((f) => !persistedName || !insideFolder(f, persistedName, parents))
+              .map((f) => ({ value: f, label: folderPath(f, parents) }))]} />
+          <p className="text-help text-text-sub-600">{t("folderTree.localHierarchy")}</p>
+        </div>}
 
         {/* The dialog is the raised layer: the checked ring's gap takes it. */}
         <div className="flex flex-col gap-1.5 [--swatch-bg:var(--bg-raised)]">
@@ -162,7 +177,7 @@ function FolderDialogBody({ target, open }: { target: FolderTarget; open: boolea
             })}
           </div>
         </div>}
-      </div>
+      </fieldset>
     </DialogModal>
   );
 }

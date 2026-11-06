@@ -1,4 +1,6 @@
 export type Settings = {
+  /** Copied into new profiles; changing these never edits existing profiles. */
+  profile_defaults?: ProfileDefaults;
   browser_path: string | null;
   theme: string;
   geo_checker?: string | null;
@@ -19,11 +21,31 @@ export type Settings = {
   minimize_to_tray?: boolean;
   /** Appended to every launch, one per line. Applied last, so a repeat wins. */
   extra_args?: string;
-  /** Ask the Web Store about linked extensions every 5 h (on when absent). */
+  /** Ask the Web Store about linked extensions every 5 h (off when absent). */
   ext_update_check?: boolean;
   /** First hop used to connect a profile's existing proxy. Missing means off. */
   proxy_chain?: ProxyChainSettings;
 };
+
+export type ProfileDefaults = {
+  startup_url: string;
+  language: string;
+  ui_language: "system" | "profile";
+  timezone: string;
+  webrtc: "auto" | "tcp_only" | "block";
+  noise_canvas: "real" | "auto";
+  noise_webgl: "real" | "auto";
+  noise_audio: "real" | "auto";
+  noise_client_rects: "real" | "auto";
+  noise_sensors: "real" | "auto";
+  noise_fonts: "real" | "auto";
+};
+
+export const defaultProfileDefaults = (): ProfileDefaults => ({
+  startup_url: "https://www.browserscan.net/zh/", language: "zh-CN", ui_language: "profile",
+  timezone: "auto", webrtc: "auto", noise_canvas: "real", noise_webgl: "real",
+  noise_audio: "real", noise_client_rects: "real", noise_sensors: "real", noise_fonts: "real",
+});
 
 export type ProxyChainSettings = {
   /** An unreadable saved chain must be explicitly repaired before use. */

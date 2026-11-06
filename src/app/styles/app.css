@@ -441,4 +441,7 @@ header[data-compact="3"] [data-title-block] > :not([data-page-title]) {
    whatever the app's primary color is (owner, 2026-10-08). Forced colors keep
    the system text color. */
 .brand-mark { color: var(--color-primary-base); }
+
+[data-reorder-drop="before"] { box-shadow: inset 0 2px 0 var(--color-primary-base); }
+[data-reorder-drop="after"] { box-shadow: inset 0 -2px 0 var(--color-primary-base); }
 @media (forced-colors: active) { .brand-mark { color: CanvasText; } }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { create } from "zustand";
 import {
-  allViews, emptyFilters, folderNamesOf, makeProfileFilter, useProfile, useProfileUi, useViews, viewQuery,
+  allViews, emptyFilters, folderNamesOf, makeProfileFilter, useFolderMeta, useProfile, useProfileUi, useViews, viewQuery,
   type ProfileFilters, type ProfileMeta, type ProfileView,
 } from "../profile";
 import { useProxy, type ProxyEntry } from "../proxy";
@@ -136,6 +136,7 @@ export type SignalState = {
 /// typed never changes them. The ProxyShard plans are the account's, in
 /// every scope.
 export function useSignalState(): SignalState {
+  const parents = useFolderMeta((s) => s.parents);
   const profiles = useProfile((s) => s.profiles);
   const proxies = useProfile((s) => s.proxies);
   const running = useProfile((s) => s.running);
@@ -159,9 +160,9 @@ export function useSignalState(): SignalState {
   );
 
   const scopeIds = useMemo(() => {
-    const keep = makeProfileFilter(proxies, "", query.folder, query.filters, running, (id) => tagsOf(id, { tags, byProfile }), now, undefined, profiles);
+    const keep = makeProfileFilter(proxies, "", query.folder, query.filters, running, (id) => tagsOf(id, { tags, byProfile }), now, undefined, profiles, parents);
     return new Set(profiles.filter(keep).map((p) => p.id));
-  }, [profiles, proxies, query, running, tags, byProfile, now]);
+  }, [profiles, proxies, query, running, tags, byProfile, now, parents]);
 
   const input = useMemo<SignalInput>(
     () => ({ profiles, scopeIds, running, proxies, snapshots, locales, startFailed, failReasons, plans, now }),

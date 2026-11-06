@@ -13,10 +13,12 @@ import { proxyStatus, useProxy, type ProxyColumnId, type ProxyEntry } from "../.
 import { ariaOf, capOf, command, commandsFor, iconOf, menuItemsFor, proxyRowSubject, reasonOf, runCommand } from "../../features/commands";
 import { pointerMoved } from "../../shared/lib/pointer";
 import { rowFill } from "../../shared/ui/rowFill";
+import type { ListReorder } from "../../shared/hooks/useListReorder";
 
 /// One 36 px line of the Proxies list, positioned by the list (`top`).
 /// Memoized: a row renders again only when its own props or store values change (PERF-02).
-export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, top, columns, order, ipInTip, rowIndex, active, inPeek, tabbable, onMenu }: {
+export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, top, columns, order, ipInTip, rowIndex, active, inPeek, tabbable, onMenu, reorder }: {
+  reorder: ListReorder;
   proxy: ProxyEntry;
   profileCount: number;
   top: number;
@@ -67,7 +69,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
   const openMenu = (e: React.MouseEvent) => {
     const subject = proxyRowSubject(p.id);
     const heading = subject.ids.length > 1 ? t("commands.nProxies", { n: subject.ids.length }) : p.name || address;
-    onMenu(e, menuItemsFor("rowMenu", "proxies", subject), { heading });
+    onMenu(e, [...reorder.menu(p.id), ...menuItemsFor("rowMenu", "proxies", subject)], { heading });
   };
   const test = command("proxy.test");
   // One fill per row state, as on Profiles (E13, O5): the target is drawn,
@@ -172,6 +174,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
       aria-rowindex={rowIndex}
       aria-selected={isSel}
       data-proxy-id={p.id}
+      {...reorder.bind(p.id)}
       data-active={active || undefined}
       data-peek-open={inPeek || undefined}
       // A click anywhere on the row opens it in Peek (O5), except on the row

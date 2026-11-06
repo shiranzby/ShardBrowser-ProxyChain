@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, DataList, DialogModal, EmptyState, IconButton, SegmentControl, Tooltip, useLatched } from "@proxyshard/shardx-ui-kit";
+import { useListOrder } from "../../shared/model/listOrder";
+import { orderItems } from "../../shared/lib/listOrder";
+import { useListReorder } from "../../shared/hooks/useListReorder";
 import { PageBody, PageHeader } from "../../widgets/PageHeader";
 import { BookmarkBulkBar } from "../../widgets/BookmarkBulkBar";
 import { useStoreChanged } from "../../shared/hooks/useStoreChanged";
@@ -192,7 +195,8 @@ export function BookmarksPage() {
     const root = b.root === "other" ? t("bookmarks.rootOther") : b.root === "synced" ? t("bookmarks.rootMobile") : t("bookmarks.rootBar");
     return [root, ...(b.path ?? [])].join(" / ");
   }, [lang]);
-  const rows = useMemo(() => shown.map((b): BookmarkRow => ({ bookmark: b, shows: showsIn(b), place: placeOf(b) })), [shown, showsIn, placeOf]);
+  const order = useListOrder("bookmarks");
+  const rows = useMemo(() => orderItems(shown, order, (b) => b.id).map((b): BookmarkRow => ({ bookmark: b, shows: showsIn(b), place: placeOf(b) })), [shown, showsIn, placeOf, order]);
   // As the Trash's: a pick the search or the Folder tab hides leaves the
   // selection, so Select all and the bar act on what the list shows.
   useEffect(() => {
@@ -239,6 +243,10 @@ export function BookmarksPage() {
     actionsLabel: t("profileTable.colActions"),
   });
   // The list scrolls itself; it keeps its place across page switches (WIG-06).
+  const reorder = useListReorder({
+    kind: "bookmarks", allIds: list.sortedAll.map((r) => r.bookmark.id), visibleIds: list.items.map((r) => r.bookmark.id), selected, resetSavedOrder: list.hasSort,
+    onReorder: list.resetSort,
+  });
   useScrollMemory(list.layout.scrollRef, "bookmarks");
   // A new bookmark (or one added through the API) slides in once.
   const arrived = useArrivedIds(items.map((b) => b.id), status === "ready");
@@ -346,6 +354,7 @@ export function BookmarksPage() {
           <DataList<BookmarkRow>
             aria-label={t("bookmarks.heading")}
             items={list.items}
+            dragProps={(r) => reorder.bind(r.bookmark.id)}
             columns={list.columns}
             layout={layout}
             getId={(r) => r.bookmark.id}
@@ -382,6 +391,7 @@ export function BookmarksPage() {
               />
             )}
             menuItems={(r) => [
+              ...reorder.menu(r.bookmark.id),
               { label: t("bookmarks.editTooltip"), icon: rowActionIcons.edit({ className: "size-3.5" }), onSelect: () => setEditing(r.bookmark) },
               { type: "separator" },
               { label: t("bookmarks.delete"), icon: rowActionIcons.trash({ className: "size-3.5" }), danger: true, disabled: !!noDelete, hint: noDelete ?? undefined, onSelect: () => void remove(r.bookmark) },

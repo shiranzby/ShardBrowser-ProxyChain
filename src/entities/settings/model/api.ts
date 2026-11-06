@@ -2,10 +2,15 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Settings, ApiInfo, DataRootInfo, ProxyChainDetection, ProxyChainSettings, ProxyChainTestKind, ProxyChainTestResult } from "./types";
 import { useProfilePasswords } from "./profilePasswords";
 
+let chainWrite: Promise<ProxyChainSettings> | null = null;
+
 /** The settings file, minus the API signing key. The form must never hold
  *  it: a Save would write an old key back after Regenerate token, and a
  *  leaked token would work again after a restart (SEC-01, backend B3). */
 export const settingsGet = async (): Promise<Settings> => {
+  // Navigation can open Settings while the toolbar switch is being saved.
+  // Read after that write, so the new draft cannot silently undo it later.
+  if (chainWrite) await chainWrite.catch(() => {});
   const raw = await invoke<Settings & { api_secret?: string }>("settings_get");
   delete raw.api_secret;
   // Credential writes never become values the form reads back.
@@ -16,6 +21,11 @@ export const settingsGet = async (): Promise<Settings> => {
 export const proxyChainDetect = (profileId?: string) => invoke<ProxyChainDetection>("proxy_chain_detect", { profileId });
 export const proxyChainTest = (kind: ProxyChainTestKind, config: ProxyChainSettings, profileId?: string) =>
   invoke<ProxyChainTestResult>("proxy_chain_test", { kind, config, profileId });
+export const proxyChainSetEnabled = (enabled: boolean) => {
+  if (chainWrite) return chainWrite;
+  chainWrite = invoke<ProxyChainSettings>("proxy_chain_set_enabled", { enabled }).finally(() => { chainWrite = null; });
+  return chainWrite;
+};
 /** Set once a save from this window is on disk: a read after that may show
  *  the change, not what runs. A failed save changes nothing, so it does not
  *  count (Pair 34 ruling, M3); one still on its way makes a read unsure. */

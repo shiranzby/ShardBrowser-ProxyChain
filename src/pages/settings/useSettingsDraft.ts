@@ -9,7 +9,6 @@ import { riskyLaunchArgs } from "../../shared/lib/launchArgs";
 import { confirmModal } from "../../shared/lib/confirm";
 import { toast } from "../../shared/model/toast";
 import { t, useLang } from "../../shared/i18n";
-import { analyticsEnabled } from "../../shared/lib/analytics";
 import { useDirectStart } from "../../shared/model/directStart";
 import { useInterfaceSize } from "../../shared/model/interfaceSize";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
@@ -440,6 +439,7 @@ export function useSettingsDraft() {
   const reduceMotion = useMotion((st) => st.reduce);
   const singleKeys = useKeyPrefs((st) => st.singleKeys);
   const simpleNavigation = useSimpleNavigation((st) => st.enabled);
+  const collapsedPages = useSimpleNavigation((st) => st.items);
   const askDirect = useDirectStart((st) => st.ask);
   const p: LocalPrefs = {
     lang,
@@ -448,7 +448,7 @@ export function useSettingsDraft() {
     reduceMotion,
     singleKeys: prefs.singleKeys ?? singleKeys,
     simpleNavigation: prefs.simpleNavigation ?? simpleNavigation,
-    analytics: prefs.analytics ?? analyticsEnabled(),
+    collapsedPages: prefs.collapsedPages ?? collapsedPages,
     askDirect: prefs.askDirect ?? askDirect,
   };
   const dirty = ready && isDirty({ edits, tagOps, viewOps, prefs }, tags, views);

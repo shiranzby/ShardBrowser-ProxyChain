@@ -35,7 +35,7 @@ type Callback = (payload: unknown) => void;
 const FAST = new Set([
   "process_list", "helper_profiles", "automation_run_status", "automation_fleet", "sync_status",
   "plugin:event|listen", "plugin:event|unlisten", "plugin:event|emit", "clipboard_write", "clipboard_read",
-  "tag_save", "tag_delete", "tag_assign", "tag_import", "folder_add", "folder_meta_set", "folder_import",
+  "tag_save", "tag_delete", "tag_assign", "tag_import", "folder_add", "folder_meta_set", "folder_import", "folder_set_parent",
 ]);
 
 function install(): void {

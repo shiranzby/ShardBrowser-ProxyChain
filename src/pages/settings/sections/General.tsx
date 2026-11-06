@@ -48,7 +48,7 @@ export function GeneralSection({ s, setS, p, setP }: SettingsProps) {
         title={t("settings.extUpdateCheckLabel")}
         help={t("settings.extUpdateCheckHelp")}
         control={({ labelId, helpId }) => (
-          <Switch aria-labelledby={labelId} aria-describedby={helpId} checked={s.ext_update_check ?? true} onChange={(on) => setS({ ...s, ext_update_check: on })} />
+          <Switch aria-labelledby={labelId} aria-describedby={helpId} checked={s.ext_update_check ?? false} onChange={(on) => setS({ ...s, ext_update_check: on })} />
         )}
       />
     </SettingsGroup>

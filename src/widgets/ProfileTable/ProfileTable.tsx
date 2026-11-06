@@ -6,7 +6,7 @@ import { ProfileListEmpty } from "./ProfileListEmpty";
 import { useLang, useT } from "../../shared/i18n";
 import { ListHeader, useAutoWidths, type ColumnSort } from "../../shared/ui/listHeader";
 import {
-  rowKey, setOnRestored, useListSearch, useProfile, useProfileUi, useProfileLayout, useSizingRows, useVisible, useProxyMap,
+  rowKey, setOnRestored, sortProfiles, NO_RUNNING, useListSearch, useProfile, useProfileUi, useProfileLayout, useSizingRows, useVisible, useProxyMap,
   useProfileColumnsApi, PROFILE_COLUMNS, PROFILE_FLOATING_ACTIONS, PROFILE_SORTS, type ProfileColumnId, type ProfileMeta,
 } from "../../entities/profile";
 import { tagsOf, useTags } from "../../entities/tag";
@@ -25,6 +25,7 @@ import { useDialogLife } from "../../shared/lib/useDialogLife";
 import { useListEndRoom } from "../../shared/ui/ListColumn";
 import { LIST_HEADER_HEIGHT, LIST_ROW_HEIGHT } from "../../shared/ui/listMetrics";
 import { useSelectionMode } from "../../shared/lib/selectionMode";
+import { useListReorder } from "../../shared/hooks/useListReorder";
 
 /** Every row is this tall. */
 export const ROW_HEIGHT = LIST_ROW_HEIGHT;
@@ -406,6 +407,20 @@ const ProfileRows = memo(function ProfileRows({ visible, loading, scrollRef, end
   peekId: string | null;
   onMenu: ContextMenuApi["open"];
 }) {
+  const profiles = useProfile((s) => s.profiles);
+  const selected = useProfileUi((s) => s.selected);
+  const sort = useProfileUi((s) => s.sort);
+  const running = useProfile((s) => sort === "status" || sort === "runtime-desc" ? s.running : NO_RUNNING);
+  const allSorted = useMemo(() => sort === "manual" ? profiles : sortProfiles(profiles, sort, running, now), [profiles, sort, running, now]);
+  const pinned = useMemo(() => new Set(profiles.filter((p) => p.pinned).map((p) => p.id)), [profiles]);
+  const allIds = useMemo(() => allSorted.map((p) => p.id), [allSorted]);
+  const visibleIds = useMemo(() => visible.map((p) => p.id), [visible]);
+  const groupOf = useCallback((id: string) => pinned.has(id) ? "pinned" : "other", [pinned]);
+  const onReorder = useCallback(() => useProfileUi.getState().setSort("manual"), []);
+  const reorder = useListReorder({
+    kind: "profiles", allIds, visibleIds, selected, resetSavedOrder: sort !== "manual",
+    groupOf, onReorder,
+  });
   const { range, totalHeight, offsetOf, scrollToIndex } = useVirtualList({
     count: visible.length, rowHeight: ROW_HEIGHT, scrollRef, headerHeight: HEADER_HEIGHT, bottomInset: endRoom,
   });
@@ -424,6 +439,7 @@ const ProfileRows = memo(function ProfileRows({ visible, loading, scrollRef, end
           <ProfileRow
             key={rowKey(p.id)}
             profile={p}
+            reorder={reorder}
             proxy={p.proxy_id ? proxyMap[p.proxy_id] ?? null : null}
             top={offsetOf(i)}
             columns={columns}

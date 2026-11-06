@@ -1,6 +1,8 @@
 import type { ProxyEntry } from "../../proxy";
 import { tagsOf, type TagStore } from "../../tag";
 import type { ProfileMeta } from "../model/types";
+import type { FolderParents } from "./folderTree";
+import { orderItems } from "../../../shared/lib/listOrder";
 import { makeProfileFilter, searchTextOf, sortProfiles, type ProfileFilters, type ProfileSort } from "./listing";
 
 /** Everything the Profiles list's rows depend on. */
@@ -9,10 +11,12 @@ export type VisibleInputs = {
   proxies: ProxyEntry[];
   search: string;
   folder: string;
+  parents?: FolderParents;
   filters: ProfileFilters;
   /** `NO_RUNNING` unless `needsRunning` says the query reads the running state. */
   running: Record<string, number>;
   sort: ProfileSort;
+  manualOrder?: readonly string[];
   tags: TagStore["tags"];
   byProfile: TagStore["byProfile"];
   /** Proxy id to its last seen IP, while the Proxies store has its tests. */
@@ -52,12 +56,12 @@ export const readsClock = (filters: ProfileFilters, sort: ProfileSort) =>
 const clockOf = (i: Pick<VisibleInputs, "sort" | "filters" | "now">) =>
   readsClock(i.filters, i.sort) ? Math.floor(i.now / 60_000) : 0;
 
-const KEYS = ["profiles", "proxies", "search", "folder", "filters", "running", "sort", "tags", "byProfile", "proxyIps", "only"] as const;
+const KEYS = ["profiles", "proxies", "search", "folder", "parents", "filters", "running", "sort", "tags", "byProfile", "proxyIps", "only", "manualOrder"] as const;
 const sameInputs = (a: VisibleInputs, b: VisibleInputs) => KEYS.every((k) => a[k] === b[k]) && clockOf(a) === clockOf(b);
 
 // The order depends on the list and the sort, and for the Status and Run time
 // orders on the running state (and the minute): a keystroke never sorts.
-let sorted: { profiles: ProfileMeta[]; sort: ProfileSort; running: Record<string, number> | null; clock: number; out: ProfileMeta[] } | null = null;
+let sorted: { profiles: ProfileMeta[]; sort: ProfileSort; manualOrder?: readonly string[]; running: Record<string, number> | null; clock: number; out: ProfileMeta[] } | null = null;
 // Each profile's search text, per list and tags.
 let texts: { profiles: ProfileMeta[]; tags: VisibleInputs["tags"]; byProfile: VisibleInputs["byProfile"]; proxies: ProxyEntry[]; proxyIps: VisibleInputs["proxyIps"]; out: Map<string, string> } | null = null;
 // The last two answers used, newest first: the table renders from the
@@ -73,11 +77,12 @@ export function computeVisible(inputs: VisibleInputs): Visible {
     if (at > 0) answers.unshift(...answers.splice(at, 1));
     return answers[0].out;
   }
-  const { profiles, sort, tags, byProfile, now } = inputs;
+  const { profiles, sort, tags, byProfile, now, manualOrder } = inputs;
   const running = sort === "status" || sort === "runtime-desc" ? inputs.running : null;
   const clock = sort === "runtime-desc" ? Math.floor(now / 60_000) : 0;
-  if (!sorted || sorted.profiles !== profiles || sorted.sort !== sort || sorted.running !== running || sorted.clock !== clock) {
-    sorted = { profiles, sort, running, clock, out: sortProfiles(profiles, sort, running ?? NO_RUNNING, now) };
+  if (!sorted || sorted.profiles !== profiles || sorted.sort !== sort || sorted.manualOrder !== manualOrder || sorted.running !== running || sorted.clock !== clock) {
+    const source = sort === "manual" ? orderItems(profiles, manualOrder ?? [], (p) => p.id) : profiles;
+    sorted = { profiles, sort, manualOrder, running, clock, out: sortProfiles(source, sort, running ?? NO_RUNNING, now) };
   }
   const tagsOfId = (id: string) => tagsOf(id, { tags, byProfile });
   let text: Map<string, string> | undefined;
@@ -91,7 +96,7 @@ export function computeVisible(inputs: VisibleInputs): Visible {
     }
     text = texts.out;
   }
-  const keep = makeProfileFilter(inputs.proxies, inputs.search, inputs.folder, inputs.filters, inputs.running, tagsOfId, now, text, profiles);
+  const keep = makeProfileFilter(inputs.proxies, inputs.search, inputs.folder, inputs.filters, inputs.running, tagsOfId, now, text, profiles, inputs.parents);
   // Filtering keeps the sorted order, so this equals sorting the kept rows.
   const only = inputs.only;
   const list = sorted.out.filter(only ? (p) => only.has(p.id) && keep(p) : keep);

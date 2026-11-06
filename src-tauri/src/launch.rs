@@ -605,6 +605,7 @@ struct Ready<'a> {
 }
 
 async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>) -> Result<LaunchOutcome> {
+    crate::profile_defaults::validate_config(&input.stored.config)?;
     let mut s = crate::proxy_chain::saved_settings()?;
     s.proxy_chain = crate::proxy_chain::policy::effective(&s.proxy_chain, input.stored.meta.proxy_chain_policy, input.proxy.as_ref().map(|p| p.proxy_chain_policy).unwrap_or_default())?;
     // All later checks for this start use the same resolved choice, including
@@ -876,6 +877,7 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
 fn engine_config(stored: &profile::StoredProfile) -> serde_json::Map<String, serde_json::Value> {
     let mut raw = stored.config.clone();
     raw.remove("_meta");
+    raw.remove("startup_url");
     if raw.get("ui_language").and_then(|v| v.as_str()) != Some("profile") {
         raw.remove("ui_language");
     }
@@ -1047,6 +1049,11 @@ fn command_line(
 
     // Operator's own switches, last so they win a repeat.
     args.extend(extra);
+    // A dedicated profile value, passed as one URL argument rather than a
+    // switch in extra_args. Old profiles without this field open as before.
+    if let Some(url) = input.stored.config.get("startup_url").and_then(|v| v.as_str()).map(str::trim).filter(|url| !url.is_empty()) {
+        args.push(url.to_owned());
+    }
     args
 }
 
@@ -1750,6 +1757,23 @@ mod tests {
                 "--shardx-camera",
             ]
         );
+    }
+
+    #[test]
+    fn startup_url_uses_the_saved_profile_value_as_one_argument() {
+        let url = "https://www.browserscan.net/zh/?label=one two&next=1";
+        let p = input(json!({ "_meta": { "id": "start-url" }, "startup_url": url }), None);
+        let mut s = settings();
+        s.profile_defaults.startup_url = "https://different.example/".into();
+        let args = argv(&p, &UI, &s);
+        assert_eq!(args.last().map(String::as_str), Some(url));
+        assert_eq!(args.iter().filter(|v| *v == url).count(), 1);
+        assert!(!args.iter().any(|v| v == "https://different.example/"));
+        for value in [json!({}), json!({"startup_url":""})] {
+            let mut raw = value.as_object().unwrap().clone();
+            raw.insert("_meta".into(), json!({"id":"old-start-url"}));
+            assert!(!argv(&input(json!(raw), None), &UI, &s).iter().any(|v| v.starts_with("http")));
+        }
     }
 
     /// #126: off in Settings, the engine is told to show no name, and the pill colour goes too.

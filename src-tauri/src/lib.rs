@@ -1,6 +1,7 @@
 // ShardBrowser Launcher — Tauri backend.
 
 mod profile_icon;
+mod profile_defaults;
 mod api;
 mod fingerprints;
 mod gpu_caps;
@@ -12,6 +13,7 @@ mod proxy_chain;
 mod psapi;
 mod runtime;
 mod settings;
+mod tnbproxy;
 mod store;
 mod sync_bus;
 mod cdp;
@@ -492,8 +494,12 @@ fn profile_payload(
     let sent_rev = meta.and_then(|m| m.get("rev")).and_then(|v| v.as_u64()).filter(|_| !is_new);
     if is_new && enrich {
         if let Some(obj) = payload.as_object_mut() {
+            settings::load().map_err(|e| e.to_string())?.profile_defaults.apply_missing(obj);
             enrich_new_config(window, obj);
         }
+    }
+    if let Some(obj) = payload.as_object() {
+        profile_defaults::validate_config(obj).map_err(|e| e.to_string())?;
     }
     let stored = serde_json::from_value(payload).map_err(|e| e.to_string())?;
     Ok((stored, space::profile::SaveOpts { sent_rev, ..Default::default() }))
@@ -1232,6 +1238,12 @@ async fn folder_meta_set(name: String, meta: space::folders::FolderMeta, epoch: 
     space::folders::set_meta(space::Door("folder_meta_set"), &t, &name, meta).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn folder_set_parent(name: String, parent: String, meta: Option<space::folders::FolderMeta>, epoch: Option<u64>) -> Result<(), String> {
+    let t = ticket(epoch)?;
+    space::folders::set_parent(&t, &name, &parent, meta).map_err(|e| e.to_string())
+}
+
 /// The folders and looks the interface kept in its own storage, taken once.
 #[tauri::command]
 fn folder_import(state: space::folders::FolderState, epoch: Option<u64>) -> Result<bool, String> {
@@ -1456,6 +1468,7 @@ pub fn library_profile(
     host: Option<launch::HostScreen>,
 ) -> Result<serde_json::Map<String, Value>, String> {
     let mut merged = merge_library_fingerprint(template_id)?;
+    settings::load().map_err(|e| e.to_string())?.profile_defaults.apply_to_template(&mut merged);
     launch::claim_host_screen(&mut merged, host);
     Ok(merged)
 }
@@ -1683,6 +1696,18 @@ fn proxy_bulk_parse(text: String, kind: String) -> Vec<space::proxy::ProxyEntry>
         _ => space::proxy::ProxyKind::Socks5,
     };
     space::proxy::parse_bulk(&text, default_kind)
+}
+
+/// Extracts a preview only; the operator saves it through proxy_bulk_save.
+#[tauri::command]
+async fn tnbproxy_extract(request: tnbproxy::ExtractRequest) -> Result<tnbproxy::Extraction, String> {
+    tnbproxy::extract(request).await.map_err(str::to_owned)
+}
+
+/// Public provider region metadata; no account credentials or extraction.
+#[tauri::command]
+async fn tnbproxy_locations(request: tnbproxy::LocationsRequest) -> Result<tnbproxy::Locations, String> {
+    tnbproxy::locations(request).await.map_err(str::to_owned)
 }
 
 /// Persist pre-tested proxies (bulk dialog).
@@ -2083,6 +2108,57 @@ async fn proxy_chain_detect(profile_id: Option<String>) -> Result<proxy_chain::d
 #[tauri::command]
 async fn proxy_chain_test(kind: String, config: proxy_chain::config::ProxyChainSettings, profile_id: Option<String>) -> Result<proxy_chain::TestResult, String> {
     proxy_chain::test(kind, config, profile_id).await.map_err(|e| e.to_string())
+}
+
+/// The toolbar changes only the saved switch; credentials and other settings
+/// are read here, never round-tripped through a stale page snapshot.
+#[tauri::command]
+fn proxy_chain_set_enabled(enabled: bool) -> Result<proxy_chain::config::ProxyChainSettings, String> {
+    let mut value = settings::load().map_err(|e| e.to_string())?;
+    if settings::load_error().is_some() { return Err("proxy_chain_settings_unreadable".into()); }
+    if enabled { value.proxy_chain.validate().map_err(|e| e.to_string())?; }
+    value.proxy_chain.enabled = enabled;
+    settings::save(&value).map_err(|e| e.to_string())?;
+    Ok(value.proxy_chain.public())
+}
+
+#[cfg(test)]
+mod proxy_chain_toolbar_tests {
+    #[test]
+    fn proxy_chain_quick_toggle_preserves_other_settings_and_credential() {
+        let _serial = crate::migrate::serial();
+        let _root = crate::store::test_root("chain-quick-toggle").with_config();
+        let mut saved = crate::settings::load().unwrap();
+        saved.theme = "light".into();
+        saved.api_secret = "synthetic-api-key".into();
+        saved.proxy_chain.mode = "http".into();
+        saved.proxy_chain.username = "synthetic-user".into();
+        saved.proxy_chain.protected_password = Some("synthetic-protected-value".into());
+        saved.proxy_chain.password_saved = true;
+        crate::settings::save(&saved).unwrap();
+        let public = super::proxy_chain_set_enabled(true).unwrap();
+        assert!(public.enabled && public.password_saved);
+        assert!(public.protected_password.is_none());
+        saved.proxy_chain.enabled = true;
+        assert_eq!(serde_json::to_value(crate::settings::load().unwrap()).unwrap(), serde_json::to_value(&saved).unwrap());
+        super::proxy_chain_set_enabled(false).unwrap();
+        saved.proxy_chain.enabled = false;
+        assert_eq!(serde_json::to_value(crate::settings::load().unwrap()).unwrap(), serde_json::to_value(saved).unwrap());
+    }
+
+    #[test]
+    fn proxy_chain_quick_enable_rejects_invalid_route_without_writing() {
+        let _serial = crate::migrate::serial();
+        let _root = crate::store::test_root("chain-quick-invalid").with_config();
+        let mut saved = crate::settings::load().unwrap();
+        saved.proxy_chain.mode = "http".into();
+        saved.proxy_chain.port = 0;
+        crate::settings::save(&saved).unwrap();
+        let path = crate::store::settings_path().unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(super::proxy_chain_set_enabled(true).is_err());
+        assert_eq!(before, std::fs::read(path).unwrap());
+    }
 }
 
 /// The primary monitor in CSS pixels, so the editor can offer resolutions and
@@ -2804,6 +2880,7 @@ pub fn run() {
             folder_list,
             folder_add,
             folder_meta_set,
+            folder_set_parent,
             folder_import,
             data_root_get,
             data_root_migrate,
@@ -2840,11 +2917,14 @@ pub fn run() {
             proxy_last_test,
             proxy_bulk_import,
             proxy_bulk_parse,
+            tnbproxy_extract,
+            tnbproxy_locations,
             proxy_bulk_save,
             launch,
             settings_get,
             proxy_chain_detect,
             proxy_chain_test,
+            proxy_chain_set_enabled,
             settings_save,
             settings_load_error,
             host_screen,

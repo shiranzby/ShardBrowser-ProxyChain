@@ -5,7 +5,9 @@ import {
 import { isMod, keyboardIsTaken, overlayHasKeyboard } from "../../shared/lib/keyboard";
 import { useNav } from "../../shared/model/navigation";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
-import { folderNamesOf, leaveList, useProfile, useProfileUi } from "../../entities/profile";
+import { folderNamesOf, folderTree, leaveList, useFolderMeta, useProfile, useProfileUi } from "../../entities/profile";
+import { orderedIds } from "../../shared/lib/listOrder";
+import { listOrder } from "../../shared/model/listOrder";
 import { runCommand } from "./surfaces";
 
 /** How long a sequence's first key waits for its second. */
@@ -30,7 +32,8 @@ function openFolderByDigit(e: KeyboardEvent): boolean {
   const digit = eventDigit(e);
   if (digit === null || digit === "0") return false;
   const d = useProfile.getState();
-  const folder = folderNamesOf(d.profiles, d.folderRegistry)[Number(digit) - 1];
+  const names = orderedIds(folderNamesOf(d.profiles, d.folderRegistry), listOrder("folders"));
+  const folder = folderTree(names, useFolderMeta.getState().parents)[Number(digit) - 1]?.name;
   if (!folder) return false;
   void leaveList(() => {
     useProfileUi.getState().setFolder(folder);

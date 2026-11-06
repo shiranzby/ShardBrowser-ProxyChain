@@ -1,6 +1,7 @@
 import type { ProxyEntry } from "../../proxy";
 import { stampMs } from "../../../shared/lib/utils";
 import type { ProfileMeta } from "../model/types";
+import { insideFolder, NO_FOLDER_PARENTS, type FolderParents } from "./folderTree.ts";
 
 /** The Connection filter: "bound" = has a proxy, "direct" = none,
  *  "shared" = on a proxy another profile the list keeps uses too (what the
@@ -75,6 +76,7 @@ export function lastRunMatches(stamp: string | null | undefined, want: ProfileFi
 /** Row order. "added" is the order the store returns them in — how it always was. */
 export type ProfileSort =
   | "added"
+  | "manual"
   | "name-asc"
   | "name-desc"
   | "created-desc"
@@ -156,7 +158,7 @@ export function sortProfiles(
 
 function sortGroup(list: ProfileMeta[], sort: ProfileSort, running: Record<string, number>, now: number, rank: Map<string, number> | null): ProfileMeta[] {
   // "added" is the order the store returns them in.
-  if (sort === "added") return list;
+  if (sort === "added" || sort === "manual") return list;
   const out = [...list];
   switch (sort) {
     case "name-asc":
@@ -261,6 +263,7 @@ export function makeProfileFilter(
   searchText?: ReadonlyMap<string, string>,
   /** Every profile: "shared" counts who else is on a profile's proxy. */
   all: readonly ProfileMeta[] = [],
+  parents: FolderParents = NO_FOLDER_PARENTS,
 ): (p: ProfileMeta) => boolean {
   const q = search.trim().toLowerCase();
   const byId = new Map(proxies.map((p) => [p.id, p]));
@@ -269,10 +272,10 @@ export function makeProfileFilter(
   // filters keep, the search aside (a search does not change who shares a
   // proxy), as the Shared proxy card counts in its scope.
   const shared = filters.proxy === "shared"
-    ? sharedProxyIds(all.filter(makeProfileFilter(proxies, "", folder, { ...filters, proxy: "all" }, running, tagsOf, now)), byId)
+    ? sharedProxyIds(all.filter(makeProfileFilter(proxies, "", folder, { ...filters, proxy: "all" }, running, tagsOf, now, undefined, [], parents)), byId)
     : null;
   return (p) => {
-    if (folder !== "all" && p.folder !== folder) return false;
+    if (folder !== "all" && !insideFolder(p.folder, folder, parents)) return false;
     if (q) {
       const text = searchText?.get(p.id);
       const bound = p.proxy_id ? byId.get(p.proxy_id) : undefined;
@@ -322,8 +325,9 @@ export function applyProfileFilters(
   tagsOf: (id: string) => { id: string; name: string }[] = () => [],
   /** For the Last run filter. */
   now: number = Date.now(),
+  parents: FolderParents = NO_FOLDER_PARENTS,
 ): ProfileMeta[] {
   // Sorted here rather than in the table, so the rows on screen and the rows a
   // shift-click range covers stay the same list.
-  return sortProfiles(profiles.filter(makeProfileFilter(proxies, search, folder, filters, running, tagsOf, now, undefined, profiles)), sort, running, now);
+  return sortProfiles(profiles.filter(makeProfileFilter(proxies, search, folder, filters, running, tagsOf, now, undefined, profiles, parents)), sort, running, now);
 }

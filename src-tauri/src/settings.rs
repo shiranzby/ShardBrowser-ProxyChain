@@ -6,6 +6,9 @@ use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {
+    /// Copied into new profiles only; never applied to existing profiles.
+    #[serde(default)]
+    pub profile_defaults: crate::profile_defaults::ProfileDefaults,
     #[serde(default, deserialize_with = "crate::proxy_chain::config::deserialize")]
     pub proxy_chain: crate::proxy_chain::config::ProxyChainSettings,
     /// Absolute path to the ShardX executable.
@@ -50,7 +53,7 @@ pub struct Settings {
     pub data_root: Option<String>,
     /// Every 5 h ask the Web Store about the library's linked extensions,
     /// straight from this computer's IP, not through a profile's proxy.
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub ext_update_check: bool,
 
     // ---- Local automation HTTP API (axum + JWT bearer) ----
@@ -93,6 +96,7 @@ static LOAD_ERROR: Mutex<Option<String>> = Mutex::new(None);
 /// The settings a fresh install starts with — the serde defaults, spelled out.
 fn defaults() -> Settings {
     Settings {
+        profile_defaults: Default::default(),
         proxy_chain: Default::default(),
         browser_path: None,
         theme: default_theme(),
@@ -106,7 +110,7 @@ fn defaults() -> Settings {
         minimize_to_tray: default_minimize_to_tray(),
         extra_args: String::new(),
         data_root: None,
-        ext_update_check: default_true(),
+        ext_update_check: false,
         api_enabled: default_api_enabled(),
         api_port: default_api_port(),
         api_secret: String::new(),
@@ -232,6 +236,7 @@ pub fn parse_extra_args(raw: &str) -> Vec<String> {
 }
 
 pub fn save(s: &Settings) -> Result<()> {
+    s.profile_defaults.validate()?;
     let path = store::settings_path()?;
     // Keep the unreadable file next to the new one — it is the only copy of
     // whatever the user had configured.
@@ -249,4 +254,22 @@ pub fn save(s: &Settings) -> Result<()> {
         *g = None;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn missing_settings_preserve_other_fields_and_disable_extension_checks() {
+        let old: super::Settings = serde_json::from_str(r#"{"theme":"light","extra_args":"--lang=de"}"#).unwrap();
+        assert!(!old.ext_update_check);
+        assert_eq!(old.theme, "light");
+        assert_eq!(old.extra_args, "--lang=de");
+        assert_eq!(old.profile_defaults.language, "zh-CN");
+        assert_eq!(old.profile_defaults.startup_url, "https://www.browserscan.net/zh/");
+        let explicit: super::Settings = serde_json::from_str(r#"{"ext_update_check":true,"profile_defaults":{"language":"auto","startup_url":""}}"#).unwrap();
+        assert!(explicit.ext_update_check);
+        assert_eq!(explicit.profile_defaults.language, "auto");
+        assert_eq!(explicit.profile_defaults.startup_url, "");
+        assert!(!super::defaults().ext_update_check);
+    }
 }

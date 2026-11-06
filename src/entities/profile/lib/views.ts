@@ -86,7 +86,7 @@ export function sameQuery(a: ViewQuery, b: ViewQuery): boolean {
 
 // ---- Reading a saved value ---------------------------------------------------
 
-const SORTS: readonly ProfileSort[] = ["added", "name-asc", "name-desc", "created-desc", "created-asc", "launched-desc", "runtime-desc", "status"];
+const SORTS: readonly ProfileSort[] = ["added", "manual", "name-asc", "name-desc", "created-desc", "created-asc", "launched-desc", "runtime-desc", "status"];
 const FILTER_VALUES: { [K in keyof ProfileFilters]: (v: unknown) => boolean } = {
   status: (v) => v === "all" || v === "running" || v === "idle",
   country: (v) => typeof v === "string",

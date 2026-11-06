@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@proxyshard/shardx-ui-kit";
-import { GH_REPO_URL, SITE_HOST, siteUrl } from "../../../shared/lib/utils";
 import type { RtUpdate } from "../../../shared/types";
 import { useWhatsNew } from "../../../shared/model/whatsNew";
 import { toast } from "../../../shared/model/toast";
@@ -11,7 +10,8 @@ import { takeTheTour } from "../../../features/tour";
 import { useT } from "../../../shared/i18n";
 import { DetailRow, DetailsCard } from "../../../shared/ui/DetailsCard";
 
-const ABOUT_SITE = siteUrl("settings_about");
+const ABOUT_SITE = "https://github.com/shiranzby/ShardBrowser-ProxyChain";
+const REPO_LABEL = "shiranzby/ShardBrowser-ProxyChain";
 
 export function AboutSection() {
   const t = useT();
@@ -64,7 +64,7 @@ export function AboutSection() {
             className="text-primary-text underline underline-offset-2"
             onClick={(e) => { e.preventDefault(); openUrl(ABOUT_SITE).catch(() => {}); }}
           >
-            {SITE_HOST}
+            {REPO_LABEL}
           </a>
         </DetailRow>
       </DetailsCard>
@@ -86,7 +86,7 @@ export function AboutSection() {
             {t("settings.aboutTipsAgain")}
           </Button>
         )}
-        <Button variant="neutral" mode="ghost" size="xsmall" onClick={() => void openUrl(GH_REPO_URL).catch(() => {})}>
+        <Button variant="neutral" mode="ghost" size="xsmall" onClick={() => void openUrl(ABOUT_SITE).catch(() => {})}>
           GitHub
         </Button>
       </div>

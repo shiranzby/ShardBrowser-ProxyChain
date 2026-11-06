@@ -3,7 +3,7 @@ import { DeleteIcon, EditIcon, FolderIcon } from "../../shared/icons";
 import { useNav } from "../../shared/model/navigation";
 import { defineCommands, type Command } from "../../shared/commands";
 import { leaveList, useProfile, useProfileUi } from "../../entities/profile";
-import { adminRefusal } from "../../entities/space";
+import { adminRefusal, inTeam } from "../../entities/space";
 
 // A Folder is named by its name: the subject's one id is the Folder (A11Y-13).
 const FOLDER = { area: "folders", scope: "active" } as const;
@@ -11,6 +11,14 @@ const FOLDER = { area: "folders", scope: "active" } as const;
 /// A Folder's commands: its sidebar menu and its actions in the palette
 /// (Tab on a Folder), so editing and deleting one never needs a right-click.
 export const FOLDER_COMMANDS: readonly Command[] = [
+  {
+    ...FOLDER, id: "folder.newChild", group: "organize", icon: FolderIcon,
+    focusAfter: true,
+    label: () => t("folderTree.newChild"),
+    surfaces: ["rowMenu", "paletteActions"],
+    when: () => !inTeam(),
+    run: (s) => useProfileUi.getState().setFolderDialog({ mode: "create", parent: s.ids[0] }),
+  },
   {
     ...FOLDER, id: "folder.open", group: "open", icon: FolderIcon,
     label: () => t("commands.openFolder"),

@@ -625,13 +625,14 @@ pub mod profile {
         }
     }
 
-    /// The folder's kept entry and its look follow the name. The profiles have
-    /// moved by then, so a folders.json that fails is logged, not returned.
+    /// Refuse unreadable hierarchy or a name collision before any profiles
+    /// move. A later I/O error updating the index is logged after the move.
     pub async fn rename_folder(door: Door, t: &Ticket, old: &str, new: &str) -> Result<usize> {
         if let Some(team) = t.team() {
             return Ok(write::rename_folder(door, t, team, old, new).await?);
         }
         t.still()?;
+        super::local::folders::check_rename(old, new)?;
         let n = local::rename_folder(old, new)?;
         if let Err(e) = super::local::folders::rename(old, new) {
             eprintln!("[launcher] folder {old} renamed, its kept entry and look not: {e:#}");
@@ -645,6 +646,9 @@ pub mod profile {
             return Ok(write::delete_folder(door, t, team, name, delete_profiles).await?);
         }
         t.still()?;
+        // A damaged hierarchy must not turn a delete into partial profile
+        // mutation. Check it before unfiling or sending anything to Trash.
+        super::local::folders::list()?;
         let n = local::delete_folder(name, delete_profiles)?;
         if let Err(e) = super::local::folders::forget(name) {
             eprintln!("[launcher] folder {name} deleted, its kept entry and look not: {e:#}");
@@ -911,6 +915,13 @@ pub mod folders {
         }
     }
 
+    /// Team servers do not carry hierarchy; never reinterpret their folder
+    /// permission scopes as inherited rights.
+    pub fn set_parent(t: &Ticket, name: &str, parent: &str, meta: Option<FolderMeta>) -> Result<()> {
+        t.here(NOT_IN_TEAM)?;
+        local::set_parent(name, parent, meta)
+    }
+
     /// A team folder's look is its colour alone.
     pub async fn set_meta(door: Door, t: &Ticket, name: &str, meta: FolderMeta) -> Result<()> {
         match t.team() {
@@ -926,6 +937,18 @@ pub mod folders {
     pub fn import(t: &Ticket, state: FolderState) -> Result<bool> {
         t.here(NOT_IN_TEAM)?;
         local::import(state)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn hierarchy_is_refused_in_a_team_before_reading_local_folders() {
+            let ticket = Ticket { epoch: 0, team: Some("synthetic-team".into()) };
+            let err = set_parent(&ticket, "Child", "Parent", None).unwrap_err();
+            assert!(err.to_string().contains(NOT_IN_TEAM));
+        }
     }
 }
 
@@ -1367,19 +1390,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_broken_folders_file_never_fails_a_folder_rename_or_delete() {
+    async fn an_unreadable_folder_hierarchy_refuses_before_changing_profiles_or_index() {
         let _root = crate::store::test_root("folder-broken").with_config();
         put_profile("fb1", "Ads");
         put_profile("fb2", "Shops");
         let path = crate::store::folders_path().unwrap();
-        for body in ["{not json", r#"{"version": 2, "registry": ["Ads"]}"#] {
+        let profile_paths = ["fb1", "fb2"].map(|id| crate::store::profiles_dir().unwrap().join(format!("{id}.json")));
+        let before = profile_paths.each_ref().map(|path| fs::read(path).unwrap());
+        // Version 2 is supported now. An unknown future version and a broken
+        // parents field must be preserved just as exactly as malformed JSON.
+        for body in ["{not json", r#"{"version": 3, "registry": ["Ads"]}"#,
+            r#"{"version":2,"registry":["Ads"],"parents":{"Child":42}}"#] {
             fs::write(&path, body).unwrap();
-            assert_eq!(profile::rename_folder(Door("folder_rename"), &here(), "Ads", "Ads2").await.unwrap(), 1);
-            assert_eq!(folder_of("fb1"), "Ads2");
-            assert_eq!(profile::rename_folder(Door("folder_rename"), &here(), "Ads2", "Ads").await.unwrap(), 1);
+            for next in ["Ads2", "", "Ads"] {
+                assert!(profile::rename_folder(Door("folder_rename"), &here(), "Ads", next).await.is_err());
+                assert_eq!(profile_paths.each_ref().map(|path| fs::read(path).unwrap()), before);
+                assert_eq!(fs::read_to_string(&path).unwrap(), body);
+            }
+            for delete_profiles in [false, true] {
+                assert!(profile::delete_folder(Door("folder_delete"), &here(), "Shops", delete_profiles).await.is_err());
+                assert_eq!(profile_paths.each_ref().map(|path| fs::read(path).unwrap()), before);
+                assert_eq!(folder_of("fb2"), "Shops");
+            }
             assert_eq!(fs::read_to_string(&path).unwrap(), body, "left as it was");
         }
-        assert_eq!(profile::delete_folder(Door("folder_delete"), &here(), "Shops", false).await.unwrap(), 1);
-        assert_eq!(folder_of("fb2"), "");
+    }
+
+    #[tokio::test]
+    async fn supported_folder_versions_allow_rename_and_delete_without_losing_children() {
+        let _root = crate::store::test_root("folder-supported").with_config();
+        let path = crate::store::folders_path().unwrap();
+        for version in [1, 2] {
+            put_profile("fv1", "Ads");
+            put_profile("fv2", "Child");
+            let parents = if version == 2 { serde_json::json!({ "Child": "Ads" }) } else { serde_json::json!({}) };
+            fs::write(&path, serde_json::json!({"version":version,"registry":["Ads","Child"],"meta":{},"parents":parents}).to_string()).unwrap();
+            assert_eq!(profile::rename_folder(Door("folder_rename"), &here(), "Ads", "Renamed").await.unwrap(), 1);
+            assert_eq!(folder_of("fv1"), "Renamed");
+            if version == 2 { assert_eq!(folders::list().unwrap().parents["Child"], "Renamed"); }
+            assert_eq!(profile::delete_folder(Door("folder_delete"), &here(), "Renamed", false).await.unwrap(), 1);
+            assert_eq!(folder_of("fv1"), "");
+            assert_eq!(folder_of("fv2"), "Child");
+            let state = folders::list().unwrap();
+            assert_eq!(state.registry, ["Child"]);
+            assert!(state.parents.is_empty());
+        }
     }
 }

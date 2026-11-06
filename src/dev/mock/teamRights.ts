@@ -195,7 +195,7 @@ export function teamDoor(state: MockState, cmd: string, args: Record<string, unk
     }
     case "profile_delete":
       return onProfile(args.id, "delete");
-    case "profile_set_pin": case "folder_import": case "tag_import":
+    case "profile_set_pin": case "folder_import": case "folder_set_parent": case "tag_import":
       return NOT_IN_TEAM;
     case "profile_create_from_template":
       return inFolder("");

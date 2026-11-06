@@ -65,7 +65,6 @@ export const SETTINGS_TABS: Record<SettingsTab, () => string> = {
   storage: () => t("settings.tabStorage"),
   sync: () => t("settings.tabSync"),
   proxy: () => t("settings.tabProxy"),
-  other: () => t("settings.tabOther"),
   about: () => t("settings.tabAbout"),
 };
 export const SETTINGS_TAB_IDS = Object.keys(SETTINGS_TABS) as SettingsTab[];

@@ -24,6 +24,7 @@ export function NewProxyButton({ className }: { className?: string }) {
         size="xsmall"
         className={className}
         data-tour="add-proxy"
+        aria-haspopup="dialog"
         leftIcon={<AddIcon className="size-3.5" />}
         disabled={!!why}
         aria-description={why ?? undefined}

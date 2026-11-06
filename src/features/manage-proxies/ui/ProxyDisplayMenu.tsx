@@ -52,6 +52,7 @@ export function ProxyDisplayMenu() {
           value={sort}
           onChange={(v) => setSort(v as ProxySort)}
           options={[
+            { value: "manual", label: t("listOrder.manual") },
             { value: "added", label: t("profileFilterBar.orderAdded") },
             { value: "name", label: t("proxyDisplay.orderName") },
             { value: "latency", label: t("proxyDisplay.orderLatency") },

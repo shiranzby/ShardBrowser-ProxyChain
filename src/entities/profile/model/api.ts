@@ -70,11 +70,12 @@ export const folderDelete = (folder: string, deleteProfiles: boolean) => invoke<
 /** A folder's color (a palette id) and icon, as the backend keeps them (folders.rs). */
 export type StoredFolderMeta = { color: string | null; icon: string };
 /** Folders kept while empty, and each folder's look by name. */
-export type FolderState = { registry: string[]; meta: Record<string, StoredFolderMeta> };
+export type FolderState = { registry: string[]; meta: Record<string, StoredFolderMeta>; parents?: Record<string, string> };
 export const folderList = () => invoke<FolderState>("folder_list");
 /** Keeps the folder while no profile is in it. */
 export const folderAdd = (name: string) => invoke<null>("folder_add", { name });
 export const folderMetaSet = (name: string, meta: StoredFolderMeta) => invoke<null>("folder_meta_set", { name, meta });
+export const folderSetParent = (name: string, parent: string, meta?: StoredFolderMeta) => invoke<null>("folder_set_parent", { name, parent, meta });
 /** Hands over the copy an older build kept in this window; false when the backend had folders already. */
 export const folderImport = (state: FolderState) => invoke<boolean>("folder_import", { state });
 export const cookiesExportToFile = (profileId: string, path: string) => invoke<number>("cookies_export_to_file", { profileId, path });

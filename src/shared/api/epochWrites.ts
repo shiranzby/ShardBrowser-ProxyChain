@@ -5,7 +5,7 @@ export const EPOCH_WRITES: ReadonlySet<string> = new Set([
   "bookmark_delete", "bookmark_delete_many", "bookmark_save",
   "extension_delete", "extension_import", "extension_import_url",
   "extension_link_source", "extension_update", "extension_updates_check",
-  "folder_add", "folder_delete", "folder_import", "folder_meta_set", "folder_rename",
+  "folder_add", "folder_delete", "folder_import", "folder_meta_set", "folder_rename", "folder_set_parent",
   "profile_bind_proxy", "profile_clone", "profile_create_from_template", "profile_delete", "profile_import",
   "profile_save", "profile_set_folder", "profile_set_pin",
   "proxy_bulk_import", "proxy_bulk_save", "proxy_delete", "proxy_save",

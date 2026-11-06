@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { setSpaceEpoch, setSpaceReader } from "../../../shared/api/invoke";
 import { confirmLeave } from "../../../shared/model/unsaved";
+import { useListOrderStore } from "../../../shared/model/listOrder";
 import type { Space, SpaceState, TeamStatus } from "./types";
 
 let listening = false;
@@ -18,6 +19,7 @@ export const useSpace = create<{
 }>((set, get) => {
   // The state first, then its edition: the stores reset for it read the new space.
   const take = (state: SpaceState) => {
+    useListOrderStore.getState().setScope(state.space.kind === "team" ? `team:${state.space.team_id}` : "personal");
     set({ state });
     setSpaceEpoch(state.epoch);
   };

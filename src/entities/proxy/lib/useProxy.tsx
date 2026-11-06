@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { listOrder } from '../../../shared/model/listOrder';
+import { orderItems } from '../../../shared/lib/listOrder';
 import { ProxyEntry, ProxyTestSnapshot } from '../model/types'
 import { proxyFullTest, proxyLastTest, proxyList, proxyDelete, proxySave, proxyBulkImport } from '../model/api';
 import { onProxy, teamRefusal } from '../../space';
@@ -112,8 +114,8 @@ export const countActiveProxyFilters = (f: ProxyFilters) =>
     (f.status !== 'any' ? 1 : 0) + (f.used !== 'any' ? 1 : 0) + (f.kind ? 1 : 0) + (f.country ? 1 : 0);
 
 /** Display's order. `added` is the stored order. */
-export type ProxySort = 'added' | 'name' | 'latency' | 'tested' | 'profiles';
-const SORTS: readonly ProxySort[] = ['added', 'name', 'latency', 'tested', 'profiles'];
+export type ProxySort = 'added' | 'manual' | 'name' | 'latency' | 'tested' | 'profiles';
+const SORTS: readonly ProxySort[] = ['added', 'manual', 'name', 'latency', 'tested', 'profiles'];
 /** Saved, so the order comes back after a restart (owner, 2026-09-30). */
 const SORT_KEY = 'shardx.proxies.sort';
 const loadSort = (): ProxySort => {
@@ -167,7 +169,9 @@ export function sortProxies(
     sort: ProxySort,
     snapshots: Record<string, ProxyTestSnapshot>,
     used: Record<string, number>,
+    manualOrder: readonly string[] = listOrder('proxies'),
 ): ProxyEntry[] {
+    if (sort === 'manual') return orderItems(list, manualOrder, (p) => p.id);
     if (sort === 'added') return list;
     const out = [...list];
     const latency = (p: ProxyEntry) => snapshots[p.id]?.tcp_ms ?? Number.POSITIVE_INFINITY;

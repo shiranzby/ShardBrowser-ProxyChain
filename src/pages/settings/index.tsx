@@ -21,7 +21,6 @@ import { HelperSection } from "./sections/Helper";
 import { StorageSection } from "./sections/Storage";
 import { SyncSection } from "./sections/Sync";
 import { ProxySection } from "./sections/Proxy";
-import { OtherSection } from "./sections/Other";
 import { AboutSection } from "./sections/About";
 import type { SettingsProps } from "./SettingRow";
 import { showMeAround } from "../../features/tour";
@@ -48,7 +47,6 @@ const SECTIONS: Record<SettingsTab, ComponentType<SectionProps>> = {
   storage: StorageSection,
   sync: SyncSection,
   proxy: ProxySection,
-  other: OtherSection,
   about: AboutSection,
 };
 
@@ -65,7 +63,6 @@ const TAB_LABEL: Record<SettingsTab, string> = {
   storage: "settings.tabStorage",
   sync: "settings.tabSync",
   proxy: "settings.tabProxy",
-  other: "settings.tabOther",
   about: "settings.tabAbout",
 };
 
@@ -163,7 +160,6 @@ export function SettingsPage() {
               // A backend without sync commands (a build before them) has no Sync tab.
               ...(syncMissing ? [] : [{ value: "sync", label: t("settings.tabSync") }]),
               { value: "proxy", label: t("settings.tabProxy") },
-              { value: "other", label: t("settings.tabOther") },
               { value: "about", label: t("settings.tabAbout") },
             ]}
           />
