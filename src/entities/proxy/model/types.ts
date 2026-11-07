@@ -38,7 +38,7 @@ export type ProxyTestSnapshot = {
   first_hop_error_code?: string | null;
   udp_state?: "unsupported_by_chain";
   /** Safe failure details from the exact chain route; absent in old history. */
-  chain_error?: { code: string; layer: string; message: string } | null;
+  chain_error?: { code: string; layer: string; message: string; route_ready?: boolean | null } | null;
 };
 
 export type BulkRowState = {

@@ -204,7 +204,8 @@ export function ProxySection({ s, setS }: SettingsProps) {
 function ChainResult({ result }: { result: ProxyChainTestResult }) {
   const t = useT();
   const exitLabel = result.kind === "system" ? t("proxyChain.systemExitIp") : result.kind === "local" ? t("proxyChain.localExitIp") : t("proxyChain.exitIp");
-  const exitError = result.exit_error_code === "proxy_chain_system_geo_failed" ? t("proxyChain.systemGeoFailed")
+  const exitError = result.route_ready === true && (result.exit_error_code === "proxy_chain_profile_geo_failed" || result.exit_error_code === "proxy_chain_system_geo_failed") ? t("proxyChain.readyGeoUnknown")
+    : result.exit_error_code === "proxy_chain_system_geo_failed" ? t("proxyChain.systemGeoFailed")
     : result.exit_error_code === "proxy_chain_profile_geo_failed" ? t("proxyChain.profileGeoFailed")
     : result.exit_error_code === "proxy_chain_local_geo_failed" ? t("proxyChain.localGeoFailed") : result.exit_error;
   // A stale or mismatched Geo response must not lend a location to another IP.
@@ -214,6 +215,7 @@ function ChainResult({ result }: { result: ProxyChainTestResult }) {
     geo.region, geo.city,
   ].map((part) => part.trim()).filter(Boolean))].join(", ") : "";
   const missingExit = exitError ? t("proxyChain.exitUnavailable") : t("proxyChain.stageUntested");
+  const exitIp = exitError ? null : result.exit_ip;
   const stage = (value?: ProxyChainStage | null) => value?.state === "ok"
     ? value.latency_ms != null ? t("proxyChain.stageLatency", { ms: value.latency_ms }) : t("proxyChain.stageOk")
     : value?.state === "failed" ? t("proxyChain.stageFailed") : t("proxyChain.stageUntested");
@@ -246,11 +248,11 @@ function ChainResult({ result }: { result: ProxyChainTestResult }) {
             </div>
           );
         })}
-        <div data-chain-exit className="flex flex-wrap gap-2"><dt>{exitLabel}</dt><dd className="mono m-0 break-all">{result.exit_ip || missingExit}</dd></div>
-        <div data-chain-location className="flex flex-wrap gap-2"><dt>{t("proxyChain.exitLocation")}</dt><dd className="m-0 break-words">{location || (result.exit_ip ? t("proxyChain.locationNotReturned") : missingExit)}</dd></div>
+        <div data-chain-exit className="flex flex-wrap gap-2"><dt>{exitLabel}</dt><dd className="mono m-0 break-all">{exitIp || missingExit}</dd></div>
+        <div data-chain-location className="flex flex-wrap gap-2"><dt>{t("proxyChain.exitLocation")}</dt><dd className="m-0 break-words">{location || (exitIp ? t("proxyChain.locationNotReturned") : missingExit)}</dd></div>
         {geo?.provider && <div data-chain-geo-source className="flex flex-wrap gap-2"><dt>{t("proxyChain.geoProvider")}</dt><dd className="m-0 break-all">{geo.provider}</dd></div>}
         {result.kind === "system" && <div data-chain-exit-scope>{t("proxyChain.systemExitHelp")}</div>}
-        {exitError && <div className="text-error-text" data-chain-exit-error>{exitError}</div>}
+        {exitError && <div className={result.route_ready === true ? "text-warning-text" : "text-error-text"} data-chain-exit-error>{exitError}</div>}
         {result.total_ms != null && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.totalLatency")}</dt><dd className="m-0">{t("proxyChain.milliseconds", { ms: result.total_ms })}</dd></div>}
         <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.testedAt")}</dt><dd className="m-0">{time}</dd></div>
       </dl>

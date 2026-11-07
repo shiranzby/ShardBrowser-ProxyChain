@@ -63,14 +63,16 @@ export function StatusPill({ status, swell = false, className, ...rest }: { stat
  *  "Testing…" with a spinner while a test runs, whatever the last result
  *  was. `detail` (when and why) is read out with the word, never drawn:
  *  hover shows it through the cell's Tooltip. */
-export function ProxyTestPill({ state, busy, ms, detail, className, ...rest }: (
+export function ProxyTestPill({ state, busy, ms, detail, geoUnknown = false, className, ...rest }: (
   /** A reached proxy says how fast: its last test's TCP time, in ms. */
   | { state: "ok"; ms: number }
   | { state: "failed" | "untested"; ms?: never }
-) & { busy: boolean; detail?: string } & SpanProps) {
+) & { busy: boolean; detail?: string; geoUnknown?: boolean } & SpanProps) {
   const t = useT();
-  const color: BadgeColor = busy ? "information" : state === "ok" ? "success" : state === "failed" ? "error" : "gray";
+  const unknown = state === "ok" && geoUnknown;
+  const color: BadgeColor = busy ? "information" : unknown ? "warning" : state === "ok" ? "success" : state === "failed" ? "error" : "gray";
   const word = busy ? t("proxyTestResult.testing")
+    : unknown ? t("proxyChain.readyGeoUnknownLabel")
     : state === "ok" ? t("proxyTestResult.ok", { ms })
     : state === "failed" ? t("proxyTestResult.failed")
     : t("proxyTestResult.notTested");
@@ -80,11 +82,11 @@ export function ProxyTestPill({ state, busy, ms, detail, className, ...rest }: (
       shape="pill"
       color={color}
       data-pill="proxy-test"
-      data-state={busy ? "testing" : state}
+      data-state={busy ? "testing" : unknown ? "geo_unknown" : state}
       // Figures line up down the column, and a Retest from 98 to 120 ms keeps the pill's width.
       className={cn("max-w-full tabular-nums", className)}
       // A failed test has its own shape, not only a hue (A11Y-18).
-      lead={busy ? spinner : state === "failed" ? <AlertCircleIcon data-failed-mark className="size-3.5" /> : null}
+      lead={busy ? spinner : state === "failed" || unknown ? <AlertCircleIcon data-failed-mark={state === "failed" ? "" : undefined} className="size-3.5" /> : null}
     >
       <Word>{word}</Word>
       {/* No leading punctuation: the accessible name joins it with a space. */}

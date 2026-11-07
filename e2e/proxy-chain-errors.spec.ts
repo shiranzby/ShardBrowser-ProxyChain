@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { appModule, openApp } from "./support/app";
 import { TEAM_WARNINGS } from "../src/shared/api/backendWarnings";
 
-async function failedChain(page: Page, failure: { code: string; layer: string; message: string }, tcp: number | null = null) {
+async function failedChain(page: Page, failure: { code: string; layer: string; message: string; route_ready?: boolean }, tcp: number | null = null) {
   await appModule(page, "/src/entities/proxy/index.ts", "proxyStore");
   await page.evaluate(({ failure, tcp }) => {
     const store = (window as any).proxyStore.useProxy;
@@ -48,6 +48,25 @@ test("Geo failure keeps TCP success visible while the chain remains not ready", 
   await expect(peek.locator("[data-chain-test-error]")).toContainText("final exit IP and location lookup failed");
   await expect(peek.locator("[data-chain-test-error]")).toContainText("Starting is blocked");
   await expect(peek.locator("[data-peek-test-status]")).toContainText("Failed");
+});
+
+test("verified HTTPS route keeps unknown Geo visible without claiming startup is blocked", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("shardx.lang", "zh"));
+  await openApp(page, { section: "proxies" });
+  await failedChain(page, { code: "proxy_chain_profile_geo_failed", layer: "exit", message: "Current location lookup failed.", route_ready: true }, 17);
+  const peek = page.locator("aside[data-peek='proxy']");
+  await expect(peek).toContainText("TCP 17 毫秒");
+  await expect(peek.locator("[data-peek-test-status]")).toContainText("已连接，地区未知");
+  await expect(peek.locator("[data-peek-test-status]")).toHaveAttribute("data-state", "geo_unknown");
+  await expect(peek.locator("[data-chain-test-error]")).toContainText("已通过 HTTPS 验证此代理路线");
+  await expect(peek.locator("[data-chain-test-error]")).toContainText("可以启动");
+  await expect(peek.locator("[data-chain-test-error]")).not.toContainText("会阻止启动");
+  await expect(peek.locator("[data-test-result]")).not.toContainText("203.0.113.");
+  await expect(peek.locator("[data-test-result]")).not.toContainText("42.122.22.67");
+  await expect(peek).not.toContainText("Current location lookup failed.");
+  const row = page.locator("[role='row'][data-proxy-id='px-jp-1']");
+  await expect(row.locator("[data-cell='test']")).toHaveAttribute("data-status", "ok");
+  await expect(row.locator("[data-cell='test'] [data-pill='proxy-test']")).toHaveAttribute("data-state", "geo_unknown");
 });
 
 test("tagged launch chain error is localized before generic refusal matching", async ({ page }) => {

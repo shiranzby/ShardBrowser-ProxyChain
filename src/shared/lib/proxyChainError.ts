@@ -1,9 +1,10 @@
-type ChainError = { code?: string | null; error_code?: string | null; message?: string | null; error_message?: string | null };
+type ChainError = { code?: string | null; error_code?: string | null; message?: string | null; error_message?: string | null; route_ready?: boolean | null };
 
 /** Shared by settings, proxy history and launch failures. Unknown safe backend
  * errors keep their own message rather than becoming an unrelated offline error. */
 export function proxyChainErrorText(t: (key: string) => string, error?: ChainError | null, scope?: "proxy" | "system"): string | undefined {
   const code = error?.code ?? error?.error_code;
+  if (error?.route_ready === true && (code === "proxy_chain_profile_geo_failed" || code === "proxy_chain_system_geo_failed")) return t("proxyChain.readyGeoUnknown");
   if (scope === "proxy") switch (code) {
     case "proxy_chain_profile_auth_failed": return t("profileRoute.errorProxyAuth");
     case "proxy_chain_profile_timeout": return t("profileRoute.errorProxyTimeout");

@@ -9,7 +9,7 @@ import { fmtTs, HOST_OS } from "../../shared/lib/utils";
 import { slideDelayOf } from "../../shared/lib/arrival";
 import { useT } from "../../shared/i18n";
 import { useRightsChange } from "../../entities/space";
-import { proxyStatus, useProxy, type ProxyColumnId, type ProxyEntry } from "../../entities/proxy";
+import { proxyReadyWithUnknownGeo, proxyStatus, useProxy, type ProxyColumnId, type ProxyEntry } from "../../entities/proxy";
 import { ariaOf, capOf, command, commandsFor, iconOf, menuItemsFor, proxyRowSubject, reasonOf, runCommand } from "../../features/commands";
 import { pointerMoved } from "../../shared/lib/pointer";
 import { rowFill } from "../../shared/ui/rowFill";
@@ -156,7 +156,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
                 visually-hidden detail and the hover tooltip. */}
             <Tooltip content={detail}>
               {status === "ok"
-                ? <ProxyTestPill state="ok" ms={snap!.tcp_ms!} busy={busy} detail={detail} className="shrink-0" />
+                ? <ProxyTestPill state="ok" ms={snap!.tcp_ms!} busy={busy} geoUnknown={proxyReadyWithUnknownGeo(snap)} detail={detail} className="shrink-0" />
                 : <ProxyTestPill state={status} busy={busy} detail={detail} className="shrink-0" />}
             </Tooltip>
             {/* The address it came out at stays beside it, as before, while

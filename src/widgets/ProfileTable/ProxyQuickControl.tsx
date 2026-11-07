@@ -79,7 +79,7 @@ export function ProxyQuickControl() {
   };
   const keepOpen = () => { clearTimeout(timer.current); setOpen(true); };
   const failure = result ? proxyChainErrorText(t, result.kind === "local" ? result.local_network : result.system_proxy)
-    ?? proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error }) : null;
+    ?? proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error, route_ready: result.route_ready }) : null;
   return <div ref={root} className="relative flex items-center" data-proxy-quick
     onMouseEnter={keepOpen}
     onMouseLeave={() => { timer.current = setTimeout(() => { if (!root.current?.contains(document.activeElement)) setOpen(false); }, 250); }}
@@ -105,7 +105,7 @@ export function ProxyQuickControl() {
           <div>{t("proxyQuick.checkedAt", { time: fmtTs(result.tested_at) })}</div>
         </> : t("proxyQuick.noResult")}
       </div>
-      {(error || failure) && <p role="alert" className="my-2 text-help text-error-text">{error || failure}</p>}
+      {(error || failure) && <p role="alert" className={`my-2 text-help ${!error && result?.route_ready === true && (result.exit_error_code === "proxy_chain_profile_geo_failed" || result.exit_error_code === "proxy_chain_system_geo_failed") ? "text-warning-text" : "text-error-text"}`}>{error || failure}</p>}
       <div className="mt-3 flex items-center justify-between gap-2">
         <Button size="xsmall" mode="ghost" variant="neutral" disabled={busy || saving} onClick={() => void refresh(true)}>{t("proxyQuick.refresh")}</Button>
         <Button size="xsmall" mode="ghost" variant="neutral" onClick={() => { setOpen(false); void useNav.getState().openSettings("proxy"); }}>{t("proxyQuick.settings")}</Button>

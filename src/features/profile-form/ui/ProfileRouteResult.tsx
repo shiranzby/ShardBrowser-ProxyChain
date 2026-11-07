@@ -62,7 +62,7 @@ export function ProfileRouteResult({ result, route: selectedRoute }: { result: P
       <div className="flex flex-wrap gap-2" data-profile-route-location><dt>{t("proxyChain.exitLocation")}</dt><dd className="m-0 break-words">{location || (exitIp ? t("proxyChain.locationNotReturned") : t("proxyChain.exitUnavailable"))}</dd></div>
       {result.tested_at && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.testedAt")}</dt><dd className="m-0">{fmtTs(result.tested_at)}</dd></div>}
     </dl>
-    {result.exit_error && <p className="m-0 break-words text-error-text">{proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error }, scope)}</p>}
+    {result.exit_error && <p className={`m-0 break-words ${result.route_ready === true ? "text-warning-text" : "text-error-text"}`}>{proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error, route_ready: result.route_ready }, scope)}</p>}
     {result.exit_error && result.exit_error_details?.length ? <ul data-profile-route-geo-details className="m-0 flex list-none flex-col gap-2 p-0 text-error-text">
       {result.exit_error_details.map((failure, index) => <li key={index} className="break-words">
         {t("profileRoute.geoSourceFailure", {

@@ -1180,11 +1180,14 @@ pub struct ChainTestError {
     pub code: String,
     pub layer: String,
     pub message: String,
+    /// Only this observation's verified route can supply this evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_ready: Option<bool>,
 }
 
 impl From<crate::proxy_chain::error::ChainError> for ChainTestError {
     fn from(error: crate::proxy_chain::error::ChainError) -> Self {
-        Self { code: error.code.into(), layer: error.layer.into(), message: error.message }
+        Self { code: error.code.into(), layer: error.layer.into(), message: error.message, route_ready: None }
     }
 }
 
@@ -1437,7 +1440,7 @@ async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_cha
     // probe asks for and carry everything else. The other way round, a probe
     // that reached a host is proof too, and the test then says so with no
     // address rather than calling a working proxy dead.
-    let chain_error = tunnel.and_then(|tunnel| {
+    let mut chain_error: Option<ChainTestError> = tunnel.and_then(|tunnel| {
         if let Err(error) = &tcp_res {
             Some(error.downcast_ref::<crate::proxy_chain::error::ChainError>().cloned()
                 .unwrap_or_else(||crate::proxy_chain::profile_failure(tunnel,error)).into())
@@ -1448,6 +1451,10 @@ async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_cha
             )).into())
         } else { None }
     });
+    if verification_error.is_none() && tcp_res.is_ok() && geo_res.is_err()
+        && prepared.is_some_and(|route|route.is_ready()) {
+        if let Some(error)=chain_error.as_mut() {error.route_ready=Some(true);}
+    }
     let geo_error = if chained {
         // Only fixed safe chain errors may enter history; provider failures
         // can carry request details and must not hide the failed layer.
@@ -1775,6 +1782,7 @@ mod tests {
         let failure = result.chain_error.as_ref().unwrap();
         assert_eq!(failure.code, "system_proxy_connect_refused");
         assert_eq!(failure.layer, "system_proxy");
+        assert!(failure.route_ready.is_none(), "a refusal cannot advertise verified route readiness");
         assert!(failure.message.contains("403"));
         let stored = serde_json::to_string(&result).unwrap();
         assert!(!stored.contains("private-fixture-detail") && !stored.contains("not-for-history") && !stored.contains("synthetic"));
@@ -1857,6 +1865,7 @@ mod tests {
         let failure = result.chain_error.as_ref().unwrap();
         assert_eq!(failure.code, "proxy_chain_profile_geo_failed");
         assert_eq!(failure.layer, "exit");
+        assert_ne!(failure.route_ready, Some(true), "TCP-only partial success is not route readiness");
         assert!(!serde_json::to_string(&result).unwrap().contains("private-geo-response"));
     }
 
@@ -1884,6 +1893,8 @@ mod tests {
         assert!(result.ip.is_empty() && result.country_code.is_empty() && result.country.is_empty() && result.timezone.is_empty());
         assert_eq!(result.geo_error.as_deref(), Some(geo_failure.message.as_str()));
         assert_eq!(result.chain_error.as_ref().unwrap().code, geo_failure.code);
+        assert_eq!(result.chain_error.as_ref().unwrap().route_ready, Some(true));
+        assert_eq!(serde_json::to_value(&result).unwrap()["chain_error"]["route_ready"], true);
         assert!(prepared.tunnel.last_error().is_none());
         assert!(matches!(upstream.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock), "no Geo or TCP flow may redial the prepared route");
 
@@ -1897,6 +1908,17 @@ mod tests {
         assert!(current.ip.is_empty() && history.last().unwrap().country_code.is_empty());
         assert!(history.last().unwrap().geo_error.is_some(), "the current missing Geo must not borrow a past location");
         prepared.tunnel.shutdown().await;
+    }
+
+    #[test]
+    fn legacy_chain_errors_do_not_infer_readiness_from_the_error_code() {
+        for code in ["proxy_chain_profile_geo_failed", "proxy_chain_profile_auth_failed", "system_proxy_connect_refused"] {
+            let failure: ChainTestError=serde_json::from_value(serde_json::json!({"code":code,"layer":"profile","message":"Synthetic failure"})).unwrap();
+            assert!(failure.route_ready.is_none());
+            assert!(serde_json::to_value(&failure).unwrap().get("route_ready").is_none());
+            let current: ChainTestError=crate::proxy_chain::error::ChainError::new(code,"profile","Synthetic failure").into();
+            assert!(current.route_ready.is_none(), "an error conversion supplies no success evidence");
+        }
     }
 
     fn entry(line: &str) -> ProxyEntry {

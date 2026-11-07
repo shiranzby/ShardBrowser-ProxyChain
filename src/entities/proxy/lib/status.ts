@@ -9,9 +9,17 @@ import type { ProxyTestSnapshot } from "../model/types";
 /// does — the old test called a proxy reached as soon as it had greeted us,
 /// so a gateway with a dead upstream, no traffic left or a banned address
 /// read as working.
+export function proxyReadyWithUnknownGeo(snap: ProxyTestSnapshot | undefined): boolean {
+  return snap?.transport === "proxy_chain" && snap.chain_error?.route_ready === true
+    && snap.chain_error.code === "proxy_chain_profile_geo_failed" && snap.chain_error.layer === "exit"
+    && snap.tcp_ms != null && Number.isFinite(snap.tcp_ms) && snap.tcp_ms >= 0 && !snap.ip;
+}
+
 export function proxyStatus(snap: ProxyTestSnapshot | undefined): "ok" | "failed" | "untested" {
   if (!snap) return "untested";
-  // Chain launches require both checks. Keep legacy direct-route tolerance.
+  // Only an explicit current readiness proof can keep unknown Geo usable.
+  // Older partial results must not be inferred ready from their TCP time.
+  if (proxyReadyWithUnknownGeo(snap)) return "ok";
   if (snap.transport === "proxy_chain" && (snap.chain_error || snap.geo_error || snap.tcp_ms == null || !snap.ip)) return "failed";
   return snap.tcp_ms != null || snap.ip !== "" ? "ok" : "failed";
 }

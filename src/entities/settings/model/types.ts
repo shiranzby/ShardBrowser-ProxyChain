@@ -84,6 +84,8 @@ export type ProxyChainStage = {
 
 export type ProxyChainTestResult = {
   kind: ProxyChainTestKind;
+  /** This test verified the prepared route; missing in older results. */
+  route_ready?: boolean | null;
   route?: ProxyChainRoute | null;
   first_hop_error_code?: string | null;
   proxy_kind?: "http" | "https" | "socks5" | null;

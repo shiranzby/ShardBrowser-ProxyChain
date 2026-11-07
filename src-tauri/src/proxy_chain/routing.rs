@@ -108,7 +108,7 @@ pub async fn test_resolved_route(route:Option<&ProfileProxyRoute>,policy:policy:
     let normalized=route.map(ProfileProxyRoute::normalized);
     let route=normalized.as_ref();
     let start=Instant::now();
-    let mut result=TestResult{kind:"profile".into(),proxy_kind:None,proxy_address:None,source:None,resolved_for:None,profile_proxy_address:assigned.map(|p|format!("{}:{}",p.host,p.port)),route:None,first_hop_error_code:None,system_proxy:Stage::pending(),profile_proxy:Stage::pending(),local_network:None,exit_ip:None,exit_geo:None,exit_error:None,exit_error_code:None,exit_error_details:None,total_ms:0,tested_at:format!("@{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs())};
+    let mut result=TestResult{kind:"profile".into(),proxy_kind:None,proxy_address:None,source:None,resolved_for:None,profile_proxy_address:assigned.map(|p|format!("{}:{}",p.host,p.port)),route:None,route_ready:None,first_hop_error_code:None,system_proxy:Stage::pending(),profile_proxy:Stage::pending(),local_network:None,exit_ip:None,exit_geo:None,exit_error:None,exit_error_code:None,exit_error_details:None,total_ms:0,tested_at:format!("@{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs())};
     // The selected endpoint is useful evidence even when its handshake fails.
     // Do not leave the first-hop address dependent on a successful result.
     if matches!(route,Some(ProfileProxyRoute::Chain{first:FirstHop::Proxy{..},..})) {
@@ -138,6 +138,7 @@ pub async fn test_resolved_route(route:Option<&ProfileProxyRoute>,policy:policy:
                     prepared.tunnel.shutdown().await;result.total_ms=start.elapsed().as_millis();return Ok(result);
                 }}
                 record_connected_route(&mut result,route,first,prepared.route,prepared.first_hop_error.clone(),prepared.verified_tcp_ms.expect("route TCP verified"));
+                result.route_ready=Some(prepared.is_ready());
                 result.set_exit(prepared.exit_result());
                 prepared.tunnel.shutdown().await;
             },

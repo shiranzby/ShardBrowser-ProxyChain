@@ -46,3 +46,14 @@ test("single system-proxy errors identify the system connection without hop numb
 test("explicit local-network failure is translated without inventing a proxy layer", () => {
   assert.equal(proxyChainErrorText(key, { code: "proxy_chain_local_network_failed" }), "proxyChain.localGeoFailed");
 });
+
+test("verified route with unknown Geo uses the same nonblocking message in every scope", () => {
+  for (const code of ["proxy_chain_profile_geo_failed", "proxy_chain_system_geo_failed"]) {
+    for (const scope of [undefined, "proxy", "system"] as const) {
+      assert.equal(proxyChainErrorText(key, { code, route_ready: true }, scope), "proxyChain.readyGeoUnknown");
+    }
+  }
+  const ready = { code: "proxy_chain_profile_geo_failed", route_ready: true };
+  assert.equal(proxyChainErrorText(key, { ...ready, route_ready: false }), "proxyChain.profileGeoFailed");
+  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_auth_failed", route_ready: true }), "proxyChain.errorSecondAuth");
+});

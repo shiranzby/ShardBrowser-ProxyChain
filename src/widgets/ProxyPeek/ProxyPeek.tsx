@@ -10,7 +10,7 @@ import { ChainRouteSummary } from "../../shared/ui/ChainRouteSummary";
 import { fmtTs } from "../../shared/lib/utils";
 import { focusProxyRow } from "../../shared/lib/focusRow";
 import { useT } from "../../shared/i18n";
-import { proxyHistory, proxyStatus, useProxy, type ProxyEntry, type ProxyTestSnapshot } from "../../entities/proxy";
+import { proxyHistory, proxyReadyWithUnknownGeo, proxyStatus, useProxy, type ProxyEntry, type ProxyTestSnapshot } from "../../entities/proxy";
 import { useProfileUi } from "../../entities/profile";
 import { onProxy, teamRefusal, useRightsChange } from "../../entities/space";
 import { capOf, command, menuItemsFor } from "../../features/commands";
@@ -98,7 +98,7 @@ function ProxyPeekHeader({ name, proxy, onEdit, onClose }: {
       // dot and a word until the pair that rebuilds that list adopts it.
       status={
         testStatus === "ok"
-          ? <ProxyTestPill data-peek-test-status state="ok" ms={snap!.tcp_ms!} busy={busy} />
+          ? <ProxyTestPill data-peek-test-status state="ok" ms={snap!.tcp_ms!} busy={busy} geoUnknown={proxyReadyWithUnknownGeo(snap)} />
           : <ProxyTestPill data-peek-test-status state={testStatus} busy={busy} />
       }
       extra={
@@ -175,6 +175,7 @@ function TestSection({ proxy }: { proxy: ProxyEntry }) {
 
 function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot }) {
   const t = useT();
+  const readyGeoUnknown = proxyReadyWithUnknownGeo(snap);
   const place = [snap.region, snap.city].filter(Boolean).join(", ") || snap.country;
   return (
     // The last test's facts, strong 13 px, 14 px apart (owner, "more air").
@@ -204,9 +205,9 @@ function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot })
         <span className="text-secondary text-text-soft-400">{fmtTs(snap.last_seen)}</span>
       </div>
       {(snap.geo_error || snap.chain_error) && (
-        <p className="m-0 text-secondary text-error-text" data-chain-test-error={snap.transport === "proxy_chain" ? "" : undefined}>
-          {snap.transport === "proxy_chain" ? t("proxyChain.startBlocked") : t("proxyInfoPopover.geoError")}
-          <span className="block text-secondary text-text-soft-400" data-selectable>{snap.chain_error ? proxyChainErrorText(t, snap.chain_error) : explainError(snap.geo_error)}</span>
+        <p className={`m-0 text-secondary ${readyGeoUnknown ? "text-warning-text" : "text-error-text"}`} data-chain-test-error={snap.transport === "proxy_chain" ? "" : undefined}>
+          {readyGeoUnknown ? t("proxyChain.readyGeoUnknownLabel") : snap.transport === "proxy_chain" ? t("proxyChain.startBlocked") : t("proxyInfoPopover.geoError")}
+          <span className="block text-secondary text-text-soft-400" data-selectable>{snap.chain_error ? proxyChainErrorText(t, { ...snap.chain_error, route_ready: readyGeoUnknown }) : explainError(snap.geo_error)}</span>
           {snap.chain_error && <code className="block break-all" data-selectable>{snap.chain_error.code}</code>}
         </p>
       )}

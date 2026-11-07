@@ -1025,6 +1025,7 @@ async fn profile_geo_is_the_second_hop_exit_and_original_binding_is_unchanged() 
 fn pending(kind: &str) -> super::TestResult {
     super::TestResult {
         route: None,
+        route_ready: None,
         first_hop_error_code: None,
         kind: kind.into(),
         proxy_kind: None,

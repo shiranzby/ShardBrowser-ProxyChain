@@ -159,6 +159,15 @@ direct UDP restrictions remain in force. Same-exit recovery still requires
 fresh IP evidence from both routes; HTTPS readiness alone cannot establish
 exit equality.
 
+Detection also reports an optional `route_ready` evidence field. It is true
+only after this attempt proves the route using live Geo or verified HTTPS
+content. A Geo error in history carries the same current proof; older history
+without the field remains unknown. The interface uses a warning-colored
+“Connected, location unknown” result for verified routes with missing Geo,
+and does not claim their next start is blocked. TCP-only partial results and
+authentication failures remain failed. Every new start verifies its route
+again rather than trusting a history flag.
+
 Older pc7 clients treat the new policy as invalid and refuse it. Use pc8 on
 clients editing or starting profiles with this choice; switch back to a supported
 explicit policy in pc8 before returning to pc7. Proxy identity and data stay intact.

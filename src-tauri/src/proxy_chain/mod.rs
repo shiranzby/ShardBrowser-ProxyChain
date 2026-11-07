@@ -433,6 +433,9 @@ pub struct TestResult {
     profile_proxy_address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     route: Option<Route>,
+    /// This attempt verified the selected route; missing on older results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route_ready: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     first_hop_error_code: Option<&'static str>,
     system_proxy: Stage,
@@ -452,6 +455,7 @@ impl TestResult {
     fn set_exit(&mut self, geo: anyhow::Result<proxy::GeoInfo>) {
         match geo {
             Ok(geo) => {
+                self.route_ready=Some(true);
                 self.exit_error=None;
                 self.exit_error_code=None;
                 self.exit_error_details=None;
@@ -459,6 +463,7 @@ impl TestResult {
                 self.exit_geo = Some(geo);
             }
             Err(error) => {
+                if self.route_ready.is_none() {self.route_ready=Some(false);}
                 self.exit_error_details=error.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone())
                     .or_else(||error.downcast_ref::<ChainError>().and_then(|error|error.geo_failures.clone()));
                 let (code, message) = match self.kind.as_str() {
@@ -525,6 +530,7 @@ pub async fn test(
         resolved_for: None,
         profile_proxy_address: None,
         route: None,
+        route_ready: None,
         first_hop_error_code: None,
         system_proxy: Stage::pending(),
         profile_proxy: Stage::pending(),
@@ -575,6 +581,7 @@ pub async fn test(
                 match prepare_with_saved(Some(entry), &effective, &saved.proxy_chain).await {
                     Ok(Some(prepared)) => {
                         result.route = Some(prepared.route);
+                        result.route_ready = Some(prepared.is_ready());
                         result.source = Some(match prepared.route { Route::FirstHop => "preferred_first_hop", route => route.as_str() });
                         result.first_hop_error_code = prepared.first_hop_error.as_ref().map(|e| e.code);
                         result.system_proxy = match prepared.first_hop_error.clone() { Some(error) => Stage::failed(error), None if prepared.route == Route::FirstHop => Stage::ok(start), None => Stage::pending() };
@@ -637,6 +644,7 @@ pub async fn test(
                         },
                         Ok(prepared) => {
                             result.route = Some(prepared.route);
+                            result.route_ready = Some(prepared.is_ready());
                             let ms=prepared.verified_tcp_ms.expect("route reachability verified");
                             if prepared.route==Route::FirstHop {result.system_proxy=Stage::measured(ms);}
                             else {

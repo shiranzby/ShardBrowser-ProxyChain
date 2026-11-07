@@ -2470,6 +2470,8 @@
   "proxyChain.systemExitHelp": "This is the first-hop exit, not the profile’s final exit. Choose a profile and test the full proxy chain to see its exit and location.",
   "proxyChain.systemGeoFailed": "The system proxy connected, but the exit IP and location lookup failed. Retry the test; it did not fall back to a direct lookup.",
   "proxyChain.profileGeoFailed": "The full proxy chain connected, but the final exit IP and location lookup failed. Retry the test; it did not fall back to a direct lookup.",
+  "proxyChain.readyGeoUnknownLabel": "Connected, location unknown",
+  "proxyChain.readyGeoUnknown": "HTTPS verified this proxy route, but the exit IP and location are unavailable. You can start; the route is checked again on the next start.",
   "proxyChain.localGeoFailed": "The local network exit IP and location lookup failed. Check the connection and retry.",
   "proxyChain.totalLatency": "Total latency",
   "proxyChain.milliseconds": "{ms} ms",
