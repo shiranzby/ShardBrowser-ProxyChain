@@ -46,10 +46,10 @@ index 0000000000000000000000000000000000000000..69a55d6c36b1f4318d13d6902d0ae3ce
 +定向验证：Rust 创建/显式覆盖、设置旧 JSON 缺省、克隆/导入不覆盖与启动 argv；Playwright 新建默认、修改保存重载、旧配置编辑保留。原生 Engine 页面导航由候选产物验收另行确认。
 diff --git a/docs/PROXY-CHAIN-POLICY.md b/docs/PROXY-CHAIN-POLICY.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..aef47db11b506ddedb5b3a56f50881904c324aba
+index 0000000000000000000000000000000000000000..ebf39a286c95eaa4021881781424e31ccdcb94be
 --- /dev/null
 +++ b/docs/PROXY-CHAIN-POLICY.md
-@@ -0,0 +1,187 @@
+@@ -0,0 +1,206 @@
 +# Per-profile route choice and HTTP/HTTPS second hops (pc8)
 +
 +## Live verification (pc10)
@@ -191,6 +191,25 @@ index 0000000000000000000000000000000000000000..aef47db11b506ddedb5b3a56f5088190
 +binding and profile data remain unchanged. The retained route uses the assigned
 +proxy, not a mutable system-only connection. Each new test/start resolves and
 +checks again; it does not reuse an earlier equivalence decision.
++
++PC14 separates route readiness from live location metadata. A fresh Geo reply
++can still prove the selected route works. If Geo is unavailable, a bounded
++HTTPS content check through that same prepared route may prove readiness:
++original proxy credentials, certificate and hostname verification, a successful
++HTTP response and a nonempty body are required. It never tries a website-direct
++connection or a different proxy. Explicit authentication refusal cannot be
++rescued by another request. This content check is only an alternative when Geo
++is missing, so a single fixed website does not become mandatory for every start.
++
++An HTTPS-ready route without Geo keeps the current Geo error and unknown exit
++IP/location in detection and history. Starting it does not query another route
++or borrow a historical IP, the first hop's location, a country tag or this
++computer's location. Existing manually chosen fingerprint fields remain;
++unresolved automatic fields use the existing proxy-unknown defaults (UTC,
++en-US, no automatic coordinates). No historical IP is used for ICE. QUIC and
++direct UDP restrictions remain in force. Same-exit recovery still requires
++fresh IP evidence from both routes; HTTPS readiness alone cannot establish
++exit equality.
 +
 +Older pc7 clients treat the new policy as invalid and refuse it. Use pc8 on
 +clients editing or starting profiles with this choice; switch back to a supported
@@ -3187,7 +3206,7 @@ index 10be256ee963d34d5dd952626b4e67dcbe73fdb8..c0af4c720b0ce2eb0994008bf25077f1
      let page = s.page().ok_or_else(|| anyhow!("no page attached"))?;
      s.call(method, params, Some(&page)).await
 diff --git a/src-tauri/src/launch.rs b/src-tauri/src/launch.rs
-index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d239c922126 100644
+index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..da2c9f96c5258c8d3757be059482768ec6507213 100644
 --- a/src-tauri/src/launch.rs
 +++ b/src-tauri/src/launch.rs
 @@ -278,6 +278,7 @@ pub struct LaunchInput {
@@ -3305,7 +3324,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
 +    crate::proxy_chain::prepare(input.proxy.as_ref(), &s.proxy_chain).await?
 +    };
 +    let chain_geo = if let Some(chain) = &mut chain {
-+        if chain.verified_geo.is_none() { crate::proxy_chain::verify_prepared(chain).await?; }
++        if !chain.is_ready() { crate::proxy_chain::verify_prepared(chain).await?; }
 +        chain.verified_geo.clone()
 +    } else { None };
      // Read off the engine binary while the proxy is probed; once per engine version.
@@ -3342,26 +3361,28 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
      // Strip `_meta` wrapper and resolve "auto" sentinels before serialising.
      let mut raw = engine_config(&input.stored);
 -    resolve_auto_fields(&mut raw, input.proxy.as_ref()).await;
-+    resolve_auto_fields(&mut raw, input.proxy.as_ref(), chain_geo.as_ref()).await;
++    resolve_auto_fields(&mut raw, input.proxy.as_ref(), chain_geo.as_ref(), chain.is_some()).await;
      // The proxy probe and the geo lookup are the slow part: a cancel made
      // while they ran stops here, before anything is written.
      check_cancel(&input.profile_id)?;
-@@ -739,10 +798,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -738,25 +797,20 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+         Err(e) => eprintln!("[launcher] bookmarks skipped: {e}"),
      }
  
-     // Live geo for ICE-candidate spoofing, cached snapshot as fallback.
+-    // Live geo for ICE-candidate spoofing, cached snapshot as fallback.
 -    let proxy_public_ip: Option<String> = if let Some(p) = input.proxy.as_ref() {
-+    let proxy_public_ip: Option<String> = if let Some(geo) = &chain_geo {
-+        Some(geo.ip.clone())
-+    } else if let Some(p) = input.proxy.as_ref() {
-         match proxy::geo_check(p, None).await {
-             Ok(g) if !g.ip.is_empty() => Some(g.ip),
+-        match proxy::geo_check(p, None).await {
+-            Ok(g) if !g.ip.is_empty() => Some(g.ip),
 -            _ => proxy::latest_test(&p.id)
-+            _ => proxy::latest_test_for(p)
-                 .map(|s| s.ip)
-                 .filter(|ip| !ip.is_empty()),
-         }
-@@ -754,9 +815,14 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+-                .map(|s| s.ip)
+-                .filter(|ip| !ip.is_empty()),
+-        }
+-    } else {
+-        None
+-    };
++    let proxy_public_ip = resolve_proxy_public_ip(input.proxy.as_ref(), chain_geo.as_ref(), chain.is_some()).await;
+     let ext_alone = match ext_alone {
+         Some(asked) => asked.await.unwrap_or(false),
          None => false,
      };
  
@@ -3376,7 +3397,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
              fp_file: &fp_file,
              icon: icon.as_deref(),
              raw: &raw,
-@@ -769,6 +835,15 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -769,6 +823,15 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
          opts,
          &s,
      );
@@ -3392,7 +3413,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
      let LaunchInput { profile_id, udd, exit, cdp: enable_cdp, ext_ids, .. } = input;
      let remote = exit.session();
      // A team's profile has no launch count of its own here.
-@@ -798,7 +873,8 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -798,7 +861,8 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
          Some(_) => process::spawn_tied(cmd).await.context("start the ShardBrowser engine")?,
          None => (cmd.spawn().context("start the ShardBrowser engine")?, process::Tie::default()),
      };
@@ -3402,7 +3423,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
  
      if let Some(s) = &remote {
          s.spawned(tie, pid);
-@@ -839,6 +915,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -839,6 +903,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
  fn engine_config(stored: &profile::StoredProfile) -> serde_json::Map<String, serde_json::Value> {
      let mut raw = stored.config.clone();
      raw.remove("_meta");
@@ -3410,7 +3431,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
      if raw.get("ui_language").and_then(|v| v.as_str()) != Some("profile") {
          raw.remove("ui_language");
      }
-@@ -900,8 +977,9 @@ fn command_line(
+@@ -900,8 +965,9 @@ fn command_line(
          args.push("--hide-crash-restore-bubble".into());
      }
  
@@ -3421,7 +3442,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
  
          // QUIC: enable only when proxy UDP relay verified; rely on Alt-Svc upgrade path.
          if ready.proxy_udp_ok {
-@@ -915,6 +993,9 @@ fn command_line(
+@@ -915,6 +981,9 @@ fn command_line(
              eprintln!("[launcher] QUIC disabled: proxy {} has no working UDP relay", p.host);
          }
      }
@@ -3431,7 +3452,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
  
      // WebRTC IP policy: block / tcp_only / auto (auto = relay if UDP, else tcp_only).
      let webrtc_mode = ready.raw.get("webrtc").and_then(|v| v.as_str()).unwrap_or("auto");
-@@ -1009,6 +1090,11 @@ fn command_line(
+@@ -1009,6 +1078,11 @@ fn command_line(
  
      // Operator's own switches, last so they win a repeat.
      args.extend(extra);
@@ -3443,15 +3464,39 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
      args
  }
  
-@@ -1045,6 +1131,7 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
+@@ -1041,10 +1115,30 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
+     None
+ }
+ 
+-/// Resolve "auto" sentinels in profile JSON; with proxy: live → cached → country tag → host warn.
++/// A prepared route only supplies its current Geo. Missing Geo is not a reason
++/// to query again or borrow an older proxy IP for ICE candidates.
++async fn resolve_proxy_public_ip(
++    proxy_opt: Option<&proxy::ProxyEntry>,
++    chain_geo: Option<&proxy::GeoInfo>,
++    protected_route: bool,
++) -> Option<String> {
++    if let Some(geo) = chain_geo { return Some(geo.ip.clone()); }
++    if protected_route { return None; }
++    if let Some(p) = proxy_opt {
++        match proxy::geo_check(p, None).await {
++            Ok(g) if !g.ip.is_empty() => Some(g.ip),
++            _ => proxy::latest_test_for(p).map(|s| s.ip).filter(|ip| !ip.is_empty()),
++        }
++    } else { None }
++}
++
++/// Resolve "auto" sentinels in profile JSON. Prepared routes use only their
++/// fresh Geo; older unprepared routes retain their live/cached/tag fallback.
  async fn resolve_auto_fields(
      cfg: &mut serde_json::Map<String, serde_json::Value>,
      proxy_opt: Option<&proxy::ProxyEntry>,
 +    chain_geo: Option<&proxy::GeoInfo>,
++    protected_route: bool,
  ) {
      let want_tz_auto = cfg.get("timezone").and_then(|v| v.as_str()) == Some("auto");
      let want_lang_auto = cfg
-@@ -1071,13 +1158,16 @@ async fn resolve_auto_fields(
+@@ -1071,13 +1165,19 @@ async fn resolve_auto_fields(
  
      // ---- geo source ----
      let mut source = "";
@@ -3459,6 +3504,9 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
 +    let geo: Option<proxy::GeoInfo> = if let Some(geo) = chain_geo {
 +        source = "proxy-chain-live";
 +        Some(geo.clone())
++    } else if protected_route {
++        source = "proxy-chain-unknown";
++        None
 +    } else { match proxy_opt {
          Some(p) => {
              match proxy::geo_check_via(Some(p), None).await {
@@ -3470,7 +3518,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
                          if !snap.country_code.is_empty() || !snap.timezone.is_empty() {
                              source = "cached-snapshot";
                              Some(proxy::GeoInfo {
-@@ -1123,7 +1213,7 @@ async fn resolve_auto_fields(
+@@ -1123,10 +1223,10 @@ async fn resolve_auto_fields(
                  }
              }
          }
@@ -3478,8 +3526,82 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
 +    }};
  
      let host_warn = || {
-         if proxy_opt.is_some() {
-@@ -1640,6 +1730,7 @@ mod tests {
+-        if proxy_opt.is_some() {
++        if protected_route || proxy_opt.is_some() {
+             crate::notify_warning(
+                 "Could not read the proxy's location. Rather than hand a page \
+                  this computer's timezone, the profile starts on UTC — which \
+@@ -1151,7 +1251,7 @@ async fn resolve_auto_fields(
+         }
+         None => {
+             host_warn();
+-            if proxy_opt.is_some() {
++            if protected_route || proxy_opt.is_some() {
+                 // A profile behind a proxy must never answer with this
+                 // computer's clock. Before, the Windows branch had no way to
+                 // read the host zone and landed on UTC by accident; now that
+@@ -1436,6 +1536,60 @@ mod tests {
+         v.as_object().unwrap().clone()
+     }
+ 
++    fn metadata_proxy(port: u16) -> super::proxy::ProxyEntry {
++        serde_json::from_value(json!({"id":"metadata-proxy","name":"Synthetic metadata proxy","kind":"http",
++            "host":"127.0.0.1","port":port,"username":"","password":"","country":"JP","notes":""})).unwrap()
++    }
++
++    #[tokio::test]
++    async fn protected_route_with_unknown_geo_never_rechecks_or_uses_the_country_tag() {
++        let _root = crate::store::test_root("protected-geo-unknown");
++        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
++        listener.set_nonblocking(true).unwrap();
++        let entry = metadata_proxy(listener.local_addr().unwrap().port());
++        let mut raw = obj(json!({"timezone":"auto","navigator":{"language":"auto"},"geolocation":{"mode":"auto"}}));
++        tokio::time::timeout(std::time::Duration::from_millis(300), async {
++            super::resolve_auto_fields(&mut raw, Some(&entry), None, true).await;
++            assert_eq!(super::resolve_proxy_public_ip(Some(&entry), None, true).await, None);
++        }).await.expect("a ready route with unknown metadata must not perform another network query");
++        assert_eq!(raw["timezone"], "UTC");
++        assert_eq!(raw["navigator"]["language"], "en-US");
++        assert_eq!(raw["icu_locale"], "en-US");
++        assert!(raw.get("geolocation").is_none());
++        assert_eq!(listener.accept().unwrap_err().kind(), std::io::ErrorKind::WouldBlock,
++            "neither automatic fields nor ICE may requery the proxy before considering old Geo");
++    }
++
++    #[tokio::test]
++    async fn protected_route_uses_only_its_fresh_geo_for_auto_fields_and_ice() {
++        let _root = crate::store::test_root("protected-geo-current");
++        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
++        listener.set_nonblocking(true).unwrap();
++        let entry = metadata_proxy(listener.local_addr().unwrap().port());
++        let geo = super::proxy::GeoInfo { ip:"198.51.100.42".into(),country:"Synthetic Egypt".into(),country_code:"EG".into(),
++            region:String::new(),city:String::new(),isp:String::new(),timezone:"Africa/Cairo".into(),latitude:30.04,longitude:31.24,provider:"synthetic".into() };
++        let mut raw = obj(json!({"timezone":"auto","navigator":{"language":"auto"},"geolocation":{"mode":"auto"}}));
++        super::resolve_auto_fields(&mut raw, Some(&entry), Some(&geo), true).await;
++        assert_eq!(raw["timezone"], "Africa/Cairo");
++        assert_eq!(raw["navigator"]["language"], "ar-SA");
++        assert_eq!(raw["geolocation"]["latitude"], 30.04);
++        assert_eq!(raw["geolocation"]["longitude"], 31.24);
++        assert_eq!(super::resolve_proxy_public_ip(Some(&entry), Some(&geo), true).await.as_deref(), Some("198.51.100.42"));
++        assert_eq!(listener.accept().unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
++    }
++
++    #[tokio::test]
++    async fn protected_route_with_unknown_geo_keeps_manual_fingerprint_fields() {
++        let _root = crate::store::test_root("protected-geo-manual");
++        let entry = metadata_proxy(1);
++        let mut raw = obj(json!({"timezone":"Asia/Hong_Kong","navigator":{"language":"zh-CN","languages":["zh-CN","zh"]},
++            "icu_locale":"zh-CN","geolocation":{"mode":"manual","latitude":22.3,"longitude":114.2,"accuracy":50},"webrtc":"tcp_only"}));
++        let before = raw.clone();
++        super::resolve_auto_fields(&mut raw, Some(&entry), None, true).await;
++        assert_eq!(raw, before);
++        assert_eq!(super::resolve_proxy_public_ip(Some(&entry), None, true).await, None);
++    }
++
+     #[test]
+     fn derives_a_window_from_the_claimed_screen() {
+         let mut raw = obj(json!({
+@@ -1640,6 +1794,7 @@ mod tests {
              profile_id: stored.meta.id.clone(),
              udd: PathBuf::from(format!("/data/user-data/{}", stored.meta.id)),
              proxy: proxy.map(|p| serde_json::from_value(p).unwrap()),
@@ -3487,7 +3609,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
              extensions: stored.meta.extensions.iter().map(|id| PathBuf::from(format!("/data/extensions/{id}"))).collect(),
              library: Some(PathBuf::from("/data/extensions")),
              ext_ids: Vec::new(),
-@@ -1655,6 +1746,19 @@ mod tests {
+@@ -1655,6 +1810,19 @@ mod tests {
          crate::settings::Settings { helper_enabled: true, camera_enabled: true, show_profile_name: true, ..Default::default() }
      }
  
@@ -3507,7 +3629,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
      /// As launched on an engine from before patch 0092's second part.
      fn argv(input: &LaunchInput, opts: &LaunchOpts, s: &crate::settings::Settings) -> Vec<String> {
          argv_on(false, input, opts, s)
-@@ -1667,6 +1771,7 @@ mod tests {
+@@ -1667,6 +1835,7 @@ mod tests {
          let fp = PathBuf::from(format!("{}/fingerprint.json", input.udd.display()));
          let icon = PathBuf::from(format!("/runtime/profile-icons/{}.png", input.profile_id));
          let ready = Ready {
@@ -3515,7 +3637,7 @@ index c248e597bba4c2acb6a4e16f8b5b3f2b5a886b69..1e9e87948d99735f0301a1b2d4aa9d23
              fp_file: &fp,
              icon: Some(&icon),
              raw: &raw,
-@@ -1709,6 +1814,23 @@ mod tests {
+@@ -1709,6 +1878,23 @@ mod tests {
          );
      }
  
@@ -9416,10 +9538,10 @@ index 0000000000000000000000000000000000000000..f7bb892bebd3da48a4af1f8378dcddd6
 +}
 diff --git a/src-tauri/src/proxy_chain/mod.rs b/src-tauri/src/proxy_chain/mod.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..249a69c3c699b639db7312966bcd0afd91238c57
+index 0000000000000000000000000000000000000000..0dd8ad3b17fd70ee2870c0b1bde141963f9a8697
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/mod.rs
-@@ -0,0 +1,659 @@
+@@ -0,0 +1,701 @@
 +//! Windows system proxy -> original profile proxy. Never fall back to direct.
 +pub mod config;
 +pub mod connector;
@@ -9429,10 +9551,13 @@ index 0000000000000000000000000000000000000000..249a69c3c699b639db7312966bcd0afd
 +pub mod policy;
 +pub mod route;
 +pub mod routing;
++mod readiness;
 +#[cfg(test)]
 +mod tests;
 +#[cfg(test)]
 +mod same_exit_tests;
++#[cfg(test)]
++mod readiness_tests;
 +pub mod tunnel;
 +pub mod tls;
 +
@@ -9450,9 +9575,22 @@ index 0000000000000000000000000000000000000000..249a69c3c699b639db7312966bcd0afd
 +    pub route: Route,
 +    pub first_hop_error: Option<ChainError>,
 +    pub verified_geo: Option<proxy::GeoInfo>,
++    /// A strict same-route HTTPS response can prove reachability without Geo.
++    pub verified_https: bool,
++    /// This attempt's independent Geo failure; never filled from old results.
++    pub geo_failure: Option<ChainError>,
 +    /// Measured reachability latency. A live Geo response on the same route
 +    /// also proves TCP transport when the dedicated probe target is unavailable.
 +    pub verified_tcp_ms: Option<u128>,
++}
++
++impl PreparedProxy {
++    pub fn is_ready(&self) -> bool { self.verified_geo.is_some() || self.verified_https }
++
++    pub fn exit_result(&self) -> anyhow::Result<proxy::GeoInfo> {
++        self.verified_geo.clone().ok_or_else(|| self.geo_failure.clone().unwrap_or_else(||
++            ChainError::new("proxy_chain_profile_geo_failed", "exit", "The route is connected, but its live exit information is unavailable.")).into())
++    }
 +}
 +
 +/// Internal evidence from a strict preparation that reached the proxy but
@@ -9567,6 +9705,8 @@ index 0000000000000000000000000000000000000000..249a69c3c699b639db7312966bcd0afd
 +pub(crate) async fn verify_prepared(prepared: &mut PreparedProxy) -> Result<(), ChainError> {
 +    prepared.verified_tcp_ms=None;
 +    prepared.verified_geo=None;
++    prepared.verified_https=false;
++    prepared.geo_failure=None;
 +    let probe = proxy::probe_on_route(&prepared.effective).await
 +        .map_err(|cause| profile_failure(&prepared.tunnel, &cause));
 +    if let Err(error) = &probe {
@@ -9588,9 +9728,33 @@ index 0000000000000000000000000000000000000000..249a69c3c699b639db7312966bcd0afd
 +            Ok(())
 +        },
 +        Err(cause)=>{
-+            let mut error=probe.err().unwrap_or_else(||ChainError::new("proxy_chain_profile_geo_failed", "exit", "The assigned proxy connected, but its live exit IP could not be verified on this route."));
-+            error.geo_failures=cause.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone());
-+            Err(error)
++            let failures=cause.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone());
++            // A parsed proxy refusal from this Geo attempt is not an outage of
++            // the location service. Nor may a fresh first-hop auth refusal be
++            // hidden by trying another destination on that same route.
++            if failures.as_ref().is_some_and(|failures|failures.iter().any(|failure|failure.http_status==Some(407))) {
++                return Err(ChainError::new("proxy_chain_profile_auth_failed", "profile", "The proxy rejected authentication during the exit lookup.")
++                    .with_proxy_response("http","authentication",407,None));
++            }
++            if let Some(error)=prepared.tunnel.last_error().filter(|error|matches!(error.code,"proxy_chain_profile_auth_failed"|"system_proxy_auth_failed")) {
++                return Err(error);
++            }
++            let mut geo_error=ChainError::new("proxy_chain_profile_geo_failed", "exit", "The route is connected, but its live exit information could not be read.");
++            geo_error.geo_failures=failures;
++            prepared.geo_failure=Some(geo_error.clone());
++            match readiness::verify(&prepared.effective,&prepared.tunnel).await {
++                Ok(ms)=>{
++                    prepared.verified_tcp_ms=prepared.verified_tcp_ms.or(Some(ms));
++                    prepared.verified_https=true;
++                    Ok(())
++                },
++                Err(error) if matches!(error.code,"proxy_chain_profile_auth_failed"|"system_proxy_auth_failed")=>Err(error),
++                Err(_)=>{
++                    let mut error=probe.err().unwrap_or(geo_error.clone());
++                    error.geo_failures=geo_error.geo_failures;
++                    Err(error)
++                },
++            }
 +        },
 +    }
 +}
@@ -9599,7 +9763,7 @@ index 0000000000000000000000000000000000000000..249a69c3c699b639db7312966bcd0afd
 +    let target = Target::new(&entry.host, entry.port)?;
 +    let tls = if entry.kind == ProxyKind::Https { Some(tls::client()?) } else { None };
 +    let tunnel = Tunnel::bind_assigned(target, tls).await?;
-+    let mut prepared = PreparedProxy { effective: effective_entry(entry, &tunnel), tunnel, route, first_hop_error, verified_geo: None, verified_tcp_ms: None };
++    let mut prepared = PreparedProxy { effective: effective_entry(entry, &tunnel), tunnel, route, first_hop_error, verified_geo: None, verified_https: false, geo_failure: None, verified_tcp_ms: None };
 +    if let Err(cause)=verify_prepared(&mut prepared).await {
 +        let first_hop_error_code = prepared.first_hop_error.as_ref().map(|e| e.code);
 +        let mut error = if route == Route::SameProxyEndpoint {
@@ -9627,7 +9791,7 @@ index 0000000000000000000000000000000000000000..249a69c3c699b639db7312966bcd0afd
 +        Tunnel::bind(hop, target).await?
 +    };
 +    let effective = effective_entry(entry, &tunnel);
-+    Ok(PreparedProxy { effective, tunnel, route: Route::FirstHop, first_hop_error: None, verified_geo: None, verified_tcp_ms: None })
++    Ok(PreparedProxy { effective, tunnel, route: Route::FirstHop, first_hop_error: None, verified_geo: None, verified_https: false, geo_failure: None, verified_tcp_ms: None })
 +}
 +
 +/// The caller has already resolved one first hop for the assigned endpoint.
@@ -9664,8 +9828,8 @@ index 0000000000000000000000000000000000000000..249a69c3c699b639db7312966bcd0afd
 +    let target=Target::new(&entry.host,entry.port).ok()?;
 +    let tls=if entry.kind==ProxyKind::Https {Some(tls::client().ok()?)} else {None};
 +    let tunnel=Tunnel::bind_assigned(target,tls).await.ok()?;
-+    let mut prepared=PreparedProxy{effective:effective_entry(entry,&tunnel),tunnel,route:Route::ExplicitProxy,first_hop_error:None,verified_geo:None,verified_tcp_ms:None};
-+    if matches!(tokio::time::timeout_at(deadline,verify_prepared(&mut prepared)).await,Ok(Ok(()))) {Some(prepared)}
++    let mut prepared=PreparedProxy{effective:effective_entry(entry,&tunnel),tunnel,route:Route::ExplicitProxy,first_hop_error:None,verified_geo:None,verified_https:false,geo_failure:None,verified_tcp_ms:None};
++    if matches!(tokio::time::timeout_at(deadline,verify_prepared(&mut prepared)).await,Ok(Ok(()))) && prepared.verified_geo.is_some() {Some(prepared)}
 +    else {prepared.tunnel.shutdown().await;None}
 +}
 +
@@ -9959,7 +10123,7 @@ index 0000000000000000000000000000000000000000..249a69c3c699b639db7312966bcd0afd
 +                        result.first_hop_error_code = prepared.first_hop_error.as_ref().map(|e| e.code);
 +                        result.system_proxy = match prepared.first_hop_error.clone() { Some(error) => Stage::failed(error), None if prepared.route == Route::FirstHop => Stage::ok(start), None => Stage::pending() };
 +                        result.profile_proxy = Stage::ok(start);
-+                        result.set_exit(Ok(prepared.verified_geo.clone().expect("preferred routes are verified")));
++                        result.set_exit(prepared.exit_result());
 +                        prepared.tunnel.shutdown().await;
 +                    },
 +                    Err(error) => {
@@ -10024,7 +10188,7 @@ index 0000000000000000000000000000000000000000..249a69c3c699b639db7312966bcd0afd
 +                                result.system_proxy=Stage::pending();
 +                            }
 +                            result.profile_proxy=Stage::measured(ms);
-+                            result.set_exit(Ok(prepared.verified_geo.clone().expect("route exit verified")));
++                            result.set_exit(prepared.exit_result());
 +                            prepared.tunnel.shutdown().await;
 +                        },
 +                    }
@@ -10208,6 +10372,360 @@ index 0000000000000000000000000000000000000000..9505ef6358558324aee1c76e87505559
 +        assert!(effective(&disabled, ChainPolicy::Enabled, ChainPolicy::Inherit).is_err());
 +    }
 +}
+diff --git a/src-tauri/src/proxy_chain/readiness.rs b/src-tauri/src/proxy_chain/readiness.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..ac5e1ab8407d639cca22d790035428182ee71419
+--- /dev/null
++++ b/src-tauri/src/proxy_chain/readiness.rs
+@@ -0,0 +1,98 @@
++//! A bounded HTTPS response on the prepared proxy is independent of Geo.
++//! Every socket uses that proxy; target names are never resolved directly.
++use super::{connector::{self, ProxyHop, Target}, error::ChainError, tls, tunnel::Tunnel};
++use crate::space::proxy::{ProxyEntry, ProxyKind};
++use http_body_util::{BodyExt, Empty};
++use hyper::{body::Bytes, Request, StatusCode};
++use hyper_util::rt::TokioIo;
++use std::{sync::Arc, time::{Duration, Instant}};
++
++const TOTAL_BUDGET:Duration=Duration::from_secs(6);
++const TARGET_BUDGET:Duration=Duration::from_secs(3);
++const MAX_BODY:usize=64*1024;
++const TARGETS:[&str;2]=["https://example.com/","https://example.org/"];
++
++fn unavailable()->ChainError {
++    ChainError::new("proxy_chain_profile_geo_failed","exit","The exit lookup failed and this same proxy route did not return a verified HTTPS response.")
++}
++
++struct ConnectionTask(tokio::task::JoinHandle<()>);
++impl Drop for ConnectionTask {fn drop(&mut self){self.0.abort();}}
++
++pub(super) async fn verify(entry:&ProxyEntry,tunnel:&Tunnel)->Result<u128,ChainError> {
++    let start=Instant::now();
++    let (targets,config)=configuration()?;
++    let hop=ProxyHop{kind:match entry.kind {ProxyKind::Http=>connector::ProxyKind::Http,ProxyKind::Https=>connector::ProxyKind::Https,ProxyKind::Socks5=>connector::ProxyKind::Socks5},
++        host:entry.host.clone(),port:entry.port,username:entry.username.clone(),password:entry.password.clone()};
++    tokio::time::timeout(TOTAL_BUDGET,async {
++        for url in targets {
++            match tokio::time::timeout(TARGET_BUDGET,one(&hop,&url,config.clone())).await {
++                Ok(Ok(()))=>return Ok(start.elapsed().as_millis()),
++                Ok(Err(error)) if matches!(error.code,"proxy_chain_profile_auth_failed"|"system_proxy_auth_failed")=>return Err(error),
++                _=>{
++                    // A system relay may give its local client a generic
++                    // failure after publishing the actual first-hop refusal.
++                    // Never hide or retry that authentication failure.
++                    if let Some(error)=authentication_failure(tunnel){return Err(error);}
++                },
++            }
++        }
++        Err(unavailable())
++    }).await.map_err(|_|authentication_failure(tunnel).unwrap_or_else(unavailable))?
++}
++
++fn authentication_failure(tunnel:&Tunnel)->Option<ChainError> {
++    tunnel.last_error().filter(|error|matches!(error.code,"proxy_chain_profile_auth_failed"|"system_proxy_auth_failed"))
++}
++
++async fn one(hop:&ProxyHop,url:&str,config:Arc<rustls::ClientConfig>)->Result<(),ChainError> {
++    let url=url::Url::parse(url).map_err(|_|unavailable())?;
++    if url.scheme()!="https" || !url.username().is_empty() || url.password().is_some() {return Err(unavailable());}
++    let host=url.host_str().ok_or_else(unavailable)?;
++    let target=Target::new(host,url.port_or_known_default().ok_or_else(unavailable)?)?;
++    let stream=connector::connect_with_timeout(hop,&target,TARGET_BUDGET).await.map_err(|mut error|{
++        // This hop is the prepared local endpoint, whose authentication is the
++        // original assigned proxy's. A parsed refusal remains authoritative.
++        if error.code=="system_proxy_auth_failed" {error.code="proxy_chain_profile_auth_failed";error.layer="profile";}
++        error
++    })?;
++    let name=rustls::pki_types::ServerName::try_from(host.to_owned()).map_err(|_|unavailable())?;
++    let secure=tokio_rustls::TlsConnector::from(config).connect(name,stream).await.map_err(|_|unavailable())?;
++    let (mut sender,connection)=hyper::client::conn::http1::Builder::new().max_buf_size(16*1024)
++        .handshake::<_,Empty<Bytes>>(TokioIo::new(secure)).await.map_err(|_|unavailable())?;
++    let _connection=ConnectionTask(tokio::spawn(async move {let _=connection.await;}));
++    let mut path=url.path().to_owned();
++    if path.is_empty(){path.push('/');}
++    if let Some(query)=url.query(){path.push('?');path.push_str(query);}
++    let authority=if let Some(port)=url.port(){format!("{host}:{port}")}else{host.to_owned()};
++    let request=Request::builder().method("GET").uri(path).header("Host",authority)
++        .header("Connection","close").body(Empty::<Bytes>::new()).map_err(|_|unavailable())?;
++    let response=sender.send_request(request).await.map_err(|_|unavailable())?;
++    if response.status()!=StatusCode::OK {return Err(unavailable());}
++    if response.headers().get(hyper::header::CONTENT_LENGTH).and_then(|value|value.to_str().ok()).and_then(|value|value.parse::<u64>().ok()).is_some_and(|size|size>MAX_BODY as u64) {return Err(unavailable());}
++    let mut body=response.into_body();let mut bytes=0usize;
++    while let Some(frame)=body.frame().await {
++        let frame=frame.map_err(|_|unavailable())?;
++        if let Some(data)=frame.data_ref() {bytes=bytes.checked_add(data.len()).ok_or_else(unavailable)?;if bytes>MAX_BODY{return Err(unavailable());}}
++    }
++    if bytes==0 {return Err(unavailable());}
++    Ok(())
++}
++
++fn configuration()->Result<(Vec<String>,Arc<rustls::ClientConfig>),ChainError> {
++    #[cfg(test)]
++    if let Some(value)=TEST_CONFIGURATION.with(|value|value.borrow().clone()){return Ok(value);}
++    Ok((TARGETS.iter().map(|target|(*target).to_owned()).collect(),tls::client()?))
++}
++
++#[cfg(test)]
++thread_local! {static TEST_CONFIGURATION:std::cell::RefCell<Option<(Vec<String>,Arc<rustls::ClientConfig>)>>=const{std::cell::RefCell::new(None)};}
++
++#[cfg(test)]
++pub(super) struct TestConfiguration(Option<(Vec<String>,Arc<rustls::ClientConfig>)>);
++#[cfg(test)]
++impl Drop for TestConfiguration {fn drop(&mut self){TEST_CONFIGURATION.with(|value|*value.borrow_mut()=self.0.take());}}
++#[cfg(test)]
++pub(super) fn test_configuration(targets:Vec<String>,config:Arc<rustls::ClientConfig>)->TestConfiguration {
++    TestConfiguration(TEST_CONFIGURATION.with(|value|value.replace(Some((targets,config)))))
++}
+diff --git a/src-tauri/src/proxy_chain/readiness_tests.rs b/src-tauri/src/proxy_chain/readiness_tests.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..89e8e3d847da0d981a44268601fdc3bd396e0a0d
+--- /dev/null
++++ b/src-tauri/src/proxy_chain/readiness_tests.rs
+@@ -0,0 +1,244 @@
++//! Owned loopback proxies and trusted local TLS pages; no public traffic.
++use super::{connector::{ProxyHop,ProxyKind as HopKind,Target},readiness,PreparedProxy,Route};
++use crate::space::proxy::ProxyEntry;
++use base64::{engine::general_purpose::STANDARD,Engine as _};
++use serde_json::json;
++use std::{net::SocketAddr,sync::{Arc,atomic::{AtomicUsize,Ordering}},time::Duration};
++use tokio::{io::{AsyncRead,AsyncReadExt,AsyncWriteExt},net::{TcpListener,TcpStream},task::{JoinHandle,JoinSet}};
++
++const HOST:&str="readiness.synthetic.test";
++const USER:&str="readiness-synthetic";
++const PASSWORD:&str="readiness synthetic password";
++const BODY:&str="<!doctype html><title>Ready</title><main>Actual same-route HTTPS content</main>";
++
++#[derive(Default)]
++struct Counts {geo:AtomicUsize,content:AtomicUsize,accepted:AtomicUsize,active:AtomicUsize}
++struct Active(Arc<Counts>);
++impl Drop for Active {fn drop(&mut self){self.0.active.fetch_sub(1,Ordering::SeqCst);}}
++struct Service {addr:SocketAddr,counts:Arc<Counts>,task:JoinHandle<()>}
++impl Drop for Service {fn drop(&mut self){self.task.abort();}}
++
++#[derive(Clone)]
++struct Options {
++    tls:Arc<rustls::ServerConfig>,
++    geo_refuses_auth:bool,
++    probe_refuses:bool,
++    content_status:u16,
++    content_body:&'static str,
++    chain_refusal:Option<SocketAddr>,
++}
++
++async fn head(stream:&mut(impl AsyncRead+Unpin))->std::io::Result<String> {
++    let mut bytes=Vec::new();
++    while !bytes.ends_with(b"\r\n\r\n")&&bytes.len()<16384 {bytes.push(stream.read_u8().await?);}
++    Ok(String::from_utf8_lossy(&bytes).into_owned())
++}
++
++async fn response(stream:&mut TcpStream,status:u16)->std::io::Result<()> {
++    stream.write_all(format!("HTTP/1.1 {status} Fixture\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes()).await
++}
++
++fn tls_config(cert_host:&str)->(Arc<rustls::ServerConfig>,Arc<rustls::ClientConfig>) {
++    let generated=rcgen::generate_simple_self_signed(vec![cert_host.into()]).unwrap();
++    let cert=generated.cert.der().clone();
++    let provider=Arc::new(rustls::crypto::ring::default_provider());
++    let server=rustls::ServerConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().unwrap().with_no_client_auth()
++        .with_single_cert(vec![cert.clone()],rustls::pki_types::PrivatePkcs8KeyDer::from(generated.key_pair.serialize_der()).into()).unwrap();
++    let mut roots=rustls::RootCertStore::empty();roots.add(cert).unwrap();
++    let client=rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth();
++    (Arc::new(server),Arc::new(client))
++}
++
++fn options(tls:Arc<rustls::ServerConfig>)->Options {
++    Options{tls,geo_refuses_auth:false,probe_refuses:false,content_status:200,content_body:BODY,chain_refusal:None}
++}
++
++async fn service(options:Options)->Service {
++    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr=listener.local_addr().unwrap();let counts=Arc::new(Counts::default());let record=counts.clone();
++    let task=tokio::spawn(async move {
++        let mut clients=JoinSet::new();
++        loop {tokio::select! {
++            _=clients.join_next(),if !clients.is_empty()=>{},
++            accepted=listener.accept()=>{
++                let Ok((mut stream,_))=accepted else {break;};
++                record.accepted.fetch_add(1,Ordering::SeqCst);record.active.fetch_add(1,Ordering::SeqCst);
++                let counts=record.clone();let options=options.clone();
++                clients.spawn(async move {
++                    let _active=Active(counts.clone());
++                    let Ok(request)=head(&mut stream).await else {return;};
++                    let authorization=format!("Basic {}",STANDARD.encode(format!("{USER}:{PASSWORD}")));
++                    if !request.lines().any(|line|line.split_once(':').is_some_and(|(name,value)|name.eq_ignore_ascii_case("Proxy-Authorization")&&value.trim()==authorization)) {
++                        let _=response(&mut stream,407).await;return;
++                    }
++                    if options.chain_refusal.is_some_and(|target|request.starts_with(&format!("CONNECT {target} "))) {
++                        let _=response(&mut stream,502).await;return;
++                    }
++                    if request.starts_with("CONNECT example.com:443 ") {
++                        let _=response(&mut stream,if options.probe_refuses{502}else{200}).await;return;
++                    }
++                    if request.starts_with(&format!("CONNECT {HOST}:443 ")) {
++                        counts.content.fetch_add(1,Ordering::SeqCst);
++                        if stream.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await.is_err(){return;}
++                        let Ok(mut secure)=tokio_rustls::TlsAcceptor::from(options.tls).accept(&mut stream).await else {return;};
++                        let Ok(request)=head(&mut secure).await else {return;};
++                        assert!(request.starts_with("GET /health HTTP/1.1\r\n"));
++                        let location=if options.content_status==302{"Location: https://redirect.synthetic.test/\r\n"}else{""};
++                        let _=secure.write_all(format!("HTTP/1.1 {} Fixture\r\nContent-Type: text/html\r\nContent-Length: {}\r\n{location}Connection: close\r\n\r\n{}",options.content_status,options.content_body.len(),options.content_body).as_bytes()).await;
++                        let _=secure.shutdown().await;return;
++                    }
++                    if request.starts_with("CONNECT ") {let _=response(&mut stream,502).await;return;}
++                    counts.geo.fetch_add(1,Ordering::SeqCst);
++                    if options.geo_refuses_auth {let _=response(&mut stream,407).await;return;}
++                    let body=r#"{"status":"fail","message":"synthetic Geo service unavailable"}"#;
++                    let _=stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).as_bytes()).await;
++                });
++            }
++        }}
++    });
++    Service{addr,counts,task}
++}
++
++fn entry(service:&Service)->ProxyEntry {
++    serde_json::from_value(json!({"id":"readiness-assigned","name":"Synthetic readiness proxy","kind":"http","host":service.addr.ip().to_string(),"port":service.addr.port(),"username":USER,"password":PASSWORD})).unwrap()
++}
++
++async fn prepared(entry:&ProxyEntry)->PreparedProxy {
++    let tunnel=super::Tunnel::bind_assigned(Target::new(&entry.host,entry.port).unwrap(),None).await.unwrap();
++    PreparedProxy{effective:super::effective_entry(entry,&tunnel),tunnel,route:Route::ExplicitProxy,first_hop_error:None,verified_geo:None,verified_https:false,geo_failure:None,verified_tcp_ms:None}
++}
++
++fn configure(client:Arc<rustls::ClientConfig>)->readiness::TestConfiguration {
++    crate::settings::save(&crate::settings::Settings{geo_checker:Some("ip-api.com".into()),..Default::default()}).unwrap();
++    readiness::test_configuration(vec![format!("https://{HOST}/health")],client)
++}
++
++async fn cleanup(prepared:PreparedProxy,service:&Service) {
++    let addr=prepared.tunnel.addr();prepared.tunnel.shutdown().await;
++    assert!(TcpStream::connect(addr).await.is_err());
++    tokio::time::timeout(Duration::from_secs(2),async {while service.counts.active.load(Ordering::SeqCst)!=0 {tokio::time::sleep(Duration::from_millis(5)).await;}}).await.unwrap();
++}
++
++#[tokio::test]
++async fn geo_failure_keeps_a_same_route_strict_https_response_ready_without_an_exit_ip() {
++    let _root=crate::store::test_root("https-ready-no-geo");
++    let (server,client)=tls_config(HOST);let _config=configure(client);
++    let service=service(options(server)).await;let assigned=entry(&service);
++    let original=serde_json::to_value(&assigned).unwrap();let mut prepared=prepared(&assigned).await;
++    super::verify_prepared(&mut prepared).await.unwrap();
++    assert!(prepared.is_ready()&&prepared.verified_https&&prepared.verified_tcp_ms.is_some());
++    assert!(prepared.verified_geo.is_none());
++    let geo=prepared.exit_result().unwrap_err();
++    assert_eq!(geo.downcast_ref::<super::ChainError>().unwrap().code,"proxy_chain_profile_geo_failed");
++    assert_eq!(prepared.geo_failure.as_ref().unwrap().layer,"exit");
++    assert!(prepared.geo_failure.as_ref().unwrap().geo_failures.is_some());
++    assert_eq!(service.counts.content.load(Ordering::SeqCst),1);
++    assert_eq!(serde_json::to_value(&assigned).unwrap(),original);
++    cleanup(prepared,&service).await;
++}
++
++#[tokio::test]
++async fn detection_keeps_https_connectivity_and_unknown_geo_as_distinct_results() {
++    let _root=crate::store::test_root("https-ready-detection");
++    let (server,client)=tls_config(HOST);let _config=configure(client);
++    let service=service(options(server)).await;let assigned=entry(&service);
++    let result=super::routing::test_resolved_route(Some(&super::route::ProfileProxyRoute::Proxy),super::policy::ChainPolicy::Enabled,Some(&assigned),None).await.unwrap();
++    assert_eq!(result.profile_proxy.state,"ok");assert_eq!(result.system_proxy.state,"not_tested");
++    assert_eq!(result.route,Some(Route::ExplicitProxy));
++    assert_eq!(result.exit_error_code,Some("proxy_chain_profile_geo_failed"));
++    assert!(result.exit_ip.is_none()&&result.exit_geo.is_none());
++    assert_eq!(service.counts.content.load(Ordering::SeqCst),1);
++}
++
++#[tokio::test]
++async fn https_can_prove_transport_after_a_probe_target_refusal_but_geo_stays_unknown() {
++    let _root=crate::store::test_root("https-ready-probe-refusal");
++    let (server,client)=tls_config(HOST);let _config=configure(client);
++    let mut setup=options(server);setup.probe_refuses=true;
++    let service=service(setup).await;let mut prepared=prepared(&entry(&service)).await;
++    super::verify_prepared(&mut prepared).await.unwrap();
++    assert!(prepared.is_ready()&&prepared.verified_https&&prepared.verified_tcp_ms.is_some());
++    assert_eq!(prepared.geo_failure.as_ref().unwrap().code,"proxy_chain_profile_geo_failed");
++    cleanup(prepared,&service).await;
++}
++
++#[tokio::test]
++async fn an_untrusted_certificate_or_wrong_hostname_cannot_prove_readiness() {
++    let _root=crate::store::test_root("https-ready-cert-refusal");
++    for hostname in [HOST,"wrong.synthetic.test"] {
++        let (server,trusted)=tls_config(hostname);
++        let client=if hostname==HOST {super::tls::client().unwrap()}else{trusted};
++        let _config=configure(client);let service=service(options(server)).await;
++        let mut prepared=prepared(&entry(&service)).await;
++        let error=super::verify_prepared(&mut prepared).await.unwrap_err();
++        assert_eq!(error.code,"proxy_chain_profile_geo_failed");assert!(!prepared.is_ready());
++        assert!(prepared.verified_geo.is_none()&&!prepared.verified_https);
++        cleanup(prepared,&service).await;
++    }
++}
++
++#[tokio::test]
++async fn missing_content_empty_content_and_redirects_cannot_replace_geo() {
++    let _root=crate::store::test_root("https-ready-body-refusal");
++    for(status,body)in [(503,BODY),(200,""),(302,BODY)] {
++        let(server,client)=tls_config(HOST);let _config=configure(client);
++        let mut setup=options(server);setup.content_status=status;setup.content_body=body;
++        let service=service(setup).await;let mut prepared=prepared(&entry(&service)).await;
++        assert!(super::verify_prepared(&mut prepared).await.is_err());assert!(!prepared.is_ready());
++        assert_eq!(service.counts.content.load(Ordering::SeqCst),1,"no redirect target may be connected");
++        cleanup(prepared,&service).await;
++    }
++}
++
++#[tokio::test]
++async fn an_explicit_authentication_refusal_is_not_retried_as_https() {
++    let _root=crate::store::test_root("https-ready-auth-refusal");
++    let(server,client)=tls_config(HOST);let _config=configure(client);
++    let service=service(options(server)).await;let mut assigned=entry(&service);assigned.password="incorrect synthetic password".into();
++    let mut prepared=prepared(&assigned).await;
++    assert_eq!(super::verify_prepared(&mut prepared).await.unwrap_err().code,"proxy_chain_profile_auth_failed");
++    assert_eq!(service.counts.geo.load(Ordering::SeqCst),0);assert_eq!(service.counts.content.load(Ordering::SeqCst),0);
++    assert!(!prepared.is_ready());cleanup(prepared,&service).await;
++}
++
++#[tokio::test]
++async fn authentication_refused_during_geo_does_not_run_a_working_https_fallback() {
++    let _root=crate::store::test_root("https-ready-geo-auth-refusal");
++    let(server,client)=tls_config(HOST);let _config=configure(client);
++    let mut setup=options(server);setup.geo_refuses_auth=true;
++    let service=service(setup).await;let mut prepared=prepared(&entry(&service)).await;
++    assert_eq!(super::verify_prepared(&mut prepared).await.unwrap_err().code,"proxy_chain_profile_auth_failed");
++    assert!(service.counts.geo.load(Ordering::SeqCst)>0);assert_eq!(service.counts.content.load(Ordering::SeqCst),0);
++    assert!(!prepared.is_ready());cleanup(prepared,&service).await;
++}
++
++#[tokio::test]
++async fn a_first_hop_auth_refusal_hidden_by_the_local_socks_reply_stops_https_retries() {
++    let _root=crate::store::test_root("https-ready-first-hop-auth");
++    let _config=readiness::test_configuration(vec![format!("https://{HOST}/health"),"https://second.synthetic.test/health".into()],super::tls::client().unwrap());
++    let calls=Arc::new(AtomicUsize::new(0));let observed=calls.clone();
++    let resolver:super::tunnel::SystemResolver=Arc::new(move|_|{
++        observed.fetch_add(1,Ordering::SeqCst);
++        Box::pin(async {Err(super::ChainError::new("system_proxy_auth_failed","system_proxy","Synthetic first-hop authentication refusal."))})
++    });
++    let tunnel=super::Tunnel::bind_system_with_resolver(resolver).await.unwrap();
++    let entry:ProxyEntry=serde_json::from_value(json!({"name":"Synthetic local relay","kind":"socks5","host":tunnel.addr().ip().to_string(),"port":tunnel.addr().port()})).unwrap();
++    let error=readiness::verify(&entry,&tunnel).await.unwrap_err();
++    assert_eq!(error.code,"system_proxy_auth_failed");
++    assert_eq!(calls.load(Ordering::SeqCst),1,"the second HTTPS target cannot hide or retry an explicit first-hop refusal");
++    tunnel.shutdown().await;
++}
++
++#[tokio::test]
++async fn https_success_without_geo_cannot_establish_same_exit_recovery() {
++    let _root=crate::store::test_root("https-ready-no-same-exit");
++    let(server,client)=tls_config(HOST);let _config=configure(client);
++    let second=service(options(server.clone())).await;
++    let mut setup=options(server);setup.chain_refusal=Some(second.addr);
++    let first=service(setup).await;let assigned=entry(&second);
++    let hop=ProxyHop{kind:HopKind::Http,host:first.addr.ip().to_string(),port:first.addr.port(),username:USER.into(),password:PASSWORD.into()};
++    let error=super::prepare_checked_chain(&assigned,hop).await.err().unwrap();
++    assert_eq!(error.downcast_ref::<super::ChainError>().unwrap().code,"system_proxy_connect_refused");
++    assert!(first.counts.content.load(Ordering::SeqCst)>0,"the recovery candidate really has HTTPS readiness");
++    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),0,"unknown first exit cannot authorize the assigned recovery candidate");
++}
 diff --git a/src-tauri/src/proxy_chain/route.rs b/src-tauri/src/proxy_chain/route.rs
 new file mode 100644
 index 0000000000000000000000000000000000000000..c1c2275cc08bd242725ba25cd75d11063a3f44f6
@@ -10354,7 +10872,7 @@ index 0000000000000000000000000000000000000000..c1c2275cc08bd242725ba25cd75d1106
 +}
 diff --git a/src-tauri/src/proxy_chain/routing.rs b/src-tauri/src/proxy_chain/routing.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..b0b5d83d300fe04f35e2981bba09a4b4fb1e8b40
+index 0000000000000000000000000000000000000000..ec48acbf05ca85da3f73b6f0406a42d94a2d755f
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/routing.rs
 @@ -0,0 +1,173 @@
@@ -10386,7 +10904,7 @@ index 0000000000000000000000000000000000000000..b0b5d83d300fe04f35e2981bba09a4b4
 +    let target=Target::new(&entry.host,entry.port)?;
 +    let tls=if entry.kind==ProxyKind::Https {Some(tls::client()?)} else {None};
 +    let tunnel=Tunnel::bind_assigned(target,tls).await?;
-+    let mut prepared=PreparedProxy{effective:effective_entry(entry,&tunnel),tunnel,route,first_hop_error:None,verified_geo:None,verified_tcp_ms:None};
++    let mut prepared=PreparedProxy{effective:effective_entry(entry,&tunnel),tunnel,route,first_hop_error:None,verified_geo:None,verified_https:false,geo_failure:None,verified_tcp_ms:None};
 +    if let Err(error)=verify_prepared(&mut prepared).await {let error=preparation_failure(&prepared,error);prepared.tunnel.shutdown().await;return Err(error);}
 +    Ok(prepared)
 +}
@@ -10394,7 +10912,7 @@ index 0000000000000000000000000000000000000000..b0b5d83d300fe04f35e2981bba09a4b4
 +async fn system() -> anyhow::Result<PreparedProxy> {
 +    let tunnel=Tunnel::bind_system().await?;
 +    let effective=ProxyEntry {proxy_chain_policy:Default::default(),id:String::new(),name:String::new(),kind:ProxyKind::Socks5,host:"127.0.0.1".into(),port:tunnel.addr().port(),username:String::new(),password:String::new(),country:String::new(),notes:String::new()};
-+    let mut prepared=PreparedProxy{effective,tunnel,route:Route::ExplicitSystem,first_hop_error:None,verified_geo:None,verified_tcp_ms:None};
++    let mut prepared=PreparedProxy{effective,tunnel,route:Route::ExplicitSystem,first_hop_error:None,verified_geo:None,verified_https:false,geo_failure:None,verified_tcp_ms:None};
 +    if let Err(error)=verify_prepared(&mut prepared).await {
 +        let error=if prepared.verified_tcp_ms.is_some(){error}else{prepared.tunnel.last_error().unwrap_or(error)};
 +        let error=preparation_failure(&prepared,error);prepared.tunnel.shutdown().await;return Err(error);
@@ -10488,7 +11006,7 @@ index 0000000000000000000000000000000000000000..b0b5d83d300fe04f35e2981bba09a4b4
 +        };
 +        match prepared {
 +            Ok(Some(mut prepared))=>{
-+                if prepared.verified_geo.is_none() {if let Err(error)=verify_prepared(&mut prepared).await {
++                if !prepared.is_ready() {if let Err(error)=verify_prepared(&mut prepared).await {
 +                    if let Some(tcp_ms)=prepared.verified_tcp_ms {
 +                        record_connected_route(&mut result,route,first,prepared.route,prepared.first_hop_error.clone(),tcp_ms);
 +                        result.set_exit(Err(error.into()));
@@ -10498,7 +11016,7 @@ index 0000000000000000000000000000000000000000..b0b5d83d300fe04f35e2981bba09a4b4
 +                    prepared.tunnel.shutdown().await;result.total_ms=start.elapsed().as_millis();return Ok(result);
 +                }}
 +                record_connected_route(&mut result,route,first,prepared.route,prepared.first_hop_error.clone(),prepared.verified_tcp_ms.expect("route TCP verified"));
-+                result.set_exit(Ok(prepared.verified_geo.clone().expect("route verified")));
++                result.set_exit(prepared.exit_result());
 +                prepared.tunnel.shutdown().await;
 +            },
 +            Err(error)=>{
@@ -12451,15 +12969,15 @@ index 90b201e8372b1f23c15160cd93979c4e8353fa6f..70304651379d1abc31a71b486fbab12a
 +    }
 +}
 diff --git a/src-tauri/src/space/client.rs b/src-tauri/src/space/client.rs
-index 93b7a0779c308c227bbeff00b269c2d62ccb8d52..7e8c1b0276ca864523c432077bdd5ede027d0511 100644
+index 93b7a0779c308c227bbeff00b269c2d62ccb8d52..a7b63157581ba206a0a216f07dfcdb8956613460 100644
 --- a/src-tauri/src/space/client.rs
 +++ b/src-tauri/src/space/client.rs
-@@ -1486,17 +1486,26 @@ mod tests {
+@@ -1486,17 +1486,28 @@ mod tests {
      }
  
      /// Files that talk HTTP or open sockets for something other than a team.
 -    const OTHER_TRAFFIC: [(&str, &str); 10] = [
-+    const OTHER_TRAFFIC: [(&str, &str); 19] = [
++    const OTHER_TRAFFIC: [(&str, &str); 21] = [
          ("process/close.rs", "Stop's Browser.close on a launched browser's own devtools"),
          ("live_e2e.rs", "the live end-to-end harness, run by hand: a test site, a proxy, CDP, the server raw"),
          ("runtime.rs", "engine and launcher downloads"),
@@ -12478,11 +12996,13 @@ index 93b7a0779c308c227bbeff00b269c2d62ccb8d52..7e8c1b0276ca864523c432077bdd5ede
 +        ("proxy_chain/integration_tests.rs", "synthetic profile launch and lifecycle tests"),
 +        ("proxy_chain/detection_tests.rs", "synthetic loopback Geo responders and proxy URL validation"),
 +        ("proxy_chain/same_exit_tests.rs", "synthetic loopback proxy equivalence and owned tunnel cleanup tests"),
++        ("proxy_chain/readiness.rs", "bounded verified HTTPS content through the prepared proxy only when live Geo is unavailable"),
++        ("proxy_chain/readiness_tests.rs", "synthetic proxy-only HTTPS readiness and certificate rejection tests"),
 +        ("proxy_chain/live_tests.rs", "explicit opt-in isolated Engine acceptance checks its own loopback listener cleanup"),
      ];
  
      const TALKS: [&str; 6] = ["reqwest", "tungstenite", "wreq", "TcpStream::connect", "hyper", "rustls"];
-@@ -1552,6 +1561,7 @@ mod tests {
+@@ -1552,6 +1563,7 @@ mod tests {
          assert!(unused.is_empty(), "no longer talks HTTP, take it off the list: {unused:?}");
          // Inside it, one pool and one way to open a connection: the switch to TLS.
          let ours = std::fs::read_to_string(src.join("space/client.rs")).unwrap();
@@ -12999,7 +13519,7 @@ index 0b822fb2e3f1c6aa20d8e6881e8daa295bb210b9..0dec4b34bf41bc979e16b1a4fca8cb46
 +    }
  }
 diff --git a/src-tauri/src/space/local/proxy.rs b/src-tauri/src/space/local/proxy.rs
-index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809df4e8b46 100644
+index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b8d96cf13 100644
 --- a/src-tauri/src/space/local/proxy.rs
 +++ b/src-tauri/src/space/local/proxy.rs
 @@ -32,6 +32,8 @@ pub struct ProxyEntry {
@@ -13234,7 +13754,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
      let mut out = vec![chosen.to_string()];
      out.extend(all.iter().filter(|p| **p != chosen).map(|p| p.to_string()));
      out
-@@ -844,12 +953,12 @@ pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider_override: Option
+@@ -844,12 +953,20 @@ pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider_override: Option
                          if !failures.is_empty() {
                              eprintln!(
                                  "[launcher] geo: {provider} answered after {} failed: {}",
@@ -13245,11 +13765,19 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
                          return Ok(info);
                      }
 -                    Err(e) => failures.push(format!("{provider}: {e}")),
-+                    Err(e) => failures.push(e),
++                    Err(e) => {
++                        let e: GeoProviderFailure = e;
++                        // A parsed proxy authentication refusal is final for
++                        // this route, rather than a location-provider outage.
++                        // Dropping the race also cancels already pending work.
++                        let authentication_refused=entry.is_some()&&e.http_status==Some(407);
++                        failures.push(e);
++                        if authentication_refused {return Err(GeoLookupError{failures}.into());}
++                    },
                  }
                  if pending.is_empty() && next >= chain.len() {
                      break;
-@@ -869,10 +978,11 @@ pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider_override: Option
+@@ -869,10 +986,11 @@ pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider_override: Option
              else => break,
          }
      }
@@ -13263,7 +13791,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
      let url = match provider {
          "ip-api.com" => "http://ip-api.com/json/?fields=status,message,query,country,countryCode,regionName,city,isp,timezone,lat,lon",
          "ipapi.co" => "https://ipapi.co/json/",
-@@ -903,15 +1013,19 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
+@@ -903,15 +1021,19 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
                  entry.port
              )
          };
@@ -13286,7 +13814,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
  
      let s = |v: &serde_json::Value, k: &str| {
          v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
-@@ -925,18 +1039,13 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
+@@ -925,18 +1047,13 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
      if body.get("error").and_then(|v| v.as_bool()) == Some(true)
          || body.get("success").and_then(|v| v.as_bool()) == Some(false)
      {
@@ -13307,7 +13835,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
              }
              GeoInfo {
                  ip: s(&body, "query"),
-@@ -990,8 +1099,8 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
+@@ -990,8 +1107,8 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> Result<Geo
      };
      // Every provider names the address it saw. Without one there is nothing to
      // trust in the rest of the object, so the next provider gets a turn.
@@ -13318,7 +13846,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
      }
      Ok(info)
  }
-@@ -1057,9 +1166,33 @@ pub fn country_to_locale(cc: &str) -> &'static str {
+@@ -1057,9 +1174,33 @@ pub fn country_to_locale(cc: &str) -> &'static str {
  
  // ---- Test history ----
  
@@ -13352,7 +13880,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
      pub first_seen: String,
      pub last_seen: String,
      pub ip: String,
-@@ -1162,7 +1295,7 @@ pub(in crate::space) fn keep_test(entries: &mut Vec<TestSnapshot>, mut snap: Tes
+@@ -1162,7 +1303,7 @@ pub(in crate::space) fn keep_test(entries: &mut Vec<TestSnapshot>, mut snap: Tes
      // used to stay as they were first seen, so a proxy that had moved
      // went on claiming its old city.
      if let Some(last) = entries.last_mut() {
@@ -13361,7 +13889,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
              snap.first_seen = last.first_seen.clone();
              *last = snap.clone();
              return snap;
-@@ -1226,10 +1359,45 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
+@@ -1226,10 +1367,45 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
  /// other: the reach test, the relay test and the address the world sees are
  /// three separate questions to the same proxy.
  pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
@@ -13376,7 +13904,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
 +            // the relay's shared diagnostic. Reuse the verification results
 +            // below, including partial connectivity, without another request.
 +            let verification_error=if let Some(route)=prepared.as_mut() {
-+                if route.verified_geo.is_none() {crate::proxy_chain::verify_prepared(route).await.err()} else {None}
++                if !route.is_ready() {crate::proxy_chain::verify_prepared(route).await.err()} else {None}
 +            } else {None};
 +            let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
 +            let result = measure_on_route(effective, prepared.as_ref(), verification_error.as_ref()).await;
@@ -13408,13 +13936,16 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
              Some(probe_udp(entry).await)
          } else {
              None
-@@ -1239,11 +1407,18 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1239,11 +1415,21 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      // else still shows how long a round trip through it takes.
      let geo_fut = async {
          let started = std::time::Instant::now();
 -        let res = geo_check(entry, None).await;
-+        let res = if let Some(geo) = prepared.and_then(|p| p.verified_geo.as_ref()) { Ok(geo.clone()) }
-+            else if let Some(error)=verification_error {Err(error.clone().into())}
++        // A prepared route owns this observation, including a missing Geo.
++        // HTTPS readiness must not trigger a second Geo lookup or borrow an
++        // older success before this result reaches the list and its history.
++        let res = if let Some(error)=verification_error {Err(error.clone().into())}
++            else if let Some(prepared)=prepared {prepared.exit_result()}
 +            else { geo_check(entry, None).await };
          (res, started.elapsed().as_millis())
      };
@@ -13429,7 +13960,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
  
      // An answer from a geo service IS the proxy working: the request went out
      // through it and came back. So its address is kept whenever it arrived,
-@@ -1251,11 +1426,26 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1251,11 +1437,26 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      // probe asks for and carry everything else. The other way round, a probe
      // that reached a host is proof too, and the test then says so with no
      // address rather than calling a working proxy dead.
@@ -13438,11 +13969,11 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
 +        if let Err(error) = &tcp_res {
 +            Some(error.downcast_ref::<crate::proxy_chain::error::ChainError>().cloned()
 +                .unwrap_or_else(||crate::proxy_chain::profile_failure(tunnel,error)).into())
-+        } else if geo_res.is_err() {
-+            Some(crate::proxy_chain::error::ChainError::new(
++        } else if let Err(error) = &geo_res {
++            Some(error.downcast_ref::<crate::proxy_chain::error::ChainError>().cloned().unwrap_or_else(||crate::proxy_chain::error::ChainError::new(
 +                "proxy_chain_profile_geo_failed", "exit",
 +                "The full chain connected, but no live exit IP was returned.",
-+            ).into())
++            )).into())
 +        } else { None }
 +    });
 +    let geo_error = if chained {
@@ -13458,7 +13989,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
      let (ip, country_code, country, region, city, isp, tz, lat, lng, provider) = match &geo_res {
          Ok(g) => (
              g.ip.clone(), g.country_code.clone(), g.country.clone(),
-@@ -1268,6 +1458,11 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1268,6 +1469,11 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      };
  
      TestSnapshot {
@@ -13470,7 +14001,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
          first_seen: String::new(),
          last_seen: now,
          ip,
-@@ -1282,7 +1477,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1282,7 +1488,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
          // Set whenever the proxy carried something, so "reached" always comes
          // with a time: the probe's own round trip, or the geo request's when
          // only that one got through.
@@ -13479,7 +14010,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
          udp_ms: udp_res
              .as_ref()
              .and_then(|r| r.as_ref().ok().copied()),
-@@ -1347,6 +1542,278 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
+@@ -1347,6 +1553,352 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
  mod tests {
      use super::*;
  
@@ -13560,6 +14091,41 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
 +        assert!(typed.failures.iter().any(|failure|failure.provider=="ip-api.com"&&failure.phase=="http_status"&&failure.http_status==Some(429)));
 +        let safe=format!("{error:#} {}",serde_json::to_string(typed).unwrap());
 +        for secret in ["private-provider-reason","hidden-provider-detail","private-fixture-user","private-fixture-secret","127.0.0.1"] {assert!(!safe.contains(secret));}
++    }
++
++    #[tokio::test]
++    async fn geo_proxy_authentication_refusal_stops_before_a_later_success_can_replace_it() {
++        use std::sync::{Arc,atomic::{AtomicUsize,Ordering}};
++        use tokio::io::{AsyncReadExt,AsyncWriteExt};
++        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let addr=listener.local_addr().unwrap();
++        let calls=Arc::new(AtomicUsize::new(0));let observed=calls.clone();
++        let worker=tokio::spawn(async move {
++            loop {
++                let (mut socket,_)=listener.accept().await.unwrap();
++                let mut head=Vec::new();while !head.ends_with(b"\r\n\r\n") {let Ok(byte)=socket.read_u8().await else{break;};head.push(byte);}
++                let request=observed.fetch_add(1,Ordering::SeqCst);
++                let status=if request==0 {407}else{200};
++                let body=if request==0 {r#"{"status":"success","query":"203.0.113.70","message":"private-auth-detail"}"#}
++                    else {r#"{"status":"success","query":"203.0.113.71","country":"Synthetic successful candidate"}"#};
++                let _=socket.write_all(format!("HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).as_bytes()).await;
++            }
++        });
++        let proxy=serde_json::from_value(serde_json::json!({"id":"geo-auth-race-fixture","name":"Synthetic", "kind":"http", "host":"127.0.0.1", "port":addr.port(), "username":"private-fixture-user","password":"private-fixture-secret"})).unwrap();
++        let error=geo_check_via(Some(&proxy),Some("ip-api.com".into())).await.unwrap_err();
++        let failure=error.downcast_ref::<GeoLookupError>().expect("the parsed refusal remains typed");
++        assert_eq!(failure.failures.len(),1);
++        assert_eq!(failure.failures[0].http_status,Some(407));
++        assert_eq!(failure.failures[0].phase,"http_status");
++        assert_eq!(calls.load(Ordering::SeqCst),1,"a rejected proxy must not launch another provider");
++        let safe=format!("{error:#} {}",serde_json::to_string(failure).unwrap());
++        for secret in ["private-auth-detail","private-fixture-user","private-fixture-secret","203.0.113.70"] {assert!(!safe.contains(secret));}
++        // Verify the counterfactual using the real parser: a later request to
++        // this same route could succeed, but cannot overwrite this attempt.
++        let later=geo_check_one(Some(&proxy),"ip-api.com").await.unwrap();
++        assert_eq!(later.ip,"203.0.113.71");
++        assert_eq!(calls.load(Ordering::SeqCst),2);
++        worker.abort();let _=worker.await;
 +    }
 +
 +    #[test]
@@ -13753,6 +14319,45 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..c70179ca5424b9e615c7f178cf9d2809
 +        assert_eq!(failure.code, "proxy_chain_profile_geo_failed");
 +        assert_eq!(failure.layer, "exit");
 +        assert!(!serde_json::to_string(&result).unwrap().contains("private-geo-response"));
++    }
++
++    #[tokio::test]
++    async fn https_ready_measurement_keeps_unknown_geo_without_reprobing_or_reusing_history() {
++        use crate::proxy_chain::{connector::Target, error::ChainError, tunnel::Tunnel, PreparedProxy, Route};
++        let _root = crate::store::test_root("https-ready-unknown-geo-measurement");
++        // Any accidental second probe is observable at this unused upstream.
++        let upstream = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
++        upstream.set_nonblocking(true).unwrap();
++        let target = upstream.local_addr().unwrap();
++        let tunnel = Tunnel::bind_assigned(Target::new("127.0.0.1", target.port()).unwrap(), None).await.unwrap();
++        let mut effective = entry(&format!("127.0.0.1:{}", tunnel.addr().port()));
++        effective.country = "HK".into();
++        let geo_failure = ChainError::new("proxy_chain_profile_geo_failed", "exit", "The live route returned no exit metadata for this observation.");
++        let prepared = PreparedProxy {
++            effective, tunnel, route: Route::ExplicitProxy, first_hop_error: None,
++            verified_geo: None, verified_https: true, geo_failure: Some(geo_failure.clone()), verified_tcp_ms: Some(17),
++        };
++        assert!(prepared.is_ready());
++        let result = tokio::time::timeout(std::time::Duration::from_secs(3), measure_on_route(&prepared.effective, Some(&prepared), None))
++            .await.expect("a ready route reuses its observation without network requests");
++        assert_eq!(result.tcp_ms, Some(17));
++        assert_eq!(result.route.as_deref(), Some("explicit_proxy"));
++        assert!(result.ip.is_empty() && result.country_code.is_empty() && result.country.is_empty() && result.timezone.is_empty());
++        assert_eq!(result.geo_error.as_deref(), Some(geo_failure.message.as_str()));
++        assert_eq!(result.chain_error.as_ref().unwrap().code, geo_failure.code);
++        assert!(prepared.tunnel.last_error().is_none());
++        assert!(matches!(upstream.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock), "no Geo or TCP flow may redial the prepared route");
++
++        let mut old = result.clone();
++        old.ip = "203.0.113.81".into(); old.country_code = "HK".into(); old.country = "Synthetic history".into();
++        old.timezone = "Asia/Hong_Kong".into(); old.geo_error = None; old.chain_error = None;
++        let mut history = Vec::new();
++        keep_test(&mut history, old);
++        let current = keep_test(&mut history, result);
++        assert_eq!(history.len(), 2);
++        assert!(current.ip.is_empty() && history.last().unwrap().country_code.is_empty());
++        assert!(history.last().unwrap().geo_error.is_some(), "the current missing Geo must not borrow a past location");
++        prepared.tunnel.shutdown().await;
 +    }
 +
      fn entry(line: &str) -> ProxyEntry {
