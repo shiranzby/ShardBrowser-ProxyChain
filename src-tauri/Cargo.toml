@@ -122,6 +122,9 @@ libc = "0.2"
 
 # Windows cookie crypto: AES-256-GCM + DPAPI key from Local State.
 [target.'cfg(windows)'.dependencies]
+# Earlier Mio sockets can be inherited by the Engine and outlive tunnel shutdown.
+# Keep this floor when replaying the patch onto an upstream lockfile.
+mio = { version = "1.2.1", default-features = false }
 aes-gcm = "0.10"
 getrandom = "0.2"
 windows-sys = { version = "0.59", features = [

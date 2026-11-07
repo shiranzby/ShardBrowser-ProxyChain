@@ -34,6 +34,119 @@ fn target() -> Target {
     Target::new("remote-proxy.invalid", 1080).unwrap()
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_tcp_listener_accepted_and_outbound_sockets_are_not_inheritable() {
+    use std::os::windows::io::AsRawSocket;
+    use windows_sys::Win32::Foundation::{GetHandleInformation, HANDLE_FLAG_INHERIT};
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (accepted, outbound) = within(async {
+        tokio::join!(listener.accept(), TcpStream::connect(listener.local_addr().unwrap()))
+    }).await;
+    let (accepted, _) = accepted.unwrap();
+    let outbound = outbound.unwrap();
+    for (kind, socket) in [
+        ("listener", listener.as_raw_socket()),
+        ("accepted", accepted.as_raw_socket()),
+        ("outbound", outbound.as_raw_socket()),
+    ] {
+        let mut flags = 0;
+        assert_ne!(unsafe { GetHandleInformation(socket as _, &mut flags) }, 0,
+            "read {kind} socket handle flags: {}", std::io::Error::last_os_error());
+        assert_eq!(flags & HANDLE_FLAG_INHERIT, 0,
+            "the Engine must not inherit the {kind} socket; keep Mio's Windows socket fix");
+    }
+}
+
+/// Query the kernel table, not the tunnel's own completion bookkeeping.
+/// The original address and PID exclude unrelated listeners in parallel tests.
+#[cfg(windows)]
+fn windows_listener_owned(addr: SocketAddr, pid: u32) -> bool {
+    #[link(name = "iphlpapi")]
+    extern "system" {
+        fn GetExtendedTcpTable(table: *mut std::ffi::c_void, size: *mut u32,
+            order: i32, family: u32, class: i32, reserved: u32) -> u32;
+    }
+    let mut size = 0;
+    let mut table = Vec::<u32>::new();
+    // AF_INET, TCP_TABLE_OWNER_PID_LISTENER. A parallel listener can grow the
+    // table between size/read; retry only this bounded local table read.
+    for _ in 0..3 {
+        let result = unsafe {
+            GetExtendedTcpTable(if table.is_empty() { std::ptr::null_mut() } else { table.as_mut_ptr().cast() },
+                &mut size, 0, 2, 3, 0)
+        };
+        if result == 122 {
+            table.resize((size as usize + 3) / 4, 0);
+            continue;
+        }
+        assert_eq!(result, 0, "read the Windows listener table");
+        assert!(!table.is_empty() && table[0] as usize <= (table.len() - 1) / 6);
+        return table[1..].chunks_exact(6).take(table[0] as usize).any(|row| {
+            row[0] == 2 && std::net::IpAddr::V4(std::net::Ipv4Addr::from(row[1].to_ne_bytes())) == addr.ip()
+                && u16::from_be(row[2] as u16) == addr.port() && row[5] == pid
+        });
+    }
+    panic!("Windows listener table kept changing during the bounded read");
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_tunnel_closes_its_os_listener_while_a_spawned_child_stays_alive() {
+    use std::process::Stdio;
+
+    let second = echo().await;
+    let first = http_forward(second.addr).await;
+    let tunnel = Tunnel::bind(hop(first.addr, ProxyKind::Http), target()).await.unwrap();
+    let addr = tunnel.addr();
+    let completed = tunnel.closed_signal();
+    let mut browser = TcpStream::connect(addr).await.unwrap();
+    roundtrip(&mut browser, b"before-child-spawn").await;
+    assert!(windows_listener_owned(addr, std::process::id()));
+
+    let control_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+    command.args(["--exact", "proxy_chain::integration_tests::tracker_child_waits_for_its_control_connection",
+        "--nocapture", "--test-threads=1"])
+        .env("SHARD_CHAIN_SYNTHETIC_CHILD_CONTROL", control_listener.local_addr().unwrap().to_string())
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+        .creation_flags(0x08000000).kill_on_drop(true);
+    let mut child = command.spawn().unwrap();
+    let (mut control, _) = tokio::time::timeout(Duration::from_secs(15), control_listener.accept())
+        .await.unwrap().unwrap();
+    drop(control_listener);
+    assert!(child.try_wait().unwrap().is_none(), "the controlled child must be alive before closure");
+
+    let closed_result = tunnel.close_and_wait().await;
+    let worker_finished = *completed.borrow();
+    let active = tunnel.active_connections();
+    let still_listening = windows_listener_owned(addr, std::process::id());
+    // Windows may discard a post-close SYN instead of returning 10061. The
+    // kernel listener row is the ownership assertion; either closed outcome
+    // is acceptable here, but a completed TCP handshake is not.
+    let new_connection = tokio::time::timeout(SHORT, TcpStream::connect(addr)).await;
+    let new_handshake = matches!(&new_connection, Ok(Ok(_)));
+    drop(new_connection);
+    let old_connection = tokio::time::timeout(SHORT, browser.read(&mut [0; 1])).await;
+    let old_closed = matches!(old_connection, Ok(Ok(0)) | Ok(Err(_)));
+    let child_still_alive = child.try_wait().unwrap().is_none();
+
+    // Clean up before asserting the old dependency's expected failure. Only
+    // this exact child is controlled; no user process or executable-name kill.
+    control.write_all(&[1]).await.unwrap();
+    let child_exited = match tokio::time::timeout(Duration::from_secs(15), child.wait()).await {
+        Ok(result) => result.unwrap().success(),
+        Err(_) => { let _ = child.kill().await; let _ = child.wait().await; false }
+    };
+    tunnel.shutdown().await;
+    assert!(child_exited && child_still_alive, "the child must survive tunnel closure and then exit under control");
+    assert!(closed_result.is_ok() && worker_finished && active == 0, "tunnel task/flow cleanup must complete");
+    assert!(!still_listening, "a child inherited the original OS listener after the worker finished");
+    assert!(!new_handshake, "a closed tunnel must not accept a new TCP connection while the child is alive");
+    assert!(old_closed, "the original flow must close while the child is alive");
+}
+
 #[tokio::test]
 async fn tcp_dial_retries_a_failed_connection_once_before_protocol_bytes() {
     let mut attempts = 0;
