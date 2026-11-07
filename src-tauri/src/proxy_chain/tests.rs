@@ -35,6 +35,89 @@ fn target() -> Target {
 }
 
 #[tokio::test]
+async fn tcp_dial_retries_a_failed_connection_once_before_protocol_bytes() {
+    let mut attempts = 0;
+    let start = tokio::time::Instant::now();
+    let connected = connector::retry_tcp_dial(Duration::from_millis(500), || {
+        attempts += 1;
+        let attempt = attempts;
+        async move {
+            if attempt == 1 { Err(std::io::ErrorKind::ConnectionRefused.into()) }
+            else { Ok(42) }
+        }
+    }).await.unwrap();
+    assert_eq!(connected, 42);
+    assert_eq!(attempts, 2);
+    assert!(start.elapsed() < Duration::from_millis(500));
+}
+
+#[tokio::test]
+async fn tcp_dial_retries_a_dropped_syn_and_preserves_the_original_total_budget() {
+    let mut attempts = 0;
+    let start = tokio::time::Instant::now();
+    let connected = connector::retry_tcp_dial(Duration::from_millis(200), || {
+        attempts += 1;
+        let attempt = attempts;
+        async move {
+            if attempt == 1 { std::future::pending::<()>().await; }
+            Ok::<_, std::io::Error>(42)
+        }
+    }).await.unwrap();
+    assert_eq!(connected, 42);
+    assert_eq!(attempts, 2);
+    assert!(start.elapsed() >= Duration::from_millis(100));
+    assert!(start.elapsed() < Duration::from_millis(500));
+
+    let mut attempts = 0;
+    let start = tokio::time::Instant::now();
+    let error = connector::retry_tcp_dial(Duration::from_millis(200), || {
+        attempts += 1;
+        std::future::pending::<std::io::Result<()>>()
+    }).await.unwrap_err();
+    assert_eq!(error, connector::TcpDialError::Timeout);
+    assert_eq!(attempts, 2);
+    assert!(start.elapsed() >= Duration::from_millis(200));
+    assert!(start.elapsed() < Duration::from_millis(500), "two attempts must share one 200ms budget");
+
+    let mut attempts = 0;
+    let error = connector::retry_tcp_dial(Duration::ZERO, || {
+        attempts += 1;
+        async { Ok::<_, std::io::Error>(()) }
+    }).await.unwrap_err();
+    assert_eq!(error, connector::TcpDialError::Timeout);
+    assert_eq!(attempts, 0);
+}
+
+#[tokio::test]
+async fn tcp_retry_does_not_replay_proxy_authentication_connect_or_protocol_failures() {
+    for (kind, response, expected) in [
+        (ProxyKind::Http, Some(407), "system_proxy_auth_failed"),
+        (ProxyKind::Http, Some(403), "system_proxy_connect_refused"),
+        (ProxyKind::Http, None, "system_proxy_io_failed"),
+        (ProxyKind::Socks5, None, "system_proxy_auth_failed"),
+    ] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let first = hop(listener.local_addr().unwrap(), kind);
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            if kind == ProxyKind::Socks5 {
+                let _ = socks_greeting(&mut socket).await;
+                socket.write_all(&[5, 255]).await.unwrap();
+            } else {
+                let _ = http_head(&mut socket).await;
+                if let Some(status) = response {
+                    socket.write_all(format!("HTTP/1.1 {status} Synthetic refusal\r\nContent-Length: 0\r\n\r\n").as_bytes()).await.unwrap();
+                }
+            }
+            drop(socket);
+            tokio::time::timeout(Duration::from_millis(150), listener.accept()).await.is_ok()
+        });
+        assert_eq!(within(connector::connect(&first, &target())).await.err().unwrap().code, expected);
+        assert!(!server.await.unwrap(), "a failure after TCP connected must never create a second connection");
+    }
+}
+
+#[tokio::test]
 async fn explicit_system_listener_resolves_each_actual_connect_and_refuses_udp_and_direct_pac() {
     let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
     let first_addr=listener.local_addr().unwrap();

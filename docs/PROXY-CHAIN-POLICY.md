@@ -21,6 +21,13 @@ caller can identify a failed first hop instead of guessing from loopback EOF.
 The settings-only system test likewise accepts live Geo evidence on the
 resolved system proxy when its separate probe target is unavailable.
 
+PC12 retries only TCP establishment once, before any proxy protocol bytes are
+sent. Both attempts share the original connection deadline; the first uses at
+most half the remaining time. This applies to detection, preparation and every
+new browser flow, for both the first hop and a selected proxy used alone.
+Authentication, CONNECT refusals, malformed replies and TLS failures are not
+replayed. An established connection is never switched to another route.
+
 Each saved profile `_meta.proxy_chain_policy` and saved proxy
 `proxy_chain_policy` accepts `inherit`, `enabled`, `disabled`, or `prefer_first_hop`. Missing fields
 mean `inherit`. Unknown values are errors, never an unchained fallback.

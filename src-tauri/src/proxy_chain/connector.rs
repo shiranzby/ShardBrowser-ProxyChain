@@ -162,10 +162,11 @@ pub async fn connect(hop: &ProxyHop, target: &Target) -> Result<Stream, ChainErr
 /// A protected route may explicitly skip the first hop, but it still dials
 /// only the original assigned proxy. Never pass a browser destination here.
 pub(crate) async fn connect_assigned(target: &Target, deadline: Duration) -> Result<TcpStream, ChainError> {
-    tokio::time::timeout(deadline, TcpStream::connect((target.host.as_str(), target.port)))
-        .await
-        .map_err(|_| ChainError::new("proxy_chain_assigned_proxy_timeout", "profile", "Connecting to the assigned proxy without the first hop timed out. No website direct connection was attempted."))?
-        .map_err(|_| ChainError::new("proxy_chain_assigned_proxy_failed", "profile", "Could not connect to the assigned proxy without the first hop. No website direct connection was attempted."))
+    retry_tcp_dial(deadline, || TcpStream::connect((target.host.as_str(), target.port)))
+        .await.map_err(|error| match error {
+            TcpDialError::Timeout => ChainError::new("proxy_chain_assigned_proxy_timeout", "profile", "Connecting to the assigned proxy without the first hop timed out. No website direct connection was attempted."),
+            TcpDialError::Failed => ChainError::new("proxy_chain_assigned_proxy_failed", "profile", "Could not connect to the assigned proxy without the first hop. No website direct connection was attempted."),
+        })
 }
 
 pub(super) async fn connect_with_timeout(
@@ -181,14 +182,10 @@ pub(super) async fn connect_with_tls_config(hop:&ProxyHop,target:&Target,budget:
     let host = normal_host(&hop.host)?;
     let target = Target::new(target.host.clone(), target.port)?;
     tokio::time::timeout(budget, async {
-        let stream = TcpStream::connect((host.as_str(), hop.port))
-            .await
-            .map_err(|_| {
-                ChainError::new(
-                    "system_proxy_connect_failed",
-                    "system_proxy",
-                    "Could not connect to the system proxy.",
-                )
+        let stream = retry_tcp_dial(budget, || TcpStream::connect((host.as_str(), hop.port)))
+            .await.map_err(|error| match error {
+                TcpDialError::Timeout => ChainError::new("system_proxy_timeout", "system_proxy", "The system proxy did not finish connecting in time."),
+                TcpDialError::Failed => ChainError::new("system_proxy_connect_failed", "system_proxy", "Could not connect to the system proxy."),
             })?;
         let _ = stream.set_nodelay(true);
         let mut stream: Stream = if hop.kind == ProxyKind::Https {
@@ -209,6 +206,36 @@ pub(super) async fn connect_with_tls_config(hop:&ProxyHop,target:&Target,budget:
             "The system proxy did not finish connecting in time.",
         )
     })?
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TcpDialError { Failed, Timeout }
+
+/// Retry only a TCP dial, before sending any protocol bytes. Both attempts
+/// share the original budget; authentication, TLS and CONNECT are never
+/// replayed. All routes (including browser flows after preparation) use this.
+pub(super) async fn retry_tcp_dial<T, F, Fut>(budget: Duration, mut dial: F) -> Result<T, TcpDialError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = std::io::Result<T>>,
+{
+    let deadline = tokio::time::Instant::now() + budget;
+    let mut last = TcpDialError::Timeout;
+    for attempt in 0..2 {
+        let now = tokio::time::Instant::now();
+        if now >= deadline { break; }
+        let until = if attempt == 0 { now + (deadline - now) / 2 } else { deadline };
+        match tokio::time::timeout_at(until, dial()).await {
+            Ok(Ok(stream)) => return Ok(stream),
+            Ok(Err(error)) => last = if error.kind() == std::io::ErrorKind::TimedOut { TcpDialError::Timeout } else { TcpDialError::Failed },
+            Err(_) => last = TcpDialError::Timeout,
+        }
+        if attempt == 0 {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            tokio::time::sleep(Duration::from_millis(100).min(remaining / 4)).await;
+        }
+    }
+    Err(last)
 }
 
 fn first_tls_error() -> ChainError {
