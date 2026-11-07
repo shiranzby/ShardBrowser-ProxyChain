@@ -366,9 +366,12 @@ async fn explicit_single_proxy_failures_keep_socks_response_details_and_skip_glo
         }
         assert_eq!(serde_json::to_value(&entry).unwrap(),before);
         let requests=endpoint.requests.lock().unwrap();
-        assert_eq!(requests.iter().filter(|target| target.as_str()=="example.com:443").count(),2);
+        assert_eq!(requests.iter().filter(|target| target.as_str()=="example.com:443").count(),4,
+            "each policy makes the original probe and the bounded same-route HTTPS alternative");
+        assert_eq!(requests.iter().filter(|target| target.as_str()=="example.org:443").count(),2,
+            "the second HTTPS target remains bounded to one attempt per policy");
         assert!(requests.iter().any(|target| target=="ip-api.com:80"),"failed reach probes still check the live exit on this route");
-        assert!(requests.iter().all(|target|matches!(target.as_str(),"example.com:443"|"ip-api.com:80"|"ipapi.co:443"|"ipwho.is:443")));
+        assert!(requests.iter().all(|target|matches!(target.as_str(),"example.com:443"|"example.org:443"|"ip-api.com:80"|"ipapi.co:443"|"ipwho.is:443")));
     }
     let endpoint=socks_proxy(SECOND_USER,"different synthetic secret","198.51.100.88").await;
     let entry=assigned(endpoint.addr,"socks5");
