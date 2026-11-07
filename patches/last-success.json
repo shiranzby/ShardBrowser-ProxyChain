@@ -2,14 +2,14 @@
   "schema": 1,
   "result": "success",
   "delivered_kind": "actions_artifact",
-  "completed_at_utc": "2026-11-07T11:05:58.096Z",
+  "completed_at_utc": "2026-11-07T23:14:08.418Z",
   "upstream_tag": "v2.1.4",
   "upstream_commit": "315753098b36affac020237f16273fe7a8351332",
-  "patch_revision": "pc15",
-  "patch_sha256": "7ad0530190666c932858c3827136d01562011a5900dd4a0ff3b355629b68a94b",
-  "candidate_commit": "4a85e54e2d5a7bd071d7e6632dd07191a54c4415",
-  "portable_sha256": "868e4fcd7bc744d65170c2e59e0c235af6f3787823f17f8bb9044edd9ba8eac5",
-  "artifact_id": "13571493200",
-  "artifact_digest": "3671c860a468e39c8cd5ec993869f43f9f3fe07c23f7b5050c54f6f40c928cd4",
-  "run_url": "https://github.com/shiranzby/ShardBrowser-ProxyChain/actions/runs/42363501982"
+  "patch_revision": "pc16",
+  "patch_sha256": "38ed28bbbf5f41a3ec4f936b3a82af58c990eba2d868c2b97c54b5d7ce352d6c",
+  "candidate_commit": "8bc0b31865cf39f7c85a5fe4e6e5c602ea218bde",
+  "portable_sha256": "0e109ad844e7635b648bc0fe1062aee324ec9dbff302b2531789649b86695199",
+  "artifact_id": "13594632641",
+  "artifact_digest": "ddf717b8aefda1724c2c14441a4c8a3da4c32c71da396f8c0abb8a4bc0013d2b",
+  "run_url": "https://github.com/shiranzby/ShardBrowser-ProxyChain/actions/runs/42421833308"
 }
