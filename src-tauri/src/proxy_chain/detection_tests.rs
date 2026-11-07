@@ -570,7 +570,7 @@ async fn preferred_failed_first_hop_keeps_the_assigned_proxy_and_freezes_its_pro
 }
 
 #[tokio::test]
-async fn preferred_working_chain_with_fresh_matching_exits_uses_only_the_original_assigned_proxy() {
+async fn preferred_working_chain_with_matching_exits_keeps_both_hops() {
     let _root = crate::store::test_root("preferred-same-exit");
     let second = http_proxy(None, true).await;
     let first = http_proxy(Some(second.addr), true).await;
@@ -581,8 +581,8 @@ async fn preferred_working_chain_with_fresh_matching_exits_uses_only_the_origina
     let first_result = super::test("system".into(), draft.clone(), None).await.unwrap();
     let profile_result = super::test("profile".into(), draft, Some("adaptive-profile".into())).await.unwrap();
     assert_eq!(first_result.exit_ip, profile_result.exit_ip);
-    assert_eq!(profile_result.route, Some(super::Route::SameExitVerified));
-    assert_eq!(profile_result.system_proxy.state,"not_tested","the final route retains only the assigned proxy");
+    assert_eq!(profile_result.route, Some(super::Route::FirstHop));
+    assert_eq!(profile_result.system_proxy.state,"ok","the verified first hop remains part of the route");
     assert_eq!(profile_result.profile_proxy.state, "ok");
     assert!(profile_result.first_hop_error_code.is_none());
     assert!(!first.requests.lock().unwrap().is_empty());
@@ -590,7 +590,7 @@ async fn preferred_working_chain_with_fresh_matching_exits_uses_only_the_origina
 }
 
 #[tokio::test]
-async fn explicit_matching_exit_route_does_not_credit_the_skipped_first_hop() {
+async fn explicit_matching_exit_route_preserves_and_reports_both_hops() {
     use super::{policy::ChainPolicy,route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,Route};
     let _root=crate::store::test_root("explicit-fresh-matching-exits");
     let second=http_proxy(None,true).await;
@@ -601,9 +601,9 @@ async fn explicit_matching_exit_route_does_not_credit_the_skipped_first_hop() {
     let route=R::Chain{first:FirstHop::Proxy{proxy_id:first_entry.id.clone()},second:SecondHop::Proxy};
     for _ in 0..2 {
         let result=routing::test_resolved_route(Some(&route),ChainPolicy::Enabled,Some(&entry),Some(&first_entry)).await.unwrap();
-        assert_eq!(result.route,Some(Route::SameExitVerified));
-        assert_eq!(result.source,Some("same_exit_verified"));
-        assert_eq!(result.system_proxy.state,"not_tested");
+        assert_eq!(result.route,Some(Route::ExplicitChain));
+        assert_eq!(result.source,Some("explicit_chain"));
+        assert_eq!(result.system_proxy.state,"ok");
         assert_eq!(result.profile_proxy.state,"ok");
         assert_eq!(result.exit_ip.as_deref(),Some("198.51.100.44"));
         assert!(result.first_hop_error_code.is_none());

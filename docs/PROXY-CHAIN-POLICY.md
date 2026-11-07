@@ -122,14 +122,17 @@ settings/credentials, missing proxy bindings and locked-profile authorization
 errors are not eligible for route recovery. Existing saved choices are not
 automatically changed.
 
-For `same_exit_verified`, PC11 compares fresh Geo evidence from the resolved,
-frozen first-hop endpoint with the verified chain exit. Only when they agree
-does it try the original assigned proxy alone. If that single route also
-authenticates and returns the same fresh exit, its already-verified tunnel is
-retained, and the chain is closed. Comparison has a six-second total budget,
-separate from product connection deadlines. An unsuccessful optimisation keeps
-the verified chain. A transport-failed chain can recover only when both fresh
-single-route exits agree; explicit authentication refusal is never hidden.
+PC13 retains a verified chain without making independent single-route
+comparisons, even when both proxies share an exit IP. This preserves the
+working first hop rather than replacing it with a separately dialled assigned
+proxy that may not remain reachable. Exact matching endpoints still use one
+assigned connection, avoiding an unnecessary self-connection.
+
+For `same_exit_verified`, only a transport-failed chain can recover when fresh
+single-route Geo checks on the frozen first hop and original assigned proxy
+both succeed and their exit IPs agree. The assigned route's already-verified
+tunnel is retained. Comparison has a six-second total budget, separate from
+product connection deadlines. Explicit authentication refusal is never hidden.
 Unknown exits, historical IPs and country labels cannot establish equivalence.
 
 This means equal observed exits, not equal node identity. Credentials, proxy

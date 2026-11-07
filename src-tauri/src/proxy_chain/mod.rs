@@ -209,9 +209,9 @@ async fn prepare_with_hop(entry: &ProxyEntry, hop: ProxyHop) -> anyhow::Result<P
 }
 
 /// The caller has already resolved one first hop for the assigned endpoint.
-/// Equal fresh exits are an optimisation, not proof of equal node identity.
-/// The retained single route always uses the original assigned credentials;
-/// it never becomes a mutable system-only route or a website direct route.
+/// A verified chain is retained even when both proxies share an exit IP.
+/// Equal fresh exits are only used to recover a failed chain, never to replace
+/// a working route with a separately dialled assigned-proxy connection.
 pub(super) async fn prepare_checked_chain(entry: &ProxyEntry, hop: ProxyHop) -> anyhow::Result<PreparedProxy> {
     prepare_checked_chain_with_budget(entry, hop, std::time::Duration::from_secs(6)).await
 }
@@ -221,20 +221,14 @@ async fn prepare_checked_chain_with_budget(entry: &ProxyEntry, hop: ProxyHop, co
     let verified=verify_prepared(&mut chained).await;
     let deadline=tokio::time::Instant::now()+comparison_budget;
     match verified {
-        Ok(())=>{
-            let expected=chained.verified_geo.as_ref().expect("verified chain exit").ip.clone();
-            if let Some(single)=try_same_exit_single(entry,&hop,Some(&expected),deadline).await {
-                chained.tunnel.shutdown().await;
-                Ok(single)
-            } else {Ok(chained)}
-        },
+        Ok(())=>Ok(chained),
         Err(error)=>{
             let recoverable=!matches!(error.code,"proxy_chain_profile_auth_failed"|"system_proxy_auth_failed")
                 && !matches!(error.layer,"configuration"|"exit");
             let failure=preparation_failure(&chained,error);
             chained.tunnel.shutdown().await;
             if recoverable {
-                if let Some(single)=try_same_exit_single(entry,&hop,None,deadline).await {return Ok(single);}
+                if let Some(single)=try_same_exit_single(entry,&hop,deadline).await {return Ok(single);}
             }
             Err(failure)
         },
@@ -253,13 +247,12 @@ async fn assigned_candidate_before(entry:&ProxyEntry,deadline:tokio::time::Insta
     else {prepared.tunnel.shutdown().await;None}
 }
 
-async fn try_same_exit_single(entry:&ProxyEntry,hop:&ProxyHop,expected:Option<&str>,deadline:tokio::time::Instant) -> Option<PreparedProxy> {
+async fn try_same_exit_single(entry:&ProxyEntry,hop:&ProxyHop,deadline:tokio::time::Instant) -> Option<PreparedProxy> {
     // Use the frozen hop itself. Resolving Windows/PAC again for a Geo URL
     // could select a different first hop than the assigned endpoint did.
     let first=assigned_candidate_before(&system_entry(hop),deadline).await?;
     let first_ip=first.verified_geo.as_ref().expect("verified first-hop exit").ip.clone();
     first.tunnel.shutdown().await;
-    if expected.is_some_and(|ip|!same_exit_ip(ip,&first_ip)) {return None;}
     let mut assigned=assigned_candidate_before(entry,deadline).await?;
     if assigned.verified_geo.as_ref().is_some_and(|geo|same_exit_ip(&geo.ip,&first_ip)) {
         assigned.route=Route::SameExitVerified;
