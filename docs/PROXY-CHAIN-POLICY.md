@@ -25,6 +25,8 @@ PC12 retries only TCP establishment once, before any proxy protocol bytes are
 sent. Both attempts share the original connection deadline; the first uses at
 most half the remaining time. This applies to detection, preparation and every
 new browser flow, for both the first hop and a selected proxy used alone.
+Hostnames are resolved once; the second attempt tries the resolved addresses in
+reverse order so an unavailable first address cannot starve the other IP family.
 Authentication, CONNECT refusals, malformed replies and TLS failures are not
 replayed. An established connection is never switched to another route.
 

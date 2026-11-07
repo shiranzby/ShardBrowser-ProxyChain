@@ -162,8 +162,8 @@ pub async fn connect(hop: &ProxyHop, target: &Target) -> Result<Stream, ChainErr
 /// A protected route may explicitly skip the first hop, but it still dials
 /// only the original assigned proxy. Never pass a browser destination here.
 pub(crate) async fn connect_assigned(target: &Target, deadline: Duration) -> Result<TcpStream, ChainError> {
-    retry_tcp_dial(deadline, || TcpStream::connect((target.host.as_str(), target.port)))
-        .await.map_err(|error| match error {
+    tokio::time::timeout(deadline, connect_tcp(&target.host, target.port, deadline))
+        .await.unwrap_or(Err(TcpDialError::Timeout)).map_err(|error| match error {
             TcpDialError::Timeout => ChainError::new("proxy_chain_assigned_proxy_timeout", "profile", "Connecting to the assigned proxy without the first hop timed out. No website direct connection was attempted."),
             TcpDialError::Failed => ChainError::new("proxy_chain_assigned_proxy_failed", "profile", "Could not connect to the assigned proxy without the first hop. No website direct connection was attempted."),
         })
@@ -182,7 +182,7 @@ pub(super) async fn connect_with_tls_config(hop:&ProxyHop,target:&Target,budget:
     let host = normal_host(&hop.host)?;
     let target = Target::new(target.host.clone(), target.port)?;
     tokio::time::timeout(budget, async {
-        let stream = retry_tcp_dial(budget, || TcpStream::connect((host.as_str(), hop.port)))
+        let stream = connect_tcp(&host, hop.port, budget)
             .await.map_err(|error| match error {
                 TcpDialError::Timeout => ChainError::new("system_proxy_timeout", "system_proxy", "The system proxy did not finish connecting in time."),
                 TcpDialError::Failed => ChainError::new("system_proxy_connect_failed", "system_proxy", "Could not connect to the system proxy."),
@@ -210,6 +210,23 @@ pub(super) async fn connect_with_tls_config(hop:&ProxyHop,target:&Target,budget:
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TcpDialError { Failed, Timeout }
+
+async fn connect_tcp(host: &str, port: u16, budget: Duration) -> Result<TcpStream, TcpDialError> {
+    let deadline = tokio::time::Instant::now() + budget;
+    // Resolve once under the caller's original deadline. Restarting the same
+    // multi-address dial can otherwise spend both half-budgets on an unusable
+    // IPv6 address and never reach a healthy IPv4 address (including localhost).
+    let addresses: Vec<_> = tokio::net::lookup_host((host, port)).await
+        .map_err(|_| TcpDialError::Failed)?.collect();
+    if addresses.is_empty() { return Err(TcpDialError::Failed); }
+    let mut reverse = false;
+    retry_tcp_dial(deadline.saturating_duration_since(tokio::time::Instant::now()), || {
+        let mut addresses = addresses.clone();
+        if reverse { addresses.reverse(); }
+        reverse = true;
+        async move { TcpStream::connect(addresses.as_slice()).await }
+    }).await
+}
 
 /// Retry only a TCP dial, before sending any protocol bytes. Both attempts
 /// share the original budget; authentication, TLS and CONNECT are never
