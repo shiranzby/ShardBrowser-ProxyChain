@@ -19785,7 +19785,7 @@ index 0000000000000000000000000000000000000000..c2bf0d90c6a21439ec7528289389ab90
 +  }, [kind, allIds, visibleIds, selected, groupOf, onReorder, dragHandle, resetSavedOrder, t, scope]);
 +}
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..6df4b29300a6a32481188056cba689fb7dfc73de 100644
+index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..32f6d1606adcc1aa059eb3ea1106796b931a6a3f 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
 @@ -1,4 +1,27 @@
@@ -19929,7 +19929,7 @@ index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..6df4b29300a6a32481188056cba689fb
    "settings.tabProfiles": "Profile defaults",
    "settings.tabStorage": "Storage",
    "settings.tabSync": "Sync",
-@@ -3481,5 +3589,166 @@
+@@ -3481,5 +3589,156 @@
    "sync.guideWhere": "Run it on a computer that stays on and that all your computers can reach: a small VPS or a home server.",
    "sync.syncFirst": "Sync first",
    "sync.unsentMany": "{n} changes made here haven’t reached the server: they stay on this computer only.",
@@ -20023,7 +20023,6 @@ index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..6df4b29300a6a32481188056cba689fb
 +  "profileRoute.legacyTitle": "Using existing proxy rules",
 +  "profileRoute.legacyHelp": "This profile keeps its proxy choice and existing first-hop rules until you choose a custom connection.",
 +  "profileRoute.customize": "Customize connection",
-+  "profileRoute.useLegacy": "Use existing proxy rules",
 +  "profileRoute.enableChain": "Enable proxy chain",
 +  "profileRoute.overrideHelp": "These choices apply to this profile and take priority over the global proxy-chain switch on its next start.",
 +  "profileRoute.connection": "Connection",
@@ -20034,19 +20033,12 @@ index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..6df4b29300a6a32481188056cba689fb
 +  "profileRoute.secondLayer": "Second-hop proxy",
 +  "profileRoute.firstSystem": "Use system proxy",
 +  "profileRoute.firstProxy": "Choose proxy",
-+  "profileRoute.firstDirect": "Use real IP",
-+  "profileRoute.secondProxy": "Choose proxy",
-+  "profileRoute.secondDirect": "Direct connection",
-+  "profileRoute.secondSystem": "Use system proxy",
-+  "profileRoute.secondSystemHelp": "Uses the system proxy as the only proxy, equivalent to selecting it with chaining off. Choosing another first hop changes this second choice to direct.",
 +  "profileRoute.chooseProxy": "Choose a saved proxy",
 +  "profileRoute.firstProxyChoice": "First-hop proxy choice",
 +  "profileRoute.systemHelp": "Uses this computer’s Windows system proxy, including supported PAC rules. A proxy failure stops the connection.",
 +  "profileRoute.proxyHelp": "Connects to the selected proxy without the system first hop. The selected proxy remains the website exit.",
 +  "profileRoute.directHelp": "Uses no application or Windows explicit proxy. A VPN or TUN can still affect this computer’s network exit; check the tested IP.",
-+  "profileRoute.firstDirectHelp": "Adds no proxy at the first hop. The second choice determines the route; a VPN or TUN can still affect this computer’s network.",
 +  "profileRoute.firstProxyHelp": "Connects to the second hop through this saved proxy, using its protocol and authentication.",
-+  "profileRoute.secondDirectHelp": "Adds no second proxy. Websites use the first hop; only a first hop using real IP also makes this a direct connection.",
 +  "profileRoute.secondProxyHelp": "The selected proxy is the final website exit. It is reached using the first-hop choice above.",
 +  "profileRoute.sameProxyHelp": "Both layers select the same proxy. Matching endpoint, protocol and authentication are used once; matching exit IPs alone do not prove a match.",
 +  "profileRoute.bindingKept": "The assigned proxy is kept for switching back, but this connection does not use it.",
@@ -20061,8 +20053,6 @@ index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..6df4b29300a6a32481188056cba689fb
 +  "profileRoute.summaryFirstSystem": "System proxy",
 +  "profileRoute.summaryFirstDirect": "Real IP",
 +  "profileRoute.summaryChain": "{first}, then {second}",
-+  "profileRoute.fallbackLabel": "Use the assigned proxy if the first hop fails",
-+  "profileRoute.fallbackHelp": "After a first-hop failure, verify a direct connection to the same assigned proxy. If that also fails, stop; websites are never reached directly.",
 +  "profileRoute.invalid": "This profile’s saved route is invalid. Choose its connection again before testing or saving.",
 +  "profileRoute.resetInvalid": "Choose connection again",
 +  "proxyChain.errorFirstTls": "First hop: the HTTPS proxy could not establish a verified TLS connection. Check its protocol, certificate and host name.",
@@ -20098,7 +20088,7 @@ index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..6df4b29300a6a32481188056cba689fb
 +  "profileRoute.geoRequest": "Request failed"
  }
 diff --git a/src/shared/i18n/locales/ru.json b/src/shared/i18n/locales/ru.json
-index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..df6f11b1d146137693dc902bbf188fa1aac94280 100644
+index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..c0b742d63936e217a2b69f4cb37b7b4ec75fb554 100644
 --- a/src/shared/i18n/locales/ru.json
 +++ b/src/shared/i18n/locales/ru.json
 @@ -1,4 +1,27 @@
@@ -20242,7 +20232,7 @@ index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..df6f11b1d146137693dc902bbf188fa1
    "settings.tabProfiles": "Новые профили",
    "settings.tabStorage": "Хранилище",
    "settings.tabSync": "Синхронизация",
-@@ -3481,5 +3589,166 @@
+@@ -3481,5 +3589,156 @@
    "sync.guideWhere": "Запускайте его на компьютере, который всегда включён и доступен всем вашим компьютерам: на небольшом VPS или домашнем сервере.",
    "sync.syncFirst": "Сначала синхронизировать",
    "sync.unsentMany": "{n} {n|изменение, сделанное здесь, не дошло|изменения, сделанные здесь, не дошли|изменений, сделанных здесь, не дошли} до сервера: они останутся только на этом компьютере.",
@@ -20336,7 +20326,6 @@ index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..df6f11b1d146137693dc902bbf188fa1
 +  "profileRoute.legacyTitle": "Используются прежние правила прокси",
 +  "profileRoute.legacyHelp": "Профиль сохраняет прежний прокси и правила первого перехода, пока вы не выберете отдельный маршрут.",
 +  "profileRoute.customize": "Настроить соединение",
-+  "profileRoute.useLegacy": "Использовать прежние правила",
 +  "profileRoute.enableChain": "Включить цепочку прокси",
 +  "profileRoute.overrideHelp": "Эти настройки действуют для этого профиля со следующего запуска и имеют приоритет над общим переключателем цепочки.",
 +  "profileRoute.connection": "Соединение",
@@ -20347,19 +20336,12 @@ index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..df6f11b1d146137693dc902bbf188fa1
 +  "profileRoute.secondLayer": "Второй прокси",
 +  "profileRoute.firstSystem": "Системный прокси",
 +  "profileRoute.firstProxy": "Выбрать прокси",
-+  "profileRoute.firstDirect": "Использовать реальный IP",
-+  "profileRoute.secondProxy": "Выбрать прокси",
-+  "profileRoute.secondDirect": "Напрямую",
-+  "profileRoute.secondSystem": "Системный прокси",
-+  "profileRoute.secondSystemHelp": "Использует только системный прокси, как при отключённой цепочке. При выборе другого первого перехода второй меняется на прямое соединение.",
 +  "profileRoute.chooseProxy": "Выберите сохранённый прокси",
 +  "profileRoute.firstProxyChoice": "Выбор первого прокси",
 +  "profileRoute.systemHelp": "Использует системный прокси Windows, включая поддерживаемые правила PAC. При ошибке прокси соединение останавливается.",
 +  "profileRoute.proxyHelp": "Подключается к выбранному прокси без системного первого перехода. Сайты видят выход выбранного прокси.",
 +  "profileRoute.directHelp": "Не использует прокси приложения или явно заданный прокси Windows. VPN или TUN могут менять выход сети; проверьте IP в тесте.",
-+  "profileRoute.firstDirectHelp": "Первый переход не добавляет прокси. Маршрут определяется вторым выбором; VPN или TUN могут влиять на сеть компьютера.",
 +  "profileRoute.firstProxyHelp": "Подключается ко второму прокси через сохранённый первый прокси с его протоколом и авторизацией.",
-+  "profileRoute.secondDirectHelp": "Не добавляет второй прокси. Сайты доступны через первый переход; прямой выход получается, только если там выбран реальный IP.",
 +  "profileRoute.secondProxyHelp": "Выбранный прокси является конечным выходом к сайтам. Соединение с ним идёт через указанный первый переход.",
 +  "profileRoute.sameProxyHelp": "На обоих переходах выбран один прокси. Одинаковые адрес, протокол и авторизация используются один раз; совпадение выходного IP этого не доказывает.",
 +  "profileRoute.bindingKept": "Привязка прокси сохранена для возврата, но этот маршрут её не использует.",
@@ -20374,8 +20356,6 @@ index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..df6f11b1d146137693dc902bbf188fa1
 +  "profileRoute.summaryFirstSystem": "Системный прокси",
 +  "profileRoute.summaryFirstDirect": "Реальный IP",
 +  "profileRoute.summaryChain": "{first}, затем {second}",
-+  "profileRoute.fallbackLabel": "Использовать назначенный прокси при ошибке первого",
-+  "profileRoute.fallbackHelp": "После ошибки первого перехода проверяет прямое соединение с тем же назначенным прокси. При повторной ошибке останавливается, не обращаясь к сайтам напрямую.",
 +  "profileRoute.invalid": "Сохранённый маршрут профиля неверен. Выберите соединение заново перед тестом или сохранением.",
 +  "profileRoute.resetInvalid": "Выбрать соединение заново",
 +  "proxyChain.errorFirstTls": "Первый узел: HTTPS-прокси не установил TLS-соединение с проверенным сертификатом. Проверьте протокол, сертификат и имя узла.",
@@ -20411,7 +20391,7 @@ index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..df6f11b1d146137693dc902bbf188fa1
 +  "profileRoute.geoRequest": "Запрос не удался"
  }
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..773ae0703dcfba7ba49752414b7f39db04c1c42d 100644
+index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..3b79bae8f5bed3b8712f4959ea00a0f6c1da4952 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
 @@ -1,4 +1,27 @@
@@ -20555,7 +20535,7 @@ index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..773ae0703dcfba7ba49752414b7f39db
    "settings.tabProfiles": "配置默认值",
    "settings.tabStorage": "存储",
    "settings.tabSync": "同步",
-@@ -3481,5 +3589,166 @@
+@@ -3481,5 +3589,156 @@
    "sync.guideWhere": "在一台始终开机、你所有电脑都能访问的电脑上运行它：小型 VPS 或家用服务器。",
    "sync.syncFirst": "先同步",
    "sync.unsentMany": "这里做的 {n} 项更改还没送达服务器：它们只会留在这台电脑上。",
@@ -20649,7 +20629,6 @@ index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..773ae0703dcfba7ba49752414b7f39db
 +  "profileRoute.legacyTitle": "使用现有代理规则",
 +  "profileRoute.legacyHelp": "此配置保留原代理选择和第一层规则，直到你选择自定义连接方式。",
 +  "profileRoute.customize": "自定义连接方式",
-+  "profileRoute.useLegacy": "使用现有代理规则",
 +  "profileRoute.enableChain": "启用链式代理",
 +  "profileRoute.overrideHelp": "这些选择只适用于此配置，并在下次启动时优先于全局代理链开关。",
 +  "profileRoute.connection": "连接方式",
@@ -20660,19 +20639,12 @@ index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..773ae0703dcfba7ba49752414b7f39db
 +  "profileRoute.secondLayer": "第二层代理",
 +  "profileRoute.firstSystem": "使用系统代理",
 +  "profileRoute.firstProxy": "选择代理",
-+  "profileRoute.firstDirect": "使用真实 IP",
-+  "profileRoute.secondProxy": "选择代理",
-+  "profileRoute.secondDirect": "直连",
-+  "profileRoute.secondSystem": "使用系统代理",
-+  "profileRoute.secondSystemHelp": "此组合仅使用系统代理，与关闭链式后选择系统代理相同。改选其他第一层时，第二层会改为直连。",
 +  "profileRoute.chooseProxy": "选择已保存的代理",
 +  "profileRoute.firstProxyChoice": "第一层代理选择",
 +  "profileRoute.systemHelp": "使用这台电脑的 Windows 系统代理，包括支持的 PAC 规则。代理失败时停止连接。",
 +  "profileRoute.proxyHelp": "跳过系统第一层，直接连接所选代理，仍由此代理访问网站。",
 +  "profileRoute.directHelp": "不使用应用代理或 Windows 显式代理；VPN 或 TUN 仍可能改变网络出口，请以实测 IP 为准。",
-+  "profileRoute.firstDirectHelp": "第一层不增加代理，出口由第二层的选择决定；VPN 或 TUN 仍可能影响这台电脑的底层网络。",
 +  "profileRoute.firstProxyHelp": "通过此条已保存代理连接第二层，使用其协议和认证信息。",
-+  "profileRoute.secondDirectHelp": "不增加第二个代理，网站仍经第一层出网；第一层也选择真实 IP 时才是真实 IP 直连。",
 +  "profileRoute.secondProxyHelp": "所选代理是网站最终出口，通过上方第一层选择连接到它。",
 +  "profileRoute.sameProxyHelp": "两层选择了同一条代理。地址、协议和认证完全一致时只连接一次；仅出口 IP 相同不能证明入口相同。",
 +  "profileRoute.bindingKept": "原代理绑定已保留，便于切回；当前连接方式不使用它。",
@@ -20687,8 +20659,6 @@ index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..773ae0703dcfba7ba49752414b7f39db
 +  "profileRoute.summaryFirstSystem": "系统代理",
 +  "profileRoute.summaryFirstDirect": "真实 IP",
 +  "profileRoute.summaryChain": "{first}，再经 {second}",
-+  "profileRoute.fallbackLabel": "第一层失败时仅用配置代理",
-+  "profileRoute.fallbackHelp": "第一层路线失败后，验证直接连接原绑定代理；如果仍失败则停止，不直接访问网站。",
 +  "profileRoute.invalid": "此配置保存的连接方式无效，请重新选择后再测试或保存。",
 +  "profileRoute.resetInvalid": "重新选择连接方式",
 +  "proxyChain.errorFirstTls": "第一层：HTTPS 代理无法建立通过证书验证的 TLS 连接，请检查协议、证书和主机名。",
