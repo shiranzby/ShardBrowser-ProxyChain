@@ -46,10 +46,10 @@ index 0000000000000000000000000000000000000000..69a55d6c36b1f4318d13d6902d0ae3ce
 +定向验证：Rust 创建/显式覆盖、设置旧 JSON 缺省、克隆/导入不覆盖与启动 argv；Playwright 新建默认、修改保存重载、旧配置编辑保留。原生 Engine 页面导航由候选产物验收另行确认。
 diff --git a/docs/PROXY-CHAIN-POLICY.md b/docs/PROXY-CHAIN-POLICY.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..43632bbc4ded3fdd9ecfa1e5efa22031ddeb3498
+index 0000000000000000000000000000000000000000..aef47db11b506ddedb5b3a56f50881904c324aba
 --- /dev/null
 +++ b/docs/PROXY-CHAIN-POLICY.md
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,187 @@
 +# Per-profile route choice and HTTP/HTTPS second hops (pc8)
 +
 +## Live verification (pc10)
@@ -174,14 +174,17 @@ index 0000000000000000000000000000000000000000..43632bbc4ded3fdd9ecfa1e5efa22031
 +errors are not eligible for route recovery. Existing saved choices are not
 +automatically changed.
 +
-+For `same_exit_verified`, PC11 compares fresh Geo evidence from the resolved,
-+frozen first-hop endpoint with the verified chain exit. Only when they agree
-+does it try the original assigned proxy alone. If that single route also
-+authenticates and returns the same fresh exit, its already-verified tunnel is
-+retained, and the chain is closed. Comparison has a six-second total budget,
-+separate from product connection deadlines. An unsuccessful optimisation keeps
-+the verified chain. A transport-failed chain can recover only when both fresh
-+single-route exits agree; explicit authentication refusal is never hidden.
++PC13 retains a verified chain without making independent single-route
++comparisons, even when both proxies share an exit IP. This preserves the
++working first hop rather than replacing it with a separately dialled assigned
++proxy that may not remain reachable. Exact matching endpoints still use one
++assigned connection, avoiding an unnecessary self-connection.
++
++For `same_exit_verified`, only a transport-failed chain can recover when fresh
++single-route Geo checks on the frozen first hop and original assigned proxy
++both succeed and their exit IPs agree. The assigned route's already-verified
++tunnel is retained. Comparison has a six-second total budget, separate from
++product connection deadlines. Explicit authentication refusal is never hidden.
 +Unknown exits, historical IPs and country labels cannot establish equivalence.
 +
 +This means equal observed exits, not equal node identity. Credentials, proxy
@@ -5786,7 +5789,7 @@ index 0000000000000000000000000000000000000000..b53e5b910df49df61865567902df08b9
 +}
 diff --git a/src-tauri/src/proxy_chain/detection_tests.rs b/src-tauri/src/proxy_chain/detection_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..cb7bc24f549dbb5d5ee066520969ee68eaa8825b
+index 0000000000000000000000000000000000000000..b1026fed44032393b0e7d1cce110eb0546f8eda3
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detection_tests.rs
 @@ -0,0 +1,1219 @@
@@ -6362,7 +6365,7 @@ index 0000000000000000000000000000000000000000..cb7bc24f549dbb5d5ee066520969ee68
 +}
 +
 +#[tokio::test]
-+async fn preferred_working_chain_with_fresh_matching_exits_uses_only_the_original_assigned_proxy() {
++async fn preferred_working_chain_with_matching_exits_keeps_both_hops() {
 +    let _root = crate::store::test_root("preferred-same-exit");
 +    let second = http_proxy(None, true).await;
 +    let first = http_proxy(Some(second.addr), true).await;
@@ -6373,8 +6376,8 @@ index 0000000000000000000000000000000000000000..cb7bc24f549dbb5d5ee066520969ee68
 +    let first_result = super::test("system".into(), draft.clone(), None).await.unwrap();
 +    let profile_result = super::test("profile".into(), draft, Some("adaptive-profile".into())).await.unwrap();
 +    assert_eq!(first_result.exit_ip, profile_result.exit_ip);
-+    assert_eq!(profile_result.route, Some(super::Route::SameExitVerified));
-+    assert_eq!(profile_result.system_proxy.state,"not_tested","the final route retains only the assigned proxy");
++    assert_eq!(profile_result.route, Some(super::Route::FirstHop));
++    assert_eq!(profile_result.system_proxy.state,"ok","the verified first hop remains part of the route");
 +    assert_eq!(profile_result.profile_proxy.state, "ok");
 +    assert!(profile_result.first_hop_error_code.is_none());
 +    assert!(!first.requests.lock().unwrap().is_empty());
@@ -6382,7 +6385,7 @@ index 0000000000000000000000000000000000000000..cb7bc24f549dbb5d5ee066520969ee68
 +}
 +
 +#[tokio::test]
-+async fn explicit_matching_exit_route_does_not_credit_the_skipped_first_hop() {
++async fn explicit_matching_exit_route_preserves_and_reports_both_hops() {
 +    use super::{policy::ChainPolicy,route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,Route};
 +    let _root=crate::store::test_root("explicit-fresh-matching-exits");
 +    let second=http_proxy(None,true).await;
@@ -6393,9 +6396,9 @@ index 0000000000000000000000000000000000000000..cb7bc24f549dbb5d5ee066520969ee68
 +    let route=R::Chain{first:FirstHop::Proxy{proxy_id:first_entry.id.clone()},second:SecondHop::Proxy};
 +    for _ in 0..2 {
 +        let result=routing::test_resolved_route(Some(&route),ChainPolicy::Enabled,Some(&entry),Some(&first_entry)).await.unwrap();
-+        assert_eq!(result.route,Some(Route::SameExitVerified));
-+        assert_eq!(result.source,Some("same_exit_verified"));
-+        assert_eq!(result.system_proxy.state,"not_tested");
++        assert_eq!(result.route,Some(Route::ExplicitChain));
++        assert_eq!(result.source,Some("explicit_chain"));
++        assert_eq!(result.system_proxy.state,"ok");
 +        assert_eq!(result.profile_proxy.state,"ok");
 +        assert_eq!(result.exit_ip.as_deref(),Some("198.51.100.44"));
 +        assert!(result.first_hop_error_code.is_none());
@@ -9413,10 +9416,10 @@ index 0000000000000000000000000000000000000000..f7bb892bebd3da48a4af1f8378dcddd6
 +}
 diff --git a/src-tauri/src/proxy_chain/mod.rs b/src-tauri/src/proxy_chain/mod.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..275af2c963ead44ba6f26d654e639f509a1cb216
+index 0000000000000000000000000000000000000000..249a69c3c699b639db7312966bcd0afd91238c57
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/mod.rs
-@@ -0,0 +1,666 @@
+@@ -0,0 +1,659 @@
 +//! Windows system proxy -> original profile proxy. Never fall back to direct.
 +pub mod config;
 +pub mod connector;
@@ -9628,9 +9631,9 @@ index 0000000000000000000000000000000000000000..275af2c963ead44ba6f26d654e639f50
 +}
 +
 +/// The caller has already resolved one first hop for the assigned endpoint.
-+/// Equal fresh exits are an optimisation, not proof of equal node identity.
-+/// The retained single route always uses the original assigned credentials;
-+/// it never becomes a mutable system-only route or a website direct route.
++/// A verified chain is retained even when both proxies share an exit IP.
++/// Equal fresh exits are only used to recover a failed chain, never to replace
++/// a working route with a separately dialled assigned-proxy connection.
 +pub(super) async fn prepare_checked_chain(entry: &ProxyEntry, hop: ProxyHop) -> anyhow::Result<PreparedProxy> {
 +    prepare_checked_chain_with_budget(entry, hop, std::time::Duration::from_secs(6)).await
 +}
@@ -9640,20 +9643,14 @@ index 0000000000000000000000000000000000000000..275af2c963ead44ba6f26d654e639f50
 +    let verified=verify_prepared(&mut chained).await;
 +    let deadline=tokio::time::Instant::now()+comparison_budget;
 +    match verified {
-+        Ok(())=>{
-+            let expected=chained.verified_geo.as_ref().expect("verified chain exit").ip.clone();
-+            if let Some(single)=try_same_exit_single(entry,&hop,Some(&expected),deadline).await {
-+                chained.tunnel.shutdown().await;
-+                Ok(single)
-+            } else {Ok(chained)}
-+        },
++        Ok(())=>Ok(chained),
 +        Err(error)=>{
 +            let recoverable=!matches!(error.code,"proxy_chain_profile_auth_failed"|"system_proxy_auth_failed")
 +                && !matches!(error.layer,"configuration"|"exit");
 +            let failure=preparation_failure(&chained,error);
 +            chained.tunnel.shutdown().await;
 +            if recoverable {
-+                if let Some(single)=try_same_exit_single(entry,&hop,None,deadline).await {return Ok(single);}
++                if let Some(single)=try_same_exit_single(entry,&hop,deadline).await {return Ok(single);}
 +            }
 +            Err(failure)
 +        },
@@ -9672,13 +9669,12 @@ index 0000000000000000000000000000000000000000..275af2c963ead44ba6f26d654e639f50
 +    else {prepared.tunnel.shutdown().await;None}
 +}
 +
-+async fn try_same_exit_single(entry:&ProxyEntry,hop:&ProxyHop,expected:Option<&str>,deadline:tokio::time::Instant) -> Option<PreparedProxy> {
++async fn try_same_exit_single(entry:&ProxyEntry,hop:&ProxyHop,deadline:tokio::time::Instant) -> Option<PreparedProxy> {
 +    // Use the frozen hop itself. Resolving Windows/PAC again for a Geo URL
 +    // could select a different first hop than the assigned endpoint did.
 +    let first=assigned_candidate_before(&system_entry(hop),deadline).await?;
 +    let first_ip=first.verified_geo.as_ref().expect("verified first-hop exit").ip.clone();
 +    first.tunnel.shutdown().await;
-+    if expected.is_some_and(|ip|!same_exit_ip(ip,&first_ip)) {return None;}
 +    let mut assigned=assigned_candidate_before(entry,deadline).await?;
 +    if assigned.verified_geo.as_ref().is_some_and(|geo|same_exit_ip(&geo.ip,&first_ip)) {
 +        assigned.route=Route::SameExitVerified;
@@ -10537,38 +10533,40 @@ index 0000000000000000000000000000000000000000..b0b5d83d300fe04f35e2981bba09a4b4
 +}
 diff --git a/src-tauri/src/proxy_chain/same_exit_tests.rs b/src-tauri/src/proxy_chain/same_exit_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..9dfeba57ee0d1555a0daaa53b505fd076c9ae7de
+index 0000000000000000000000000000000000000000..6d98d7eac49d4495514cb246893938a8d663231a
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/same_exit_tests.rs
-@@ -0,0 +1,217 @@
+@@ -0,0 +1,287 @@
 +//! Local protocol evidence for route optimisation. No Internet targets resolve.
 +use super::{connector::{ProxyHop,ProxyKind as HopKind},PreparedProxy,Route};
 +use base64::{engine::general_purpose::STANDARD,Engine as _};
 +use serde_json::json;
-+use std::{net::SocketAddr,sync::{Arc,atomic::{AtomicUsize,Ordering}},time::Duration};
-+use tokio::{io::{AsyncReadExt,AsyncWriteExt},net::{TcpListener,TcpStream},task::{JoinHandle,JoinSet}};
++use std::{net::SocketAddr,sync::{Arc,atomic::{AtomicBool,AtomicUsize,Ordering}},time::Duration};
++use tokio::{io::{AsyncRead,AsyncReadExt,AsyncWriteExt},net::{TcpListener,TcpStream},task::{JoinHandle,JoinSet}};
 +
 +const FIRST_USER:&str="first-synthetic";
 +const FIRST_PASS:&str="first-synthetic-password";
 +const SECOND_USER:&str="second-synthetic";
 +const SECOND_PASS:&str="second-synthetic-password";
++const WEBSITE_HOST:&str="content.synthetic.test";
++const WEBSITE_BODY:&str="<!doctype html><title>Ordinary content</title><main>Fresh chained website content</main>";
 +
 +#[derive(Clone)]
-+struct Leaf {ip:&'static str,user:&'static str,password:&'static str,valid_geo:bool,reject_auth:bool,hang_geo:bool}
++struct Leaf {ip:&'static str,user:&'static str,password:&'static str,valid_geo:bool,reject_auth:bool,hang_geo:bool,website:Option<Arc<rustls::ServerConfig>>}
 +impl Leaf {
-+    fn first(ip:&'static str)->Self {Self{ip,user:FIRST_USER,password:FIRST_PASS,valid_geo:true,reject_auth:false,hang_geo:false}}
-+    fn second(ip:&'static str)->Self {Self{ip,user:SECOND_USER,password:SECOND_PASS,valid_geo:true,reject_auth:false,hang_geo:false}}
++    fn first(ip:&'static str)->Self {Self{ip,user:FIRST_USER,password:FIRST_PASS,valid_geo:true,reject_auth:false,hang_geo:false,website:None}}
++    fn second(ip:&'static str)->Self {Self{ip,user:SECOND_USER,password:SECOND_PASS,valid_geo:true,reject_auth:false,hang_geo:false,website:None}}
 +}
 +#[derive(Clone)]
 +enum Chain {Relay(SocketAddr),Inline(Leaf),Refuse}
 +#[derive(Default)]
-+struct Counts {accepted:AtomicUsize,active:AtomicUsize,chained:AtomicUsize,geos:AtomicUsize}
++struct Counts {accepted:AtomicUsize,active:AtomicUsize,chained:AtomicUsize,geos:AtomicUsize,websites:AtomicUsize}
 +struct Active(Arc<Counts>);
 +impl Drop for Active {fn drop(&mut self){self.0.active.fetch_sub(1,Ordering::SeqCst);}}
-+struct Service {addr:SocketAddr,counts:Arc<Counts>,task:JoinHandle<()>}
++struct Service {addr:SocketAddr,counts:Arc<Counts>,reject_direct:Arc<AtomicBool>,task:JoinHandle<()>}
 +impl Drop for Service {fn drop(&mut self){self.task.abort();}}
 +
-+async fn head(stream:&mut TcpStream)->std::io::Result<String> {
++async fn head(stream:&mut (impl AsyncRead+Unpin))->std::io::Result<String> {
 +    let mut bytes=Vec::new();
 +    while !bytes.ends_with(b"\r\n\r\n") && bytes.len()<16384 {bytes.push(stream.read_u8().await?);}
 +    Ok(String::from_utf8_lossy(&bytes).into_owned())
@@ -10583,6 +10581,16 @@ index 0000000000000000000000000000000000000000..9dfeba57ee0d1555a0daaa53b505fd07
 +async fn leaf_response(stream:&mut TcpStream,request:&str,leaf:&Leaf,counts:&Counts)->std::io::Result<()> {
 +    if !authorized(request,leaf) {return refuse(stream,407).await;}
 +    if request.starts_with("CONNECT example.com:443 ") {return stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await;}
++    if request.starts_with(&format!("CONNECT {WEBSITE_HOST}:443 ")) {
++        let Some(config)=&leaf.website else {return refuse(stream,502).await;};
++        stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await?;
++        let mut tls=tokio_rustls::TlsAcceptor::from(config.clone()).accept(stream).await?;
++        let request=head(&mut tls).await?;
++        assert!(request.starts_with("GET /ordinary-content HTTP/1.1\r\n"));
++        counts.websites.fetch_add(1,Ordering::SeqCst);
++        tls.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{WEBSITE_BODY}",WEBSITE_BODY.len()).as_bytes()).await?;
++        return tls.shutdown().await;
++    }
 +    if request.starts_with("CONNECT ") {return refuse(stream,502).await;}
 +    counts.geos.fetch_add(1,Ordering::SeqCst);
 +    if leaf.hang_geo {let _=stream.read(&mut [0;1]).await?;return Ok(());}
@@ -10593,6 +10601,7 @@ index 0000000000000000000000000000000000000000..9dfeba57ee0d1555a0daaa53b505fd07
 +async fn service(leaf:Leaf,chain:Option<(SocketAddr,Chain)>,reject_direct:bool)->Service {
 +    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
 +    let addr=listener.local_addr().unwrap();let counts=Arc::new(Counts::default());let record=counts.clone();
++    let reject_direct=Arc::new(AtomicBool::new(reject_direct));let blocked=reject_direct.clone();
 +    let task=tokio::spawn(async move {
 +        let mut clients=JoinSet::new();
 +        loop {tokio::select! {
@@ -10600,10 +10609,10 @@ index 0000000000000000000000000000000000000000..9dfeba57ee0d1555a0daaa53b505fd07
 +            accepted=listener.accept()=>{
 +                let Ok((mut stream,_))=accepted else {break;};
 +                record.accepted.fetch_add(1,Ordering::SeqCst);record.active.fetch_add(1,Ordering::SeqCst);
-+                let counts=record.clone();let leaf=leaf.clone();let chain=chain.clone();
++                let counts=record.clone();let leaf=leaf.clone();let chain=chain.clone();let blocked=blocked.clone();
 +                clients.spawn(async move {
 +                    let _active=Active(counts.clone());
-+                    if reject_direct {return;}
++                    if blocked.load(Ordering::SeqCst) {return;}
 +                    let Ok(request)=head(&mut stream).await else {return;};
 +                    if !authorized(&request,&leaf) {let _=refuse(&mut stream,407).await;return;}
 +                    if let Some((target,action))=chain {
@@ -10624,7 +10633,29 @@ index 0000000000000000000000000000000000000000..9dfeba57ee0d1555a0daaa53b505fd07
 +            }
 +        }}
 +    });
-+    Service{addr,counts,task}
++    Service{addr,counts,reject_direct,task}
++}
++
++fn website_tls()->(Arc<rustls::ServerConfig>,Arc<rustls::ClientConfig>) {
++    use rustls::pki_types::PrivatePkcs8KeyDer;
++    let certified=rcgen::generate_simple_self_signed(vec![WEBSITE_HOST.into()]).unwrap();
++    let cert=certified.cert.der().clone();let provider=Arc::new(rustls::crypto::ring::default_provider());
++    let server=rustls::ServerConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().unwrap().with_no_client_auth()
++        .with_single_cert(vec![cert.clone()],PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der()).into()).unwrap();
++    let mut roots=rustls::RootCertStore::empty();roots.add(cert).unwrap();
++    let client=rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth();
++    (Arc::new(server),Arc::new(client))
++}
++
++async fn website(entry:&crate::space::proxy::ProxyEntry,client:Arc<rustls::ClientConfig>)->anyhow::Result<String> {
++    tokio::time::timeout(Duration::from_secs(3),async {
++        let proxy=ProxyHop{kind:HopKind::Http,host:entry.host.clone(),port:entry.port,username:entry.username.clone(),password:entry.password.clone()};
++        let stream=super::connector::connect(&proxy,&super::connector::Target::new(WEBSITE_HOST,443)?).await?;
++        let mut tls=tokio_rustls::TlsConnector::from(client).connect(rustls::pki_types::ServerName::try_from(WEBSITE_HOST.to_owned())?,stream).await?;
++        tls.write_all(format!("GET /ordinary-content HTTP/1.1\r\nHost: {WEBSITE_HOST}\r\nConnection: close\r\n\r\n").as_bytes()).await?;
++        let mut response=String::new();tls.read_to_string(&mut response).await?;
++        anyhow::Ok(response)
++    }).await?
 +}
 +fn entry(addr:SocketAddr)->crate::space::proxy::ProxyEntry {
 +    serde_json::from_value(json!({"id":"same-exit-assigned","name":"Synthetic assigned","kind":"http","host":addr.ip().to_string(),"port":addr.port(),"username":SECOND_USER,"password":SECOND_PASS})).unwrap()
@@ -10648,18 +10679,21 @@ index 0000000000000000000000000000000000000000..9dfeba57ee0d1555a0daaa53b505fd07
 +}
 +
 +#[tokio::test]
-+async fn matching_fresh_exits_reuse_only_the_original_assigned_proxy_without_editing_it() {
-+    let _root=crate::store::test_root("same-exit-retained-assigned");preferred_geo();
++async fn matching_exits_keep_the_verified_chain_without_dialling_assigned_direct() {
++    let _root=crate::store::test_root("same-exit-retained-chain");preferred_geo();
 +    let second=service(Leaf::second("198.51.100.91"),None,false).await;
 +    let first=service(Leaf::first("198.51.100.91"),Some((second.addr,Chain::Relay(second.addr))),false).await;
 +    let assigned=entry(second.addr);let before=serde_json::to_value(&assigned).unwrap();
 +    let prepared=super::prepare_checked_chain(&assigned,hop(&first)).await.unwrap();
-+    assert_eq!(prepared.route,Route::SameExitVerified);
++    assert_eq!(prepared.route,Route::FirstHop);
 +    assert_eq!(prepared.effective.username,SECOND_USER);assert_eq!(prepared.effective.password,SECOND_PASS);
 +    assert_eq!(serde_json::to_value(&assigned).unwrap(),before);
-+    let calls=first.counts.accepted.load(Ordering::SeqCst);
++    assert_eq!(first.counts.geos.load(Ordering::SeqCst),0,"a healthy chain must not start an independent first-hop exit comparison");
++    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),first.counts.chained.load(Ordering::SeqCst),"matching exits must not cause a direct assigned connection");
++    let calls=first.counts.chained.load(Ordering::SeqCst);
 +    assert_eq!(crate::space::proxy::geo_check_on_route(Some(&prepared.effective),None).await.unwrap().ip,"198.51.100.91");
-+    assert_eq!(first.counts.accepted.load(Ordering::SeqCst),calls,"retained traffic must not use the first hop");
++    assert!(first.counts.chained.load(Ordering::SeqCst)>calls,"retained traffic must continue through the supplied first hop");
++    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),first.counts.chained.load(Ordering::SeqCst));
 +    shutdown(prepared).await;wait_no_clients(&first).await;wait_no_clients(&second).await;
 +}
 +
@@ -10675,13 +10709,44 @@ index 0000000000000000000000000000000000000000..9dfeba57ee0d1555a0daaa53b505fd07
 +}
 +
 +#[tokio::test]
-+async fn failed_assigned_single_optimisation_does_not_discard_a_working_chain() {
++async fn unavailable_assigned_direct_is_not_probed_when_the_chain_works() {
 +    let _root=crate::store::test_root("same-exit-direct-unavailable");preferred_geo();
 +    let second=service(Leaf::second("198.51.100.94"),None,true).await;
 +    let first=service(Leaf::first("198.51.100.94"),Some((second.addr,Chain::Inline(Leaf::second("198.51.100.94")))),false).await;
 +    let prepared=super::prepare_checked_chain(&entry(second.addr),hop(&first)).await.unwrap();
-+    assert_eq!(prepared.route,Route::FirstHop);assert!(second.counts.accepted.load(Ordering::SeqCst)>0);
++    assert_eq!(prepared.route,Route::FirstHop);assert_eq!(second.counts.accepted.load(Ordering::SeqCst),0);
 +    assert_eq!(crate::space::proxy::geo_check_on_route(Some(&prepared.effective),None).await.unwrap().ip,"198.51.100.94");
++    shutdown(prepared).await;wait_no_clients(&first).await;wait_no_clients(&second).await;
++}
++
++#[tokio::test]
++async fn same_exit_chain_keeps_serving_tls_website_content_after_assigned_direct_stops_working() {
++    let _root=crate::store::test_root("same-exit-website-after-direct-failure");preferred_geo();
++    let (server,client)=website_tls();
++    let mut leaf=Leaf::second("198.51.100.104");leaf.website=Some(server);
++    let second=service(leaf.clone(),None,false).await;
++    let first=service(Leaf::first(leaf.ip),Some((second.addr,Chain::Inline(leaf))),false).await;
++    let assigned=entry(second.addr);let original=serde_json::to_value(&assigned).unwrap();
++    // A successful direct check must not let a later healthy chain be replaced
++    // with a new assigned-proxy connection that may no longer be reachable.
++    assert_eq!(crate::space::proxy::geo_check_on_route(Some(&assigned),None).await.unwrap().ip,"198.51.100.104");
++    let direct_before=second.counts.accepted.load(Ordering::SeqCst);
++    let prepared=super::prepare_checked_chain(&assigned,hop(&first)).await.unwrap();
++    assert_eq!(prepared.route,Route::FirstHop);
++    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),direct_before,"healthy preparation cannot dial the assigned endpoint directly");
++    second.reject_direct.store(true,Ordering::SeqCst);
++    assert!(website(&assigned,client.clone()).await.is_err(),"the independent assigned path must now be unavailable");
++    let direct_after=second.counts.accepted.load(Ordering::SeqCst);
++    let chained_before=first.counts.chained.load(Ordering::SeqCst);
++    for _ in 0..2 {
++        let response=website(&prepared.effective,client.clone()).await.unwrap();
++        assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
++        assert!(response.ends_with(WEBSITE_BODY));
++    }
++    assert_eq!(first.counts.chained.load(Ordering::SeqCst),chained_before+2,"each new website flow must retain the first hop");
++    assert_eq!(first.counts.websites.load(Ordering::SeqCst),2);
++    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),direct_after,"website traffic must not retry the unavailable direct assigned path");
++    assert_eq!(serde_json::to_value(&assigned).unwrap(),original);
 +    shutdown(prepared).await;wait_no_clients(&first).await;wait_no_clients(&second).await;
 +}
 +
@@ -10732,15 +10797,16 @@ index 0000000000000000000000000000000000000000..9dfeba57ee0d1555a0daaa53b505fd07
 +}
 +
 +#[tokio::test]
-+async fn comparison_timeout_closes_its_pending_clients_and_keeps_the_verified_chain() {
++async fn comparison_timeout_closes_its_pending_clients_after_chain_failure() {
 +    let _root=crate::store::test_root("same-exit-comparison-timeout");preferred_geo();
 +    let second=service(Leaf::second("198.51.100.100"),None,false).await;
 +    let mut hanging=Leaf::first("198.51.100.100");hanging.hang_geo=true;
-+    let first=service(hanging,Some((second.addr,Chain::Relay(second.addr))),false).await;
-+    let prepared=super::prepare_checked_chain_with_budget(&entry(second.addr),hop(&first),Duration::from_millis(100)).await.unwrap();
-+    assert_eq!(prepared.route,Route::FirstHop);wait_no_clients(&first).await;
-+    assert_eq!(crate::space::proxy::geo_check_on_route(Some(&prepared.effective),None).await.unwrap().ip,"198.51.100.100");
-+    shutdown(prepared).await;wait_no_clients(&first).await;wait_no_clients(&second).await;
++    let first=service(hanging,Some((second.addr,Chain::Refuse)),false).await;
++    let error=super::prepare_checked_chain_with_budget(&entry(second.addr),hop(&first),Duration::from_millis(100)).await.err().unwrap();
++    assert_eq!(error.downcast_ref::<super::ChainError>().unwrap().code,"system_proxy_connect_refused");
++    assert!(first.counts.geos.load(Ordering::SeqCst)>0,"failed chain recovery must begin a fresh first-hop comparison");
++    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),0,"an expired first-hop comparison cannot dial the assigned candidate");
++    wait_no_clients(&first).await;wait_no_clients(&second).await;
 +}
 +
 +#[tokio::test]
@@ -10750,7 +10816,7 @@ index 0000000000000000000000000000000000000000..9dfeba57ee0d1555a0daaa53b505fd07
 +    let first=service(Leaf::first("198.51.100.101"),Some((second.addr,Chain::Relay(second.addr))),false).await;
 +    let changed=service(Leaf::first("198.51.100.102"),Some((second.addr,Chain::Relay(second.addr))),false).await;
 +    let assigned=entry(second.addr);let original=serde_json::to_value(&assigned).unwrap();
-+    let a=super::prepare_checked_chain(&assigned,hop(&first)).await.unwrap();assert_eq!(a.route,Route::SameExitVerified);
++    let a=super::prepare_checked_chain(&assigned,hop(&first)).await.unwrap();assert_eq!(a.route,Route::FirstHop);
 +    let b=super::prepare_checked_chain(&assigned,hop(&changed)).await.unwrap();assert_eq!(b.route,Route::FirstHop);
 +    let before=changed.counts.accepted.load(Ordering::SeqCst);
 +    assert_eq!(crate::space::proxy::geo_check_on_route(Some(&a.effective),None).await.unwrap().ip,"198.51.100.101");
