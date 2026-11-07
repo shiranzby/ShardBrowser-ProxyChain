@@ -337,10 +337,11 @@ test("new profiles can test their direct draft before any profile exists", async
 });
 
 for (const lang of ["zh", "ru"]) test(`explicit route choices fit the minimum window in ${lang}`, async ({ page }) => {
+  // Start in this locale: changing it rebuilds App and can close a form that
+  // the test opens through its store before the rebuilt shell has settled.
+  await page.addInitScript((lang) => localStorage.setItem("shardx.lang", lang), lang);
   await openApp(page, { theme: "light" });
-  await appModule(page, "/src/shared/i18n/index.ts", "__routeI18n");
   await appModule(page, "/src/features/profile-form/model/useProfileForm.ts", "__routeForm");
-  await page.evaluate((lang) => (window as any).__routeI18n.useLang.getState().setLang(lang), lang);
   await expect(page.locator("html")).toHaveAttribute("lang", lang === "zh" ? "zh-CN" : "ru");
   await page.evaluate(() => (window as any).__routeForm.openProfileForm({ mode: "edit", id: "c31d92f1", tab: "proxy" }));
   const form = page.getByRole("dialog");
