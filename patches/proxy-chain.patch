@@ -46,10 +46,10 @@ index 0000000000000000000000000000000000000000..69a55d6c36b1f4318d13d6902d0ae3ce
 +定向验证：Rust 创建/显式覆盖、设置旧 JSON 缺省、克隆/导入不覆盖与启动 argv；Playwright 新建默认、修改保存重载、旧配置编辑保留。原生 Engine 页面导航由候选产物验收另行确认。
 diff --git a/docs/PROXY-CHAIN-POLICY.md b/docs/PROXY-CHAIN-POLICY.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..ebf39a286c95eaa4021881781424e31ccdcb94be
+index 0000000000000000000000000000000000000000..142df6c7ecded95aba6a5ab03f6869a05ef17297
 --- /dev/null
 +++ b/docs/PROXY-CHAIN-POLICY.md
-@@ -0,0 +1,206 @@
+@@ -0,0 +1,215 @@
 +# Per-profile route choice and HTTP/HTTPS second hops (pc8)
 +
 +## Live verification (pc10)
@@ -210,6 +210,15 @@ index 0000000000000000000000000000000000000000..ebf39a286c95eaa4021881781424e31c
 +direct UDP restrictions remain in force. Same-exit recovery still requires
 +fresh IP evidence from both routes; HTTPS readiness alone cannot establish
 +exit equality.
++
++Detection also reports an optional `route_ready` evidence field. It is true
++only after this attempt proves the route using live Geo or verified HTTPS
++content. A Geo error in history carries the same current proof; older history
++without the field remains unknown. The interface uses a warning-colored
++“Connected, location unknown” result for verified routes with missing Geo,
++and does not claim their next start is blocked. TCP-only partial results and
++authentication failures remain failed. Every new start verifies its route
++again rather than trusting a history flag.
 +
 +Older pc7 clients treat the new policy as invalid and refuse it. Use pc8 on
 +clients editing or starting profiles with this choice; switch back to a supported
@@ -1271,15 +1280,15 @@ index 0000000000000000000000000000000000000000..21b911188441a0d52b2e4532247d4132
 +});
 diff --git a/e2e/proxy-chain-errors.spec.ts b/e2e/proxy-chain-errors.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..8936ca20ca894dd5ae6df0382e976c61e913dc95
+index 0000000000000000000000000000000000000000..b7b5749bad67de2c4b5872b0d3206179ad6d36cb
 --- /dev/null
 +++ b/e2e/proxy-chain-errors.spec.ts
-@@ -0,0 +1,180 @@
+@@ -0,0 +1,199 @@
 +import { expect, test, type Page } from "@playwright/test";
 +import { appModule, openApp } from "./support/app";
 +import { TEAM_WARNINGS } from "../src/shared/api/backendWarnings";
 +
-+async function failedChain(page: Page, failure: { code: string; layer: string; message: string }, tcp: number | null = null) {
++async function failedChain(page: Page, failure: { code: string; layer: string; message: string; route_ready?: boolean }, tcp: number | null = null) {
 +  await appModule(page, "/src/entities/proxy/index.ts", "proxyStore");
 +  await page.evaluate(({ failure, tcp }) => {
 +    const store = (window as any).proxyStore.useProxy;
@@ -1325,6 +1334,25 @@ index 0000000000000000000000000000000000000000..8936ca20ca894dd5ae6df0382e976c61
 +  await expect(peek.locator("[data-chain-test-error]")).toContainText("final exit IP and location lookup failed");
 +  await expect(peek.locator("[data-chain-test-error]")).toContainText("Starting is blocked");
 +  await expect(peek.locator("[data-peek-test-status]")).toContainText("Failed");
++});
++
++test("verified HTTPS route keeps unknown Geo visible without claiming startup is blocked", async ({ page }) => {
++  await page.addInitScript(() => localStorage.setItem("shardx.lang", "zh"));
++  await openApp(page, { section: "proxies" });
++  await failedChain(page, { code: "proxy_chain_profile_geo_failed", layer: "exit", message: "Current location lookup failed.", route_ready: true }, 17);
++  const peek = page.locator("aside[data-peek='proxy']");
++  await expect(peek).toContainText("TCP 17 毫秒");
++  await expect(peek.locator("[data-peek-test-status]")).toContainText("已连接，地区未知");
++  await expect(peek.locator("[data-peek-test-status]")).toHaveAttribute("data-state", "geo_unknown");
++  await expect(peek.locator("[data-chain-test-error]")).toContainText("已通过 HTTPS 验证此代理路线");
++  await expect(peek.locator("[data-chain-test-error]")).toContainText("可以启动");
++  await expect(peek.locator("[data-chain-test-error]")).not.toContainText("会阻止启动");
++  await expect(peek.locator("[data-test-result]")).not.toContainText("203.0.113.");
++  await expect(peek.locator("[data-test-result]")).not.toContainText("42.122.22.67");
++  await expect(peek).not.toContainText("Current location lookup failed.");
++  const row = page.locator("[role='row'][data-proxy-id='px-jp-1']");
++  await expect(row.locator("[data-cell='test']")).toHaveAttribute("data-status", "ok");
++  await expect(row.locator("[data-cell='test'] [data-pill='proxy-test']")).toHaveAttribute("data-state", "geo_unknown");
 +});
 +
 +test("tagged launch chain error is localized before generic refusal matching", async ({ page }) => {
@@ -5911,10 +5939,10 @@ index 0000000000000000000000000000000000000000..b53e5b910df49df61865567902df08b9
 +}
 diff --git a/src-tauri/src/proxy_chain/detection_tests.rs b/src-tauri/src/proxy_chain/detection_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..c133b7532b98b952cd07e39b02eae562540d2a0f
+index 0000000000000000000000000000000000000000..930089c43c3284bb7c43567129bd026504778752
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detection_tests.rs
-@@ -0,0 +1,1222 @@
+@@ -0,0 +1,1223 @@
 +//! Detection uses real loopback proxy protocols. Fixtures answer Geo requests
 +//! themselves; they never resolve or connect to any external destination.
 +
@@ -6942,6 +6970,7 @@ index 0000000000000000000000000000000000000000..c133b7532b98b952cd07e39b02eae562
 +fn pending(kind: &str) -> super::TestResult {
 +    super::TestResult {
 +        route: None,
++        route_ready: None,
 +        first_hop_error_code: None,
 +        kind: kind.into(),
 +        proxy_kind: None,
@@ -9541,10 +9570,10 @@ index 0000000000000000000000000000000000000000..f7bb892bebd3da48a4af1f8378dcddd6
 +}
 diff --git a/src-tauri/src/proxy_chain/mod.rs b/src-tauri/src/proxy_chain/mod.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..0dd8ad3b17fd70ee2870c0b1bde141963f9a8697
+index 0000000000000000000000000000000000000000..9a48e6b4645d0b2d58604fffa015bb23bc061715
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/mod.rs
-@@ -0,0 +1,701 @@
+@@ -0,0 +1,709 @@
 +//! Windows system proxy -> original profile proxy. Never fall back to direct.
 +pub mod config;
 +pub mod connector;
@@ -9980,6 +10009,9 @@ index 0000000000000000000000000000000000000000..0dd8ad3b17fd70ee2870c0b1bde14196
 +    profile_proxy_address: Option<String>,
 +    #[serde(skip_serializing_if = "Option::is_none")]
 +    route: Option<Route>,
++    /// This attempt verified the selected route; missing on older results.
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub route_ready: Option<bool>,
 +    #[serde(skip_serializing_if = "Option::is_none")]
 +    first_hop_error_code: Option<&'static str>,
 +    system_proxy: Stage,
@@ -9999,6 +10031,7 @@ index 0000000000000000000000000000000000000000..0dd8ad3b17fd70ee2870c0b1bde14196
 +    fn set_exit(&mut self, geo: anyhow::Result<proxy::GeoInfo>) {
 +        match geo {
 +            Ok(geo) => {
++                self.route_ready=Some(true);
 +                self.exit_error=None;
 +                self.exit_error_code=None;
 +                self.exit_error_details=None;
@@ -10006,6 +10039,7 @@ index 0000000000000000000000000000000000000000..0dd8ad3b17fd70ee2870c0b1bde14196
 +                self.exit_geo = Some(geo);
 +            }
 +            Err(error) => {
++                if self.route_ready.is_none() {self.route_ready=Some(false);}
 +                self.exit_error_details=error.downcast_ref::<proxy::GeoLookupError>().map(|error|error.failures.clone())
 +                    .or_else(||error.downcast_ref::<ChainError>().and_then(|error|error.geo_failures.clone()));
 +                let (code, message) = match self.kind.as_str() {
@@ -10072,6 +10106,7 @@ index 0000000000000000000000000000000000000000..0dd8ad3b17fd70ee2870c0b1bde14196
 +        resolved_for: None,
 +        profile_proxy_address: None,
 +        route: None,
++        route_ready: None,
 +        first_hop_error_code: None,
 +        system_proxy: Stage::pending(),
 +        profile_proxy: Stage::pending(),
@@ -10122,6 +10157,7 @@ index 0000000000000000000000000000000000000000..0dd8ad3b17fd70ee2870c0b1bde14196
 +                match prepare_with_saved(Some(entry), &effective, &saved.proxy_chain).await {
 +                    Ok(Some(prepared)) => {
 +                        result.route = Some(prepared.route);
++                        result.route_ready = Some(prepared.is_ready());
 +                        result.source = Some(match prepared.route { Route::FirstHop => "preferred_first_hop", route => route.as_str() });
 +                        result.first_hop_error_code = prepared.first_hop_error.as_ref().map(|e| e.code);
 +                        result.system_proxy = match prepared.first_hop_error.clone() { Some(error) => Stage::failed(error), None if prepared.route == Route::FirstHop => Stage::ok(start), None => Stage::pending() };
@@ -10184,6 +10220,7 @@ index 0000000000000000000000000000000000000000..0dd8ad3b17fd70ee2870c0b1bde14196
 +                        },
 +                        Ok(prepared) => {
 +                            result.route = Some(prepared.route);
++                            result.route_ready = Some(prepared.is_ready());
 +                            let ms=prepared.verified_tcp_ms.expect("route reachability verified");
 +                            if prepared.route==Route::FirstHop {result.system_proxy=Stage::measured(ms);}
 +                            else {
@@ -10875,10 +10912,10 @@ index 0000000000000000000000000000000000000000..c1c2275cc08bd242725ba25cd75d1106
 +}
 diff --git a/src-tauri/src/proxy_chain/routing.rs b/src-tauri/src/proxy_chain/routing.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..ec48acbf05ca85da3f73b6f0406a42d94a2d755f
+index 0000000000000000000000000000000000000000..77c5c58e9c24914a9bac48c7243cd179d82e53ca
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/routing.rs
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,174 @@
 +//! Explicit routes are resolved once per launch. The assigned profile binding
 +//! stays untouched; neither the global switch nor a failed hop can change it.
 +use super::{*, route::{FirstHop, ProfileProxyRoute, SecondHop}};
@@ -10989,7 +11026,7 @@ index 0000000000000000000000000000000000000000..ec48acbf05ca85da3f73b6f0406a42d9
 +    let normalized=route.map(ProfileProxyRoute::normalized);
 +    let route=normalized.as_ref();
 +    let start=Instant::now();
-+    let mut result=TestResult{kind:"profile".into(),proxy_kind:None,proxy_address:None,source:None,resolved_for:None,profile_proxy_address:assigned.map(|p|format!("{}:{}",p.host,p.port)),route:None,first_hop_error_code:None,system_proxy:Stage::pending(),profile_proxy:Stage::pending(),local_network:None,exit_ip:None,exit_geo:None,exit_error:None,exit_error_code:None,exit_error_details:None,total_ms:0,tested_at:format!("@{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs())};
++    let mut result=TestResult{kind:"profile".into(),proxy_kind:None,proxy_address:None,source:None,resolved_for:None,profile_proxy_address:assigned.map(|p|format!("{}:{}",p.host,p.port)),route:None,route_ready:None,first_hop_error_code:None,system_proxy:Stage::pending(),profile_proxy:Stage::pending(),local_network:None,exit_ip:None,exit_geo:None,exit_error:None,exit_error_code:None,exit_error_details:None,total_ms:0,tested_at:format!("@{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs())};
 +    // The selected endpoint is useful evidence even when its handshake fails.
 +    // Do not leave the first-hop address dependent on a successful result.
 +    if matches!(route,Some(ProfileProxyRoute::Chain{first:FirstHop::Proxy{..},..})) {
@@ -11019,6 +11056,7 @@ index 0000000000000000000000000000000000000000..ec48acbf05ca85da3f73b6f0406a42d9
 +                    prepared.tunnel.shutdown().await;result.total_ms=start.elapsed().as_millis();return Ok(result);
 +                }}
 +                record_connected_route(&mut result,route,first,prepared.route,prepared.first_hop_error.clone(),prepared.verified_tcp_ms.expect("route TCP verified"));
++                result.route_ready=Some(prepared.is_ready());
 +                result.set_exit(prepared.exit_result());
 +                prepared.tunnel.shutdown().await;
 +            },
@@ -13522,7 +13560,7 @@ index 0b822fb2e3f1c6aa20d8e6881e8daa295bb210b9..0dec4b34bf41bc979e16b1a4fca8cb46
 +    }
  }
 diff --git a/src-tauri/src/space/local/proxy.rs b/src-tauri/src/space/local/proxy.rs
-index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b8d96cf13 100644
+index 63d3972b4adf061dbddbd0a79026b32912897e64..dea743f9d79b156215704b79cc8c78d2e382a480 100644
 --- a/src-tauri/src/space/local/proxy.rs
 +++ b/src-tauri/src/space/local/proxy.rs
 @@ -32,6 +32,8 @@ pub struct ProxyEntry {
@@ -13849,7 +13887,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
      }
      Ok(info)
  }
-@@ -1057,9 +1174,33 @@ pub fn country_to_locale(cc: &str) -> &'static str {
+@@ -1057,9 +1174,36 @@ pub fn country_to_locale(cc: &str) -> &'static str {
  
  // ---- Test history ----
  
@@ -13859,11 +13897,14 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
 +    pub code: String,
 +    pub layer: String,
 +    pub message: String,
++    /// Only this observation's verified route can supply this evidence.
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    pub route_ready: Option<bool>,
 +}
 +
 +impl From<crate::proxy_chain::error::ChainError> for ChainTestError {
 +    fn from(error: crate::proxy_chain::error::ChainError) -> Self {
-+        Self { code: error.code.into(), layer: error.layer.into(), message: error.message }
++        Self { code: error.code.into(), layer: error.layer.into(), message: error.message, route_ready: None }
 +    }
 +}
 +
@@ -13883,7 +13924,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
      pub first_seen: String,
      pub last_seen: String,
      pub ip: String,
-@@ -1162,7 +1303,7 @@ pub(in crate::space) fn keep_test(entries: &mut Vec<TestSnapshot>, mut snap: Tes
+@@ -1162,7 +1306,7 @@ pub(in crate::space) fn keep_test(entries: &mut Vec<TestSnapshot>, mut snap: Tes
      // used to stay as they were first seen, so a proxy that had moved
      // went on claiming its old city.
      if let Some(last) = entries.last_mut() {
@@ -13892,7 +13933,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
              snap.first_seen = last.first_seen.clone();
              *last = snap.clone();
              return snap;
-@@ -1226,10 +1367,45 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
+@@ -1226,10 +1370,45 @@ pub(in crate::space) async fn full_test(entry: &ProxyEntry) -> Result<TestSnapsh
  /// other: the reach test, the relay test and the address the world sees are
  /// three separate questions to the same proxy.
  pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
@@ -13939,7 +13980,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
              Some(probe_udp(entry).await)
          } else {
              None
-@@ -1239,11 +1415,21 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1239,11 +1418,21 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      // else still shows how long a round trip through it takes.
      let geo_fut = async {
          let started = std::time::Instant::now();
@@ -13963,12 +14004,12 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
  
      // An answer from a geo service IS the proxy working: the request went out
      // through it and came back. So its address is kept whenever it arrived,
-@@ -1251,11 +1437,26 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1251,11 +1440,30 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      // probe asks for and carry everything else. The other way round, a probe
      // that reached a host is proof too, and the test then says so with no
      // address rather than calling a working proxy dead.
 -    let geo_error = match (&tcp_res, &geo_res) {
-+    let chain_error = tunnel.and_then(|tunnel| {
++    let mut chain_error: Option<ChainTestError> = tunnel.and_then(|tunnel| {
 +        if let Err(error) = &tcp_res {
 +            Some(error.downcast_ref::<crate::proxy_chain::error::ChainError>().cloned()
 +                .unwrap_or_else(||crate::proxy_chain::profile_failure(tunnel,error)).into())
@@ -13979,6 +14020,10 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
 +            )).into())
 +        } else { None }
 +    });
++    if verification_error.is_none() && tcp_res.is_ok() && geo_res.is_err()
++        && prepared.is_some_and(|route|route.is_ready()) {
++        if let Some(error)=chain_error.as_mut() {error.route_ready=Some(true);}
++    }
 +    let geo_error = if chained {
 +        // Only fixed safe chain errors may enter history; provider failures
 +        // can carry request details and must not hide the failed layer.
@@ -13992,7 +14037,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
      let (ip, country_code, country, region, city, isp, tz, lat, lng, provider) = match &geo_res {
          Ok(g) => (
              g.ip.clone(), g.country_code.clone(), g.country.clone(),
-@@ -1268,6 +1469,11 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1268,6 +1476,11 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
      };
  
      TestSnapshot {
@@ -14004,7 +14049,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
          first_seen: String::new(),
          last_seen: now,
          ip,
-@@ -1282,7 +1488,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
+@@ -1282,7 +1495,7 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
          // Set whenever the proxy carried something, so "reached" always comes
          // with a time: the probe's own round trip, or the geo request's when
          // only that one got through.
@@ -14013,7 +14058,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
          udp_ms: udp_res
              .as_ref()
              .and_then(|r| r.as_ref().ok().copied()),
-@@ -1347,6 +1553,352 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
+@@ -1347,6 +1560,367 @@ pub fn country_to_timezone(cc: &str) -> &'static str {
  mod tests {
      use super::*;
  
@@ -14239,6 +14284,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
 +        let failure = result.chain_error.as_ref().unwrap();
 +        assert_eq!(failure.code, "system_proxy_connect_refused");
 +        assert_eq!(failure.layer, "system_proxy");
++        assert!(failure.route_ready.is_none(), "a refusal cannot advertise verified route readiness");
 +        assert!(failure.message.contains("403"));
 +        let stored = serde_json::to_string(&result).unwrap();
 +        assert!(!stored.contains("private-fixture-detail") && !stored.contains("not-for-history") && !stored.contains("synthetic"));
@@ -14321,6 +14367,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
 +        let failure = result.chain_error.as_ref().unwrap();
 +        assert_eq!(failure.code, "proxy_chain_profile_geo_failed");
 +        assert_eq!(failure.layer, "exit");
++        assert_ne!(failure.route_ready, Some(true), "TCP-only partial success is not route readiness");
 +        assert!(!serde_json::to_string(&result).unwrap().contains("private-geo-response"));
 +    }
 +
@@ -14348,6 +14395,8 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
 +        assert!(result.ip.is_empty() && result.country_code.is_empty() && result.country.is_empty() && result.timezone.is_empty());
 +        assert_eq!(result.geo_error.as_deref(), Some(geo_failure.message.as_str()));
 +        assert_eq!(result.chain_error.as_ref().unwrap().code, geo_failure.code);
++        assert_eq!(result.chain_error.as_ref().unwrap().route_ready, Some(true));
++        assert_eq!(serde_json::to_value(&result).unwrap()["chain_error"]["route_ready"], true);
 +        assert!(prepared.tunnel.last_error().is_none());
 +        assert!(matches!(upstream.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock), "no Geo or TCP flow may redial the prepared route");
 +
@@ -14361,6 +14410,17 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..185b35cf0f7ac067cf94c6071b45a48b
 +        assert!(current.ip.is_empty() && history.last().unwrap().country_code.is_empty());
 +        assert!(history.last().unwrap().geo_error.is_some(), "the current missing Geo must not borrow a past location");
 +        prepared.tunnel.shutdown().await;
++    }
++
++    #[test]
++    fn legacy_chain_errors_do_not_infer_readiness_from_the_error_code() {
++        for code in ["proxy_chain_profile_geo_failed", "proxy_chain_profile_auth_failed", "system_proxy_connect_refused"] {
++            let failure: ChainTestError=serde_json::from_value(serde_json::json!({"code":code,"layer":"profile","message":"Synthetic failure"})).unwrap();
++            assert!(failure.route_ready.is_none());
++            assert!(serde_json::to_value(&failure).unwrap().get("route_ready").is_none());
++            let current: ChainTestError=crate::proxy_chain::error::ChainError::new(code,"profile","Synthetic failure").into();
++            assert!(current.route_ready.is_none(), "an error conversion supplies no success evidence");
++        }
 +    }
 +
      fn entry(line: &str) -> ProxyEntry {
@@ -16729,13 +16789,13 @@ index dd700fc45211faa239a6322b523e280aaad58c49..a1b7c27354a32d53d54db6e7c9b71218
  
 diff --git a/src/entities/proxy/lib/status.test.ts b/src/entities/proxy/lib/status.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..c67c9f0d743cc063200c015c8c94c0488e284954
+index 0000000000000000000000000000000000000000..f708305b6a468be282472a072357992f22dd1247
 --- /dev/null
 +++ b/src/entities/proxy/lib/status.test.ts
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,42 @@
 +import { test } from "node:test";
 +import assert from "node:assert/strict";
-+import { proxyStatus } from "./status.ts";
++import { proxyReadyWithUnknownGeo, proxyStatus } from "./status.ts";
 +import type { ProxyTestSnapshot } from "../model/types.ts";
 +
 +const snapshot = (extra: Partial<ProxyTestSnapshot>): ProxyTestSnapshot => ({
@@ -16757,15 +16817,43 @@ index 0000000000000000000000000000000000000000..c67c9f0d743cc063200c015c8c94c048
 +  assert.equal(proxyStatus(snapshot({})), "failed");
 +  assert.equal(proxyStatus(undefined), "untested");
 +});
++
++test("unknown Geo stays usable only with an explicit current route proof", () => {
++  const ready = snapshot({ transport: "proxy_chain", tcp_ms: 17, geo_error: syntheticError,
++    chain_error: { code: "proxy_chain_profile_geo_failed", layer: "exit", message: syntheticError, route_ready: true } });
++  assert.equal(proxyStatus(ready), "ok");
++  assert.equal(proxyReadyWithUnknownGeo(ready), true);
++  for (const extra of [
++    { chain_error: { ...ready.chain_error!, route_ready: undefined } },
++    { chain_error: { ...ready.chain_error!, route_ready: false } },
++    { chain_error: { ...ready.chain_error!, code: "proxy_chain_profile_auth_failed" } },
++    { chain_error: { ...ready.chain_error!, layer: "profile" } },
++    { tcp_ms: null }, { tcp_ms: -1 }, { tcp_ms: Number.NaN },
++  ]) {
++    const invalid = { ...ready, ...extra };
++    assert.equal(proxyReadyWithUnknownGeo(invalid), false);
++    assert.equal(proxyStatus(invalid), "failed");
++  }
++});
 diff --git a/src/entities/proxy/lib/status.ts b/src/entities/proxy/lib/status.ts
-index 8a354921532a2d36ea0144e9eb358296ae043e28..ad64fe6f4aaab3d6c24d8ab5ec6dff696e67f0da 100644
+index 8a354921532a2d36ea0144e9eb358296ae043e28..0fe56dee01e35adc8953db87107e3e4335510bd0 100644
 --- a/src/entities/proxy/lib/status.ts
 +++ b/src/entities/proxy/lib/status.ts
-@@ -11,6 +11,8 @@ import type { ProxyTestSnapshot } from "../model/types";
+@@ -9,8 +9,18 @@ import type { ProxyTestSnapshot } from "../model/types";
+ /// does — the old test called a proxy reached as soon as it had greeted us,
+ /// so a gateway with a dead upstream, no traffic left or a banned address
  /// read as working.
++export function proxyReadyWithUnknownGeo(snap: ProxyTestSnapshot | undefined): boolean {
++  return snap?.transport === "proxy_chain" && snap.chain_error?.route_ready === true
++    && snap.chain_error.code === "proxy_chain_profile_geo_failed" && snap.chain_error.layer === "exit"
++    && snap.tcp_ms != null && Number.isFinite(snap.tcp_ms) && snap.tcp_ms >= 0 && !snap.ip;
++}
++
  export function proxyStatus(snap: ProxyTestSnapshot | undefined): "ok" | "failed" | "untested" {
    if (!snap) return "untested";
-+  // Chain launches require both checks. Keep legacy direct-route tolerance.
++  // Only an explicit current readiness proof can keep unknown Geo usable.
++  // Older partial results must not be inferred ready from their TCP time.
++  if (proxyReadyWithUnknownGeo(snap)) return "ok";
 +  if (snap.transport === "proxy_chain" && (snap.chain_error || snap.geo_error || snap.tcp_ms == null || !snap.ip)) return "failed";
    return snap.tcp_ms != null || snap.ip !== "" ? "ok" : "failed";
  }
@@ -16827,7 +16915,7 @@ index 3fb48333e1a10ec7020df12bdaf8e7b6fecd9a81..1627dde1921bf0dd2bdf0d3b63fdcaa2
 +export type TnbLocationsResult = { items: TnbLocation[]; supported: boolean; source: string };
 +export const tnbProxyLocations = (request: TnbLocationsRequest) => invoke<TnbLocationsResult>("tnbproxy_locations", { request });
 diff --git a/src/entities/proxy/model/types.ts b/src/entities/proxy/model/types.ts
-index f974aadf7b17aad26835b5e71742e38dbf29d984..a844aaed7aec7793b8595f99f06a99fb5ab203ea 100644
+index f974aadf7b17aad26835b5e71742e38dbf29d984..4c062ae873ed5142386e6589bdc27485e4d70ddc 100644
 --- a/src/entities/proxy/model/types.ts
 +++ b/src/entities/proxy/model/types.ts
 @@ -1,4 +1,7 @@
@@ -16849,7 +16937,7 @@ index f974aadf7b17aad26835b5e71742e38dbf29d984..a844aaed7aec7793b8595f99f06a99fb
 +  first_hop_error_code?: string | null;
 +  udp_state?: "unsupported_by_chain";
 +  /** Safe failure details from the exact chain route; absent in old history. */
-+  chain_error?: { code: string; layer: string; message: string } | null;
++  chain_error?: { code: string; layer: string; message: string; route_ready?: boolean | null } | null;
  };
  
  export type BulkRowState = {
@@ -16891,7 +16979,7 @@ index 21cd2afa3542896c92ceb89852819af943113846..5b2d56c7bd5fc39c5c799ab57f31e80a
   *  the change, not what runs. A failed save changes nothing, so it does not
   *  count (Pair 34 ruling, M3); one still on its way makes a read unsure. */
 diff --git a/src/entities/settings/model/types.ts b/src/entities/settings/model/types.ts
-index 8f97bc0f390b920d84c69c8bb3b9c1a7e79df135..f7a4b26048b90f25cb28e6751b68ad01df4b3155 100644
+index 8f97bc0f390b920d84c69c8bb3b9c1a7e79df135..ad3d0c1377d441b66a150ba82bb9ed4f608837b9 100644
 --- a/src/entities/settings/model/types.ts
 +++ b/src/entities/settings/model/types.ts
 @@ -1,4 +1,8 @@
@@ -16903,7 +16991,7 @@ index 8f97bc0f390b920d84c69c8bb3b9c1a7e79df135..f7a4b26048b90f25cb28e6751b68ad01
    browser_path: string | null;
    theme: string;
    geo_checker?: string | null;
-@@ -19,8 +23,114 @@ export type Settings = {
+@@ -19,8 +23,116 @@ export type Settings = {
    minimize_to_tray?: boolean;
    /** Appended to every launch, one per line. Applied last, so a repeat wins. */
    extra_args?: string;
@@ -16969,6 +17057,8 @@ index 8f97bc0f390b920d84c69c8bb3b9c1a7e79df135..f7a4b26048b90f25cb28e6751b68ad01
 +
 +export type ProxyChainTestResult = {
 +  kind: ProxyChainTestKind;
++  /** This test verified the prepared route; missing in older results. */
++  route_ready?: boolean | null;
 +  route?: ProxyChainRoute | null;
 +  first_hop_error_code?: string | null;
 +  proxy_kind?: "http" | "https" | "socks5" | null;
@@ -17949,7 +18039,7 @@ index ecd3342203ac27f52876d2dc342a567ce450b250..547d0c5891a2912255cdc0e6c83f06c4
      : s.badFields.length > 0 ? t("profileForm.numberInvalid")
 diff --git a/src/features/profile-form/ui/ProfileRouteResult.tsx b/src/features/profile-form/ui/ProfileRouteResult.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..18f5c9d3ae02d23150cb3d940986d09cc7ea072d
+index 0000000000000000000000000000000000000000..80e26436d0307a2f8bec113b2278726d223a54fb
 --- /dev/null
 +++ b/src/features/profile-form/ui/ProfileRouteResult.tsx
 @@ -0,0 +1,75 @@
@@ -18017,7 +18107,7 @@ index 0000000000000000000000000000000000000000..18f5c9d3ae02d23150cb3d940986d09c
 +      <div className="flex flex-wrap gap-2" data-profile-route-location><dt>{t("proxyChain.exitLocation")}</dt><dd className="m-0 break-words">{location || (exitIp ? t("proxyChain.locationNotReturned") : t("proxyChain.exitUnavailable"))}</dd></div>
 +      {result.tested_at && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.testedAt")}</dt><dd className="m-0">{fmtTs(result.tested_at)}</dd></div>}
 +    </dl>
-+    {result.exit_error && <p className="m-0 break-words text-error-text">{proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error }, scope)}</p>}
++    {result.exit_error && <p className={`m-0 break-words ${result.route_ready === true ? "text-warning-text" : "text-error-text"}`}>{proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error, route_ready: result.route_ready }, scope)}</p>}
 +    {result.exit_error && result.exit_error_details?.length ? <ul data-profile-route-geo-details className="m-0 flex list-none flex-col gap-2 p-0 text-error-text">
 +      {result.exit_error_details.map((failure, index) => <li key={index} className="break-words">
 +        {t("profileRoute.geoSourceFailure", {
@@ -18646,10 +18736,10 @@ index 2fd3c31f1a744d42e696410399ae4b368a84325f..73edf4592785d64489395f9f6e70de75
  
 diff --git a/src/pages/settings/sections/Proxy.tsx b/src/pages/settings/sections/Proxy.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..69108bd5807df915b095cc6cca4092d9dc0b47a2
+index 0000000000000000000000000000000000000000..d04fb7d163c2e431929685de98bd32c9ddd31419
 --- /dev/null
 +++ b/src/pages/settings/sections/Proxy.tsx
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,261 @@
 +import { useEffect, useRef, useState } from "react";
 +import { Button, Input, Switch } from "@proxyshard/shardx-ui-kit";
 +import {
@@ -18856,7 +18946,8 @@ index 0000000000000000000000000000000000000000..69108bd5807df915b095cc6cca4092d9
 +function ChainResult({ result }: { result: ProxyChainTestResult }) {
 +  const t = useT();
 +  const exitLabel = result.kind === "system" ? t("proxyChain.systemExitIp") : result.kind === "local" ? t("proxyChain.localExitIp") : t("proxyChain.exitIp");
-+  const exitError = result.exit_error_code === "proxy_chain_system_geo_failed" ? t("proxyChain.systemGeoFailed")
++  const exitError = result.route_ready === true && (result.exit_error_code === "proxy_chain_profile_geo_failed" || result.exit_error_code === "proxy_chain_system_geo_failed") ? t("proxyChain.readyGeoUnknown")
++    : result.exit_error_code === "proxy_chain_system_geo_failed" ? t("proxyChain.systemGeoFailed")
 +    : result.exit_error_code === "proxy_chain_profile_geo_failed" ? t("proxyChain.profileGeoFailed")
 +    : result.exit_error_code === "proxy_chain_local_geo_failed" ? t("proxyChain.localGeoFailed") : result.exit_error;
 +  // A stale or mismatched Geo response must not lend a location to another IP.
@@ -18866,6 +18957,7 @@ index 0000000000000000000000000000000000000000..69108bd5807df915b095cc6cca4092d9
 +    geo.region, geo.city,
 +  ].map((part) => part.trim()).filter(Boolean))].join(", ") : "";
 +  const missingExit = exitError ? t("proxyChain.exitUnavailable") : t("proxyChain.stageUntested");
++  const exitIp = exitError ? null : result.exit_ip;
 +  const stage = (value?: ProxyChainStage | null) => value?.state === "ok"
 +    ? value.latency_ms != null ? t("proxyChain.stageLatency", { ms: value.latency_ms }) : t("proxyChain.stageOk")
 +    : value?.state === "failed" ? t("proxyChain.stageFailed") : t("proxyChain.stageUntested");
@@ -18898,11 +18990,11 @@ index 0000000000000000000000000000000000000000..69108bd5807df915b095cc6cca4092d9
 +            </div>
 +          );
 +        })}
-+        <div data-chain-exit className="flex flex-wrap gap-2"><dt>{exitLabel}</dt><dd className="mono m-0 break-all">{result.exit_ip || missingExit}</dd></div>
-+        <div data-chain-location className="flex flex-wrap gap-2"><dt>{t("proxyChain.exitLocation")}</dt><dd className="m-0 break-words">{location || (result.exit_ip ? t("proxyChain.locationNotReturned") : missingExit)}</dd></div>
++        <div data-chain-exit className="flex flex-wrap gap-2"><dt>{exitLabel}</dt><dd className="mono m-0 break-all">{exitIp || missingExit}</dd></div>
++        <div data-chain-location className="flex flex-wrap gap-2"><dt>{t("proxyChain.exitLocation")}</dt><dd className="m-0 break-words">{location || (exitIp ? t("proxyChain.locationNotReturned") : missingExit)}</dd></div>
 +        {geo?.provider && <div data-chain-geo-source className="flex flex-wrap gap-2"><dt>{t("proxyChain.geoProvider")}</dt><dd className="m-0 break-all">{geo.provider}</dd></div>}
 +        {result.kind === "system" && <div data-chain-exit-scope>{t("proxyChain.systemExitHelp")}</div>}
-+        {exitError && <div className="text-error-text" data-chain-exit-error>{exitError}</div>}
++        {exitError && <div className={result.route_ready === true ? "text-warning-text" : "text-error-text"} data-chain-exit-error>{exitError}</div>}
 +        {result.total_ms != null && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.totalLatency")}</dt><dd className="m-0">{t("proxyChain.milliseconds", { ms: result.total_ms })}</dd></div>}
 +        <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.testedAt")}</dt><dd className="m-0">{time}</dd></div>
 +      </dl>
@@ -19225,7 +19317,7 @@ index 0000000000000000000000000000000000000000..c2bf0d90c6a21439ec7528289389ab90
 +  }, [kind, allIds, visibleIds, selected, groupOf, onReorder, dragHandle, resetSavedOrder, t, scope]);
 +}
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..393103ac77b0ebf64644f9903ebd1fa46c8eb215 100644
+index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..6df4b29300a6a32481188056cba689fb7dfc73de 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
 @@ -1,4 +1,27 @@
@@ -19268,7 +19360,7 @@ index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..393103ac77b0ebf64644f9903ebd1fa4
    "settings.apiAuthHeaderHint": "Send it as ",
    "settings.apiBaseUrlLabel": "Base URL",
    "settings.apiDetailsTitle": "Connection",
-@@ -2393,9 +2411,97 @@
+@@ -2393,9 +2411,99 @@
    "settings.tabAbout": "About",
    "settings.tabApi": "API & MCP",
    "settings.tabAppearance": "Appearance",
@@ -19331,6 +19423,8 @@ index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..393103ac77b0ebf64644f9903ebd1fa4
 +  "proxyChain.systemExitHelp": "This is the first-hop exit, not the profile’s final exit. Choose a profile and test the full proxy chain to see its exit and location.",
 +  "proxyChain.systemGeoFailed": "The system proxy connected, but the exit IP and location lookup failed. Retry the test; it did not fall back to a direct lookup.",
 +  "proxyChain.profileGeoFailed": "The full proxy chain connected, but the final exit IP and location lookup failed. Retry the test; it did not fall back to a direct lookup.",
++  "proxyChain.readyGeoUnknownLabel": "Connected, location unknown",
++  "proxyChain.readyGeoUnknown": "HTTPS verified this proxy route, but the exit IP and location are unavailable. You can start; the route is checked again on the next start.",
 +  "proxyChain.localGeoFailed": "The local network exit IP and location lookup failed. Check the connection and retry.",
 +  "proxyChain.totalLatency": "Total latency",
 +  "proxyChain.milliseconds": "{ms} ms",
@@ -19367,7 +19461,7 @@ index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..393103ac77b0ebf64644f9903ebd1fa4
    "settings.tabProfiles": "Profile defaults",
    "settings.tabStorage": "Storage",
    "settings.tabSync": "Sync",
-@@ -3481,5 +3587,166 @@
+@@ -3481,5 +3589,166 @@
    "sync.guideWhere": "Run it on a computer that stays on and that all your computers can reach: a small VPS or a home server.",
    "sync.syncFirst": "Sync first",
    "sync.unsentMany": "{n} changes made here haven’t reached the server: they stay on this computer only.",
@@ -19536,7 +19630,7 @@ index d1668a3d6da7764ab4fc2d229051dae1ec58cc40..393103ac77b0ebf64644f9903ebd1fa4
 +  "profileRoute.geoRequest": "Request failed"
  }
 diff --git a/src/shared/i18n/locales/ru.json b/src/shared/i18n/locales/ru.json
-index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..87ced773930cf4688ee5631d80e2862210068fc0 100644
+index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..df6f11b1d146137693dc902bbf188fa1aac94280 100644
 --- a/src/shared/i18n/locales/ru.json
 +++ b/src/shared/i18n/locales/ru.json
 @@ -1,4 +1,27 @@
@@ -19579,7 +19673,7 @@ index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..87ced773930cf4688ee5631d80e28622
    "settings.apiAuthHeaderHint": "Передавайте токен в заголовке ",
    "settings.apiBaseUrlLabel": "Базовый URL",
    "settings.apiDetailsTitle": "Подключение",
-@@ -2393,9 +2411,97 @@
+@@ -2393,9 +2411,99 @@
    "settings.tabAbout": "О программе",
    "settings.tabApi": "API и MCP",
    "settings.tabAppearance": "Внешний вид",
@@ -19642,6 +19736,8 @@ index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..87ced773930cf4688ee5631d80e28622
 +  "proxyChain.systemExitHelp": "Это выход первого узла, а не конечный выход профиля. Выберите профиль и проверьте всю цепочку, чтобы узнать его выходной IP и местоположение.",
 +  "proxyChain.systemGeoFailed": "Системный прокси подключён, но выходной IP и местоположение не получены. Повторите проверку; прямое соединение не использовалось.",
 +  "proxyChain.profileGeoFailed": "Цепочка прокси подключена, но конечный IP и местоположение не получены. Повторите проверку; прямое соединение не использовалось.",
++  "proxyChain.readyGeoUnknownLabel": "Подключён, место неизвестно",
++  "proxyChain.readyGeoUnknown": "Маршрут прокси проверен по HTTPS, но выходной IP и местоположение недоступны. Профиль можно запустить; при следующем запуске маршрут будет проверен снова.",
 +  "proxyChain.localGeoFailed": "Не удалось получить выходной IP и местоположение локальной сети. Проверьте соединение и повторите попытку.",
 +  "proxyChain.totalLatency": "Общая задержка",
 +  "proxyChain.milliseconds": "{ms} мс",
@@ -19678,7 +19774,7 @@ index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..87ced773930cf4688ee5631d80e28622
    "settings.tabProfiles": "Новые профили",
    "settings.tabStorage": "Хранилище",
    "settings.tabSync": "Синхронизация",
-@@ -3481,5 +3587,166 @@
+@@ -3481,5 +3589,166 @@
    "sync.guideWhere": "Запускайте его на компьютере, который всегда включён и доступен всем вашим компьютерам: на небольшом VPS или домашнем сервере.",
    "sync.syncFirst": "Сначала синхронизировать",
    "sync.unsentMany": "{n} {n|изменение, сделанное здесь, не дошло|изменения, сделанные здесь, не дошли|изменений, сделанных здесь, не дошли} до сервера: они останутся только на этом компьютере.",
@@ -19847,7 +19943,7 @@ index cbe6aca7f1d30bbba4d1b3922f6b0babc57eef42..87ced773930cf4688ee5631d80e28622
 +  "profileRoute.geoRequest": "Запрос не удался"
  }
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..c7833dfb71b1d9446ac0d5e8b2ba9ac9c69ba2db 100644
+index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..773ae0703dcfba7ba49752414b7f39db04c1c42d 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
 @@ -1,4 +1,27 @@
@@ -19890,7 +19986,7 @@ index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..c7833dfb71b1d9446ac0d5e8b2ba9ac9
    "settings.apiAuthHeaderHint": "发送时使用 ",
    "settings.apiBaseUrlLabel": "基础 URL",
    "settings.apiDetailsTitle": "连接",
-@@ -2393,9 +2411,97 @@
+@@ -2393,9 +2411,99 @@
    "settings.tabAbout": "关于",
    "settings.tabApi": "API 与 MCP",
    "settings.tabAppearance": "外观",
@@ -19953,6 +20049,8 @@ index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..c7833dfb71b1d9446ac0d5e8b2ba9ac9
 +  "proxyChain.systemExitHelp": "这是第一层出口，不是配置的最终出口。选择配置并检测完整代理链，可查看第二层出口与地区。",
 +  "proxyChain.systemGeoFailed": "系统代理已连接，但出口 IP 和地区查询失败。请重试；本次没有改为直连查询。",
 +  "proxyChain.profileGeoFailed": "完整代理链已连接，但最终出口 IP 和地区查询失败。请重试；本次没有改为直连查询。",
++  "proxyChain.readyGeoUnknownLabel": "已连接，地区未知",
++  "proxyChain.readyGeoUnknown": "已通过 HTTPS 验证此代理路线，但出口 IP 和地区暂不可用。可以启动；下次启动会重新检查路线。",
 +  "proxyChain.localGeoFailed": "本机网络的出口 IP 和地区查询失败，请检查网络后重试。",
 +  "proxyChain.totalLatency": "总延迟",
 +  "proxyChain.milliseconds": "{ms} 毫秒",
@@ -19989,7 +20087,7 @@ index b34ce3ef08f84ebed8b1a5df0f838bcb6bde13f9..c7833dfb71b1d9446ac0d5e8b2ba9ac9
    "settings.tabProfiles": "配置默认值",
    "settings.tabStorage": "存储",
    "settings.tabSync": "同步",
-@@ -3481,5 +3587,166 @@
+@@ -3481,5 +3589,166 @@
    "sync.guideWhere": "在一台始终开机、你所有电脑都能访问的电脑上运行它：小型 VPS 或家用服务器。",
    "sync.syncFirst": "先同步",
    "sync.unsentMany": "这里做的 {n} 项更改还没送达服务器：它们只会留在这台电脑上。",
@@ -20585,10 +20683,10 @@ index 0000000000000000000000000000000000000000..17c778d8ff339c02e782f3faad631ec8
 +}
 diff --git a/src/shared/lib/proxyChainError.test.ts b/src/shared/lib/proxyChainError.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..a0964c7f78bf44276f3ff20d51c33c56a9290379
+index 0000000000000000000000000000000000000000..89b33f5ec85b7db6664d2e993466b4c4be314901
 --- /dev/null
 +++ b/src/shared/lib/proxyChainError.test.ts
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,59 @@
 +import { test } from "node:test";
 +import assert from "node:assert/strict";
 +import { proxyChainErrorFromText, proxyChainErrorText } from "./proxyChainError.ts";
@@ -20637,18 +20735,30 @@ index 0000000000000000000000000000000000000000..a0964c7f78bf44276f3ff20d51c33c56
 +test("explicit local-network failure is translated without inventing a proxy layer", () => {
 +  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_local_network_failed" }), "proxyChain.localGeoFailed");
 +});
++
++test("verified route with unknown Geo uses the same nonblocking message in every scope", () => {
++  for (const code of ["proxy_chain_profile_geo_failed", "proxy_chain_system_geo_failed"]) {
++    for (const scope of [undefined, "proxy", "system"] as const) {
++      assert.equal(proxyChainErrorText(key, { code, route_ready: true }, scope), "proxyChain.readyGeoUnknown");
++    }
++  }
++  const ready = { code: "proxy_chain_profile_geo_failed", route_ready: true };
++  assert.equal(proxyChainErrorText(key, { ...ready, route_ready: false }), "proxyChain.profileGeoFailed");
++  assert.equal(proxyChainErrorText(key, { code: "proxy_chain_profile_auth_failed", route_ready: true }), "proxyChain.errorSecondAuth");
++});
 diff --git a/src/shared/lib/proxyChainError.ts b/src/shared/lib/proxyChainError.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..dd8f3e1039100239722d1f6fc3ad2d94a1c9d8ea
+index 0000000000000000000000000000000000000000..746b21ab4df8bd20c8f8a24d6eda2d5f2d2dff8e
 --- /dev/null
 +++ b/src/shared/lib/proxyChainError.ts
-@@ -0,0 +1,90 @@
-+type ChainError = { code?: string | null; error_code?: string | null; message?: string | null; error_message?: string | null };
+@@ -0,0 +1,91 @@
++type ChainError = { code?: string | null; error_code?: string | null; message?: string | null; error_message?: string | null; route_ready?: boolean | null };
 +
 +/** Shared by settings, proxy history and launch failures. Unknown safe backend
 + * errors keep their own message rather than becoming an unrelated offline error. */
 +export function proxyChainErrorText(t: (key: string) => string, error?: ChainError | null, scope?: "proxy" | "system"): string | undefined {
 +  const code = error?.code ?? error?.error_code;
++  if (error?.route_ready === true && (code === "proxy_chain_profile_geo_failed" || code === "proxy_chain_system_geo_failed")) return t("proxyChain.readyGeoUnknown");
 +  if (scope === "proxy") switch (code) {
 +    case "proxy_chain_profile_auth_failed": return t("profileRoute.errorProxyAuth");
 +    case "proxy_chain_profile_timeout": return t("profileRoute.errorProxyTimeout");
@@ -20940,6 +21050,44 @@ index 0000000000000000000000000000000000000000..b4bef4553c02fc30de7182f204540bb7
 +    {error && <p data-chain-first-attempt className="m-0 break-words">{t("proxyChain.firstAttemptFailed", { reason: error })}</p>}
 +  </div>;
 +}
+diff --git a/src/shared/ui/StatusPill.tsx b/src/shared/ui/StatusPill.tsx
+index 66845c8b7a8db5a5ce7623aaaaa5f1533e728ddc..e6926f5918fcd42bd53b27103c1ee58731bc3129 100644
+--- a/src/shared/ui/StatusPill.tsx
++++ b/src/shared/ui/StatusPill.tsx
+@@ -63,14 +63,16 @@ export function StatusPill({ status, swell = false, className, ...rest }: { stat
+  *  "Testing…" with a spinner while a test runs, whatever the last result
+  *  was. `detail` (when and why) is read out with the word, never drawn:
+  *  hover shows it through the cell's Tooltip. */
+-export function ProxyTestPill({ state, busy, ms, detail, className, ...rest }: (
++export function ProxyTestPill({ state, busy, ms, detail, geoUnknown = false, className, ...rest }: (
+   /** A reached proxy says how fast: its last test's TCP time, in ms. */
+   | { state: "ok"; ms: number }
+   | { state: "failed" | "untested"; ms?: never }
+-) & { busy: boolean; detail?: string } & SpanProps) {
++) & { busy: boolean; detail?: string; geoUnknown?: boolean } & SpanProps) {
+   const t = useT();
+-  const color: BadgeColor = busy ? "information" : state === "ok" ? "success" : state === "failed" ? "error" : "gray";
++  const unknown = state === "ok" && geoUnknown;
++  const color: BadgeColor = busy ? "information" : unknown ? "warning" : state === "ok" ? "success" : state === "failed" ? "error" : "gray";
+   const word = busy ? t("proxyTestResult.testing")
++    : unknown ? t("proxyChain.readyGeoUnknownLabel")
+     : state === "ok" ? t("proxyTestResult.ok", { ms })
+     : state === "failed" ? t("proxyTestResult.failed")
+     : t("proxyTestResult.notTested");
+@@ -80,11 +82,11 @@ export function ProxyTestPill({ state, busy, ms, detail, className, ...rest }: (
+       shape="pill"
+       color={color}
+       data-pill="proxy-test"
+-      data-state={busy ? "testing" : state}
++      data-state={busy ? "testing" : unknown ? "geo_unknown" : state}
+       // Figures line up down the column, and a Retest from 98 to 120 ms keeps the pill's width.
+       className={cn("max-w-full tabular-nums", className)}
+       // A failed test has its own shape, not only a hue (A11Y-18).
+-      lead={busy ? spinner : state === "failed" ? <AlertCircleIcon data-failed-mark className="size-3.5" /> : null}
++      lead={busy ? spinner : state === "failed" || unknown ? <AlertCircleIcon data-failed-mark={state === "failed" ? "" : undefined} className="size-3.5" /> : null}
+     >
+       <Word>{word}</Word>
+       {/* No leading punctuation: the accessible name joins it with a space. */}
 diff --git a/src/shared/ui/listHeader/useListLayout.tsx b/src/shared/ui/listHeader/useListLayout.tsx
 index 8632128e3af5bd01a3a9e3c123b13972a3226891..b5e554643e633d61581a7a522f0fb7199aee6a85 100644
 --- a/src/shared/ui/listHeader/useListLayout.tsx
@@ -21272,7 +21420,7 @@ index aa738ea8b5e74ae0d89052b96148e7487591fc36..14d9b551f71fd200f57b1b9f66aa31aa
        {!empty && (
 diff --git a/src/widgets/ProfileTable/ProxyQuickControl.tsx b/src/widgets/ProfileTable/ProxyQuickControl.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..f96c8018d597792cd363817076c08e52596d3f33
+index 0000000000000000000000000000000000000000..c6462e65bd1e7f001d8a3498c2b74248d11414a6
 --- /dev/null
 +++ b/src/widgets/ProfileTable/ProxyQuickControl.tsx
 @@ -0,0 +1,115 @@
@@ -21357,7 +21505,7 @@ index 0000000000000000000000000000000000000000..f96c8018d597792cd363817076c08e52
 +  };
 +  const keepOpen = () => { clearTimeout(timer.current); setOpen(true); };
 +  const failure = result ? proxyChainErrorText(t, result.kind === "local" ? result.local_network : result.system_proxy)
-+    ?? proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error }) : null;
++    ?? proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error, route_ready: result.route_ready }) : null;
 +  return <div ref={root} className="relative flex items-center" data-proxy-quick
 +    onMouseEnter={keepOpen}
 +    onMouseLeave={() => { timer.current = setTimeout(() => { if (!root.current?.contains(document.activeElement)) setOpen(false); }, 250); }}
@@ -21383,7 +21531,7 @@ index 0000000000000000000000000000000000000000..f96c8018d597792cd363817076c08e52
 +          <div>{t("proxyQuick.checkedAt", { time: fmtTs(result.tested_at) })}</div>
 +        </> : t("proxyQuick.noResult")}
 +      </div>
-+      {(error || failure) && <p role="alert" className="my-2 text-help text-error-text">{error || failure}</p>}
++      {(error || failure) && <p role="alert" className={`my-2 text-help ${!error && result?.route_ready === true && (result.exit_error_code === "proxy_chain_profile_geo_failed" || result.exit_error_code === "proxy_chain_system_geo_failed") ? "text-warning-text" : "text-error-text"}`}>{error || failure}</p>}
 +      <div className="mt-3 flex items-center justify-between gap-2">
 +        <Button size="xsmall" mode="ghost" variant="neutral" disabled={busy || saving} onClick={() => void refresh(true)}>{t("proxyQuick.refresh")}</Button>
 +        <Button size="xsmall" mode="ghost" variant="neutral" onClick={() => { setOpen(false); void useNav.getState().openSettings("proxy"); }}>{t("proxyQuick.settings")}</Button>
@@ -21461,10 +21609,15 @@ index d3b08b156ae6545c25d72e5e6483272dcbd43560..24af6c2b7a8674d809205d2f20ec54c2
                  top={offsetOf(i)}
                  columns={columns}
 diff --git a/src/widgets/ProxyList/ProxyListRow.tsx b/src/widgets/ProxyList/ProxyListRow.tsx
-index df7d2cb8628259c93fc50b889851952961f4172a..b046ed5382b307e6fc715001116c4635b9730b72 100644
+index df7d2cb8628259c93fc50b889851952961f4172a..48d37a72383150b53cee567f8314d0f6a70738ef 100644
 --- a/src/widgets/ProxyList/ProxyListRow.tsx
 +++ b/src/widgets/ProxyList/ProxyListRow.tsx
-@@ -13,10 +13,12 @@ import { proxyStatus, useProxy, type ProxyColumnId, type ProxyEntry } from "../.
+@@ -9,14 +9,16 @@ import { fmtTs, HOST_OS } from "../../shared/lib/utils";
+ import { slideDelayOf } from "../../shared/lib/arrival";
+ import { useT } from "../../shared/i18n";
+ import { useRightsChange } from "../../entities/space";
+-import { proxyStatus, useProxy, type ProxyColumnId, type ProxyEntry } from "../../entities/proxy";
++import { proxyReadyWithUnknownGeo, proxyStatus, useProxy, type ProxyColumnId, type ProxyEntry } from "../../entities/proxy";
  import { ariaOf, capOf, command, commandsFor, iconOf, menuItemsFor, proxyRowSubject, reasonOf, runCommand } from "../../features/commands";
  import { pointerMoved } from "../../shared/lib/pointer";
  import { rowFill } from "../../shared/ui/rowFill";
@@ -21487,6 +21640,15 @@ index df7d2cb8628259c93fc50b889851952961f4172a..b046ed5382b307e6fc715001116c4635
    };
    const test = command("proxy.test");
    // One fill per row state, as on Profiles (E13, O5): the target is drawn,
+@@ -154,7 +156,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
+                 visually-hidden detail and the hover tooltip. */}
+             <Tooltip content={detail}>
+               {status === "ok"
+-                ? <ProxyTestPill state="ok" ms={snap!.tcp_ms!} busy={busy} detail={detail} className="shrink-0" />
++                ? <ProxyTestPill state="ok" ms={snap!.tcp_ms!} busy={busy} geoUnknown={proxyReadyWithUnknownGeo(snap)} detail={detail} className="shrink-0" />
+                 : <ProxyTestPill state={status} busy={busy} detail={detail} className="shrink-0" />}
+             </Tooltip>
+             {/* The address it came out at stays beside it, as before, while
 @@ -172,6 +174,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
        aria-rowindex={rowIndex}
        aria-selected={isSel}
@@ -21522,10 +21684,10 @@ index 0a8b322ec6e1658b105d448a1c2ff2f3a7e38861..a896edfe2a90897d1a442739c68c4e57
      </PropertySheet>
    );
 diff --git a/src/widgets/ProxyPeek/ProxyPeek.tsx b/src/widgets/ProxyPeek/ProxyPeek.tsx
-index 3014d476469aef5876e46ca7a20de8332154080e..bda6b6683fb89b5897777eef3411e5f6341fc9de 100644
+index 3014d476469aef5876e46ca7a20de8332154080e..e0201b62b572e81c2c32f745235810ac62635f5b 100644
 --- a/src/widgets/ProxyPeek/ProxyPeek.tsx
 +++ b/src/widgets/ProxyPeek/ProxyPeek.tsx
-@@ -5,6 +5,8 @@ import { CountryFlag } from "../../shared/ui/CountryFlag";
+@@ -5,10 +5,12 @@ import { CountryFlag } from "../../shared/ui/CountryFlag";
  import { ProxyTestPill } from "../../shared/ui/StatusPill";
  import { PeekBody, PeekHeader, PeekPanel, PeekSection } from "../../shared/ui/peek";
  import { explainError } from "../../shared/lib/errors";
@@ -21534,15 +21696,30 @@ index 3014d476469aef5876e46ca7a20de8332154080e..bda6b6683fb89b5897777eef3411e5f6
  import { fmtTs } from "../../shared/lib/utils";
  import { focusProxyRow } from "../../shared/lib/focusRow";
  import { useT } from "../../shared/i18n";
-@@ -173,7 +175,6 @@ function TestSection({ proxy }: { proxy: ProxyEntry }) {
+-import { proxyHistory, proxyStatus, useProxy, type ProxyEntry, type ProxyTestSnapshot } from "../../entities/proxy";
++import { proxyHistory, proxyReadyWithUnknownGeo, proxyStatus, useProxy, type ProxyEntry, type ProxyTestSnapshot } from "../../entities/proxy";
+ import { useProfileUi } from "../../entities/profile";
+ import { onProxy, teamRefusal, useRightsChange } from "../../entities/space";
+ import { capOf, command, menuItemsFor } from "../../features/commands";
+@@ -96,7 +98,7 @@ function ProxyPeekHeader({ name, proxy, onEdit, onClose }: {
+       // dot and a word until the pair that rebuilds that list adopts it.
+       status={
+         testStatus === "ok"
+-          ? <ProxyTestPill data-peek-test-status state="ok" ms={snap!.tcp_ms!} busy={busy} />
++          ? <ProxyTestPill data-peek-test-status state="ok" ms={snap!.tcp_ms!} busy={busy} geoUnknown={proxyReadyWithUnknownGeo(snap)} />
+           : <ProxyTestPill data-peek-test-status state={testStatus} busy={busy} />
+       }
+       extra={
+@@ -173,7 +175,7 @@ function TestSection({ proxy }: { proxy: ProxyEntry }) {
  
  function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot }) {
    const t = useT();
 -  const status = proxyStatus(snap);
++  const readyGeoUnknown = proxyReadyWithUnknownGeo(snap);
    const place = [snap.region, snap.city].filter(Boolean).join(", ") || snap.country;
    return (
      // The last test's facts, strong 13 px, 14 px apart (owner, "more air").
-@@ -184,11 +185,16 @@ function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot })
+@@ -184,11 +186,16 @@ function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot })
        )}
        {snap.timezone && <Line icon={<ClockIcon className="size-3.5" />}>{snap.timezone}</Line>}
        {snap.isp && <Line icon={<BuildingIcon className="size-3.5" />}>{snap.isp}</Line>}
@@ -21561,7 +21738,7 @@ index 3014d476469aef5876e46ca7a20de8332154080e..bda6b6683fb89b5897777eef3411e5f6
            <Tooltip content={snap.udp_error ?? ""}>
              <Badge color={snap.udp_ms != null ? "success" : "error"} size="small">
                {snap.udp_ms != null ? t("proxyPeek.udpOk", { ms: snap.udp_ms }) : t("proxyPeek.udpFailed")}
-@@ -197,10 +203,11 @@ function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot })
+@@ -197,10 +204,11 @@ function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot })
          )}
          <span className="text-secondary text-text-soft-400">{fmtTs(snap.last_seen)}</span>
        </div>
@@ -21570,9 +21747,9 @@ index 3014d476469aef5876e46ca7a20de8332154080e..bda6b6683fb89b5897777eef3411e5f6
 -          {t("proxyInfoPopover.geoError")}
 -          <span className="block text-secondary text-text-soft-400" data-selectable>{explainError(snap.geo_error)}</span>
 +      {(snap.geo_error || snap.chain_error) && (
-+        <p className="m-0 text-secondary text-error-text" data-chain-test-error={snap.transport === "proxy_chain" ? "" : undefined}>
-+          {snap.transport === "proxy_chain" ? t("proxyChain.startBlocked") : t("proxyInfoPopover.geoError")}
-+          <span className="block text-secondary text-text-soft-400" data-selectable>{snap.chain_error ? proxyChainErrorText(t, snap.chain_error) : explainError(snap.geo_error)}</span>
++        <p className={`m-0 text-secondary ${readyGeoUnknown ? "text-warning-text" : "text-error-text"}`} data-chain-test-error={snap.transport === "proxy_chain" ? "" : undefined}>
++          {readyGeoUnknown ? t("proxyChain.readyGeoUnknownLabel") : snap.transport === "proxy_chain" ? t("proxyChain.startBlocked") : t("proxyInfoPopover.geoError")}
++          <span className="block text-secondary text-text-soft-400" data-selectable>{snap.chain_error ? proxyChainErrorText(t, { ...snap.chain_error, route_ready: readyGeoUnknown }) : explainError(snap.geo_error)}</span>
 +          {snap.chain_error && <code className="block break-all" data-selectable>{snap.chain_error.code}</code>}
          </p>
        )}
