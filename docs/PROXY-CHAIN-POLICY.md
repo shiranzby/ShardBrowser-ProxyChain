@@ -1,202 +1,190 @@
-# Per-profile route choice and HTTP/HTTPS second hops (pc8)
+# Profile proxy routes and HTTP/HTTPS transport
 
-## Live verification (pc10)
+## Five configuration choices, four execution plans
 
-The relay is bound before testing. There is no discarded first-hop CONNECT
-before the actual profile handshake. Preparation, profile tests, proxy-list
-tests and Start use the same relay verification. Each test closes its own
-listener and flows; it cannot close a running Session's relay.
+The profile editor offers these explicit choices:
 
-The dedicated `example.com:443` probe is a reachability measurement, not an
-exclusive browsing requirement. If that target fails, a valid fresh Geo
-response through the same relay and credentials proves proxy transport and
-the live exit. The measured Geo round trip supplies the reachability latency
-in this case. It is not a retry of the probe or an alternative route. Explicit
-authentication refusals still stop immediately. When both the probe and Geo
-fail, the original probe error is retained; when only Geo fails, measured
-connectivity remains visible but Start still refuses the unverified exit.
+| Proxy chain | Connection | Execution plan |
+|---|---|---|
+| Off | Real IP direct | `Direct` |
+| Off | System proxy | `System` |
+| Off | Selected proxy | `Single` |
+| On | System proxy, then selected proxy | `Chain` |
+| On | Selected first proxy, then selected second proxy | `Chain` |
 
-Typed tunnel errors are published before the local socket closes, so the
-caller can identify a failed first hop instead of guessing from loopback EOF.
-The settings-only system test likewise accepts live Geo evidence on the
-resolved system proxy when its separate probe target is unavailable.
+In chain mode, the first layer is either the system proxy or a selected library
+proxy. The second layer is a selected proxy. Empty layers are not additional
+editor choices. The final selected proxy remains the profile's `proxy_id`; a
+selected first proxy has its own library ID.
 
-PC12 retries only TCP establishment once, before any proxy protocol bytes are
-sent. Both attempts share the original connection deadline; the first uses at
-most half the remaining time. This applies to detection, preparation and every
-new browser flow, for both the first hop and a selected proxy used alone.
-Hostnames are resolved once; the second attempt tries the resolved addresses in
-reverse order so an unavailable first address cannot starve the other IP family.
+Launch and profile connection tests compile saved or draft intent into the same
+`ProfilePlan` and four `RoutePlan` kinds. Explicit routes override the global
+chain switch. A direct connection disables Chromium's explicit proxy but cannot
+bypass OS VPN/TUN routing. No proxy-route failure chooses website direct.
+
+The profile editor tests its unsaved route without saving a proxy or profile.
+Its result belongs to that draft, not a library proxy's historical test. The
+settings test likewise uses its settings draft; saved credentials can complete
+that draft without replacing its route choice.
+
+## Compatibility with saved routes and policies
+
+Older `_meta.proxy_route` values remain readable. Planning normalizes empty
+layers without rewriting their saved representation or inactive proxy bindings:
+
+| Saved legacy chain | Effective route |
+|---|---|
+| Direct, then direct | Direct |
+| Direct, then system | System |
+| System, then direct | System |
+| Direct, then assigned proxy B | Single proxy B |
+| Selected proxy A, then direct | Single proxy A |
+
+For the last case, editing the active single proxy updates A's stored selection;
+it does not replace the retained, inactive B binding. A system second hop after
+system or selected A is invalid. Missing route data preserves legacy policy
+inheritance; malformed or contradictory route data refuses testing and Start.
+
+Each saved profile `_meta.proxy_chain_policy` and saved proxy
+`proxy_chain_policy` accepts `inherit`, `enabled`, `disabled`, or
+`prefer_first_hop`. Missing fields mean `inherit`. Unknown values are errors.
+For profiles without an explicit route, precedence is **profile > assigned proxy >
+global `settings.proxy_chain.enabled`**. `disabled` skips the configured first
+hop while keeping the assigned proxy, credentials, fingerprint and data directory.
+If no proxy is assigned, the existing unchained behavior applies.
+
+Saved edits affect the next start. Active tunnels remain owned by the running
+Session, including runtime proxy-swap restrictions. Global legacy first-hop
+settings are shared; an explicit route can select its own library first proxy.
+
+Local API `POST /profiles` and `PATCH /profiles/{id}` accept the policy and optional
+route. `GET /profiles/{id}` keeps the policy inside `_meta`; profile lists also
+return the choice. `POST /proxies` accepts a default policy, and proxy responses
+return it without credentials. Proxy history used as an unchained launch fallback
+is filtered by the resolved profile policy, not only the global switch. Team and
+local proxy deduplication include the policy. Profile JSON export/import, clone
+and the opaque team/sync payload retain these choices. Older unpatched clients
+may discard or reject unknown fields: use compatible patched clients on every
+computer that edits these records.
+
+## Verification and preparation lifetime
+
+The relay is bound before testing. Preparation, profile tests and Start share the
+prepared-route verification path. It first requests fresh Geo through the actual
+relay and original credentials. Geo providers are tried serially under one
+six-second Geo deadline. Success already proves transport, so there is no preceding
+discarded CONNECT or separate successful-path TCP probe.
+
+If Geo fails, the same prepared route may prove readiness with a bounded HTTPS
+content check. Certificate and hostname verification, HTTP 200 and a nonempty body
+are required. The content stage has its own six-second budget, with up to three
+seconds per target; the Geo deadline is not a six-second total startup guarantee.
+An authentication refusal is retained as an authentication error, not a location
+provider outage. A TCP/protocol probe is only a diagnostic after both Geo and
+HTTPS content verification fail.
+
+A ready route without Geo keeps the current Geo failure and unknown exit
+IP/location in detection and history. It does not borrow a historical IP, the
+first hop's location, a country tag or this computer's location. Existing manual
+fingerprint fields remain; unresolved automatic fields use the existing
+proxy-unknown defaults (UTC, en-US, no automatic coordinates). No historical IP
+is used for ICE.
+
+The optional `route_ready` evidence is true only after this attempt proves live
+Geo or verified HTTPS content. The interface shows a warning-colored
+“Connected, location unknown” result when appropriate. Old history without this
+field remains unknown. TCP-only partial results do not authorize Start. Each new
+start verifies the current route rather than trusting history.
+
+Before switching from Geo to HTTPS content, between failed content targets, and
+before handing the prepared relay to the Engine, preparation cancels its owned
+flows and waits for them to finish. A verification client's timeout must not leave
+an upstream dial running after preparation. The listener stays available for the
+next stage. This cleanup belongs only to a relay still in preparation; it does not
+cancel business traffic in an existing Session. Completed tests close their own
+relay and flows, never a running Session's relay.
+
+Typed tunnel errors are published before the local socket closes, so the caller
+can identify the failing hop instead of guessing from loopback EOF. Settings
+system checks also retain live Geo evidence when a separate probe is unavailable.
+
+TCP establishment may retry once, before any proxy protocol bytes are sent. Both
+attempts share the original connection deadline. The first is limited to the
+smaller of two seconds and half the remaining budget; the second uses the remaining
+time. Hostnames are resolved once and the second attempt reverses address order.
 Authentication, CONNECT refusals, malformed replies and TLS failures are not
 replayed. An established connection is never switched to another route.
 
-Each saved profile `_meta.proxy_chain_policy` and saved proxy
-`proxy_chain_policy` accepts `inherit`, `enabled`, `disabled`, or `prefer_first_hop`. Missing fields
-mean `inherit`. Unknown values are errors, never an unchained fallback.
+## Identical endpoints and explicit first-hop preference
 
-Precedence is **profile > assigned proxy > global `settings.proxy_chain.enabled`**.
-`disabled` skips only the first hop: the original proxy binding, credentials,
-fingerprint and data directory stay unchanged. It is not a command to clear the
-proxy. If the profile originally has no proxy, the original unchained behavior
-still applies. Saved edits affect the next start; active tunnels remain owned by
-the running Session, including runtime proxy-swap restrictions.
+When the resolved first hop and assigned proxy match in normalized host, port,
+protocol and actual credentials, the route connects to that endpoint once. The
+result reports `same_proxy_endpoint`, while saved binding and chain intent remain
+unchanged. This avoids an unnecessary proxy self-connection.
 
-UI: edit a profile, open Proxy, choose Proxy chain choice; or open a proxy's Peek,
-press Edit and choose its default. A profile's explicit choice wins when multiple
-profiles share one proxy. Global first-hop host/port/credentials remain shared;
-this is not a separate first-hop server per profile.
+Equal public exit IPs do not establish endpoint identity. A verified chain is kept
+even if both proxies share an exit. A failed chain is no longer recovered by
+comparing first-hop and assigned-proxy exits. `same_exit_verified` remains a
+readable historical result value; new preparation does not emit it. Historical
+IPs, countries and unavailable Geo cannot authorize an alternate route.
 
-Local API `POST /profiles` and `PATCH /profiles/{id}` accept
-`proxy_chain_policy`. `GET /profiles/{id}` keeps it inside `_meta`; the list also
-returns the policy. `POST /proxies` accepts the same field; its response and
-`GET /proxies` also return it without credentials. Proxy history used as an
-unchained launch fallback is filtered by the resolved profile policy, not only
-the global switch. Team and local proxy deduplication both include the policy.
-Profile JSON
-export/import, clone and the opaque team/sync payload retain the choice. Older
-unpatched clients may discard fields they do not understand: use the patched
-version on every machine that edits these records. No claim is made that an old
-launcher understands the new policy.
+`prefer_first_hop` is a separate, explicit policy. It first tries the configured
+route to the assigned proxy. If that route fails and the policy permits recovery,
+it tries the same assigned proxy from this computer, with the same protocol and
+credentials, and requires current route verification. This is not a direct website
+connection. The normal `enabled` policy and ordinary explicit chains do not grant
+this assigned-proxy fallback.
 
-Second-hop SOCKS5 and HTTP remain transparent byte tunnels through the first
-proxy. A true HTTPS proxy requires TLS **inside the first-hop tunnel**, validated
-against the original proxy host/IP with WebPKI roots. Only the in-memory loopback
-view changes from HTTPS to HTTP; the saved entry stays HTTPS. The local listener
-forwards HTTP requests/CONNECT through verified TLS, leaving second-hop
-authentication with the engine/detection client. TLS failures do not retry HTTP,
-disable certificate checks, or connect directly. Private/self-signed certificates
-are not accepted by an untrusted override. First-hop credentials remain separate.
+Results identify `first_hop`, `assigned_proxy_fallback`, `same_proxy_endpoint`,
+`explicit_direct`, `explicit_system`, `explicit_proxy` or `explicit_chain` as
+applicable. A fallback retains `first_hop_error_code` when relevant, and the
+interface reports the chosen route. Invalid settings, unreadable credentials,
+missing required bindings and locked-profile authorization are not repaired by
+silently choosing another connection.
+
+System-only routes resolve the Windows proxy/PAC for each CONNECT target and
+reject PAC DIRECT; changing Windows settings affects later connections. In a
+system-first chain, preparation resolves the first hop for the assigned proxy's
+endpoint. Selected proxy routes keep their startup endpoint. A local proxy such
+as `127.0.0.1:7890` does not expose its internal node through HTTP/SOCKS. The Launcher
+does not inspect private account/subscription state or infer node identity from
+matching exits. It cannot freeze another proxy app's internal node selection.
+
+## HTTP, HTTPS and protected-route boundaries
+
+Second-hop SOCKS5 and HTTP use transparent byte tunnels through the first proxy.
+A true HTTPS proxy adds TLS **inside the first-hop tunnel**, validated against the
+original proxy host/IP with WebPKI roots. Only the in-memory loopback view changes
+from HTTPS to HTTP; the saved entry stays HTTPS. The local listener forwards HTTP
+requests/CONNECT through verified TLS, leaving second-hop authentication with the
+Engine/detection client. TLS failures never retry HTTP, disable certificate checks
+or connect directly. Private/self-signed certificates are not accepted through an
+untrusted override. First-hop credentials are separate. Selected HTTPS single
+proxies use the same verified TLS boundary.
 
 A supplier saying “HTTPS proxy” may mean a plain HTTP CONNECT proxy that carries
 HTTPS websites. Select `http` only after verifying the actual endpoint; never
-silently downgrade a saved `https` entry. An IP HTTPS endpoint must have a matching
-IP certificate. HTTP Basic credentials are not protected by proxy TLS in HTTP mode.
+silently downgrade a saved `https` entry. An IP HTTPS endpoint needs a matching IP
+certificate. HTTP Basic credentials are not protected by proxy TLS in HTTP mode.
 
-pc8 still has TCP-only protected routes, no QUIC/UDP and no raw-CDP/automation launch in a
-chained Session. First-hop HTTP/SOCKS5 routes may be automatic Windows settings or
-manual remote endpoints; encrypted subscription protocols are not implemented.
+Protected proxy routes use tracked TCP-only tunnels, no QUIC/direct UDP and no
+raw-CDP/automation launch. First hops support HTTP, HTTPS or SOCKS5, with automatic
+Windows resolution or explicit library/manual endpoints as applicable. Encrypted
+subscription protocols such as HY2/VLESS are not implemented by this backend.
 
-On upstream v2.1.3, password-protected profiles keep the route choice in their
-sealed content, not in the readable stub. Reading a locked stub does not disclose
-its route; editing the choice (even to inherit) through the API requires the
-profile password. Changing that choice updates the profile revision. The saved
-profile-chain test does not unlock a protected profile and reports that a password
-is required; a normal password-authorized start uses the decrypted policy.
+Password-protected profiles keep route and policy in sealed content, not the
+readable stub. Reading a locked stub does not disclose its route. Editing these
+choices through the API requires the profile password and updates the profile
+revision. A test does not silently unlock a protected profile; password-authorized
+testing or Start uses decrypted settings. A selected first proxy in a team requires
+access to that proxy; unavailable or unauthorized entries refuse the route. Routes
+are omitted from public team cards.
 
-The proxy Peek shows its saved default, not a claim about a running profile's
-route. Simple navigation under Settings / Appearance is a separate local UI
-preference: saved manually, complete navigation by default, and no proxy or profile
-data changes. More keeps all secondary destinations available; the current one
-remains visible when the group is folded, and extension update notices remain visible.
-
-## Preferred first hop, always keeping the assigned proxy
-
-`prefer_first_hop` is an explicit per-profile or per-proxy choice. It first
-verifies the configured first-hop route to the assigned proxy. If that network
-route fails, it tries a connection from this computer to the same assigned proxy,
-with the same protocol and credentials, and requires both proxy handshake and
-live Geo verification before starting. It never tries a direct website connection.
-The existing `enabled` policy does not allow unconditional assigned-proxy
-fallback. PC11 additionally permits the verified equivalence described below.
-
-When the resolved first-hop endpoint and assigned proxy match in normalized
-host, port, protocol and actual credentials, strict and preferred routes connect
-to that endpoint once. A matching public exit IP does not prove a matching endpoint
-and is never used as endpoint identity. A local proxy such as `127.0.0.1:7890` does
-not expose its internal selected node through HTTP/SOCKS; no private account or
-subscription state is inspected to guess it.
-
-Both alternatives retain the protected fixed-target loopback tunnel, TCP-only
-behavior, strict HTTPS certificate verification and runtime proxy-control
-restrictions. The selected route stays fixed for that Session; the next start
-may choose again. Changing the upstream node inside a separate local proxy app
-can still affect that app's own connections; the Launcher cannot freeze its
-private node selection.
-
-The `route` field in test results/history reports `first_hop`,
-`assigned_proxy_fallback`, `same_proxy_endpoint` or `same_exit_verified`; an alternative route keeps
-`first_hop_error_code` when relevant. The interface shows that first attempt
-separately and reports the route after a successful native start. No IP equality
-is labeled as proof of identical proxy nodes. Unknown policy values, corrupt
-settings/credentials, missing proxy bindings and locked-profile authorization
-errors are not eligible for route recovery. Existing saved choices are not
-automatically changed.
-
-PC13 retains a verified chain without making independent single-route
-comparisons, even when both proxies share an exit IP. This preserves the
-working first hop rather than replacing it with a separately dialled assigned
-proxy that may not remain reachable. Exact matching endpoints still use one
-assigned connection, avoiding an unnecessary self-connection.
-
-For `same_exit_verified`, only a transport-failed chain can recover when fresh
-single-route Geo checks on the frozen first hop and original assigned proxy
-both succeed and their exit IPs agree. The assigned route's already-verified
-tunnel is retained. Comparison has a six-second total budget, separate from
-product connection deadlines. Explicit authentication refusal is never hidden.
-Unknown exits, historical IPs and country labels cannot establish equivalence.
-
-This means equal observed exits, not equal node identity. Credentials, proxy
-binding and profile data remain unchanged. The retained route uses the assigned
-proxy, not a mutable system-only connection. Each new test/start resolves and
-checks again; it does not reuse an earlier equivalence decision.
-
-PC14 separates route readiness from live location metadata. A fresh Geo reply
-can still prove the selected route works. If Geo is unavailable, a bounded
-HTTPS content check through that same prepared route may prove readiness:
-original proxy credentials, certificate and hostname verification, a successful
-HTTP response and a nonempty body are required. It never tries a website-direct
-connection or a different proxy. Explicit authentication refusal cannot be
-rescued by another request. This content check is only an alternative when Geo
-is missing, so a single fixed website does not become mandatory for every start.
-
-An HTTPS-ready route without Geo keeps the current Geo error and unknown exit
-IP/location in detection and history. Starting it does not query another route
-or borrow a historical IP, the first hop's location, a country tag or this
-computer's location. Existing manually chosen fingerprint fields remain;
-unresolved automatic fields use the existing proxy-unknown defaults (UTC,
-en-US, no automatic coordinates). No historical IP is used for ICE. QUIC and
-direct UDP restrictions remain in force. Same-exit recovery still requires
-fresh IP evidence from both routes; HTTPS readiness alone cannot establish
-exit equality.
-
-Detection also reports an optional `route_ready` evidence field. It is true
-only after this attempt proves the route using live Geo or verified HTTPS
-content. A Geo error in history carries the same current proof; older history
-without the field remains unknown. The interface uses a warning-colored
-“Connected, location unknown” result for verified routes with missing Geo,
-and does not claim their next start is blocked. TCP-only partial results and
-authentication failures remain failed. Every new start verifies its route
-again rather than trusting a history flag.
-
-Older pc7 clients treat the new policy as invalid and refuse it. Use pc8 on
-clients editing or starting profiles with this choice; switch back to a supported
-explicit policy in pc8 before returning to pc7. Proxy identity and data stay intact.
-
-## Explicit per-profile connections (pc8)
-
-An optional `_meta.proxy_route` selects a single `system`, `proxy` or `direct`
-connection, or a `chain` whose first hop is `system`, a selected library `proxy`,
-or `direct`, and whose second hop is the assigned `proxy` or `direct`. PC11 also
-allows second-hop `system` only after a `direct` first hop; runtime normalises
-that selection to the single system route while the editor keeps the selection.
-Second-hop `system` after `system` or a selected first proxy is rejected. The
-original `proxy_id` remains the selected final proxy and can be kept while an
-inactive route does not use it. The first selected proxy has its own library ID.
-Missing route data preserves legacy policy inheritance; malformed data refuses.
-
-These explicit choices override the global chain switch. A direct connection
-disables Chromium's explicit proxy but cannot bypass OS VPN/TUN routing. With a
-direct second hop, the first proxy remains the website exit. System-only routes
-resolve the Windows proxy/PAC for every CONNECT target and reject PAC DIRECT;
-changing Windows settings affects later connections. Selected proxy routes keep
-their startup endpoint. Both proxy routes use tracked TCP-only tunnels, validated
-TLS and runtime proxy-control restrictions. No failure chooses website direct.
-
-The profile editor tests its unsaved route without saving a proxy or profile.
-Its result belongs to that draft, not a library proxy's historical test. Routes
-are sealed with protected profile settings and omitted from public team cards.
-Using a selected first hop in a team requires access to that proxy; unavailable
-or unauthorized entries refuse the route.
+The proxy Peek shows its saved default, not a running profile's actual route.
+Simple navigation under Settings / Appearance is an independent local UI
+preference: saved manually, complete navigation by default, no proxy/profile data
+changes. More keeps secondary destinations available; the current one and extension
+update notices remain visible when the group is folded.
 
 ## Startup tab reuse
 
