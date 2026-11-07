@@ -26,7 +26,7 @@ async fn single(entry: &ProxyEntry, route: Route) -> anyhow::Result<PreparedProx
     let target=Target::new(&entry.host,entry.port)?;
     let tls=if entry.kind==ProxyKind::Https {Some(tls::client()?)} else {None};
     let tunnel=Tunnel::bind_assigned(target,tls).await?;
-    let mut prepared=PreparedProxy{effective:effective_entry(entry,&tunnel),tunnel,route,first_hop_error:None,verified_geo:None,verified_tcp_ms:None};
+    let mut prepared=PreparedProxy{effective:effective_entry(entry,&tunnel),tunnel,route,first_hop_error:None,verified_geo:None,verified_https:false,geo_failure:None,verified_tcp_ms:None};
     if let Err(error)=verify_prepared(&mut prepared).await {let error=preparation_failure(&prepared,error);prepared.tunnel.shutdown().await;return Err(error);}
     Ok(prepared)
 }
@@ -34,7 +34,7 @@ async fn single(entry: &ProxyEntry, route: Route) -> anyhow::Result<PreparedProx
 async fn system() -> anyhow::Result<PreparedProxy> {
     let tunnel=Tunnel::bind_system().await?;
     let effective=ProxyEntry {proxy_chain_policy:Default::default(),id:String::new(),name:String::new(),kind:ProxyKind::Socks5,host:"127.0.0.1".into(),port:tunnel.addr().port(),username:String::new(),password:String::new(),country:String::new(),notes:String::new()};
-    let mut prepared=PreparedProxy{effective,tunnel,route:Route::ExplicitSystem,first_hop_error:None,verified_geo:None,verified_tcp_ms:None};
+    let mut prepared=PreparedProxy{effective,tunnel,route:Route::ExplicitSystem,first_hop_error:None,verified_geo:None,verified_https:false,geo_failure:None,verified_tcp_ms:None};
     if let Err(error)=verify_prepared(&mut prepared).await {
         let error=if prepared.verified_tcp_ms.is_some(){error}else{prepared.tunnel.last_error().unwrap_or(error)};
         let error=preparation_failure(&prepared,error);prepared.tunnel.shutdown().await;return Err(error);
@@ -128,7 +128,7 @@ pub async fn test_resolved_route(route:Option<&ProfileProxyRoute>,policy:policy:
         };
         match prepared {
             Ok(Some(mut prepared))=>{
-                if prepared.verified_geo.is_none() {if let Err(error)=verify_prepared(&mut prepared).await {
+                if !prepared.is_ready() {if let Err(error)=verify_prepared(&mut prepared).await {
                     if let Some(tcp_ms)=prepared.verified_tcp_ms {
                         record_connected_route(&mut result,route,first,prepared.route,prepared.first_hop_error.clone(),tcp_ms);
                         result.set_exit(Err(error.into()));
@@ -138,7 +138,7 @@ pub async fn test_resolved_route(route:Option<&ProfileProxyRoute>,policy:policy:
                     prepared.tunnel.shutdown().await;result.total_ms=start.elapsed().as_millis();return Ok(result);
                 }}
                 record_connected_route(&mut result,route,first,prepared.route,prepared.first_hop_error.clone(),prepared.verified_tcp_ms.expect("route TCP verified"));
-                result.set_exit(Ok(prepared.verified_geo.clone().expect("route verified")));
+                result.set_exit(prepared.exit_result());
                 prepared.tunnel.shutdown().await;
             },
             Err(error)=>{

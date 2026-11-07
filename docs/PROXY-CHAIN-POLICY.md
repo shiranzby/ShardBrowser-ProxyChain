@@ -140,6 +140,25 @@ binding and profile data remain unchanged. The retained route uses the assigned
 proxy, not a mutable system-only connection. Each new test/start resolves and
 checks again; it does not reuse an earlier equivalence decision.
 
+PC14 separates route readiness from live location metadata. A fresh Geo reply
+can still prove the selected route works. If Geo is unavailable, a bounded
+HTTPS content check through that same prepared route may prove readiness:
+original proxy credentials, certificate and hostname verification, a successful
+HTTP response and a nonempty body are required. It never tries a website-direct
+connection or a different proxy. Explicit authentication refusal cannot be
+rescued by another request. This content check is only an alternative when Geo
+is missing, so a single fixed website does not become mandatory for every start.
+
+An HTTPS-ready route without Geo keeps the current Geo error and unknown exit
+IP/location in detection and history. Starting it does not query another route
+or borrow a historical IP, the first hop's location, a country tag or this
+computer's location. Existing manually chosen fingerprint fields remain;
+unresolved automatic fields use the existing proxy-unknown defaults (UTC,
+en-US, no automatic coordinates). No historical IP is used for ICE. QUIC and
+direct UDP restrictions remain in force. Same-exit recovery still requires
+fresh IP evidence from both routes; HTTPS readiness alone cannot establish
+exit equality.
+
 Older pc7 clients treat the new policy as invalid and refuse it. Use pc8 on
 clients editing or starting profiles with this choice; switch back to a supported
 explicit policy in pc8 before returning to pc7. Proxy identity and data stay intact.

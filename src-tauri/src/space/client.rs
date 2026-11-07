@@ -1486,7 +1486,7 @@ mod tests {
     }
 
     /// Files that talk HTTP or open sockets for something other than a team.
-    const OTHER_TRAFFIC: [(&str, &str); 19] = [
+    const OTHER_TRAFFIC: [(&str, &str); 21] = [
         ("process/close.rs", "Stop's Browser.close on a launched browser's own devtools"),
         ("live_e2e.rs", "the live end-to-end harness, run by hand: a test site, a proxy, CDP, the server raw"),
         ("runtime.rs", "engine and launcher downloads"),
@@ -1505,6 +1505,8 @@ mod tests {
         ("proxy_chain/integration_tests.rs", "synthetic profile launch and lifecycle tests"),
         ("proxy_chain/detection_tests.rs", "synthetic loopback Geo responders and proxy URL validation"),
         ("proxy_chain/same_exit_tests.rs", "synthetic loopback proxy equivalence and owned tunnel cleanup tests"),
+        ("proxy_chain/readiness.rs", "bounded verified HTTPS content through the prepared proxy only when live Geo is unavailable"),
+        ("proxy_chain/readiness_tests.rs", "synthetic proxy-only HTTPS readiness and certificate rejection tests"),
         ("proxy_chain/live_tests.rs", "explicit opt-in isolated Engine acceptance checks its own loopback listener cleanup"),
     ];
 

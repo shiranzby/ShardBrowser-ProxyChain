@@ -645,7 +645,7 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
     crate::proxy_chain::prepare(input.proxy.as_ref(), &s.proxy_chain).await?
     };
     let chain_geo = if let Some(chain) = &mut chain {
-        if chain.verified_geo.is_none() { crate::proxy_chain::verify_prepared(chain).await?; }
+        if !chain.is_ready() { crate::proxy_chain::verify_prepared(chain).await?; }
         chain.verified_geo.clone()
     } else { None };
     // Read off the engine binary while the proxy is probed; once per engine version.
@@ -712,7 +712,7 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
 
     // Strip `_meta` wrapper and resolve "auto" sentinels before serialising.
     let mut raw = engine_config(&input.stored);
-    resolve_auto_fields(&mut raw, input.proxy.as_ref(), chain_geo.as_ref()).await;
+    resolve_auto_fields(&mut raw, input.proxy.as_ref(), chain_geo.as_ref(), chain.is_some()).await;
     // The proxy probe and the geo lookup are the slow part: a cancel made
     // while they ran stops here, before anything is written.
     check_cancel(&input.profile_id)?;
@@ -797,19 +797,7 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
         Err(e) => eprintln!("[launcher] bookmarks skipped: {e}"),
     }
 
-    // Live geo for ICE-candidate spoofing, cached snapshot as fallback.
-    let proxy_public_ip: Option<String> = if let Some(geo) = &chain_geo {
-        Some(geo.ip.clone())
-    } else if let Some(p) = input.proxy.as_ref() {
-        match proxy::geo_check(p, None).await {
-            Ok(g) if !g.ip.is_empty() => Some(g.ip),
-            _ => proxy::latest_test_for(p)
-                .map(|s| s.ip)
-                .filter(|ip| !ip.is_empty()),
-        }
-    } else {
-        None
-    };
+    let proxy_public_ip = resolve_proxy_public_ip(input.proxy.as_ref(), chain_geo.as_ref(), chain.is_some()).await;
     let ext_alone = match ext_alone {
         Some(asked) => asked.await.unwrap_or(false),
         None => false,
@@ -1127,11 +1115,30 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
     None
 }
 
-/// Resolve "auto" sentinels in profile JSON; with proxy: live → cached → country tag → host warn.
+/// A prepared route only supplies its current Geo. Missing Geo is not a reason
+/// to query again or borrow an older proxy IP for ICE candidates.
+async fn resolve_proxy_public_ip(
+    proxy_opt: Option<&proxy::ProxyEntry>,
+    chain_geo: Option<&proxy::GeoInfo>,
+    protected_route: bool,
+) -> Option<String> {
+    if let Some(geo) = chain_geo { return Some(geo.ip.clone()); }
+    if protected_route { return None; }
+    if let Some(p) = proxy_opt {
+        match proxy::geo_check(p, None).await {
+            Ok(g) if !g.ip.is_empty() => Some(g.ip),
+            _ => proxy::latest_test_for(p).map(|s| s.ip).filter(|ip| !ip.is_empty()),
+        }
+    } else { None }
+}
+
+/// Resolve "auto" sentinels in profile JSON. Prepared routes use only their
+/// fresh Geo; older unprepared routes retain their live/cached/tag fallback.
 async fn resolve_auto_fields(
     cfg: &mut serde_json::Map<String, serde_json::Value>,
     proxy_opt: Option<&proxy::ProxyEntry>,
     chain_geo: Option<&proxy::GeoInfo>,
+    protected_route: bool,
 ) {
     let want_tz_auto = cfg.get("timezone").and_then(|v| v.as_str()) == Some("auto");
     let want_lang_auto = cfg
@@ -1161,6 +1168,9 @@ async fn resolve_auto_fields(
     let geo: Option<proxy::GeoInfo> = if let Some(geo) = chain_geo {
         source = "proxy-chain-live";
         Some(geo.clone())
+    } else if protected_route {
+        source = "proxy-chain-unknown";
+        None
     } else { match proxy_opt {
         Some(p) => {
             match proxy::geo_check_via(Some(p), None).await {
@@ -1216,7 +1226,7 @@ async fn resolve_auto_fields(
     }};
 
     let host_warn = || {
-        if proxy_opt.is_some() {
+        if protected_route || proxy_opt.is_some() {
             crate::notify_warning(
                 "Could not read the proxy's location. Rather than hand a page \
                  this computer's timezone, the profile starts on UTC — which \
@@ -1241,7 +1251,7 @@ async fn resolve_auto_fields(
         }
         None => {
             host_warn();
-            if proxy_opt.is_some() {
+            if protected_route || proxy_opt.is_some() {
                 // A profile behind a proxy must never answer with this
                 // computer's clock. Before, the Windows branch had no way to
                 // read the host zone and landed on UTC by accident; now that
@@ -1524,6 +1534,60 @@ mod tests {
 
     fn obj(v: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
         v.as_object().unwrap().clone()
+    }
+
+    fn metadata_proxy(port: u16) -> super::proxy::ProxyEntry {
+        serde_json::from_value(json!({"id":"metadata-proxy","name":"Synthetic metadata proxy","kind":"http",
+            "host":"127.0.0.1","port":port,"username":"","password":"","country":"JP","notes":""})).unwrap()
+    }
+
+    #[tokio::test]
+    async fn protected_route_with_unknown_geo_never_rechecks_or_uses_the_country_tag() {
+        let _root = crate::store::test_root("protected-geo-unknown");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let entry = metadata_proxy(listener.local_addr().unwrap().port());
+        let mut raw = obj(json!({"timezone":"auto","navigator":{"language":"auto"},"geolocation":{"mode":"auto"}}));
+        tokio::time::timeout(std::time::Duration::from_millis(300), async {
+            super::resolve_auto_fields(&mut raw, Some(&entry), None, true).await;
+            assert_eq!(super::resolve_proxy_public_ip(Some(&entry), None, true).await, None);
+        }).await.expect("a ready route with unknown metadata must not perform another network query");
+        assert_eq!(raw["timezone"], "UTC");
+        assert_eq!(raw["navigator"]["language"], "en-US");
+        assert_eq!(raw["icu_locale"], "en-US");
+        assert!(raw.get("geolocation").is_none());
+        assert_eq!(listener.accept().unwrap_err().kind(), std::io::ErrorKind::WouldBlock,
+            "neither automatic fields nor ICE may requery the proxy before considering old Geo");
+    }
+
+    #[tokio::test]
+    async fn protected_route_uses_only_its_fresh_geo_for_auto_fields_and_ice() {
+        let _root = crate::store::test_root("protected-geo-current");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let entry = metadata_proxy(listener.local_addr().unwrap().port());
+        let geo = super::proxy::GeoInfo { ip:"198.51.100.42".into(),country:"Synthetic Egypt".into(),country_code:"EG".into(),
+            region:String::new(),city:String::new(),isp:String::new(),timezone:"Africa/Cairo".into(),latitude:30.04,longitude:31.24,provider:"synthetic".into() };
+        let mut raw = obj(json!({"timezone":"auto","navigator":{"language":"auto"},"geolocation":{"mode":"auto"}}));
+        super::resolve_auto_fields(&mut raw, Some(&entry), Some(&geo), true).await;
+        assert_eq!(raw["timezone"], "Africa/Cairo");
+        assert_eq!(raw["navigator"]["language"], "ar-SA");
+        assert_eq!(raw["geolocation"]["latitude"], 30.04);
+        assert_eq!(raw["geolocation"]["longitude"], 31.24);
+        assert_eq!(super::resolve_proxy_public_ip(Some(&entry), Some(&geo), true).await.as_deref(), Some("198.51.100.42"));
+        assert_eq!(listener.accept().unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+    }
+
+    #[tokio::test]
+    async fn protected_route_with_unknown_geo_keeps_manual_fingerprint_fields() {
+        let _root = crate::store::test_root("protected-geo-manual");
+        let entry = metadata_proxy(1);
+        let mut raw = obj(json!({"timezone":"Asia/Hong_Kong","navigator":{"language":"zh-CN","languages":["zh-CN","zh"]},
+            "icu_locale":"zh-CN","geolocation":{"mode":"manual","latitude":22.3,"longitude":114.2,"accuracy":50},"webrtc":"tcp_only"}));
+        let before = raw.clone();
+        super::resolve_auto_fields(&mut raw, Some(&entry), None, true).await;
+        assert_eq!(raw, before);
+        assert_eq!(super::resolve_proxy_public_ip(Some(&entry), None, true).await, None);
     }
 
     #[test]
