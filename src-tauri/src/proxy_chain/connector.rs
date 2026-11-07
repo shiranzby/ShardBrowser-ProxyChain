@@ -10,6 +10,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
+const INITIAL_TCP_DIAL_BUDGET: Duration = Duration::from_secs(2);
 const MAX_HTTP_HEAD: usize = 16 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -169,7 +170,7 @@ pub(crate) async fn connect_assigned(target: &Target, deadline: Duration) -> Res
         })
 }
 
-pub(super) async fn connect_with_timeout(
+pub(crate) async fn connect_with_timeout(
     hop: &ProxyHop,
     target: &Target,
     budget: Duration,
@@ -241,7 +242,10 @@ where
     for attempt in 0..2 {
         let now = tokio::time::Instant::now();
         if now >= deadline { break; }
-        let until = if attempt == 0 { now + (deadline - now) / 2 } else { deadline };
+        // Preparation clients can have a 3s deadline. Leave time for the
+        // second TCP dial before they abandon the relay, even when its total
+        // connection budget is 12s. Protocol handshakes are still never retried.
+        let until = if attempt == 0 { now + ((deadline - now) / 2).min(INITIAL_TCP_DIAL_BUDGET) } else { deadline };
         match tokio::time::timeout_at(until, dial()).await {
             Ok(Ok(stream)) => return Ok(stream),
             Ok(Err(error)) => last = if error.kind() == std::io::ErrorKind::TimedOut { TcpDialError::Timeout } else { TcpDialError::Failed },
@@ -308,7 +312,7 @@ async fn http_connect(
             "system_proxy_auth_failed",
             "system_proxy",
             "The system proxy rejected or requires authentication.",
-        )),
+        ).with_proxy_response("http","authentication",407,None)),
         Some(status) => Err(ChainError::new(
             "system_proxy_connect_refused",
             "system_proxy",
@@ -363,7 +367,7 @@ async fn socks_connect(
                     "system_proxy_auth_failed",
                     "system_proxy",
                     "The system proxy rejected the username or password.",
-                ));
+                ).with_proxy_response("socks5","authentication",answer[1].into(),None));
             }
         }
         2 | 255 => {
@@ -371,7 +375,7 @@ async fn socks_connect(
                 "system_proxy_auth_failed",
                 "system_proxy",
                 "The system proxy requires valid SOCKS5 credentials.",
-            ))
+            ).with_proxy_response("socks5","authentication_method",answer[1].into(),None))
         }
         _ => {
             return Err(protocol_error(

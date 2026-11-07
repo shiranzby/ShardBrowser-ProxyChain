@@ -87,9 +87,17 @@ async fn service(options:Options)->Service {
                         let _=secure.write_all(format!("HTTP/1.1 {} Fixture\r\nContent-Type: text/html\r\nContent-Length: {}\r\n{location}Connection: close\r\n\r\n{}",options.content_status,options.content_body.len(),options.content_body).as_bytes()).await;
                         let _=secure.shutdown().await;return;
                     }
-                    if request.starts_with("CONNECT ") {let _=response(&mut stream,502).await;return;}
-                    counts.geo.fetch_add(1,Ordering::SeqCst);
-                    if options.geo_refuses_auth {let _=response(&mut stream,407).await;return;}
+                    if request.starts_with("CONNECT ip-api.com:80 ") {
+                        counts.geo.fetch_add(1,Ordering::SeqCst);
+                        if options.geo_refuses_auth {let _=response(&mut stream,407).await;return;}
+                        if stream.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await.is_err(){return;}
+                        let Ok(request)=head(&mut stream).await else {return;};
+                        assert!(request.starts_with("GET /json/?fields="));
+                    } else {
+                        if request.starts_with("CONNECT ") {let _=response(&mut stream,502).await;return;}
+                        counts.geo.fetch_add(1,Ordering::SeqCst);
+                        if options.geo_refuses_auth {let _=response(&mut stream,407).await;return;}
+                    }
                     let body=r#"{"status":"fail","message":"synthetic Geo service unavailable"}"#;
                     let _=stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).as_bytes()).await;
                 });
@@ -230,7 +238,7 @@ async fn a_first_hop_auth_refusal_hidden_by_the_local_socks_reply_stops_https_re
 }
 
 #[tokio::test]
-async fn https_success_without_geo_cannot_establish_same_exit_recovery() {
+async fn chain_failure_does_not_test_a_separate_https_ready_candidate() {
     let _root=crate::store::test_root("https-ready-no-same-exit");
     let(server,client)=tls_config(HOST);let _config=configure(client);
     let second=service(options(server.clone())).await;
@@ -239,6 +247,7 @@ async fn https_success_without_geo_cannot_establish_same_exit_recovery() {
     let hop=ProxyHop{kind:HopKind::Http,host:first.addr.ip().to_string(),port:first.addr.port(),username:USER.into(),password:PASSWORD.into()};
     let error=super::prepare_checked_chain(&assigned,hop).await.err().unwrap();
     assert_eq!(error.downcast_ref::<super::ChainError>().unwrap().code,"system_proxy_connect_refused");
-    assert!(first.counts.content.load(Ordering::SeqCst)>0,"the recovery candidate really has HTTPS readiness");
-    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),0,"unknown first exit cannot authorize the assigned recovery candidate");
+    assert_eq!(first.counts.geo.load(Ordering::SeqCst),0,"a failed chain cannot query the first hop's independent exit");
+    assert_eq!(first.counts.content.load(Ordering::SeqCst),0,"a failed chain cannot test the first hop as a separate HTTPS candidate");
+    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),0,"a failed chain cannot dial the assigned proxy directly");
 }

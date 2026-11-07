@@ -52,7 +52,11 @@ async fn leaf_response(stream:&mut TcpStream,request:&str,leaf:&Leaf,counts:&Cou
         tls.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{WEBSITE_BODY}",WEBSITE_BODY.len()).as_bytes()).await?;
         return tls.shutdown().await;
     }
-    if request.starts_with("CONNECT ") {return refuse(stream,502).await;}
+    if request.starts_with("CONNECT ip-api.com:80 ") {
+        stream.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await?;
+        let request=head(stream).await?;
+        assert!(request.starts_with("GET /json/?fields="));
+    } else if request.starts_with("CONNECT ") {return refuse(stream,502).await;}
     counts.geos.fetch_add(1,Ordering::SeqCst);
     if leaf.hang_geo {let _=stream.read(&mut [0;1]).await?;return Ok(());}
     let body=if leaf.valid_geo {json!({"status":"success","query":leaf.ip,"country":"Synthetic","countryCode":"ZZ","regionName":"Synthetic","city":"Synthetic","timezone":"Etc/UTC","isp":"Synthetic","lat":1,"lon":2}).to_string()}
@@ -129,14 +133,6 @@ async fn shutdown(prepared:PreparedProxy) {
 }
 async fn wait_no_clients(service:&Service) {
     tokio::time::timeout(Duration::from_secs(2),async {while service.counts.active.load(Ordering::SeqCst)!=0 {tokio::time::sleep(Duration::from_millis(5)).await;}}).await.expect("owned comparison clients were not closed");
-}
-
-#[test]
-fn exit_comparison_uses_valid_ip_values_not_country_or_textual_similarity() {
-    assert!(super::same_exit_ip("2001:db8::1","2001:0DB8:0:0:0:0:0:1"));
-    assert!(!super::same_exit_ip("198.51.100.1","198.51.100.2"));
-    assert!(!super::same_exit_ip("HK","HK"));
-    assert!(!super::same_exit_ip("",""));
 }
 
 #[tokio::test]
@@ -230,43 +226,48 @@ async fn unknown_first_exit_cannot_be_replaced_with_a_cached_or_chain_exit() {
     let second=service(Leaf::second("198.51.100.96"),None,false).await;
     let mut unknown=Leaf::first("198.51.100.96");unknown.valid_geo=false;
     let first=service(unknown,Some((second.addr,Chain::Relay(second.addr))),false).await;
-    let prepared=super::prepare_checked_chain_with_budget(&entry(second.addr),hop(&first),Duration::from_millis(300)).await.unwrap();
+    let prepared=super::prepare_checked_chain(&entry(second.addr),hop(&first)).await.unwrap();
     assert_eq!(prepared.route,Route::FirstHop);
+    assert_eq!(first.counts.geos.load(Ordering::SeqCst),0,"the first hop's independent exit must not be queried");
     assert_eq!(second.counts.accepted.load(Ordering::SeqCst),first.counts.chained.load(Ordering::SeqCst));
     shutdown(prepared).await;wait_no_clients(&first).await;wait_no_clients(&second).await;
 }
 
 #[tokio::test]
-async fn same_exit_recovery_requires_two_fresh_single_routes_after_chain_transport_failure() {
+async fn chain_transport_failure_does_not_open_single_routes_with_matching_exits() {
     let _root=crate::store::test_root("same-exit-recovery");preferred_geo();
     let second=service(Leaf::second("198.51.100.97"),None,false).await;
     let first=service(Leaf::first("198.51.100.97"),Some((second.addr,Chain::Refuse)),false).await;
-    let prepared=super::prepare_checked_chain(&entry(second.addr),hop(&first)).await.unwrap();
-    assert_eq!(prepared.route,Route::SameExitVerified);assert!(first.counts.chained.load(Ordering::SeqCst)>0);
-    assert!(first.counts.geos.load(Ordering::SeqCst)>0);assert!(second.counts.geos.load(Ordering::SeqCst)>0);
-    shutdown(prepared).await;wait_no_clients(&first).await;wait_no_clients(&second).await;
+    let error=super::prepare_checked_chain(&entry(second.addr),hop(&first)).await.err().unwrap();
+    assert_eq!(error.downcast_ref::<super::ChainError>().unwrap().code,"system_proxy_connect_refused");
+    assert!(first.counts.chained.load(Ordering::SeqCst)>0);
+    assert_eq!(first.counts.geos.load(Ordering::SeqCst),0,"a failed chain cannot start a first-hop exit comparison");
+    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),0,"a failed chain cannot dial the assigned proxy directly");
+    wait_no_clients(&first).await;wait_no_clients(&second).await;
 }
 
 #[tokio::test]
-async fn unequal_exit_recovery_keeps_the_original_chain_failure() {
+async fn chain_transport_failure_does_not_open_single_routes_with_different_exits() {
     let _root=crate::store::test_root("same-exit-refused-recovery");preferred_geo();
     let second=service(Leaf::second("198.51.100.98"),None,false).await;
     let first=service(Leaf::first("198.51.100.99"),Some((second.addr,Chain::Refuse)),false).await;
     let error=super::prepare_checked_chain(&entry(second.addr),hop(&first)).await.err().unwrap();
     assert_eq!(error.downcast_ref::<super::ChainError>().unwrap().code,"system_proxy_connect_refused");
+    assert_eq!(first.counts.geos.load(Ordering::SeqCst),0);
+    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),0);
     wait_no_clients(&first).await;wait_no_clients(&second).await;
 }
 
 #[tokio::test]
-async fn comparison_timeout_closes_its_pending_clients_after_chain_failure() {
+async fn chain_failure_closes_its_clients_without_starting_a_hanging_exit_comparison() {
     let _root=crate::store::test_root("same-exit-comparison-timeout");preferred_geo();
     let second=service(Leaf::second("198.51.100.100"),None,false).await;
     let mut hanging=Leaf::first("198.51.100.100");hanging.hang_geo=true;
     let first=service(hanging,Some((second.addr,Chain::Refuse)),false).await;
-    let error=super::prepare_checked_chain_with_budget(&entry(second.addr),hop(&first),Duration::from_millis(100)).await.err().unwrap();
+    let error=super::prepare_checked_chain(&entry(second.addr),hop(&first)).await.err().unwrap();
     assert_eq!(error.downcast_ref::<super::ChainError>().unwrap().code,"system_proxy_connect_refused");
-    assert!(first.counts.geos.load(Ordering::SeqCst)>0,"failed chain recovery must begin a fresh first-hop comparison");
-    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),0,"an expired first-hop comparison cannot dial the assigned candidate");
+    assert_eq!(first.counts.geos.load(Ordering::SeqCst),0,"failed chains must not start an independent exit comparison");
+    assert_eq!(second.counts.accepted.load(Ordering::SeqCst),0,"failed chains must not dial an assigned candidate");
     wait_no_clients(&first).await;wait_no_clients(&second).await;
 }
 

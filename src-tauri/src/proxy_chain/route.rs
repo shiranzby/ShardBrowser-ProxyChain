@@ -21,6 +21,42 @@ pub enum FirstHop { Direct, System, Proxy { proxy_id: String } }
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SecondHop { Direct, Proxy, System }
 
+/// Runtime choices are independent of the saved legacy wire representation.
+/// In particular, a first-only library proxy must keep selecting that proxy,
+/// rather than replacing the profile's inactive assigned-proxy binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxySource { Assigned, SelectedFirst }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirstSource { System, SelectedFirst }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoutePlan {
+    Direct,
+    System,
+    Single { source: ProxySource },
+    Chain { first: FirstSource },
+}
+
+impl RoutePlan {
+    pub fn requires_assigned(self) -> bool {
+        matches!(self, Self::Single { source: ProxySource::Assigned } | Self::Chain { .. })
+    }
+
+    pub fn uses_selected_first(self) -> bool {
+        matches!(self, Self::Single { source: ProxySource::SelectedFirst } | Self::Chain { first: FirstSource::SelectedFirst })
+    }
+
+    pub fn uses_first(self) -> bool {
+        self.first_only() || matches!(self, Self::Chain { .. })
+    }
+
+    /// A selected single proxy is the exit proxy, even in the old first-only wire.
+    pub fn first_only(self) -> bool {
+        matches!(self, Self::System)
+    }
+}
+
 impl<'de> Deserialize<'de> for ProfileProxyRoute {
     fn deserialize<D: Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
         #[derive(Deserialize)]
@@ -62,17 +98,24 @@ impl ProfileProxyRoute {
         Ok(())
     }
 
-    /// Keep the editor's chain selection, but share the single system route
-    /// when real IP is followed by the system proxy.
-    pub fn normalized(&self) -> Self {
-        match self {
-            Self::Chain{first:FirstHop::Direct,second:SecondHop::System}=>Self::System,
-            route=>route.clone(),
-        }
+    /// Compile all old empty-layer aliases into the same four runtime choices.
+    /// This does not rewrite saved routes, proxy ids, or credentials.
+    pub fn plan(&self) -> Result<RoutePlan> {
+        self.validate()?;
+        Ok(match self {
+            Self::Direct | Self::Chain { first: FirstHop::Direct, second: SecondHop::Direct } => RoutePlan::Direct,
+            Self::System | Self::Chain { first: FirstHop::Direct, second: SecondHop::System }
+                | Self::Chain { first: FirstHop::System, second: SecondHop::Direct } => RoutePlan::System,
+            Self::Proxy | Self::Chain { first: FirstHop::Direct, second: SecondHop::Proxy } => RoutePlan::Single { source: ProxySource::Assigned },
+            Self::Chain { first: FirstHop::Proxy { .. }, second: SecondHop::Direct } => RoutePlan::Single { source: ProxySource::SelectedFirst },
+            Self::Chain { first: FirstHop::System, second: SecondHop::Proxy } => RoutePlan::Chain { first: FirstSource::System },
+            Self::Chain { first: FirstHop::Proxy { .. }, second: SecondHop::Proxy } => RoutePlan::Chain { first: FirstSource::SelectedFirst },
+            Self::Invalid | Self::Chain { second: SecondHop::System, .. } => unreachable!("validated route"),
+        })
     }
 
     pub fn requires_assigned(&self) -> bool {
-        matches!(self, Self::Proxy | Self::Chain { second: SecondHop::Proxy, .. })
+        self.plan().is_ok_and(RoutePlan::requires_assigned)
     }
 
     pub fn first_proxy_id(&self) -> Option<&str> {
@@ -105,30 +148,38 @@ mod tests {
     }
 
     #[test]
-    fn all_ten_choices_validate_and_only_direct_then_system_aliases_system() {
-        for route in [ProfileProxyRoute::Direct,ProfileProxyRoute::System,ProfileProxyRoute::Proxy] {
-            route.validate().unwrap();
-            assert_eq!(route.normalized(),route);
+    fn five_choices_and_legacy_empty_layers_share_the_same_execution_plans() {
+        use {FirstHop as F, ProfileProxyRoute as R, SecondHop as S};
+        let selected = F::Proxy { proxy_id: "selected-first".into() };
+        let assigned = RoutePlan::Single { source: ProxySource::Assigned };
+        let first = RoutePlan::Single { source: ProxySource::SelectedFirst };
+        let choices = [
+            (R::Direct, RoutePlan::Direct),
+            (R::System, RoutePlan::System),
+            (R::Proxy, assigned),
+            (R::Chain { first: F::System, second: S::Proxy }, RoutePlan::Chain { first: FirstSource::System }),
+            (R::Chain { first: selected.clone(), second: S::Proxy }, RoutePlan::Chain { first: FirstSource::SelectedFirst }),
+            (R::Chain { first: F::Direct, second: S::Direct }, RoutePlan::Direct),
+            (R::Chain { first: F::Direct, second: S::System }, RoutePlan::System),
+            (R::Chain { first: F::System, second: S::Direct }, RoutePlan::System),
+            (R::Chain { first: F::Direct, second: S::Proxy }, assigned),
+            (R::Chain { first: selected.clone(), second: S::Direct }, first),
+        ];
+        for (route, expected) in choices {
+            let saved = serde_json::to_value(&route).unwrap();
+            assert_eq!(route.plan().unwrap(), expected);
+            assert_eq!(route.requires_assigned(), expected.requires_assigned());
+            assert_eq!(serde_json::to_value(&route).unwrap(), saved, "planning must not rewrite old bindings");
+            assert_eq!(serde_json::from_value::<R>(saved).unwrap(), route);
         }
-        let first_proxy=FirstHop::Proxy{proxy_id:"selected-first".into()};
-        for first in [FirstHop::Direct,FirstHop::System,first_proxy.clone()] {
-            for second in [SecondHop::Proxy,SecondHop::Direct] {
-                let route=ProfileProxyRoute::Chain{first:first.clone(),second};
-                route.validate().unwrap();
-                let copy:ProfileProxyRoute=serde_json::from_value(serde_json::to_value(&route).unwrap()).unwrap();
-                assert_eq!(copy,route);
-                assert_eq!(route.normalized(),route);
-            }
-        }
-        let alias=ProfileProxyRoute::Chain{first:FirstHop::Direct,second:SecondHop::System};
-        alias.validate().unwrap();
-        assert_eq!(alias.normalized(),ProfileProxyRoute::System);
-        assert!(!alias.requires_assigned());
-        assert!(alias.first_proxy_id().is_none());
-        assert_eq!(serde_json::from_value::<ProfileProxyRoute>(serde_json::to_value(&alias).unwrap()).unwrap(),alias);
-        for first in [FirstHop::System,first_proxy] {
+        let legacy_first = R::Chain { first: selected.clone(), second: S::Direct };
+        assert_eq!(legacy_first.first_proxy_id(), Some("selected-first"));
+        assert!(!legacy_first.requires_assigned());
+        assert!(legacy_first.plan().unwrap().uses_selected_first());
+        for first in [FirstHop::System, selected] {
             let route=ProfileProxyRoute::Chain{first,second:SecondHop::System};
             assert!(route.validate().is_err());
+            assert!(route.plan().is_err());
             let restored:ProfileProxyRoute=serde_json::from_value(serde_json::to_value(&route).unwrap()).unwrap();
             assert!(restored.validate().is_err(),"invalid persisted routes must not become direct");
         }

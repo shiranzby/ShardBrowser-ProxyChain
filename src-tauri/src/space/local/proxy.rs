@@ -888,6 +888,14 @@ fn geo_provider(provider: &str) -> &'static str {
     match provider { "ipapi.co" => "ipapi.co", "ipwho.is" => "ipwho.is", _ => "ip-api.com" }
 }
 
+fn geo_provider_url(provider: &str) -> &'static str {
+    match geo_provider(provider) {
+        "ipapi.co" => "https://ipapi.co/json/",
+        "ipwho.is" => "https://ipwho.is/",
+        _ => "http://ip-api.com/json/?fields=status,message,query,country,countryCode,regionName,city,isp,timezone,lat,lon",
+    }
+}
+
 fn geo_request_failure(provider: &str, error: reqwest::Error, fallback: &'static str) -> GeoProviderFailure {
     use std::error::Error;
     let mut source: Option<&(dyn Error+'static)>=Some(&error);
@@ -920,6 +928,106 @@ fn provider_chain(chosen: &str) -> Vec<String> {
     let mut out = vec![chosen.to_string()];
     out.extend(all.iter().filter(|p| **p != chosen).map(|p| p.to_string()));
     out
+}
+
+/// A prepared route verifies Geo serially: a successful source is the route
+/// proof, so there is no reason to open competing proxy connections beside it.
+pub(crate) async fn geo_check_prepared(entry: &ProxyEntry, tunnel: &crate::proxy_chain::tunnel::Tunnel) -> Result<GeoInfo> {
+    let chosen = settings::load().ok().and_then(|s| s.geo_checker)
+        .filter(|s| !s.is_empty()).unwrap_or_else(|| "ip-api.com".into());
+    geo_check_prepared_for(entry, &chosen, Some(tunnel)).await
+}
+
+async fn geo_check_prepared_for(entry: &ProxyEntry, chosen: &str, tunnel: Option<&crate::proxy_chain::tunnel::Tunnel>) -> Result<GeoInfo> {
+    use tokio::time::{Instant, timeout_at};
+
+    let deadline = Instant::now() + STEP_TIMEOUT;
+    let mut failures = Vec::new();
+    for provider in provider_chain(chosen) {
+        if Instant::now() >= deadline { break; }
+        let result = timeout_at(deadline, geo_check_prepared_one(entry, &provider, deadline.saturating_duration_since(Instant::now()))).await
+            .unwrap_or_else(|_| Err(GeoProviderFailure::new(&provider, "timeout").into()));
+        match result {
+            Ok(info) => return Ok(info),
+            Err(error) => {
+                if let Some(error) = tunnel.and_then(|tunnel| tunnel.last_error())
+                    .filter(|error| matches!(error.code, "proxy_chain_profile_auth_failed" | "system_proxy_auth_failed")) {
+                    return Err(error.into());
+                }
+                if let Some(error) = error.downcast_ref::<crate::proxy_chain::error::ChainError>() {
+                    if matches!(error.code, "proxy_chain_profile_auth_failed" | "system_proxy_auth_failed") {
+                        return Err(error.clone().into());
+                    }
+                    let phase = match error.code {
+                        "system_proxy_timeout" => "timeout",
+                        "system_proxy_tls_failed" | "system_proxy_tls_timeout" => "tls",
+                        "system_proxy_protocol_error" | "system_proxy_connect_refused" => "proxy_protocol",
+                        _ => "connect",
+                    };
+                    failures.push(GeoProviderFailure::new(&provider, phase));
+                } else {
+                    let failure=error.downcast::<GeoProviderFailure>().unwrap_or_else(|_| GeoProviderFailure::new(&provider, "request"));
+                    let authentication_refused=failure.http_status==Some(407);
+                    failures.push(failure);
+                    if authentication_refused {break;}
+                }
+            },
+        }
+    }
+    Err(GeoLookupError { failures }.into())
+}
+
+struct GeoConnectionTask(tokio::task::JoinHandle<()>);
+impl Drop for GeoConnectionTask { fn drop(&mut self) { self.0.abort(); } }
+
+/// Speak the same proxy handshake as browser traffic before issuing Geo on
+/// that connected stream. A parsed proxy refusal must not become a provider
+/// outage in an HTTP client's erased SOCKS error.
+async fn geo_check_prepared_one(entry: &ProxyEntry, provider: &str, budget: std::time::Duration) -> Result<GeoInfo> {
+    use crate::proxy_chain::{connector::{self, ProxyHop, Target}, tls};
+    use http_body_util::{BodyExt, Empty};
+    use hyper::{body::Bytes, Request};
+    use hyper_util::rt::TokioIo;
+
+    let provider = geo_provider(provider);
+    let failed = |phase| GeoProviderFailure::new(provider, phase);
+    let url = url::Url::parse(geo_provider_url(provider)).map_err(|_| failed("configuration"))?;
+    let host = url.host_str().ok_or_else(|| failed("configuration"))?;
+    let target = Target::new(host, url.port_or_known_default().ok_or_else(|| failed("configuration"))?)?;
+    let hop = ProxyHop {
+        kind: match entry.kind { ProxyKind::Http => connector::ProxyKind::Http, ProxyKind::Https => connector::ProxyKind::Https, ProxyKind::Socks5 => connector::ProxyKind::Socks5 },
+        host: entry.host.clone(), port: entry.port, username: entry.username.clone(), password: entry.password.clone(),
+    };
+    let mut stream = connector::connect_with_timeout(&hop, &target, budget).await.map_err(|mut error| {
+        if error.code == "system_proxy_auth_failed" { error.code = "proxy_chain_profile_auth_failed"; error.layer = "profile"; }
+        error
+    })?;
+    if url.scheme() == "https" {
+        let name = rustls::pki_types::ServerName::try_from(host.to_owned()).map_err(|_| failed("tls"))?;
+        stream = Box::new(tokio_rustls::TlsConnector::from(tls::client()?).connect(name, stream).await.map_err(|_| failed("tls"))?);
+    }
+    let (mut sender, connection) = hyper::client::conn::http1::Builder::new().max_buf_size(16 * 1024)
+        .handshake::<_, Empty<Bytes>>(TokioIo::new(stream)).await.map_err(|_| failed("request"))?;
+    let _connection = GeoConnectionTask(tokio::spawn(async move { let _ = connection.await; }));
+    let mut path = url.path().to_owned();
+    if let Some(query) = url.query() { path.push('?'); path.push_str(query); }
+    let request = Request::builder().method("GET").uri(path).header("Host", host)
+        .header("Connection", "close").body(Empty::<Bytes>::new()).map_err(|_| failed("configuration"))?;
+    let response = sender.send_request(request).await.map_err(|_| failed("request"))?;
+    if !response.status().is_success() {
+        return Err(GeoProviderFailure { provider: provider.into(), phase: "http_status", http_status: Some(response.status().as_u16()) }.into());
+    }
+    let mut body = response.into_body();
+    let mut bytes = Vec::new();
+    while let Some(frame) = body.frame().await {
+        let frame = frame.map_err(|_| failed("response_body"))?;
+        if let Some(data) = frame.data_ref() {
+            if bytes.len().saturating_add(data.len()) > 64 * 1024 { return Err(failed("response_body").into()); }
+            bytes.extend_from_slice(data);
+        }
+    }
+    let body = serde_json::from_slice(&bytes).map_err(|_| failed("json"))?;
+    Ok(parse_geo_response(provider, body)?)
 }
 
 /// Probe geo through `entry` if Some, else direct. Tries the chosen provider,
@@ -991,12 +1099,7 @@ pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider_override: Option
 
 async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> std::result::Result<GeoInfo,GeoProviderFailure> {
     let provider=geo_provider(provider);
-    let url = match provider {
-        "ip-api.com" => "http://ip-api.com/json/?fields=status,message,query,country,countryCode,regionName,city,isp,timezone,lat,lon",
-        "ipapi.co" => "https://ipapi.co/json/",
-        "ipwho.is" => "https://ipwho.is/",
-        _ => "http://ip-api.com/json/?fields=status,message,query,country,countryCode,regionName,city,isp,timezone,lat,lon",
-    };
+    let url = geo_provider_url(provider);
 
     // Short on purpose: three of these can be in the air at once and the
     // operator is waiting on all of them. A service that has not answered in
@@ -1034,7 +1137,10 @@ async fn geo_check_one(entry: Option<&ProxyEntry>, provider: &str) -> std::resul
         return Err(GeoProviderFailure { provider:provider.into(), phase:"http_status", http_status:Some(response.status().as_u16()) });
     }
     let body: serde_json::Value=response.json().await.map_err(|error|geo_request_failure(provider,error,"json"))?;
+    parse_geo_response(provider, body)
+}
 
+fn parse_geo_response(provider: &str, body: serde_json::Value) -> std::result::Result<GeoInfo, GeoProviderFailure> {
     let s = |v: &serde_json::Value, k: &str| {
         v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
     };
@@ -1575,6 +1681,92 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn prepared_geo_success_does_not_open_another_provider() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let worker = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            while !head.ends_with(b"\r\n\r\n") {
+                head.push(socket.read_u8().await.unwrap());
+            }
+            assert!(head.starts_with(b"CONNECT ip-api.com:80 HTTP/1.1\r\n"));
+            socket.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await.unwrap();
+            head.clear();
+            while !head.ends_with(b"\r\n\r\n") {
+                head.push(socket.read_u8().await.unwrap());
+            }
+            assert!(head.starts_with(b"GET /json/?fields="));
+            // Exceed the ordinary lookup's 900ms stagger: preparation must
+            // wait for this source rather than open a competing connection.
+            assert!(tokio::time::timeout(std::time::Duration::from_millis(1100), listener.accept()).await.is_err(),
+                "a pending source must not open another prepared-route connection");
+            let body = r#"{"status":"success","query":"203.0.113.72","country":"Synthetic"}"#;
+            let reply = format!("HTTP/1.1 200 Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+            socket.write_all(reply.as_bytes()).await.unwrap();
+        });
+        let proxy = serde_json::from_value(serde_json::json!({
+            "id":"prepared-geo-fixture", "name":"Synthetic", "kind":"http",
+            "host":"127.0.0.1", "port":addr.port(), "username":"", "password":""
+        })).unwrap();
+        let result = geo_check_prepared_for(&proxy, "ip-api.com", None).await;
+        worker.await.unwrap();
+        let info = result.unwrap();
+        assert_eq!(info.ip, "203.0.113.72");
+        assert_eq!(info.provider, "ip-api.com");
+    }
+
+    #[tokio::test]
+    async fn prepared_geo_preserves_http_and_socks_auth_refusals_without_retrying_providers() {
+        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for kind in ["http", "socks5"] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let observed = calls.clone();
+            let worker = tokio::spawn(async move {
+                loop {
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    observed.fetch_add(1, Ordering::SeqCst);
+                    if kind == "http" {
+                        let mut head = Vec::new();
+                        while !head.ends_with(b"\r\n\r\n") { head.push(socket.read_u8().await.unwrap()); }
+                        socket.write_all(b"HTTP/1.1 407 private-auth-reason\r\nContent-Length: 0\r\n\r\n").await.unwrap();
+                    } else {
+                        let mut greeting = [0; 4];
+                        socket.read_exact(&mut greeting).await.unwrap();
+                        assert_eq!(greeting, [5, 2, 0, 2]);
+                        socket.write_all(&[5, 2]).await.unwrap();
+                        assert_eq!(socket.read_u8().await.unwrap(), 1);
+                        let username_len = socket.read_u8().await.unwrap();
+                        let mut username = vec![0; username_len as usize];
+                        socket.read_exact(&mut username).await.unwrap();
+                        let password_len = socket.read_u8().await.unwrap();
+                        let mut password = vec![0; password_len as usize];
+                        socket.read_exact(&mut password).await.unwrap();
+                        socket.write_all(&[1, 1]).await.unwrap();
+                    }
+                }
+            });
+            let proxy = serde_json::from_value(serde_json::json!({
+                "id":"prepared-geo-auth-fixture", "name":"Synthetic", "kind":kind,
+                "host":"127.0.0.1", "port":addr.port(), "username":"private-fixture-user", "password":"private-fixture-secret"
+            })).unwrap();
+            let error = geo_check_prepared_for(&proxy, "ip-api.com", None).await.unwrap_err();
+            let typed = error.downcast_ref::<crate::proxy_chain::error::ChainError>().expect("proxy authentication stays typed");
+            assert_eq!(typed.code, "proxy_chain_profile_auth_failed");
+            assert_eq!(typed.layer, "profile");
+            assert_eq!(calls.load(Ordering::SeqCst), 1, "a parsed authentication refusal cannot open another Geo connection");
+            let safe = format!("{error:#}");
+            for secret in ["private-auth-reason", "private-fixture-user", "private-fixture-secret"] { assert!(!safe.contains(secret)); }
+            worker.abort();
+            let _ = worker.await;
+        }
+    }
+
+    #[tokio::test]
     async fn geo_provider_rejects_http_error_even_when_body_looks_successful() {
         let (proxy,worker)=geo_http_fixture(429,r#"{"status":"success","query":"203.0.113.44","message":"private-provider-detail"}"#).await;
         let result=geo_check_one(Some(&proxy),"ip-api.com").await;
@@ -1766,10 +1958,12 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut head = Vec::new();
-            while !head.ends_with(b"\r\n\r\n") { head.push(stream.read_u8().await.unwrap()); }
-            stream.write_all(b"HTTP/1.1 403 private-fixture-detail\r\nX-Private: not-for-history\r\n\r\n").await.unwrap();
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                while !head.ends_with(b"\r\n\r\n") { head.push(stream.read_u8().await.unwrap()); }
+                stream.write_all(b"HTTP/1.1 403 private-fixture-detail\r\nX-Private: not-for-history\r\n\r\n").await.unwrap();
+            }
         });
         crate::settings::save(&crate::settings::Settings {
             proxy_chain: crate::proxy_chain::config::ProxyChainSettings {
@@ -1778,7 +1972,7 @@ mod tests {
             ..Default::default()
         }).unwrap();
         let result = measure(&entry("second.invalid:1080:synthetic:synthetic")).await;
-        server.await.unwrap();
+        server.abort();let _=server.await;
         let failure = result.chain_error.as_ref().unwrap();
         assert_eq!(failure.code, "system_proxy_connect_refused");
         assert_eq!(failure.layer, "system_proxy");

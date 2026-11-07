@@ -2122,7 +2122,9 @@ async fn proxy_route_test(
     password: Option<String>,
     epoch: Option<u64>,
 ) -> Result<proxy_chain::TestResult, String> {
-    proxy_route_test_core(route, policy.unwrap_or_default(), proxy_id, new_proxy_line, profile_id, password, epoch).await.map_err(|e| e.to_string())
+    let t = space::window_ticket(epoch).map_err(|e| e.to_string())?;
+    t.read_current().map_err(|e| e.to_string())?;
+    proxy_route_test_core(route, policy.unwrap_or_default(), proxy_id, new_proxy_line, profile_id, password, t).await.map_err(|e| e.to_string())
 }
 
 async fn proxy_route_test_core(
@@ -2132,10 +2134,8 @@ async fn proxy_route_test_core(
     new_proxy_line: Option<String>,
     profile_id: Option<String>,
     password: Option<String>,
-    epoch: Option<u64>,
+    t: space::Ticket,
 ) -> anyhow::Result<proxy_chain::TestResult> {
-    let t = space::window_ticket(epoch)?;
-    t.read_current()?;
     if let Some(route) = &route { route.validate()?; }
     policy.validate()?;
     if let Some(id) = profile_id.as_deref().filter(|id| !id.is_empty()) {
@@ -2183,11 +2183,11 @@ mod proxy_chain_toolbar_tests {
         let _serial = crate::migrate::serial();
         let _root = crate::store::test_root("draft-route-no-writes").with_config();
         let route = Some(crate::proxy_chain::route::ProfileProxyRoute::Invalid);
-        assert!(super::proxy_route_test_core(route, Default::default(), None, Some("socks5://synthetic:secret@127.0.0.1:9".into()), None, None, None).await.is_err());
+        assert!(super::proxy_route_test(route, None, None, Some("socks5://synthetic:secret@127.0.0.1:9".into()), None, None, None).await.is_err());
         assert!(crate::space::profile::list_all().unwrap().is_empty());
         assert!(crate::space::proxy::list().unwrap().is_empty());
         let route = Some(crate::proxy_chain::route::ProfileProxyRoute::Proxy);
-        let error = super::proxy_route_test_core(route, Default::default(), None, Some("unparseable synthetic proxy".into()), None, None, None).await.err().unwrap();
+        let error = super::proxy_route_test(route, None, None, Some("unparseable synthetic proxy".into()), None, None, None).await.err().unwrap();
         assert_eq!(error.to_string(), "The proxy line could not be parsed.");
         assert!(crate::space::profile::list_all().unwrap().is_empty());
         assert!(crate::space::proxy::list().unwrap().is_empty());
@@ -2203,7 +2203,7 @@ mod proxy_chain_toolbar_tests {
         let path = crate::store::profiles_dir().unwrap().join(format!("{}.json", row.id));
         let before = std::fs::read(&path).unwrap();
         for password in [None, Some("wrong password".into())] {
-            let result = super::proxy_route_test_core(Some(crate::proxy_chain::route::ProfileProxyRoute::Direct), Default::default(), None, None, Some(row.id.clone()), password, None).await;
+            let result = super::proxy_route_test(Some(crate::proxy_chain::route::ProfileProxyRoute::Direct), None, None, None, Some(row.id.clone()), password, None).await;
             assert!(result.is_err());
             assert_eq!(std::fs::read(&path).unwrap(), before);
         }

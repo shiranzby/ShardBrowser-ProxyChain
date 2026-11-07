@@ -5,6 +5,14 @@ type RoutedProfile = { proxy_id: string | null; proxy_route?: ProfileProxyRoute 
 type T = (key: string, vars?: Record<string, string | number>) => string;
 type NamedProxy = { id: string; name: string; host: string; port: number };
 
+/** Selecting a single proxy must not replace an old unused B with first-only A. */
+export function withRouteProxyId<T extends RoutedProfile>(p: T, proxyId: string | null): T {
+  const route = p.proxy_route;
+  return route?.mode === "chain" && route.first.mode === "proxy" && route.second.mode === "direct"
+    ? { ...p, proxy_route: { ...route, first: { mode: "proxy", proxy_id: proxyId ?? "" } } }
+    : { ...p, proxy_id: proxyId };
+}
+
 /** The selected proxy that actually provides the final exit, not a retained inactive binding. */
 export function routeExitProxyId(p: RoutedProfile): string | null {
   const route = normalizedProfileRoute(p.proxy_route);

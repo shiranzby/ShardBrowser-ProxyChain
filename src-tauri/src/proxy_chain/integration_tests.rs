@@ -129,12 +129,16 @@ async fn https_second_hop_verifies_original_name_and_carries_http_inside_tls() {
 
 #[tokio::test]
 async fn http_second_hop_refusal_is_typed_and_does_not_change_saved_proxy() {
+    let _root=crate::store::test_root("chain-http-second-hop-refusal");
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
+    let accepted=Arc::new(AtomicUsize::new(0));let count=accepted.clone();
     let task = tokio::spawn(async move {
-        for _ in 0..2 {
-            let (mut s, _) = listener.accept().await.unwrap();
-            if http_head(&mut s).await.is_ok() { let _ = s.write_all(b"HTTP/1.1 407 Authentication Required\r\n\r\n").await; }
+        while let Ok((mut s,_))=listener.accept().await {
+            if http_head(&mut s).await.is_ok() {
+                count.fetch_add(1,Ordering::SeqCst);
+                let _ = s.write_all(b"HTTP/1.1 407 Authentication Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+            }
         }
     });
     let first = first_hop(addr).await;
@@ -147,6 +151,7 @@ async fn http_second_hop_refusal_is_typed_and_does_not_change_saved_proxy() {
     assert_eq!(refusal.downcast_ref::<super::error::ChainError>().unwrap().code, "proxy_chain_profile_auth_failed");
     assert_eq!(serde_json::to_value(&proxy).unwrap(), before);
     assert_eq!(first.accepted.load(Ordering::SeqCst),1);
+    assert_eq!(accepted.load(Ordering::SeqCst),1,"an explicit authentication refusal cannot be retried");
     task.abort();
 }
 
@@ -528,13 +533,16 @@ async fn first_hop_failure_prevents_the_real_launch_path_from_spawning() {
     let second = second_hop(false).await;
     let unavailable = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let a = unavailable.local_addr().unwrap();
-    let first = tokio::spawn(async move {
-        let (mut socket, _) = unavailable.accept().await.unwrap();
-        // A service that immediately closes CONNECT is unavailable, while
-        // its address remains ours instead of being recycled by another test.
-        let _ = http_head(&mut socket).await;
-        let _ = socket.shutdown().await;
-    });
+    let accepted=Arc::new(AtomicUsize::new(0));let count=accepted.clone();
+    let _first=Service{addr:a,accepted,task:tokio::spawn(async move {
+        while let Ok((mut socket,_))=unavailable.accept().await {
+            // Keep the endpoint owned while every CONNECT closes without a
+            // response; later attempts must not turn EOF into connection refusal.
+            let _ = http_head(&mut socket).await;
+            count.fetch_add(1,Ordering::SeqCst);
+            let _ = socket.shutdown().await;
+        }
+    })};
     let p = entry("bad-a-proxy", second.addr);
     save_proxies(std::slice::from_ref(&p));
     profile("bad-a-profile", &p.id);
@@ -552,7 +560,6 @@ async fn first_hop_failure_prevents_the_real_launch_path_from_spawning() {
         error.downcast_ref::<ChainError>().map(|e| e.code),
         Some("system_proxy_io_failed")
     );
-    tokio::time::timeout(WAIT, first).await.unwrap().unwrap();
     assert!(!marker.exists());
     assert!(!crate::process::Tracker::shared().is_running("bad-a-profile"));
     assert_eq!(

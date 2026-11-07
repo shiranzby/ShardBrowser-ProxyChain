@@ -7,6 +7,7 @@ import { explainError } from "../../../shared/lib/errors";
 import { isStartupUrl } from "../../../shared/lib/startupUrl";
 import { HOST_OS } from "../../../shared/lib/utils";
 import { routeUsesAssignedProxy } from "../../../shared/model/proxyChain";
+import { withRouteProxyId } from "../../../shared/lib/profileRoute";
 import { hostScreen, type HostScreen } from "../../../shared/lib/hostScreen";
 import { matchesOs } from "../../../shared/constants";
 import { defaultProfileDefaults, settingsGet } from "../../../entities/settings";
@@ -135,7 +136,8 @@ export function problemsOf(d: ProfileFormDraft | null): { name?: string; startup
   if (route?.mode === "invalid") problems.proxy_route = t("profileRoute.invalid");
   if (route?.mode === "chain" && route.second.mode === "system" && route.first.mode !== "direct") problems.proxy_route = t("profileRoute.invalid");
   if (route && routeUsesAssignedProxy(route) && !d.form.proxy_id && !d.newProxyLine.trim()) problems.proxy_route = t("profileRoute.proxyRequired");
-  if (route?.mode === "chain" && route.first.mode === "proxy" && !route.first.proxy_id) problems.proxy_route = t("profileRoute.firstProxyRequired");
+  if (route?.mode === "chain" && route.first.mode === "proxy" && !route.first.proxy_id
+      && !(route.second.mode === "direct" && d.newProxyLine.trim())) problems.proxy_route = t("profileRoute.firstProxyRequired");
   return problems;
 }
 
@@ -481,7 +483,7 @@ export async function saveProfileForm(): Promise<boolean> {
       // The Proxies page keeps its own copy; the profile store reads its own.
       storeBus.emit("proxies", "profiles");
       await useProfile.getState().reload();
-      draft = { ...draft, newProxyLine: "", form: { ...draft.form, proxy_id: proxy.id } };
+      draft = { ...draft, newProxyLine: "", form: withRouteProxyId(draft.form, proxy.id) };
       // A retry after a later failure must not add it twice.
       if (here()) set({ draft });
     } catch (e) {

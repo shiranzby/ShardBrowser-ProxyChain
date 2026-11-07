@@ -34,6 +34,7 @@ pub(super) async fn verify(entry:&ProxyEntry,tunnel:&Tunnel)->Result<u128,ChainE
                     // failure after publishing the actual first-hop refusal.
                     // Never hide or retry that authentication failure.
                     if let Some(error)=authentication_failure(tunnel){return Err(error);}
+                    tunnel.finish_probe_flows().await?;
                 },
             }
         }

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{mpsc, oneshot, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::Instant;
 use std::{future::Future,pin::Pin};
@@ -24,6 +24,7 @@ pub struct Tunnel {
     stop: watch::Sender<bool>,
     finished: watch::Receiver<bool>,
     worker: Option<JoinHandle<()>>,
+    finish_probe: mpsc::Sender<oneshot::Sender<()>>,
     active: Arc<AtomicUsize>,
     error: Arc<Mutex<Option<ChainError>>>,
 }
@@ -97,6 +98,7 @@ impl Tunnel {
         })?;
         let (stop, mut stopping) = watch::channel(false);
         let (finished_tx, finished) = watch::channel(false);
+        let (finish_probe, mut probe_finished) = mpsc::channel::<oneshot::Sender<()>>(1);
         let active = Arc::new(AtomicUsize::new(0));
         let error = Arc::new(Mutex::new(None));
         let worker = {
@@ -113,6 +115,12 @@ impl Tunnel {
                     tokio::select! {
                         biased;
                         _ = stopping.changed() => break,
+                        request = probe_finished.recv() => {
+                            let Some(ack) = request else { break };
+                            flows.abort_all();
+                            while flows.join_next().await.is_some() {}
+                            let _ = ack.send(());
+                        },
                         _ = flows.join_next(), if !flows.is_empty() => {},
                         accepted = listener.accept() => {
                             let Ok((local, _)) = accepted else {
@@ -178,6 +186,7 @@ impl Tunnel {
             stop,
             finished,
             worker: Some(worker),
+            finish_probe,
             active,
             error,
         })
@@ -193,6 +202,14 @@ impl Tunnel {
 
     pub fn last_error(&self) -> Option<ChainError> {
         self.error.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Preparation owns all current flows. End its completed or cancelled
+    /// requests before the next check or the Engine takes this listener over.
+    pub(super) async fn finish_probe_flows(&self) -> Result<(), ChainError> {
+        let (ack, finished) = oneshot::channel();
+        self.finish_probe.send(ack).await.map_err(|_| cleanup_timeout())?;
+        finished.await.map_err(|_| cleanup_timeout())
     }
 
     #[cfg(test)]

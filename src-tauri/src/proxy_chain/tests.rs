@@ -202,6 +202,46 @@ async fn tcp_dial_retries_a_dropped_syn_and_preserves_the_original_total_budget(
 }
 
 #[tokio::test]
+async fn tcp_second_dial_is_reached_before_the_shortest_preflight_deadline() {
+    // The transparent relay has the production 12s TCP budget, while a
+    // readiness target has only 3s. A lost first SYN must not postpone the
+    // second dial until every preflight client has already abandoned it.
+    let mut attempts = 0;
+    let connected = tokio::time::timeout(
+        Duration::from_secs(3),
+        connector::retry_tcp_dial(connector::CONNECT_TIMEOUT, || {
+            attempts += 1;
+            let attempt = attempts;
+            async move {
+                if attempt == 1 { std::future::pending::<()>().await; }
+                Ok::<_, std::io::Error>(42)
+            }
+        }),
+    ).await;
+    assert!(matches!(connected, Ok(Ok(42))),
+        "a second TCP dial must be usable before the 3s preflight deadline; attempts={attempts}, result={connected:?}");
+    assert_eq!(attempts, 2, "only TCP dialing may be retried once");
+}
+
+#[tokio::test]
+async fn tcp_second_dial_keeps_the_remaining_original_budget() {
+    let mut attempts = 0;
+    let connected = connector::retry_tcp_dial(connector::CONNECT_TIMEOUT, || {
+        attempts += 1;
+        let attempt = attempts;
+        async move {
+            if attempt == 1 { std::future::pending::<()>().await; }
+            // Only the first dial has the 2s cap. A valid second dial may
+            // take longer while remaining within the original 12s budget.
+            tokio::time::sleep(Duration::from_millis(2200)).await;
+            Ok::<_, std::io::Error>(42)
+        }
+    }).await.unwrap();
+    assert_eq!(connected, 42);
+    assert_eq!(attempts, 2);
+}
+
+#[tokio::test]
 async fn tcp_retry_does_not_replay_proxy_authentication_connect_or_protocol_failures() {
     for (kind, response, expected) in [
         (ProxyKind::Http, Some(407), "system_proxy_auth_failed"),
@@ -1064,6 +1104,37 @@ async fn shutdown_cancels_a_pending_first_hop_handshake() {
     tunnel.shutdown().await;
     closed(&mut browser).await;
     closed(&mut first).await;
+}
+
+#[tokio::test]
+async fn finishing_probe_flows_cancels_a_pending_handshake_and_keeps_the_listener() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let tunnel = Tunnel::bind(hop(listener.local_addr().unwrap(), ProxyKind::Http), target()).await.unwrap();
+    let addr = tunnel.addr();
+    let mut probe = TcpStream::connect(addr).await.unwrap();
+    let (mut pending, _) = within(listener.accept()).await.unwrap();
+    assert!(within(http_head(&mut pending)).await.starts_with(b"CONNECT "));
+    assert_eq!(tunnel.active_connections(), 1);
+
+    within(tunnel.finish_probe_flows()).await.unwrap();
+    assert_eq!(tunnel.active_connections(), 0);
+    assert!(!*tunnel.closed_signal().borrow(), "probe cleanup must keep the listener alive");
+    closed(&mut probe).await;
+    closed(&mut pending).await;
+
+    let mut browser = TcpStream::connect(addr).await.unwrap();
+    let (mut first, _) = within(listener.accept()).await.unwrap();
+    within(http_head(&mut first)).await;
+    first.write_all(b"HTTP/1.1 200 Connected\r\n\r\n").await.unwrap();
+    browser.write_all(b"after-probe").await.unwrap();
+    let mut payload = [0; 11];
+    within(first.read_exact(&mut payload)).await.unwrap();
+    assert_eq!(&payload, b"after-probe");
+    first.write_all(&payload).await.unwrap();
+    within(browser.read_exact(&mut payload)).await.unwrap();
+    assert_eq!(&payload, b"after-probe");
+    assert_eq!(tunnel.active_connections(), 1);
+    tunnel.shutdown().await;
 }
 
 #[tokio::test]

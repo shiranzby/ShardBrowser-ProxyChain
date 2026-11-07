@@ -620,30 +620,21 @@ async fn start_browser(bin: &Path, mut input: LaunchInput, opts: &LaunchOpts<'_>
     crate::profile_defaults::validate_config(&input.stored.config)?;
     let mut s = crate::proxy_chain::saved_settings()?;
     let explicit = input.stored.meta.proxy_route.clone();
-    let mut chain = if let Some(route) = &explicit {
-        route.validate()?;
+    let plan=crate::proxy_chain::routing::profile_plan(explicit.as_ref(),input.stored.meta.proxy_chain_policy,input.proxy.as_ref(),&s.proxy_chain)?;
+    if explicit.is_some() || plan.config.enabled {
         crate::proxy_chain::validate_args(&s.extra_args)?;
-        if !crate::proxy_chain::routing::is_direct(route) && input.cdp { anyhow::bail!("Proxy-chain V1 cannot expose raw DevTools or automation proxy controls. Start this profile from the normal profile list without debugging."); }
-        let resolved=crate::proxy_chain::routing::prepare_route(route,input.proxy.as_ref(),input.first_proxy.as_ref(),input.stored.meta.proxy_chain_policy==crate::proxy_chain::policy::ChainPolicy::PreferFirstHop).await?;
-        input.proxy=resolved.proxy;
-        s.proxy_chain.enabled=resolved.prepared.is_some();
-        resolved.prepared
-    } else {
-    s.proxy_chain = crate::proxy_chain::policy::effective(&s.proxy_chain, input.stored.meta.proxy_chain_policy, input.proxy.as_ref().map(|p| p.proxy_chain_policy).unwrap_or_default())?;
+    }
+    if plan.config.enabled && input.cdp { anyhow::bail!("Proxy-chain V1 cannot expose raw DevTools or automation proxy controls. Start this profile from the normal profile list without debugging."); }
+    let resolved=plan.prepare(input.proxy.as_ref(),input.first_proxy.as_ref(),&s.proxy_chain).await?;
+    s.proxy_chain=plan.config;
+    input.proxy=resolved.proxy;
+    let mut chain=resolved.prepared;
     // All later checks for this start use the same resolved choice, including
     // the original route's UDP/Geo wrappers. Never persist this temporary copy.
-    if let Some(proxy) = &mut input.proxy {
+    if let Some(proxy) = input.proxy.as_mut().filter(|_|explicit.is_none()) {
         proxy.proxy_chain_policy = if s.proxy_chain.allow_assigned_fallback { crate::proxy_chain::policy::ChainPolicy::PreferFirstHop }
             else if s.proxy_chain.enabled { crate::proxy_chain::policy::ChainPolicy::Enabled } else { crate::proxy_chain::policy::ChainPolicy::Disabled };
     }
-    if s.proxy_chain.enabled {
-        crate::proxy_chain::validate_args(&s.extra_args)?;
-        // A raw DevTools client can change Traffic.setProxy inside the closed
-        // engine, bypassing Rust guards. Refuse that unsupported combination.
-        if input.cdp { anyhow::bail!("Proxy-chain V1 cannot expose raw DevTools or automation proxy controls. Start this profile from the normal profile list without debugging."); }
-    }
-    crate::proxy_chain::prepare(input.proxy.as_ref(), &s.proxy_chain).await?
-    };
     let chain_geo = if let Some(chain) = &mut chain {
         if !chain.is_ready() { crate::proxy_chain::verify_prepared(chain).await?; }
         chain.verified_geo.clone()

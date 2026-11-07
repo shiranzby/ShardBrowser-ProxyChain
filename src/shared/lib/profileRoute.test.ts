@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { routeExitProxyId, routeProxyIds, routeUsesRealIp, routeUsesProxy, profileRouteLabel } from "./profileRoute.ts";
-import { normalizedProfileRoute } from "../model/proxyChain.ts";
+import { routeExitProxyId, routeProxyIds, routeUsesRealIp, routeUsesProxy, profileRouteLabel, withRouteProxyId } from "./profileRoute.ts";
+import { normalizedProfileRoute, profileRouteForEditor } from "../model/proxyChain.ts";
 
 test("explicit routes keep an inactive binding without claiming it is the exit", () => {
   const proxy_id = "hk";
@@ -51,4 +51,31 @@ test("direct then system shares the system route without claiming the retained a
     assert.deepEqual(routeProxyIds(invalid), []);
     assert.equal(routeUsesRealIp(invalid), false);
   }
+});
+
+test("empty layers appear as their single connection without rewriting the saved route", () => {
+  const cases = [
+    [{ mode: "chain", first: { mode: "direct" }, second: { mode: "direct" } }, "direct"],
+    [{ mode: "chain", first: { mode: "direct" }, second: { mode: "proxy" } }, "proxy"],
+    [{ mode: "chain", first: { mode: "direct" }, second: { mode: "system" } }, "system"],
+    [{ mode: "chain", first: { mode: "system" }, second: { mode: "direct" } }, "system"],
+  ] as const;
+  for (const [route, mode] of cases) {
+    const before = JSON.stringify(route);
+    assert.deepEqual(profileRouteForEditor(route), { mode });
+    assert.equal(JSON.stringify(route), before);
+  }
+});
+
+test("a first-proxy-only legacy route edits A while retaining inactive B", () => {
+  const saved = { proxy_id: "retained-b", proxy_route: { mode: "chain", first: { mode: "proxy", proxy_id: "active-a" }, second: { mode: "direct" } } } as const;
+  assert.deepEqual(profileRouteForEditor(saved.proxy_route), { mode: "proxy" });
+  assert.equal(routeExitProxyId(saved), "active-a");
+  assert.deepEqual(routeProxyIds(saved), ["active-a"]);
+  const changed = withRouteProxyId(saved, "selected-c");
+  assert.equal(changed.proxy_id, "retained-b");
+  assert.deepEqual(changed.proxy_route, { mode: "chain", first: { mode: "proxy", proxy_id: "selected-c" }, second: { mode: "direct" } });
+  assert.equal(routeExitProxyId(changed), "selected-c");
+  assert.equal(saved.proxy_route.first.proxy_id, "active-a");
+  assert.equal(withRouteProxyId({ proxy_id: "a", proxy_route: { mode: "proxy" } }, "c").proxy_id, "c");
 });

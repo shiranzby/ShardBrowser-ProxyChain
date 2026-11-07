@@ -19,6 +19,7 @@ test("single connection choices retain the assigned proxy and test a draft witho
   const before = await saved(page);
   const form = await custom(page);
   expect(before._meta.proxy_route).toBeUndefined();
+  await expect(form.getByRole("button", { name: "Use existing proxy rules", exact: true })).toHaveCount(0);
   await expect(form.getByRole("combobox", { name: "Connection", exact: true })).toContainText("Choose proxy");
   await form.getByRole("button", { name: "Test connection", exact: true }).click();
   await expect(form.locator("[data-profile-route-exit]")).toContainText("203.0.113.42");
@@ -184,100 +185,105 @@ test("single system proxy exit lookup failure never describes a full chain", asy
   await expect(result.locator("[data-profile-route-geo-details]")).toContainText("HTTP 返回 429");
 });
 
-test("chain first-hop choices and direct second hop describe and save the exact route", async ({ page }) => {
+test("chain choices require two proxies and retain the saved policy", async ({ page }) => {
   await openApp(page, { theme: "light" });
+  await page.evaluate((id) => { (window as any).__shardxMock.state.profiles[id]._meta.proxy_chain_policy = "prefer_first_hop"; }, profileId);
   const before = await saved(page);
   const form = await custom(page);
   await form.getByRole("switch", { name: "Enable proxy chain", exact: true }).click();
   await expect(form.getByRole("combobox", { name: "First-hop proxy", exact: true })).toContainText("Use system proxy");
-  await pick(page, "First-hop proxy", "Choose proxy");
+  await form.getByRole("combobox", { name: "First-hop proxy", exact: true }).click();
+  await expect(page.getByRole("option", { name: "Use real IP", exact: true })).toHaveCount(0);
+  await page.getByRole("option", { name: "Choose proxy", exact: true }).click();
   await expect(form.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await form.getByRole("combobox", { name: "First-hop proxy choice", exact: true }).click();
   await page.getByRole("option", { name: /^DC Tokyo\b/ }).click();
   await expect(form.locator("[data-profile-route-same]")).toBeVisible();
-  await form.getByRole("switch", { name: "Use the assigned proxy if the first hop fails", exact: true }).click();
+  await expect(form.getByRole("combobox", { name: "Second-hop proxy", exact: true })).toHaveCount(0);
+  await expect(form.locator("[data-profile-second-hop] [data-property='proxy']")).toBeVisible();
+  await expect(form.getByRole("switch", { name: "Use the assigned proxy if the first hop fails", exact: true })).toHaveCount(0);
   await form.getByRole("button", { name: "Test connection", exact: true }).click();
   await expect(form.locator("[data-profile-route-result] [data-chain-route='same_proxy_endpoint']")).toBeVisible();
-  await pick(page, "Second-hop proxy", "Direct connection");
-  await expect(form.getByText("Adds no second proxy. Websites use the first hop; only a first hop using real IP also makes this a direct connection.")).toBeVisible();
-  await expect(form.locator("[data-property='proxy']")).toHaveCount(0);
   await form.getByRole("button", { name: "Save", exact: true }).click();
   await expect(form).toBeHidden();
-  expect((await saved(page))._meta).toMatchObject({ proxy_id: before._meta.proxy_id,
-    proxy_route: { mode: "chain", first: { mode: "proxy", proxy_id: "px-jp-1" }, second: { mode: "direct" } } });
+  expect((await saved(page))._meta).toMatchObject({ proxy_id: before._meta.proxy_id, proxy_chain_policy: before._meta.proxy_chain_policy,
+    proxy_route: { mode: "chain", first: { mode: "proxy", proxy_id: "px-jp-1" }, second: { mode: "proxy" } } });
 });
 
-for (const first of ["proxy", "system"] as const) test(`a ${first} first hop without a second proxy keeps the failure on the used connection`, async ({ page }) => {
+for (const first of ["proxy", "system"] as const) test(`a legacy ${first}-only route displays its single effective connection`, async ({ page }) => {
   await openApp(page);
-  const form = await custom(page);
-  await form.getByRole("switch", { name: "Enable proxy chain", exact: true }).click();
-  if (first === "proxy") {
-    await pick(page, "First-hop proxy", "Choose proxy");
-    await form.getByRole("combobox", { name: "First-hop proxy choice", exact: true }).click();
-    await page.getByRole("option", { name: /^DC Tokyo\b/ }).click();
-  }
-  await pick(page, "Second-hop proxy", "Direct connection");
+  await page.evaluate(({ id, first }) => {
+    (window as any).__shardxMock.state.profiles[id]._meta.proxy_route = {
+      mode: "chain", first: first === "proxy" ? { mode: first, proxy_id: "px-us-2" } : { mode: first }, second: { mode: "direct" },
+    };
+  }, { id: profileId, first });
+  const form = await openEditForm(page, "FB Ads acc-02", "Proxy");
+  await expect(form.getByRole("switch", { name: "Enable proxy chain", exact: true })).not.toBeChecked();
+  await expect(form.getByRole("combobox", { name: "Connection", exact: true })).toContainText(first === "proxy" ? "Choose proxy" : "Use system proxy");
   await appModule(page, "/src/shared/i18n/index.ts", "__firstOnlyI18n");
   await page.evaluate((first) => {
     (window as any).__firstOnlyI18n.useLang.getState().setLang("zh");
     (window as any).__shardxMockRouteResult = {
-      system_proxy: { state: "failed", error_code: first === "proxy" ? "proxy_chain_profile_timeout" : "system_proxy_timeout" },
-      profile_proxy: { state: "not_tested" },
-      proxy_address: "203.0.113.7:1080", proxy_kind: "socks5",
-      profile_proxy_address: null, exit_ip: null, exit_geo: null,
+      system_proxy: first === "system" ? { state: "failed", error_code: "system_proxy_timeout" } : { state: "not_tested" },
+      profile_proxy: first === "proxy" ? { state: "failed", error_code: "proxy_chain_profile_timeout" } : { state: "not_tested" },
+      proxy_address: first === "system" ? "203.0.113.7:1080" : null,
+      profile_proxy_address: first === "proxy" ? "203.0.113.7:1080" : null, exit_ip: null, exit_geo: null,
     };
   }, first);
   const localizedForm = page.getByRole("dialog");
   await localizedForm.getByRole("button", { name: "测试连接", exact: true }).click();
   const result = localizedForm.locator("[data-profile-route-result]");
   await expect(result.locator("dl > div").first()).toContainText(first === "proxy" ? "所选代理未能及时完成认证或目标连接" : "系统代理连接超时");
-  await expect(result.locator("dl > div").first()).not.toContainText("第二层");
+  await expect(result).not.toContainText(/第一层|第二层/);
   await expect(result).toContainText("203.0.113.7:1080");
   await expect(result.locator("[data-profile-route-exit]")).toContainText("查询失败");
 });
 
-test("a direct first hop can use system second and saves the chain selection without using its old binding", async ({ page }) => {
+test("a legacy direct-system route displays as system and preserves its old wire", async ({ page }) => {
   await openApp(page);
+  await page.evaluate((id) => {
+    (window as any).__shardxMock.state.profiles[id]._meta.proxy_route = { mode: "chain", first: { mode: "direct" }, second: { mode: "system" } };
+  }, profileId);
   const before = await saved(page);
-  const form = await custom(page);
-  await form.getByRole("switch", { name: "Enable proxy chain", exact: true }).click();
-  await pick(page, "First-hop proxy", "Use real IP");
-  await pick(page, "Second-hop proxy", "Use system proxy");
+  const form = await openEditForm(page, "FB Ads acc-02", "Proxy");
+  await expect(form.getByRole("switch", { name: "Enable proxy chain", exact: true })).not.toBeChecked();
+  await expect(form.getByRole("combobox", { name: "Connection", exact: true })).toContainText("Use system proxy");
   await expect(form.locator("[data-property='proxy']")).toHaveCount(0);
-  await expect(form.getByText("Uses the system proxy as the only proxy, equivalent to selecting it with chaining off. Choosing another first hop changes this second choice to direct.")).toBeVisible();
   await form.getByRole("button", { name: "Test connection", exact: true }).click();
   const result = form.locator("[data-profile-route-result]");
   await expect(result.locator("[data-profile-route-exit]")).toContainText("198.51.100.24");
   await expect(result).toContainText("127.0.0.1:7890");
   await expect(result).not.toContainText(/First hop|Second hop/);
   expect(await calls(page, "proxy_save")).toBe(0);
+  await appModule(page, "/src/features/profile-form/model/useProfileForm.ts", "__legacySystemForm");
+  await page.evaluate(() => (window as any).__legacySystemForm.patchForm({ notes: "Keep legacy route while editing notes" }));
   await form.getByRole("button", { name: "Save", exact: true }).click();
   await expect(form).toBeHidden();
   expect((await saved(page))._meta).toMatchObject({ proxy_id: before._meta.proxy_id,
     proxy_route: { mode: "chain", first: { mode: "direct" }, second: { mode: "system" } } });
   await reloadApp(page);
   const reopened = await openEditForm(page, "FB Ads acc-02", "Proxy");
-  await expect(reopened.getByRole("switch", { name: "Enable proxy chain", exact: true })).toBeChecked();
-  await expect(reopened.getByRole("combobox", { name: "Second-hop proxy", exact: true })).toContainText("Use system proxy");
+  await expect(reopened.getByRole("switch", { name: "Enable proxy chain", exact: true })).not.toBeChecked();
+  await expect(reopened.getByRole("combobox", { name: "Connection", exact: true })).toContainText("Use system proxy");
 });
 
-test("changing a system second choice to a proxied first hop keeps one proxy and hides the invalid combination", async ({ page }) => {
+test("editing a legacy selected-first-only route changes A and keeps inactive B", async ({ page }) => {
   await openApp(page);
-  const form = await custom(page);
-  await form.getByRole("switch", { name: "Enable proxy chain", exact: true }).click();
-  await pick(page, "First-hop proxy", "Use real IP");
-  await pick(page, "Second-hop proxy", "Use system proxy");
-  await pick(page, "First-hop proxy", "Use system proxy");
-  await expect(form.getByRole("combobox", { name: "Second-hop proxy", exact: true })).toContainText("Direct connection");
-  await form.getByRole("combobox", { name: "Second-hop proxy", exact: true }).click();
-  await expect(page.getByRole("option", { name: "Use system proxy", exact: true })).toHaveCount(0);
-  await page.keyboard.press("Escape");
-  await pick(page, "First-hop proxy", "Use real IP");
-  await pick(page, "Second-hop proxy", "Use system proxy");
-  await pick(page, "First-hop proxy", "Choose proxy");
-  await expect(form.getByRole("combobox", { name: "Second-hop proxy", exact: true })).toContainText("Direct connection");
-  await form.getByRole("combobox", { name: "Second-hop proxy", exact: true }).click();
-  await expect(page.getByRole("option", { name: "Use system proxy", exact: true })).toHaveCount(0);
+  await page.evaluate((id) => {
+    (window as any).__shardxMock.state.profiles[id]._meta.proxy_route = { mode: "chain", first: { mode: "proxy", proxy_id: "px-us-2" }, second: { mode: "direct" } };
+  }, profileId);
+  const before = await saved(page);
+  const form = await openEditForm(page, "FB Ads acc-02", "Proxy");
+  const picker = form.locator("[data-property='proxy'] button");
+  await expect(picker).toContainText("DC New York");
+  await pick(page, "Connection", "Choose proxy");
+  await expect(picker).toContainText("DC New York");
+  await picker.click();
+  await page.getByRole("option", { name: /^ISP Frankfurt\b/ }).click();
+  await form.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(form).toBeHidden();
+  expect((await saved(page))._meta).toMatchObject({ proxy_id: before._meta.proxy_id,
+    proxy_route: { mode: "chain", first: { mode: "proxy", proxy_id: "px-de-1" }, second: { mode: "direct" } } });
 });
 
 test("failed save keeps the route draft, retry saves it, and cancellation keeps the stored route", async ({ page }) => {
