@@ -25,9 +25,9 @@ test("provider credentials persist separately and generate a SOCKS5 preview", as
   await expect(dialog.getByRole("textbox", { name: "Account / base username", exact: true })).toHaveValue("synthetic-base");
   await dialog.getByText("Provider defaults", { exact: true }).click();
   await dialog.getByRole("combobox", { name: "Country", exact: true }).click();
-  const countryPicker = page.getByRole("dialog", { name: "Country", exact: true });
-  await countryPicker.getByRole("searchbox").fill("US");
-  await countryPicker.getByRole("option", { name: /^US,/ }).click();
+  const countryPicker = page.getByRole("combobox", { name: "Search country or code", exact: true });
+  await countryPicker.fill("US");
+  await page.getByRole("option", { name: /^US,/ }).click();
   await dialog.getByRole("textbox", { name: "State / province (provider name, optional)", exact: true }).fill("Louisiana");
   await dialog.getByRole("button", { name: "Generate and preview", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "Add 1 proxy", exact: true })).toBeVisible();
