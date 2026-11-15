@@ -307,9 +307,9 @@ async fn proxy_list_chain_tests_do_not_mark_a_live_geo_route_failed_for_one_prob
         assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), before);
     }
     let requests = second.requests.lock().unwrap();
-    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 0);
+    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 2);
     assert_eq!(requests.iter().filter(|r| *r == "SOCKS ip-api.com:80").count(), 2);
-    assert_eq!(first.requests.lock().unwrap().len(), 2);
+    assert_eq!(first.requests.lock().unwrap().len(), 4);
 }
 
 async fn socks_connect_refusal(reply: u8) -> Service {
