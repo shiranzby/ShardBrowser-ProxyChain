@@ -33,6 +33,8 @@ pub struct PreparedProxy {
     pub verified_geo: Option<proxy::GeoInfo>,
     /// A strict same-route HTTPS response can prove reachability without Geo.
     pub verified_https: bool,
+    /// Bytes read from the same bounded HTTPS verification response.
+    pub verified_content_bytes: Option<u64>,
     /// This attempt's independent Geo failure; never filled from old results.
     pub geo_failure: Option<ChainError>,
     /// Measured reachability latency. A live Geo response on the same route
@@ -170,6 +172,7 @@ async fn verify_prepared_inner(prepared: &mut PreparedProxy) -> Result<(), Chain
     prepared.verified_tcp_ms=None;
     prepared.verified_geo=None;
     prepared.verified_https=false;
+    prepared.verified_content_bytes=None;
     prepared.geo_failure=None;
     // A successful response already proves this relay's TCP and proxy
     // handshake. Do not open and discard another connection before it.
@@ -201,9 +204,10 @@ async fn verify_prepared_inner(prepared: &mut PreparedProxy) -> Result<(), Chain
             geo_error.geo_failures=failures;
             prepared.geo_failure=Some(geo_error.clone());
             prepared.tunnel.finish_probe_flows().await?;
-            match readiness::verify(&prepared.effective,&prepared.tunnel).await {
-                Ok(ms)=>{
+            match readiness::verify_with_content(&prepared.effective,&prepared.tunnel).await {
+                Ok((ms,bytes))=>{
                     prepared.verified_tcp_ms=prepared.verified_tcp_ms.or(Some(ms));
+                    prepared.verified_content_bytes=Some(bytes);
                     prepared.verified_https=true;
                     Ok(())
                 },
@@ -228,7 +232,7 @@ pub(super) async fn prepare_single(entry: &ProxyEntry, route: Route, first_hop_e
     let target = Target::new(&entry.host, entry.port)?;
     let tls = if entry.kind == ProxyKind::Https { Some(tls::client()?) } else { None };
     let tunnel = Tunnel::bind_assigned(target, tls).await?;
-    let mut prepared = PreparedProxy { effective: effective_entry(entry, &tunnel), tunnel, route, first_hop_error, verified_geo: None, verified_https: false, geo_failure: None, verified_tcp_ms: None };
+    let mut prepared = PreparedProxy { effective: effective_entry(entry, &tunnel), tunnel, route, first_hop_error, verified_geo: None, verified_https: false, verified_content_bytes: None, geo_failure: None, verified_tcp_ms: None };
     if let Err(cause)=verify_prepared(&mut prepared).await {
         if route==Route::ExplicitProxy {
             let error=preparation_failure(&prepared,cause);
@@ -265,7 +269,7 @@ async fn prepare_with_hop(entry: &ProxyEntry, hop: ProxyHop) -> anyhow::Result<P
         Tunnel::bind(hop, target).await?
     };
     let effective = effective_entry(entry, &tunnel);
-    Ok(PreparedProxy { effective, tunnel, route: Route::FirstHop, first_hop_error: None, verified_geo: None, verified_https: false, geo_failure: None, verified_tcp_ms: None })
+    Ok(PreparedProxy { effective, tunnel, route: Route::FirstHop, first_hop_error: None, verified_geo: None, verified_https: false, verified_content_bytes: None, geo_failure: None, verified_tcp_ms: None })
 }
 
 /// The caller has already resolved one first hop for the assigned endpoint.

@@ -20,6 +20,10 @@ struct ConnectionTask(tokio::task::JoinHandle<()>);
 impl Drop for ConnectionTask {fn drop(&mut self){self.0.abort();}}
 
 pub(crate) async fn verify(entry:&ProxyEntry,tunnel:&Tunnel)->Result<u128,ChainError> {
+    verify_with_content(entry,tunnel).await.map(|(elapsed, _)| elapsed)
+}
+
+pub(crate) async fn verify_with_content(entry:&ProxyEntry,tunnel:&Tunnel)->Result<(u128,u64),ChainError> {
     let start=Instant::now();
     let (targets,config)=configuration()?;
     let hop=ProxyHop{kind:match entry.kind {ProxyKind::Http=>connector::ProxyKind::Http,ProxyKind::Https=>connector::ProxyKind::Https,ProxyKind::Socks5=>connector::ProxyKind::Socks5},
@@ -27,7 +31,7 @@ pub(crate) async fn verify(entry:&ProxyEntry,tunnel:&Tunnel)->Result<u128,ChainE
     tokio::time::timeout(TOTAL_BUDGET,async {
         for url in targets {
             match tokio::time::timeout(TARGET_BUDGET,one(&hop,&url,config.clone())).await {
-                Ok(Ok(()))=>return Ok(start.elapsed().as_millis()),
+                Ok(Ok(bytes))=>return Ok((start.elapsed().as_millis(), bytes)),
                 Ok(Err(error)) if matches!(error.code,"proxy_chain_profile_auth_failed"|"system_proxy_auth_failed")=>return Err(error),
                 _=>{
                     // A system relay may give its local client a generic
@@ -46,7 +50,7 @@ fn authentication_failure(tunnel:&Tunnel)->Option<ChainError> {
     tunnel.last_error().filter(|error|matches!(error.code,"proxy_chain_profile_auth_failed"|"system_proxy_auth_failed"))
 }
 
-async fn one(hop:&ProxyHop,url:&str,config:Arc<rustls::ClientConfig>)->Result<(),ChainError> {
+async fn one(hop:&ProxyHop,url:&str,config:Arc<rustls::ClientConfig>)->Result<u64,ChainError> {
     let url=url::Url::parse(url).map_err(|_|unavailable())?;
     if url.scheme()!="https" || !url.username().is_empty() || url.password().is_some() {return Err(unavailable());}
     let host=url.host_str().ok_or_else(unavailable)?;
@@ -77,7 +81,7 @@ async fn one(hop:&ProxyHop,url:&str,config:Arc<rustls::ClientConfig>)->Result<()
         if let Some(data)=frame.data_ref() {bytes=bytes.checked_add(data.len()).ok_or_else(unavailable)?;if bytes>MAX_BODY{return Err(unavailable());}}
     }
     if bytes==0 {return Err(unavailable());}
-    Ok(())
+    Ok(bytes as u64)
 }
 
 fn configuration()->Result<(Vec<String>,Arc<rustls::ClientConfig>),ChainError> {

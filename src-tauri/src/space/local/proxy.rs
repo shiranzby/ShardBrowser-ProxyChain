@@ -1602,14 +1602,14 @@ async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_cha
     let content_fut = async {
         if let Some(route) = prepared {
             if route.verified_https {
-                ContentVerification { status: "passed".into(), http_status: Some(200), bytes: None, error: None }
+                ContentVerification { status: "passed".into(), http_status: Some(200), bytes: route.verified_content_bytes, error: None }
             } else {
                 // Prepared routes are fixed-target tunnels, not ordinary HTTP
                 // proxy endpoints. Use the same bounded HTTPS verifier as the
                 // chain readiness code instead of sending a second proxy
                 // handshake through the local listener.
-                match crate::proxy_chain::readiness::verify(&route.effective, &route.tunnel).await {
-                    Ok(_) => ContentVerification { status: "passed".into(), http_status: Some(200), bytes: None, error: None },
+                match crate::proxy_chain::readiness::verify_with_content(&route.effective, &route.tunnel).await {
+                    Ok((_, bytes)) => ContentVerification { status: "passed".into(), http_status: Some(200), bytes: Some(bytes), error: None },
                     Err(_) => ContentVerification { status: "failed".into(), http_status: None, bytes: None, error: Some("webpage content could not be verified through the prepared route".into()) },
                 }
             }
@@ -2158,7 +2158,7 @@ mod tests {
         let geo_failure = ChainError::new("proxy_chain_profile_geo_failed", "exit", "The live route returned no exit metadata for this observation.");
         let prepared = PreparedProxy {
             effective, tunnel, route: Route::ExplicitProxy, first_hop_error: None,
-            verified_geo: None, verified_https: true, geo_failure: Some(geo_failure.clone()), verified_tcp_ms: Some(17),
+            verified_geo: None, verified_https: true, verified_content_bytes: Some(128), geo_failure: Some(geo_failure.clone()), verified_tcp_ms: Some(17),
         };
         assert!(prepared.is_ready());
         let result = tokio::time::timeout(std::time::Duration::from_secs(3), measure_on_route(&prepared.effective, Some(&prepared), None))
@@ -2419,3 +2419,5 @@ mod tests {
 
 
 }
+
+

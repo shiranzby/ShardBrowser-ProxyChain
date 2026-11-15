@@ -113,7 +113,7 @@ fn entry(service:&Service)->ProxyEntry {
 
 async fn prepared(entry:&ProxyEntry)->PreparedProxy {
     let tunnel=super::Tunnel::bind_assigned(Target::new(&entry.host,entry.port).unwrap(),None).await.unwrap();
-    PreparedProxy{effective:super::effective_entry(entry,&tunnel),tunnel,route:Route::ExplicitProxy,first_hop_error:None,verified_geo:None,verified_https:false,geo_failure:None,verified_tcp_ms:None}
+    PreparedProxy{effective:super::effective_entry(entry,&tunnel),tunnel,route:Route::ExplicitProxy,first_hop_error:None,verified_geo:None,verified_https:false,verified_content_bytes:None,geo_failure:None,verified_tcp_ms:None}
 }
 
 fn configure(client:Arc<rustls::ClientConfig>)->readiness::TestConfiguration {
