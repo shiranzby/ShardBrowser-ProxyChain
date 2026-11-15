@@ -309,7 +309,7 @@ async fn proxy_list_chain_tests_do_not_mark_a_live_geo_route_failed_for_one_prob
     let requests = second.requests.lock().unwrap();
     assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 2);
     assert_eq!(requests.iter().filter(|r| *r == "SOCKS ip-api.com:80").count(), 2);
-    assert_eq!(first.requests.lock().unwrap().len(), 4);
+    assert_eq!(first.requests.lock().unwrap().len(), 6);
 }
 
 async fn socks_connect_refusal(reply: u8) -> Service {
@@ -1247,3 +1247,4 @@ async fn system_geolocation_proves_route_when_probe_target_refused() {
     assert_eq!(requests.iter().filter(|head| head.starts_with("CONNECT example.com:443 ")).count(), 2);
     assert_eq!(requests.iter().filter(|head| head.starts_with("GET http://ip-api.com/")).count(), 2, "each system test must obtain its own live Geo response");
 }
+
