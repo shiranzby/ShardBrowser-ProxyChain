@@ -7,7 +7,7 @@ pub mod error;
 pub mod policy;
 pub mod route;
 pub mod routing;
-mod readiness;
+pub(crate) mod readiness;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -620,3 +620,4 @@ mod detection_tests;
 mod live_tests;
 #[cfg(all(test, windows))]
 mod live_geo_tests;
+
