@@ -1247,4 +1247,3 @@ async fn system_geolocation_proves_route_when_probe_target_refused() {
     assert_eq!(requests.iter().filter(|head| head.starts_with("CONNECT example.com:443 ")).count(), 2);
     assert_eq!(requests.iter().filter(|head| head.starts_with("GET http://ip-api.com/")).count(), 2, "each system test must obtain its own live Geo response");
 }
-

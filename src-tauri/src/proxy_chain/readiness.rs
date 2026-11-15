@@ -101,4 +101,3 @@ impl Drop for TestConfiguration {fn drop(&mut self){TEST_CONFIGURATION.with(|val
 pub(super) fn test_configuration(targets:Vec<String>,config:Arc<rustls::ClientConfig>)->TestConfiguration {
     TestConfiguration(TEST_CONFIGURATION.with(|value|value.replace(Some((targets,config)))))
 }
-

@@ -60,4 +60,3 @@ export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?
     </div>
   </fieldset>;
 }
-
