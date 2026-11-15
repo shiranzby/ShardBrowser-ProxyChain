@@ -1648,7 +1648,7 @@ new file mode 100644
 index 0000000..59cb61d
 --- /dev/null
 +++ b/e2e/provider-defaults.spec.ts
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,88 @@
 +import { expect, test, type Page } from "@playwright/test";
 +import { openApp, reloadApp } from "./support/app";
 +
@@ -1676,7 +1676,9 @@ index 0000000..59cb61d
 +  await expect(dialog.getByRole("textbox", { name: "Account / base username", exact: true })).toHaveValue("synthetic-base");
 +  await dialog.getByText("Provider defaults", { exact: true }).click();
 +  await dialog.getByRole("combobox", { name: "Country", exact: true }).click();
-+  await page.getByRole("option", { name: /^US,/ }).click();
++  const countryPicker = page.getByRole("dialog", { name: "Country", exact: true });
++  await countryPicker.getByRole("searchbox").fill("US");
++  await countryPicker.getByRole("option", { name: /^US,/ }).click();
 +  await dialog.getByRole("textbox", { name: "State / province (provider name, optional)", exact: true }).fill("Louisiana");
 +  await dialog.getByRole("button", { name: "Generate and preview", exact: true }).click();
 +  await expect(dialog.getByRole("button", { name: "Add 1 proxy", exact: true })).toBeVisible();
