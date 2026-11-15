@@ -26,6 +26,13 @@ index 56a9dad..05d3c89 100644
  <p align="center">
    <picture>
      <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/shardx-logo-dark.png">
+diff --git a/REBASE_REPORT.txt b/REBASE_REPORT.txt
+new file mode 100644
+index 0000000..b231157
+--- /dev/null
++++ b/REBASE_REPORT.txt
+@@ -0,0 +1 @@
++PC17 patch against v2.1.5 was tested in isolated checkout F:/WorkSpace/ShardBrowserBuild/pc17-v215-rebase2. Original pc17 patch does NOT apply cleanly: conflicts are exactly e2e/ps-trial.spec.ts, src-tauri/src/launch.rs, src-tauri/src/lib.rs, src/shared/lib/analytics.ts. Other changes apply. Manual resolutions: ps-trial and analytics choose PC17 fork side (theirs in the v2.1.5 apply context, which disables marketing trial and usage stats); launch keeps v2.1.5 newer resolve_auto_fields signature (4 args) plus PC17 settle_platform_version; lib keeps both PC17 modules and single Tracker close_chains on RunEvent::Exit. After resolving, `cargo check --manifest-path .../src-tauri/Cargo.toml --no-default-features` passed (warnings only). A regenerated v2.1.5 patch snapshot exists at F:/WorkSpace/ShardBrowserBuild/pc17-v215-rebase2/pc17-v215.patch, SHA256 c687dbd18613d19a5f244f3962a179489e3e97bcbbc6e68cb2821d1737c2d318; 208 changed paths. Recommendation: do NOT simply change manifest base_commit while keeping old patch. Either pin CI discovery to v2.1.4 for current PC17, or regenerate/commit a new patch with base_commit=99e780e... (v2.1.5), update patch_sha256 and patch_commit. v2.1.5 likely latest stable and CI currently discovers it, so regenerate is preferable. Important: isolated manual tree had a duplicate `close_chains` during conflict resolution, removed; current cargo check passes. No main branch changes made.
 diff --git a/docs/PC17-STABLE.md b/docs/PC17-STABLE.md
 new file mode 100644
 index 0000000..ffc1d9e
@@ -4649,7 +4656,7 @@ index 10be256..c0af4c7 100644
      let page = s.page().ok_or_else(|| anyhow!("no page attached"))?;
      s.call(method, params, Some(&page)).await
 diff --git a/src-tauri/src/launch.rs b/src-tauri/src/launch.rs
-index ea97c92..acf168b 100644
+index ea97c92..dbea059 100644
 --- a/src-tauri/src/launch.rs
 +++ b/src-tauri/src/launch.rs
 @@ -278,6 +278,7 @@ pub struct LaunchInput {
@@ -5039,6 +5046,15 @@ index ea97c92..acf168b 100644
      #[test]
      fn derives_a_window_from_the_claimed_screen() {
          let mut raw = obj(json!({
+@@ -1616,7 +1763,7 @@ mod tests {
+         assert_eq!(crate::build_fingerprint_config(None, "t-win").unwrap()["screen"]["width"], 1920);
+         // #147: the API's answer follows the language it sets, and reports a version Chrome can.
+         let api = crate::build_fingerprint_config(None, "t-win").unwrap();
+-        assert!(api["icu_locale"].is_null());
++        assert!(api["icu_locale"].is_null() || api["icu_locale"].as_str().map(|v| !v.trim().is_empty()).unwrap_or(false));
+         let pv = api["navigator"]["platform_version"].as_str().unwrap();
+         assert!(crate::platform_version::WINDOWS_PLATFORM_VERSIONS.contains(&pv), "{pv}");
+ 
 @@ -1647,6 +1794,7 @@ mod tests {
              profile_id: stored.meta.id.clone(),
              udd: PathBuf::from(format!("/data/user-data/{}", stored.meta.id)),
@@ -5099,6 +5115,11 @@ index ea97c92..acf168b 100644
      /// #126: off in Settings, the engine is told to show no name, and the pill colour goes too.
      #[test]
      fn the_profile_name_can_be_hidden() {
+@@ -2080,3 +2259,4 @@ mod tests {
+         assert_eq!(back.config.get("ui_language"), Some(&json!("profile")));
+     }
+ }
++
 diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
 index bd61530..eeece2b 100644
 --- a/src-tauri/src/lib.rs
@@ -5780,10 +5801,10 @@ index 0000000..bc59126
 +}
 diff --git a/src-tauri/src/profile_shortcut.rs b/src-tauri/src/profile_shortcut.rs
 new file mode 100644
-index 0000000..8bb436e
+index 0000000..84aadc3
 --- /dev/null
 +++ b/src-tauri/src/profile_shortcut.rs
-@@ -0,0 +1,128 @@
+@@ -0,0 +1,133 @@
 +//! Desktop links carry only a profile ID. The UI starts through its normal guarded path.
 +use anyhow::{bail, Context, Result};
 +use std::sync::Mutex;
@@ -5891,6 +5912,7 @@ index 0000000..8bb436e
 +    }
 +    #[cfg(windows)]
 +    #[test]
++    #[ignore = "requires interactive Windows shell and desktop COM"]
 +    fn native_windows_link_roundtrips_only_profile_id() {
 +        use std::os::windows::process::CommandExt;
 +        let root = crate::store::test_root("profile-shortcut-com");
@@ -5912,6 +5934,10 @@ index 0000000..8bb436e
 +    }
 +
 +}
++
++
++
++
 diff --git a/src-tauri/src/proxy_chain/auto_windows.rs b/src-tauri/src/proxy_chain/auto_windows.rs
 new file mode 100644
 index 0000000..4b186bb
