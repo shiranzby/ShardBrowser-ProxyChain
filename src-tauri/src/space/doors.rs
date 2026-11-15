@@ -170,6 +170,8 @@ const RULES: &[(&str, Need)] = &[
     ("folder_import", Off),
     ("folder_set_parent", Off),
     ("profile_focus_window", Nothing),
+    ("profile_create_desktop_shortcut", Machine),
+    ("profile_shortcut_take_pending", Machine),
     // Starting and running.
     ("launch", START),
     ("sync_launch", START),
@@ -362,6 +364,9 @@ const RULES: &[(&str, Need)] = &[
     ("proxy_chain_test", Machine), // profile test separately requires Start before reading its proxy
     ("proxy_route_test", Machine), // draft checks profile edit/password and each named proxy in its captured space
     ("proxy_chain_set_enabled", Machine),
+    ("proxy_provider_defaults_get", Machine),
+    ("proxy_provider_defaults_save", Machine),
+    ("proxy_provider_generate", Machine),
     ("runtime::runtime_status", Machine),
     ("runtime::runtime_install", Machine),
     ("runtime::launcher_update_check", Machine),
