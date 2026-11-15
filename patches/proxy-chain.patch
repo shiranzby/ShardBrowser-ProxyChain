@@ -1,6 +1,6 @@
 diff --git a/.gitattributes b/.gitattributes
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..76675db
 --- /dev/null
 +++ b/.gitattributes
 @@ -0,0 +1,2 @@
@@ -28,14 +28,14 @@ index 56a9dad..05d3c89 100644
      <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/shardx-logo-dark.png">
 diff --git a/REBASE_REPORT.txt b/REBASE_REPORT.txt
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..b231157
 --- /dev/null
 +++ b/REBASE_REPORT.txt
 @@ -0,0 +1 @@
 +PC17 patch against v2.1.5 was tested in isolated checkout F:/WorkSpace/ShardBrowserBuild/pc17-v215-rebase2. Original pc17 patch does NOT apply cleanly: conflicts are exactly e2e/ps-trial.spec.ts, src-tauri/src/launch.rs, src-tauri/src/lib.rs, src/shared/lib/analytics.ts. Other changes apply. Manual resolutions: ps-trial and analytics choose PC17 fork side (theirs in the v2.1.5 apply context, which disables marketing trial and usage stats); launch keeps v2.1.5 newer resolve_auto_fields signature (4 args) plus PC17 settle_platform_version; lib keeps both PC17 modules and single Tracker close_chains on RunEvent::Exit. After resolving, `cargo check --manifest-path .../src-tauri/Cargo.toml --no-default-features` passed (warnings only). A regenerated v2.1.5 patch snapshot exists at F:/WorkSpace/ShardBrowserBuild/pc17-v215-rebase2/pc17-v215.patch, SHA256 c687dbd18613d19a5f244f3962a179489e3e97bcbbc6e68cb2821d1737c2d318; 208 changed paths. Recommendation: do NOT simply change manifest base_commit while keeping old patch. Either pin CI discovery to v2.1.4 for current PC17, or regenerate/commit a new patch with base_commit=99e780e... (v2.1.5), update patch_sha256 and patch_commit. v2.1.5 likely latest stable and CI currently discovers it, so regenerate is preferable. Important: isolated manual tree had a duplicate `close_chains` during conflict resolution, removed; current cargo check passes. No main branch changes made.
 diff --git a/docs/PC17-STABLE.md b/docs/PC17-STABLE.md
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..ffc1d9e
 --- /dev/null
 +++ b/docs/PC17-STABLE.md
 @@ -0,0 +1,89 @@
@@ -130,7 +130,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +代理文本导出默认提供不含账密的地址；包含账密必须由用户显式选择，沿用现有一分钟后清理剪贴板的机制。定向 Mock E2E 已验证地址导出不含登录信息，以及显式凭据导出一分钟后清空；这不代表操作系统剪贴板历史或其他剪贴板管理软件中的副本也会删除。
 diff --git a/docs/PC17_IMPLEMENTATION_2026-11-15.md b/docs/PC17_IMPLEMENTATION_2026-11-15.md
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..41bccd5
 --- /dev/null
 +++ b/docs/PC17_IMPLEMENTATION_2026-11-15.md
 @@ -0,0 +1,35 @@
@@ -171,7 +171,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +正式稳定包、默认 feature 构建、真实新 EXE 原生验收和发布前全包秘密扫描仍需单独完成。当前提交是 PC17 实施阶段，不等同于稳定版交付。
 diff --git a/docs/PC7_NESTED_FOLDERS.md b/docs/PC7_NESTED_FOLDERS.md
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..4285de1
 --- /dev/null
 +++ b/docs/PC7_NESTED_FOLDERS.md
 @@ -0,0 +1,25 @@
@@ -202,7 +202,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +测试使用合成 mock 和临时目录；不涉及用户实际资料、运行中的前台窗口或桌面 EXE 验收。完整回归及候选构建由主任务统一执行。
 diff --git a/docs/PROFILE-DEFAULTS.md b/docs/PROFILE-DEFAULTS.md
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..69a55d6
 --- /dev/null
 +++ b/docs/PROFILE-DEFAULTS.md
 @@ -0,0 +1,9 @@
@@ -217,7 +217,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +定向验证：Rust 创建/显式覆盖、设置旧 JSON 缺省、克隆/导入不覆盖与启动 argv；Playwright 新建默认、修改保存重载、旧配置编辑保留。原生 Engine 页面导航由候选产物验收另行确认。
 diff --git a/docs/PROXY-CHAIN-MAINTENANCE.md b/docs/PROXY-CHAIN-MAINTENANCE.md
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..4b9bb94
 --- /dev/null
 +++ b/docs/PROXY-CHAIN-MAINTENANCE.md
 @@ -0,0 +1,54 @@
@@ -277,7 +277,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +`<40-hex-commit>` 必须来自同一次官方 Release 查询。不要把 API token、代理用户名/密码、认证头、真实 Profile 数据或 Cookie 放入日志、artifact、manifest 或仓库。
 diff --git a/docs/PROXY-CHAIN-POLICY.md b/docs/PROXY-CHAIN-POLICY.md
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..4b6eec2
 --- /dev/null
 +++ b/docs/PROXY-CHAIN-POLICY.md
 @@ -0,0 +1,203 @@
@@ -486,7 +486,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +offers Retry instead of blindly opening another target.
 diff --git a/docs/TNB-PROXY.md b/docs/TNB-PROXY.md
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..22a5eee
 --- /dev/null
 +++ b/docs/TNB-PROXY.md
 @@ -0,0 +1,26 @@
@@ -545,7 +545,7 @@ index d24de9a..d40a8f3 100644
    await runIn(page, "proxy.assign", [id], "palette");
 diff --git a/e2e/list-order.spec.ts b/e2e/list-order.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..01c9e3c
 --- /dev/null
 +++ b/e2e/list-order.spec.ts
 @@ -0,0 +1,151 @@
@@ -702,7 +702,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/e2e/nested-folders.spec.ts b/e2e/nested-folders.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..76add2b
 --- /dev/null
 +++ b/e2e/nested-folders.spec.ts
 @@ -0,0 +1,157 @@
@@ -865,7 +865,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/e2e/pc17-theme-shortcuts.spec.ts b/e2e/pc17-theme-shortcuts.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..ddea6f5
 --- /dev/null
 +++ b/e2e/pc17-theme-shortcuts.spec.ts
 @@ -0,0 +1,106 @@
@@ -977,7 +977,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/e2e/personalization.spec.ts b/e2e/personalization.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..13dcc50
 --- /dev/null
 +++ b/e2e/personalization.spec.ts
 @@ -0,0 +1,145 @@
@@ -1128,7 +1128,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/e2e/profile-defaults.spec.ts b/e2e/profile-defaults.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..fb5117e
 --- /dev/null
 +++ b/e2e/profile-defaults.spec.ts
 @@ -0,0 +1,109 @@
@@ -1243,7 +1243,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/e2e/profile-route-summary.spec.ts b/e2e/profile-route-summary.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..8b86130
 --- /dev/null
 +++ b/e2e/profile-route-summary.spec.ts
 @@ -0,0 +1,33 @@
@@ -1282,7 +1282,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/e2e/profile-route.spec.ts b/e2e/profile-route.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..2ea827a
 --- /dev/null
 +++ b/e2e/profile-route.spec.ts
 @@ -0,0 +1,357 @@
@@ -1739,7 +1739,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/e2e/proxy-chain-errors.spec.ts b/e2e/proxy-chain-errors.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..b7b5749
 --- /dev/null
 +++ b/e2e/proxy-chain-errors.spec.ts
 @@ -0,0 +1,199 @@
@@ -1944,7 +1944,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/e2e/proxy-chain-policy.spec.ts b/e2e/proxy-chain-policy.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..cfd7dba
 --- /dev/null
 +++ b/e2e/proxy-chain-policy.spec.ts
 @@ -0,0 +1,160 @@
@@ -2110,7 +2110,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/e2e/proxy-chain-settings.spec.ts b/e2e/proxy-chain-settings.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..9a4ee32
 --- /dev/null
 +++ b/e2e/proxy-chain-settings.spec.ts
 @@ -0,0 +1,382 @@
@@ -2498,7 +2498,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/e2e/proxy-export-safety.spec.ts b/e2e/proxy-export-safety.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..5a71eba
 --- /dev/null
 +++ b/e2e/proxy-export-safety.spec.ts
 @@ -0,0 +1,46 @@
@@ -2769,7 +2769,7 @@ index 3d83a40..4a76d34 100644
  
 diff --git a/e2e/sidebar-simple.spec.ts b/e2e/sidebar-simple.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..e2cbce0
 --- /dev/null
 +++ b/e2e/sidebar-simple.spec.ts
 @@ -0,0 +1,157 @@
@@ -2932,7 +2932,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/e2e/tnb-extract.spec.ts b/e2e/tnb-extract.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..d3d8d77
 --- /dev/null
 +++ b/e2e/tnb-extract.spec.ts
 @@ -0,0 +1,151 @@
@@ -3089,7 +3089,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/e2e/tnb-locations.spec.ts b/e2e/tnb-locations.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..c5f1dee
 --- /dev/null
 +++ b/e2e/tnb-locations.spec.ts
 @@ -0,0 +1,193 @@
@@ -3288,7 +3288,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/scripts/apply-patch.ps1 b/scripts/apply-patch.ps1
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..36beaba
 --- /dev/null
 +++ b/scripts/apply-patch.ps1
 @@ -0,0 +1,74 @@
@@ -3368,7 +3368,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +Write-Output "Patch applied: $candidateCommit ($tree)"
 diff --git a/scripts/build-portable.ps1 b/scripts/build-portable.ps1
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..93f31b5
 --- /dev/null
 +++ b/scripts/build-portable.ps1
 @@ -0,0 +1,143 @@
@@ -3517,7 +3517,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +Write-Output "$filename SHA256=$sha; acceptance=$acceptanceState; publish_ready=$publishReady"
 diff --git a/scripts/check-upstream.ps1 b/scripts/check-upstream.ps1
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..3f6fb64
 --- /dev/null
 +++ b/scripts/check-upstream.ps1
 @@ -0,0 +1,81 @@
@@ -3635,7 +3635,7 @@ index 2728094..a7a634b 100644
        else if (/\.(tsx?|jsx?)$/.test(name)) {
 diff --git a/scripts/lib/proxy-chain-build.ps1 b/scripts/lib/proxy-chain-build.ps1
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..9be6a6c
 --- /dev/null
 +++ b/scripts/lib/proxy-chain-build.ps1
 @@ -0,0 +1,51 @@
@@ -3692,7 +3692,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/scripts/startup-page.test.mjs b/scripts/startup-page.test.mjs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..18e116b
 --- /dev/null
 +++ b/scripts/startup-page.test.mjs
 @@ -0,0 +1,74 @@
@@ -3772,7 +3772,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/scripts/test-proxy-chain-pipeline.ps1 b/scripts/test-proxy-chain-pipeline.ps1
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..36eca99
 --- /dev/null
 +++ b/scripts/test-proxy-chain-pipeline.ps1
 @@ -0,0 +1,280 @@
@@ -4058,7 +4058,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/scripts/verify-patch.ps1 b/scripts/verify-patch.ps1
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..427020d
 --- /dev/null
 +++ b/scripts/verify-patch.ps1
 @@ -0,0 +1,81 @@
@@ -5572,7 +5572,7 @@ index 2d25d08..01621d6 100644
          if let Ok(mut g) = self.inner.lock() {
 diff --git a/src-tauri/src/profile_defaults.rs b/src-tauri/src/profile_defaults.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..bc59126
 --- /dev/null
 +++ b/src-tauri/src/profile_defaults.rs
 @@ -0,0 +1,220 @@
@@ -5798,7 +5798,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/profile_shortcut.rs b/src-tauri/src/profile_shortcut.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..d20b0f0
 --- /dev/null
 +++ b/src-tauri/src/profile_shortcut.rs
 @@ -0,0 +1,129 @@
@@ -5933,7 +5933,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/auto_windows.rs b/src-tauri/src/proxy_chain/auto_windows.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..4b186bb
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/auto_windows.rs
 @@ -0,0 +1,488 @@
@@ -6427,7 +6427,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/config.rs b/src-tauri/src/proxy_chain/config.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..e244275
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/config.rs
 @@ -0,0 +1,248 @@
@@ -6681,7 +6681,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/connector.rs b/src-tauri/src/proxy_chain/connector.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..07cb41f
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/connector.rs
 @@ -0,0 +1,457 @@
@@ -7144,7 +7144,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/credentials.rs b/src-tauri/src/proxy_chain/credentials.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..387a7de
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/credentials.rs
 @@ -0,0 +1,81 @@
@@ -7231,7 +7231,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/detect_windows.rs b/src-tauri/src/proxy_chain/detect_windows.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..b53e5b9
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detect_windows.rs
 @@ -0,0 +1,345 @@
@@ -7582,7 +7582,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/detection_tests.rs b/src-tauri/src/proxy_chain/detection_tests.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..89a6808
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detection_tests.rs
 @@ -0,0 +1,1249 @@
@@ -8837,7 +8837,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/error.rs b/src-tauri/src/proxy_chain/error.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..1b144f9
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/error.rs
 @@ -0,0 +1,54 @@
@@ -8897,7 +8897,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +impl std::error::Error for ChainError {}
 diff --git a/src-tauri/src/proxy_chain/integration_tests.rs b/src-tauri/src/proxy_chain/integration_tests.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..bc80587
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/integration_tests.rs
 @@ -0,0 +1,848 @@
@@ -9751,7 +9751,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/live_geo_tests.rs b/src-tauri/src/proxy_chain/live_geo_tests.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..203a12f
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/live_geo_tests.rs
 @@ -0,0 +1,370 @@
@@ -10127,7 +10127,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/live_tests.rs b/src-tauri/src/proxy_chain/live_tests.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..f7bb892
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/live_tests.rs
 @@ -0,0 +1,1113 @@
@@ -11246,7 +11246,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/mod.rs b/src-tauri/src/proxy_chain/mod.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..5788c8f
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/mod.rs
 @@ -0,0 +1,626 @@
@@ -11878,7 +11878,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +mod live_geo_tests;
 diff --git a/src-tauri/src/proxy_chain/policy.rs b/src-tauri/src/proxy_chain/policy.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..9505ef6
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/policy.rs
 @@ -0,0 +1,123 @@
@@ -12007,7 +12007,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/readiness.rs b/src-tauri/src/proxy_chain/readiness.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..f952a7f
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/readiness.rs
 @@ -0,0 +1,103 @@
@@ -12116,7 +12116,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/readiness_tests.rs b/src-tauri/src/proxy_chain/readiness_tests.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..f6a70c5
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/readiness_tests.rs
 @@ -0,0 +1,253 @@
@@ -12375,7 +12375,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/route.rs b/src-tauri/src/proxy_chain/route.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..eb99860
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/route.rs
 @@ -0,0 +1,189 @@
@@ -12570,7 +12570,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/routing.rs b/src-tauri/src/proxy_chain/routing.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..4065d90
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/routing.rs
 @@ -0,0 +1,206 @@
@@ -12782,7 +12782,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/same_exit_tests.rs b/src-tauri/src/proxy_chain/same_exit_tests.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..92f6109
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/same_exit_tests.rs
 @@ -0,0 +1,288 @@
@@ -13076,7 +13076,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/tests.rs b/src-tauri/src/proxy_chain/tests.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..db29488
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tests.rs
 @@ -0,0 +1,1170 @@
@@ -14252,7 +14252,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/tls.rs b/src-tauri/src/proxy_chain/tls.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..eee9e3c
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tls.rs
 @@ -0,0 +1,53 @@
@@ -14311,7 +14311,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_chain/tunnel.rs b/src-tauri/src/proxy_chain/tunnel.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..fe495c5
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tunnel.rs
 @@ -0,0 +1,409 @@
@@ -14726,7 +14726,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/proxy_providers.rs b/src-tauri/src/proxy_providers.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..f07cfc9
 --- /dev/null
 +++ b/src-tauri/src/proxy_providers.rs
 @@ -0,0 +1,396 @@
@@ -17520,7 +17520,7 @@ index 82712bd..28905c0 100644
      match own {
 diff --git a/src-tauri/src/startup_page.rs b/src-tauri/src/startup_page.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..304b4bd
 --- /dev/null
 +++ b/src-tauri/src/startup_page.rs
 @@ -0,0 +1,69 @@
@@ -17595,7 +17595,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/startup_page/logic.js b/src-tauri/src/startup_page/logic.js
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..968c612
 --- /dev/null
 +++ b/src-tauri/src/startup_page/logic.js
 @@ -0,0 +1,46 @@
@@ -17647,7 +17647,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src-tauri/src/startup_page/start.js b/src-tauri/src/startup_page/start.js
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..80814fe
 --- /dev/null
 +++ b/src-tauri/src/startup_page/start.js
 @@ -0,0 +1,42 @@
@@ -17695,7 +17695,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +void run();
 diff --git a/src-tauri/src/tnbproxy.rs b/src-tauri/src/tnbproxy.rs
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..ea82dec
 --- /dev/null
 +++ b/src-tauri/src/tnbproxy.rs
 @@ -0,0 +1,615 @@
@@ -18364,7 +18364,7 @@ index a00ed32..3b146f9 100644
  @media (forced-colors: active) { .brand-mark { color: CanvasText; } }
 diff --git a/src/app/useProfileShortcuts.ts b/src/app/useProfileShortcuts.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..282d006
 --- /dev/null
 +++ b/src/app/useProfileShortcuts.ts
 @@ -0,0 +1,48 @@
@@ -18857,7 +18857,7 @@ index cad95a8..e7f45f0 100644
  
 diff --git a/src/entities/profile/lib/folderTree.test.ts b/src/entities/profile/lib/folderTree.test.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..fe3707a
 --- /dev/null
 +++ b/src/entities/profile/lib/folderTree.test.ts
 @@ -0,0 +1,40 @@
@@ -18903,7 +18903,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/src/entities/profile/lib/folderTree.ts b/src/entities/profile/lib/folderTree.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..3fce987
 --- /dev/null
 +++ b/src/entities/profile/lib/folderTree.ts
 @@ -0,0 +1,58 @@
@@ -19652,7 +19652,7 @@ index 0e0702f..948d054 100644
 +export * from "./lib/capabilities";
 diff --git a/src/entities/proxy/lib/capabilities.test.ts b/src/entities/proxy/lib/capabilities.test.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..a544bdb
 --- /dev/null
 +++ b/src/entities/proxy/lib/capabilities.test.ts
 @@ -0,0 +1,23 @@
@@ -19681,7 +19681,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/src/entities/proxy/lib/capabilities.ts b/src/entities/proxy/lib/capabilities.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..ad2ef94
 --- /dev/null
 +++ b/src/entities/proxy/lib/capabilities.ts
 @@ -0,0 +1,37 @@
@@ -19751,7 +19751,7 @@ index dd700fc..a1b7c27 100644
  
 diff --git a/src/entities/proxy/lib/status.test.ts b/src/entities/proxy/lib/status.test.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..a451161
 --- /dev/null
 +++ b/src/entities/proxy/lib/status.test.ts
 @@ -0,0 +1,43 @@
@@ -20608,7 +20608,7 @@ index 4ac3ecc..eb5ba91 100644
          aria-description={why ?? undefined}
 diff --git a/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..a391e3e
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
 @@ -0,0 +1,62 @@
@@ -20828,7 +20828,7 @@ index 00a9dbe..585efa1 100644
              { value: "latency", label: t("proxyDisplay.orderLatency") },
 diff --git a/src/features/manage-proxies/ui/TnbExtractForm.tsx b/src/features/manage-proxies/ui/TnbExtractForm.tsx
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..f6b3130
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/TnbExtractForm.tsx
 @@ -0,0 +1,100 @@
@@ -20934,7 +20934,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src/features/manage-proxies/ui/TnbGeoFields.tsx b/src/features/manage-proxies/ui/TnbGeoFields.tsx
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..fc3fdff
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/TnbGeoFields.tsx
 @@ -0,0 +1,35 @@
@@ -20975,7 +20975,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src/features/manage-proxies/ui/TnbLocationPicker.tsx b/src/features/manage-proxies/ui/TnbLocationPicker.tsx
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..fabe76a
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/TnbLocationPicker.tsx
 @@ -0,0 +1,95 @@
@@ -21076,7 +21076,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src/features/manage-proxies/ui/useTnbLocations.ts b/src/features/manage-proxies/ui/useTnbLocations.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..4d20d08
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/useTnbLocations.ts
 @@ -0,0 +1,23 @@
@@ -21282,7 +21282,7 @@ index ecd3342..547d0c5 100644
      : s.badFields.length > 0 ? t("profileForm.numberInvalid")
 diff --git a/src/features/profile-form/ui/ProfileRouteResult.tsx b/src/features/profile-form/ui/ProfileRouteResult.tsx
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..96c8e5b
 --- /dev/null
 +++ b/src/features/profile-form/ui/ProfileRouteResult.tsx
 @@ -0,0 +1,74 @@
@@ -22131,7 +22131,7 @@ index 2fd3c31..73edf45 100644
  
 diff --git a/src/pages/settings/sections/Proxy.tsx b/src/pages/settings/sections/Proxy.tsx
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..5da096b
 --- /dev/null
 +++ b/src/pages/settings/sections/Proxy.tsx
 @@ -0,0 +1,263 @@
@@ -22619,7 +22619,7 @@ index d6d69a3..5ee6a94 100644
    // A team profile's session as it closed (open.rs); the reason it gives is explained.
 diff --git a/src/shared/hooks/useListReorder.ts b/src/shared/hooks/useListReorder.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..c2bf0d9
 --- /dev/null
 +++ b/src/shared/hooks/useListReorder.ts
 @@ -0,0 +1,90 @@
@@ -24071,7 +24071,7 @@ index 2a5295a..d29519a 100644
    if (lease) return t("errors.openElsewhere", { device: lease[1] });
 diff --git a/src/shared/lib/listOrder.test.ts b/src/shared/lib/listOrder.test.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..399abae
 --- /dev/null
 +++ b/src/shared/lib/listOrder.test.ts
 @@ -0,0 +1,27 @@
@@ -24104,7 +24104,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/src/shared/lib/listOrder.ts b/src/shared/lib/listOrder.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..44f2fe0
 --- /dev/null
 +++ b/src/shared/lib/listOrder.ts
 @@ -0,0 +1,25 @@
@@ -24135,7 +24135,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src/shared/lib/profileRoute.test.ts b/src/shared/lib/profileRoute.test.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..1c6ba6d
 --- /dev/null
 +++ b/src/shared/lib/profileRoute.test.ts
 @@ -0,0 +1,81 @@
@@ -24222,7 +24222,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/src/shared/lib/profileRoute.ts b/src/shared/lib/profileRoute.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..5387e40
 --- /dev/null
 +++ b/src/shared/lib/profileRoute.ts
 @@ -0,0 +1,64 @@
@@ -24292,7 +24292,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src/shared/lib/proxyChainError.test.ts b/src/shared/lib/proxyChainError.test.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..89b33f5
 --- /dev/null
 +++ b/src/shared/lib/proxyChainError.test.ts
 @@ -0,0 +1,59 @@
@@ -24357,7 +24357,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/src/shared/lib/proxyChainError.ts b/src/shared/lib/proxyChainError.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..746b21a
 --- /dev/null
 +++ b/src/shared/lib/proxyChainError.ts
 @@ -0,0 +1,91 @@
@@ -24454,7 +24454,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src/shared/lib/startupUrl.test.ts b/src/shared/lib/startupUrl.test.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..6756450
 --- /dev/null
 +++ b/src/shared/lib/startupUrl.test.ts
 @@ -0,0 +1,12 @@
@@ -24472,7 +24472,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +});
 diff --git a/src/shared/lib/startupUrl.ts b/src/shared/lib/startupUrl.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..203212d
 --- /dev/null
 +++ b/src/shared/lib/startupUrl.ts
 @@ -0,0 +1,11 @@
@@ -24489,7 +24489,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src/shared/model/listOrder.ts b/src/shared/model/listOrder.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..c0d01b1
 --- /dev/null
 +++ b/src/shared/model/listOrder.ts
 @@ -0,0 +1,37 @@
@@ -24554,7 +24554,7 @@ index a67ced5..dcd6821 100644
  function tabFromUrl(): SettingsTab {
 diff --git a/src/shared/model/proxyChain.ts b/src/shared/model/proxyChain.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..734d9ef
 --- /dev/null
 +++ b/src/shared/model/proxyChain.ts
 @@ -0,0 +1,29 @@
@@ -24589,7 +24589,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +  !route || route.mode === "proxy" || (route.mode === "chain" && route.second.mode === "proxy");
 diff --git a/src/shared/model/simpleNavigation.ts b/src/shared/model/simpleNavigation.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..95a23d9
 --- /dev/null
 +++ b/src/shared/model/simpleNavigation.ts
 @@ -0,0 +1,32 @@
@@ -24627,7 +24627,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}));
 diff --git a/src/shared/ui/ChainPolicyField.tsx b/src/shared/ui/ChainPolicyField.tsx
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..07e2b71
 --- /dev/null
 +++ b/src/shared/ui/ChainPolicyField.tsx
 @@ -0,0 +1,17 @@
@@ -24650,7 +24650,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src/shared/ui/ChainRouteSummary.tsx b/src/shared/ui/ChainRouteSummary.tsx
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..b4bef45
 --- /dev/null
 +++ b/src/shared/ui/ChainRouteSummary.tsx
 @@ -0,0 +1,19 @@
@@ -25045,7 +25045,7 @@ index aa738ea..81ec438 100644
        {!empty && (
 diff --git a/src/widgets/ProfileTable/ProxyQuickControl.tsx b/src/widgets/ProfileTable/ProxyQuickControl.tsx
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..c6462e6
 --- /dev/null
 +++ b/src/widgets/ProfileTable/ProxyQuickControl.tsx
 @@ -0,0 +1,115 @@
@@ -25166,7 +25166,7 @@ index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
 +}
 diff --git a/src/widgets/ProfileTable/ThemeQuickControl.tsx b/src/widgets/ProfileTable/ThemeQuickControl.tsx
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..b5a6b18
 --- /dev/null
 +++ b/src/widgets/ProfileTable/ThemeQuickControl.tsx
 @@ -0,0 +1,49 @@
