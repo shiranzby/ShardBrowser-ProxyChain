@@ -1595,7 +1595,17 @@ async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_cha
         else { probe(entry).await }
     };
     let content_entry = prepared.map(|p| &p.effective).unwrap_or(entry);
-    let content_fut = verify_content(content_entry);
+    // `verify_prepared` already consumed and validated a bounded HTTPS body when
+    // Geo was unavailable. Reuse that proof instead of opening a second flow on
+    // the same prepared route; a successful Geo path still gets its own content
+    // read here so the snapshot always carries a real body verification.
+    let content_fut = async {
+        if prepared.is_some_and(|route| route.verified_https) {
+            ContentVerification { status: "passed".into(), http_status: Some(200), bytes: None, error: None }
+        } else {
+            verify_content(content_entry).await
+        }
+    };
     let (tcp_res, udp_res, (geo_res, geo_ms), content) =
         tokio::join!(tcp_fut, udp_fut, geo_fut, content_fut);
 
