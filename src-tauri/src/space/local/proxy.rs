@@ -1600,8 +1600,19 @@ async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_cha
     // the same prepared route; a successful Geo path still gets its own content
     // read here so the snapshot always carries a real body verification.
     let content_fut = async {
-        if prepared.is_some_and(|route| route.verified_https) {
-            ContentVerification { status: "passed".into(), http_status: Some(200), bytes: None, error: None }
+        if let Some(route) = prepared {
+            if route.verified_https {
+                ContentVerification { status: "passed".into(), http_status: Some(200), bytes: None, error: None }
+            } else {
+                // Prepared routes are fixed-target tunnels, not ordinary HTTP
+                // proxy endpoints. Use the same bounded HTTPS verifier as the
+                // chain readiness code instead of sending a second proxy
+                // handshake through the local listener.
+                match crate::proxy_chain::readiness::verify(&route.effective, &route.tunnel).await {
+                    Ok(_) => ContentVerification { status: "passed".into(), http_status: Some(200), bytes: None, error: None },
+                    Err(_) => ContentVerification { status: "failed".into(), http_status: None, bytes: None, error: Some("webpage content could not be verified through the prepared route".into()) },
+                }
+            }
         } else {
             verify_content(content_entry).await
         }
