@@ -32,7 +32,7 @@ test("Proxy chain draft writes a secret once and never returns it", async ({ pag
   await page.getByRole("combobox", { name: "Configuration method" }).click();
   await page.getByRole("option", { name: "Manual HTTP" }).click();
   await page.getByRole("textbox", { name: "Host or IP" }).fill("127.0.0.1");
-  await page.getByRole("textbox", { name: "Port" }).fill("7890");
+  await page.getByRole("textbox", { name: "Port", exact: true }).fill("7890");
   await page.getByRole("textbox", { name: "Password (optional)" }).fill("mock-only-password");
   await expect(bar(page)).toBeVisible();
   await bar(page).getByRole("button", { name: "Save", exact: true }).click();

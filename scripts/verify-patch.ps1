@@ -41,7 +41,7 @@ $uiTests = @(
     'sidebar-simple.spec.ts', 'sidebar.spec.ts', 'personalization.spec.ts',
     'list-order.spec.ts', 'nested-folders.spec.ts', 'folders.spec.ts',
     'profile-defaults.spec.ts', 'tnb-extract.spec.ts', 'tnb-locations.spec.ts', 'settings.spec.ts',
-    'engine-update.spec.ts', 'profile-window-maximized.spec.ts', 'proxyshard-v2.spec.ts', 'team-created.spec.ts'
+    'engine-update.spec.ts', 'profile-window-maximized.spec.ts', 'proxyshard-v2.spec.ts', 'team-created.spec.ts',
     'profile-route.spec.ts', 'profile-route-summary.spec.ts', 'ps-trial.spec.ts',
     'pc17-theme-shortcuts.spec.ts', 'proxy-export-safety.spec.ts', 'provider-defaults.spec.ts'
 )
