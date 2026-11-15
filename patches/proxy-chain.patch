@@ -28,13 +28,13 @@ index 25436c231465d5b5f691cf0add772cc1ee4e91e0..7f041613a4d6b288eb5ed75752b2c1c2
      <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/shardx-logo-dark.png">
 diff --git a/docs/PC17-STABLE.md b/docs/PC17-STABLE.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..42063d08432b20f75fb9ef0104b28ed823a61de7
+index 0000000000000000000000000000000000000000..ffc1d9e19553992e8ed75b30ca2b27e993c56593
 --- /dev/null
 +++ b/docs/PC17-STABLE.md
 @@ -0,0 +1,89 @@
 +# PC17 稳定版实现与验收约定
 +
-+日期：2026-11-15（Asia/Singapore）  
++日期：2026-11-15（Asia/Singapore）
 +状态：实现中；本文说明 PC17 对原稳定版设计的具体收敛，不构成已发布或验收通过声明。
 +
 +## 目的与兼容边界
@@ -7549,10 +7549,10 @@ index 0000000000000000000000000000000000000000..b53e5b910df49df61865567902df08b9
 +}
 diff --git a/src-tauri/src/proxy_chain/detection_tests.rs b/src-tauri/src/proxy_chain/detection_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..de24368346390560999a4e636f461f581c21e96e
+index 0000000000000000000000000000000000000000..89a68081e9a073f391f5e09a087c8b7acd5f3d14
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detection_tests.rs
-@@ -0,0 +1,1250 @@
+@@ -0,0 +1,1249 @@
 +//! Detection uses real loopback proxy protocols. Fixtures answer Geo requests
 +//! themselves; they never resolve or connect to any external destination.
 +
@@ -8802,7 +8802,6 @@ index 0000000000000000000000000000000000000000..de24368346390560999a4e636f461f58
 +    assert_eq!(requests.iter().filter(|head| head.starts_with("CONNECT example.com:443 ")).count(), 2);
 +    assert_eq!(requests.iter().filter(|head| head.starts_with("GET http://ip-api.com/")).count(), 2, "each system test must obtain its own live Geo response");
 +}
-+
 diff --git a/src-tauri/src/proxy_chain/error.rs b/src-tauri/src/proxy_chain/error.rs
 new file mode 100644
 index 0000000000000000000000000000000000000000..1b144f9bc3fc6633ff8913d2ef1546ef08fda06f
@@ -11214,10 +11213,10 @@ index 0000000000000000000000000000000000000000..f7bb892bebd3da48a4af1f8378dcddd6
 +}
 diff --git a/src-tauri/src/proxy_chain/mod.rs b/src-tauri/src/proxy_chain/mod.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..cbc515a02c205f6be3966ce6e74b7a45879687b5
+index 0000000000000000000000000000000000000000..5788c8f1e352cb41fdabbecf9c746b06706abbf1
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/mod.rs
-@@ -0,0 +1,627 @@
+@@ -0,0 +1,626 @@
 +//! Windows system proxy -> original profile proxy. Never fall back to direct.
 +pub mod config;
 +pub mod connector;
@@ -11844,7 +11843,6 @@ index 0000000000000000000000000000000000000000..cbc515a02c205f6be3966ce6e74b7a45
 +mod live_tests;
 +#[cfg(all(test, windows))]
 +mod live_geo_tests;
-+
 diff --git a/src-tauri/src/proxy_chain/policy.rs b/src-tauri/src/proxy_chain/policy.rs
 new file mode 100644
 index 0000000000000000000000000000000000000000..9505ef6358558324aee1c76e8750555966cfd12c
@@ -11976,10 +11974,10 @@ index 0000000000000000000000000000000000000000..9505ef6358558324aee1c76e87505559
 +}
 diff --git a/src-tauri/src/proxy_chain/readiness.rs b/src-tauri/src/proxy_chain/readiness.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..edd2aca17189d80ee9d2be04dff348d974385253
+index 0000000000000000000000000000000000000000..f952a7f7bf87e9e0f8a3ac28ebd97e95d0a647f5
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/readiness.rs
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,103 @@
 +//! A bounded HTTPS response on the prepared proxy is independent of Geo.
 +//! Every socket uses that proxy; target names are never resolved directly.
 +use super::{connector::{self, ProxyHop, Target}, error::ChainError, tls, tunnel::Tunnel};
@@ -12083,7 +12081,6 @@ index 0000000000000000000000000000000000000000..edd2aca17189d80ee9d2be04dff348d9
 +pub(super) fn test_configuration(targets:Vec<String>,config:Arc<rustls::ClientConfig>)->TestConfiguration {
 +    TestConfiguration(TEST_CONFIGURATION.with(|value|value.replace(Some((targets,config)))))
 +}
-+
 diff --git a/src-tauri/src/proxy_chain/readiness_tests.rs b/src-tauri/src/proxy_chain/readiness_tests.rs
 new file mode 100644
 index 0000000000000000000000000000000000000000..f6a70c5abb65fb3aeef57b2d51beb53027e8ed9a
@@ -15832,7 +15829,7 @@ index 0b822fb2e3f1c6aa20d8e6881e8daa295bb210b9..0dec4b34bf41bc979e16b1a4fca8cb46
 +    }
  }
 diff --git a/src-tauri/src/space/local/proxy.rs b/src-tauri/src/space/local/proxy.rs
-index 63d3972b4adf061dbddbd0a79026b32912897e64..06e5acc3b95a80c82ee02a88c680c4f392d87a69 100644
+index 63d3972b4adf061dbddbd0a79026b32912897e64..b72e35dc8e743d2966ef0b25d35c44d279cb6e2f 100644
 --- a/src-tauri/src/space/local/proxy.rs
 +++ b/src-tauri/src/space/local/proxy.rs
 @@ -14,24 +14,44 @@ pub enum ProxyKind {
@@ -17034,7 +17031,7 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..06e5acc3b95a80c82ee02a88c680c4f3
      fn entry(line: &str) -> ProxyEntry {
          parse_one(line, &ProxyKind::Socks5).expect("parses")
      }
-@@ -1542,4 +2391,33 @@ mod tests {
+@@ -1542,4 +2391,31 @@ mod tests {
          let err = probe(&e).await.expect_err("a refused CONNECT is a failure");
          assert!(err.to_string().contains("ruleset"), "says why: {err}");
      }
@@ -17066,8 +17063,6 @@ index 63d3972b4adf061dbddbd0a79026b32912897e64..06e5acc3b95a80c82ee02a88c680c4f3
 +
 +
  }
-+
-+
 diff --git a/src-tauri/src/space/local/trash.rs b/src-tauri/src/space/local/trash.rs
 index f926201a97976a34dfb2bcf43653330890ab42a6..5f66d12d169b0a218ec298ade5c7b86beec069ba 100644
 --- a/src-tauri/src/space/local/trash.rs
@@ -20580,10 +20575,10 @@ index 4ac3ecc21e9fced9ce1d42981298ce45c5732053..eb5ba91a816b394155d7f45ae25ddc7f
          aria-description={why ?? undefined}
 diff --git a/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..2c60ff36ec62ff3c05134049118defabbd637519
+index 0000000000000000000000000000000000000000..a391e3efa855eb4704037e479a261e8d21376d24
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,62 @@
 +import { useEffect, useState } from "react";
 +import { Button, Input } from "@proxyshard/shardx-ui-kit";
 +import { providerDefaultsGet, providerDefaultsSave, type ProviderDefaults, type ProviderUpdate } from "../../../entities/proxy";
@@ -20646,7 +20641,6 @@ index 0000000000000000000000000000000000000000..2c60ff36ec62ff3c05134049118defab
 +    </div>
 +  </fieldset>;
 +}
-+
 diff --git a/src/features/manage-proxies/ui/ProxyBulkImporter.tsx b/src/features/manage-proxies/ui/ProxyBulkImporter.tsx
 index b6faf8e8e6c368a2f1dc18bf77509100514e80f4..c434e1e7407b42bb6378f0896b766cb80e349682 100644
 --- a/src/features/manage-proxies/ui/ProxyBulkImporter.tsx
