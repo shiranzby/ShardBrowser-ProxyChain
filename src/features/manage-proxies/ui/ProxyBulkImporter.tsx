@@ -8,7 +8,13 @@ import { toast } from "../../../shared/model/toast";
 import { useT } from "../../../shared/i18n";
 import type { ProxyEntry, BulkRowState } from "../../../entities/proxy";
 import { proxyBulkParse, proxyBulkSave, proxyFullTest, proxyStatus, sameProxy, tnbProxyExtract, useProxy, type TnbExtractResult } from "../../../entities/proxy";
+import { providerDefaultsGet, providerGenerate } from "../../../entities/proxy";
+import { Input } from "@proxyshard/shardx-ui-kit";
+import { ProviderDefaultsPanel } from "./ProviderDefaultsPanel";
+import { SelectField } from "../../../shared/ui/SelectField";
 import { newTnbDraft, TnbExtractForm, tnbErrorText, tnbRequest } from "./TnbExtractForm";
+
+const ISO_COUNTRY_CODES = `AF AL DZ AS AD AO AI AQ AG AR AM AW AU AT AZ BS BH BD BB BY BE BZ BJ BM BT BO BQ BA BW BV BR IO BN BG BF BI CV KH CM CA KY CF TD CL CN CX CC CO KM CG CD CK CR CI HR CU CW CY CZ DK DJ DM DO EC EG SV GQ ER EE SZ ET FK FO FJ FI FR GF PF TF GA GM GE DE GH GI GR GL GD GP GU GT GG GN GW GY HT HM VA HN HK HU IS IN ID IR IQ IE IM IL IT JM JP JE JO KZ KE KI KP KR KW KG LA LV LB LS LR LY LI LT LU MO MG MW MY MV ML MT MH MQ MR MU YT MX FM MD MC MN ME MS MA MZ MM NA NR NP NL NC NZ NI NE NG NU NF MK MP NO OM PK PW PS PA PG PY PE PH PN PL PT PR QA RE RO RU RW BL SH KN LC MF PM VC WS SM ST SA SN RS SC SL SG SX SK SI SB SO ZA GS SS ES LK SD SR SJ SE CH SY TW TJ TZ TH TL TG TK TO TT TN TR TM TC TV UG UA AE GB US UM UY UZ VU VE VN VG VI WF EH YE ZM ZW`.split(" ");
 
 /// `onClose` gets the id of the proxy saved when it was the only one, for the
 /// page to open in Peek (or not, when the setup checklist opened the importer).
@@ -20,6 +26,16 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
   const [busy, setBusy] = useState(false);
   const [source, setSource] = useState("custom");
   const [tnb, setTnb] = useState(newTnbDraft);
+  const [country, setCountry] = useState("");
+  const [state, setState] = useState("");
+  useEffect(() => { if (!open) return; let live = true; void providerDefaultsGet().then((v) => { if (live) setTnb((d) => ({ ...d, server: v.tnb_server, plan_name: v.tnb_plan, kind: v.tnb_kind })); }).catch(() => {}); return () => { live = false; }; }, [open]);
+  const generate = async () => {
+    if (extraction.current) return;
+    extraction.current = true; setExtracting(true); setExtractError(null);
+    try { const entry = await providerGenerate(country, state); setRows([{ entry, selected: true, status: "idle" }]); }
+    catch (e) { setExtractError(String(e).includes("provider_region_template_required") ? t("provider.templateRequired") : String(e).includes("provider_region_invalid") ? t("provider.regionInvalid") : t("provider.credentialsRequired")); }
+    finally { extraction.current = false; setExtracting(false); }
+  };
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<TnbExtractResult | null>(null);
@@ -157,14 +173,14 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
       title={t("proxyBulkImporter.title")}
       size="lg"
       // Pasted lines or parsed rows: Esc and the backdrop ask first (IFACE-08).
-      dirty={text.trim() !== "" || rows.length > 0 || source === "tnb"}
+      dirty={text.trim() !== "" || rows.length > 0 || source !== "custom"}
       footer={
         <div className="flex items-center justify-end gap-2">
           {/* Cancel cannot stop a save that has started (Esc and the backdrop close without a Peek). */}
           <Button variant="neutral" mode="stroke" size="xsmall" disabled={extracting || (busy && rows.length === 0)} onClick={() => onClose()}>{t("proxyBulkImporter.cancel")}</Button>
           {rows.length === 0 ? (
-            <Button variant="primary" mode="filled" size="xsmall" aria-label={source === "tnb" ? t("tnb.extract") : t("proxyBulkImporter.parse")} disabled={busy || extracting} isLoading={extracting} onClick={source === "tnb" ? extract : parse}>
-              {source === "tnb" ? t("tnb.extract") : t("proxyBulkImporter.parse")}
+            <Button variant="primary" mode="filled" size="xsmall" aria-label={source === "tnb" ? t("tnb.extract") : source === "1024proxy" ? t("provider.generate") : t("proxyBulkImporter.parse")} disabled={busy || extracting} isLoading={extracting} onClick={source === "tnb" ? extract : source === "1024proxy" ? generate : parse}>
+              {source === "tnb" ? t("tnb.extract") : source === "1024proxy" ? t("provider.generate") : t("proxyBulkImporter.parse")}
             </Button>
           ) : (
             <Button variant="primary" mode="filled" size="xsmall" disabled={busy || selCount === 0} onClick={saveSelected}>
@@ -177,8 +193,24 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
       <div className="flex min-h-0 flex-col gap-3">
         {rows.length === 0 ? (
           <>
-            <Select label={t("tnb.source")} size="xsmall" value={source} disabled={extracting} onChange={setSource} options={[{ value: "custom", label: t("tnb.custom") }, { value: "tnb", label: t("tnb.provider") }]} />
-            {source === "tnb" ? <TnbExtractForm value={tnb} onChange={(next) => { setTnb(next); setExtractError(null); }} disabled={extracting} error={extractError} /> : <>
+            <Select label={t("tnb.source")} size="xsmall" value={source} disabled={extracting} onChange={setSource} options={[{ value: "custom", label: t("tnb.custom") }, { value: "tnb", label: t("tnb.provider") }, { value: "1024proxy", label: t("provider.name1024") }]} />
+            {source !== "custom" && <details className="text-secondary"><summary className="cursor-pointer py-1 text-text-sub-600">{t("provider.defaultsTitle")}</summary><div className="py-3"><ProviderDefaultsPanel provider={source === "tnb" ? "tnbproxy" : "1024proxy"} onSaved={(v) => setTnb((d) => ({ ...d, server: v.tnb_server, plan_name: v.tnb_plan, kind: v.tnb_kind }))} /></div></details>}
+            {source === "1024proxy" ? <div className="flex flex-col gap-3">
+              <SelectField
+                label={t("tnbGeo.country")}
+                value={country}
+                isSearchable
+                searchPlaceholder={t("tnbGeo.searchCountry")}
+                onChange={(v) => { setCountry(v); setState(""); }}
+                options={[{ value: "", label: t("tnbGeo.anyCountry") }, ...ISO_COUNTRY_CODES.map((value) => ({
+                  value,
+                  label: `${value}, ${new Intl.DisplayNames(["zh-CN", "en"], { type: "region" }).of(value) ?? value}`,
+                }))]}
+              />
+              <Input inputSize="xsmall" label={t("provider.stateCode")} placeholder={t("provider.statePlaceholder")} value={state} disabled={!country} onChange={(e) => setState(e.target.value)} />
+              <p className="m-0 text-help text-text-sub-600">{t("provider.regionHelp")}</p>
+              {extractError && <p role="alert" className="m-0 text-help text-error-text">{extractError}</p>}
+            </div> : source === "tnb" ? <TnbExtractForm value={tnb} onChange={(next) => { setTnb(next); setExtractError(null); }} disabled={extracting} error={extractError} /> : <>
             <Select
               label={t("proxyBulkImporter.defaultTypeLabel")}
               size="xsmall"

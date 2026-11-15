@@ -13,7 +13,7 @@ import { useT } from "../../../shared/i18n";
 import { useProxy, type ProxyEntry } from "../../../entities/proxy";
 import { ChainPolicyField } from "../../../shared/ui/ChainPolicyField";
 
-const FIELDS = ["name", "kind", "host", "port", "username", "password", "country", "notes", "proxy_chain_policy"] as const;
+const FIELDS = ["name", "kind", "host", "port", "username", "password", "country", "notes", "proxy_chain_policy", "provider_id"] as const;
 
 /// Edit proxy (manual save, owner 2026-10-07): one dialog changes a proxy,
 /// and nothing is written until Save. Opened by the proxy panel's Edit;
@@ -203,6 +203,7 @@ function EditProxyBody({ id, open, onClose }: { id: string; open: boolean; onClo
             />
           </div>
           <Field label={t("proxyPeek.notes")} value={draft.notes} onChange={(notes) => patch({ notes })} />
+          <SelectField label={t("tnb.source")} value={draft.provider_id || "manual"} onChange={(provider_id) => patch({ provider_id })} options={[{ value: "manual", label: t("tnb.custom") }, { value: "1024proxy", label: t("provider.name1024") }, { value: "tnbproxy", label: t("tnb.provider") }, { value: "custom", label: t("provider.other") }, ...(!["manual","1024proxy","tnbproxy","custom", ""].includes(draft.provider_id ?? "") ? [{value:draft.provider_id!,label:draft.provider_id!}] : [])]} />
           <ChainPolicyField value={draft.proxy_chain_policy} onChange={(proxy_chain_policy) => patch({ proxy_chain_policy })} />
         </div>
       </fieldset>

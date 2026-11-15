@@ -1,4 +1,4 @@
-//! Current-user DPAPI for the first hop only. Never return stored secrets to UI.
+//! Current-user DPAPI for local credentials. Callers decide which fields their UI may receive.
 use super::error::ChainError;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 

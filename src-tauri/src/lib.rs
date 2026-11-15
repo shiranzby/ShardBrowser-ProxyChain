@@ -1,6 +1,7 @@
 // ShardBrowser Launcher — Tauri backend.
 
 mod profile_icon;
+mod profile_shortcut;
 mod profile_defaults;
 mod startup_page;
 mod api;
@@ -15,6 +16,7 @@ mod psapi;
 mod runtime;
 mod settings;
 mod tnbproxy;
+mod proxy_providers;
 mod store;
 mod sync_bus;
 mod cdp;
@@ -1623,6 +1625,13 @@ async fn process_kill(profile_id: String) -> Result<bool, String> {
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn proxy_provider_defaults_get() -> Result<proxy_providers::ProviderView, String> { proxy_providers::get().map_err(|_| "provider_defaults_unavailable".into()) }
+#[tauri::command]
+fn proxy_provider_defaults_save(value: proxy_providers::ProviderUpdate) -> Result<proxy_providers::ProviderView, String> { proxy_providers::save(value).map_err(|e| e.to_string()) }
+#[tauri::command]
+fn proxy_provider_generate(request: proxy_providers::GenerateRequest) -> Result<space::proxy::ProxyEntry, String> { proxy_providers::generate(request).map_err(|e| e.to_string()) }
+
 // ---- Proxies ----
 
 #[tauri::command]
@@ -2838,7 +2847,6 @@ async fn ps_set_tag(id: i64, tag: String) -> Result<Value, String> {
     .map_err(|e| e.to_string())
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Bring the main window back from the tray / minimized state and focus it.
 fn show_main_window(app: &tauri::AppHandle) {
     use tauri::Manager;
@@ -2854,11 +2862,13 @@ pub fn reap_if_asked() -> Option<i32> {
     space::reap::from_args(std::env::args_os())
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     with_app_menu(tauri::Builder::default())
         // Must be the first plugin: a second launch focuses the running window.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             show_main_window(app);
+            profile_shortcut::receive(&argv);
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -2900,6 +2910,8 @@ pub fn run() {
             helper_fields,
             helper_fill,
             profile_focus_window,
+            profile_shortcut::profile_create_desktop_shortcut,
+            profile_shortcut::profile_shortcut_take_pending,
             helper_show,
             helper_close,
             helper_dismiss,
@@ -2991,6 +3003,9 @@ pub fn run() {
             read_text_file,
             process_list,
             process_kill,
+            proxy_provider_defaults_get,
+            proxy_provider_defaults_save,
+            proxy_provider_generate,
             proxy_list,
             proxy_save,
             proxy_delete,
@@ -3092,6 +3107,7 @@ pub fn run() {
         ])
         .setup(|app| {
             let _ = APP_HANDLE.set(app.handle().clone());
+            profile_shortcut::receive(&std::env::args().collect::<Vec<_>>());
 
             {
                 use tauri::menu::{Menu, MenuItem};

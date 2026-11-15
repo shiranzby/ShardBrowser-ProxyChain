@@ -152,6 +152,7 @@ function testSnapshot(entry: ProxyEntry, previous?: ProxyTestSnapshot): ProxyTes
     udp_error: dead ? null : isShard ? null : "SOCKS5 UDP ASSOCIATE refused",
     geo_error: dead ? "connect timed out after 8000 ms" : null,
     provider: "ip-api.com",
+    content: { status: "passed", http_status: 200, bytes: 512 },
   };
 }
 
@@ -605,6 +606,12 @@ export const handlers: Record<string, Handler> = {
   },
 
   // ---- profiles ---------------------------------------------------------------
+  profile_shortcut_take_pending: () => {
+    const w = window as { __shardxMockShortcutPending?: string[] };
+    return w.__shardxMockShortcutPending?.splice(0) ?? [];
+  },
+  profile_focus_window: ({ profileId }, { state }) => { if (!state.running[profileId]) throw "Profile is not running"; return null; },
+  profile_create_desktop_shortcut: ({ profileId }, { state }) => { profile(state, profileId); return `C:/Desktop/ShardBrowser-${profileId}.lnk`; },
   profile_list: (_a, { state }) => state.order.map((id) => metaOf(state.profiles[id])),
   // A protected profile's answer is a stub: its name and the open part of `_meta` (#127).
   profile_get: ({ id }, { state }) => { const p = profile(state, id); return p._meta.lock ? stubOf(p) : p; },
@@ -1015,6 +1022,25 @@ export const handlers: Record<string, Handler> = {
   proxy_last_test: ({ id }, { state }) => { const h = state.snapshots[id]; return h?.length ? h[h.length - 1] : null; },
   proxy_history: ({ id }, { state }) => state.snapshots[id] ?? [],
   proxy_bulk_parse: ({ text, kind }) => parseProxyLines(String(text ?? ""), kind),
+  proxy_provider_defaults_get: (_a, { state }) => {
+    const d = state.providerDefaults ?? { relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://hkdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false };
+    const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, ...view } = d;
+    return view;
+  },
+  proxy_provider_defaults_save: ({ value }, { state, save }) => {
+    const old = state.providerDefaults;
+    const d = { ...value, password: value.password ?? old?.password ?? "", tnb_api_password: value.tnb_api_password ?? old?.tnb_api_password ?? "", tnb_proxy_password: value.tnb_proxy_password ?? old?.tnb_proxy_password ?? "" };
+    d.password_saved = !!d.password; d.tnb_api_password_saved = !!d.tnb_api_password; d.tnb_proxy_password_saved = !!d.tnb_proxy_password;
+    state.providerDefaults = d; save();
+    const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, ...view } = d;
+    return view;
+  },
+  proxy_provider_generate: ({ request }, { state }) => {
+    const d = state.providerDefaults;
+    if (!d?.username || !d.password) throw "provider_credentials_required";
+    const location = request.country ? `-region-${request.country.toUpperCase()}${request.state ? `-st-${request.state}` : ""}` : "";
+    return { id: `provider-${newId()}`, name: `1024Proxy ${request.country || "Global"}`, kind: "socks5", host: d.relay.split(":")[0], port: Number(d.relay.split(":")[1]), username: d.username_template.split("{username}").join(d.username).split("{country}").join(request.country).split("{state}").join(request.state).split("{location}").join(location), password: d.password, country: request.country, notes: "", provider_id: "1024proxy", provider_options: { country: request.country, state: request.state } };
+  },
   tnbproxy_locations: ({ request }) => {
     let server: URL;
     try { server = new URL(request?.server ?? ""); } catch { throw "tnb_locations_invalid_request"; }
@@ -1031,7 +1057,7 @@ export const handlers: Record<string, Handler> = {
     const entries: ProxyEntry[] = Array.from({ length: request.count }, (_, i) => ({
       id: `tnb-${newId()}`, name: `TNB ${i + 1}`, kind: request.kind,
       host: `tnb-${i + 1}.proxy.example`, port: 10000 + i, username: "synthetic-session", password: "synthetic-password",
-      country: String(request.geo ?? "").split("_")[0].toUpperCase(), notes: `TNB ${request.plan_name}`,
+      provider_id: "tnbproxy", provider_options: { server: request.server, plan_name: request.plan_name }, country: String(request.geo ?? "").split("_")[0].toUpperCase(), notes: `TNB ${request.plan_name}`,
     }));
     return { entries, route: request.route, server: request.server, requested_count: request.count };
   },

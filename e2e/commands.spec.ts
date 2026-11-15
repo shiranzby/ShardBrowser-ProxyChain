@@ -223,7 +223,7 @@ test("every command has an English and a Chinese label, and no key is taken twic
 test("Settings commands come from one typed record: every tab has one", async ({ page }) => {
   await loadCommands(page);
   const ids = await page.evaluate(() => (window as unknown as CW).__cmds.SETTINGS_TAB_IDS);
-  expect(ids.sort()).toEqual(["about", "api", "appearance", "general", "helper", "other", "profiles", "storage", "sync", "tags", "views"]);
+  expect(ids.sort()).toEqual(["about", "api", "appearance", "general", "helper", "profiles", "proxy", "storage", "sync", "tags", "views"]);
 });
 
 test("a command run on the selection keeps the selection exactly as it was (owner rule, ORDER R26 a)", async ({ page }) => {
@@ -369,7 +369,12 @@ test("the palette's Export and Assign act on their proxy and leave the selection
   await expect.poll(() => page.evaluate(() => (window as unknown as X).__proxy.useProxy.getState().proxies.length)).toBeGreaterThan(0);
   const id = await page.evaluate(() => (window as unknown as X).__proxy.useProxy.getState().proxies[0].id);
   const selection = () => page.evaluate(() => [...(window as unknown as X).__proxy.useProxy.getState().proxySel]);
-  await runIn(page, "proxy.export", [id], "palette");
+  await page.evaluate((id) => {
+    const cmds = (window as unknown as CW).__cmds;
+    void cmds.runCommand(cmds.allCommands().find((c) => c.id === "proxy.export")!, { ids: [id] }, { from: "palette" });
+  }, id);
+  await page.getByRole("dialog", { name: "Export proxies" })
+    .getByRole("button", { name: "Copy addresses only", exact: true }).click();
   await expect(page.locator("[data-toast]").filter({ hasText: /Copied 1/ })).toBeVisible();
   expect(await selection()).toEqual([]);
   await runIn(page, "proxy.assign", [id], "palette");

@@ -271,8 +271,10 @@ export type ProfileStore = {
    *  first (O9a), unless `directChecked` says the question already ran for
    *  this start. `quiet` reports nothing: a bulk caller reports the batch
    *  once (IFACE-06). A protected profile's password is asked first, at
-   *  every start; one the person did not give goes into `skipped`. */
-  startStop: (p: ProfileMeta, opts?: { directChecked?: boolean; quiet?: boolean; skipped?: Set<string> }) => Promise<string | null>;
+   *  every start; one the person did not give goes into `skipped`.
+   *  `startOnly` lets a desktop request bypass a stale running marker without
+   *  ever interpreting that request as Stop. */
+  startStop: (p: ProfileMeta, opts?: { directChecked?: boolean; quiet?: boolean; skipped?: Set<string>; startOnly?: boolean }) => Promise<string | null>;
   /** Cancels a start that is still launching. The backend's `launch_cancel`
    *  (B49) ends the launch; without it (the command is missing, or fails) the
    *  launch is left to return, and whatever it started is stopped then. Either
@@ -863,7 +865,7 @@ export const useProfile = create<ProfileStore>((set, get) => ({
       if (!found) return null;
       p = found;
     }
-    if (get().running[p.id]) {
+    if (get().running[p.id] && !opts?.startOnly) {
       if (get().startBusy.has(p.id)) return null; // the launch is still starting it
       const since = get().running[p.id];
       markStopped(set, get, p.id);

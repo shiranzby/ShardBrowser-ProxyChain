@@ -703,7 +703,7 @@ pub mod proxy {
 
     pub use local::{
         can_send_udp_directly, country_to_locale, country_to_timezone,
-        parse_bulk, parse_single, GeoInfo, ProxyEntry, ProxyKind, TestSnapshot,
+        parse_bulk, parse_single, GeoInfo, ProxyEntry, ProxyKind, ProxyCapabilities, TestSnapshot,
     };
     pub(crate) use local::{probe as probe_on_route, geo_check_via as geo_check_on_route, geo_check_prepared, Socks5ProbeError, HttpProbeError, GeoLookupError, GeoProviderFailure};
 

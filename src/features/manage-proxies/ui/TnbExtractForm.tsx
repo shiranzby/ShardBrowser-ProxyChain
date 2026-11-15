@@ -9,7 +9,7 @@ export type TnbDraft = Omit<TnbExtractRequest, "count" | "ttl" | "geo"> & TnbGeo
 };
 
 export const newTnbDraft = (): TnbDraft => ({
-  server: "http://usdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", kind: "http",
+  server: "http://hkdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", kind: "http",
   count: "1", ttl: "0", pre: false, route: "direct", country: null, region: null, city: null,
   pool: "", isp: "", asn: "", ip: "", sid: "",
 });
@@ -31,6 +31,7 @@ export function tnbRequest(draft: TnbDraft): TnbExtractRequest | null {
   return {
     server: draft.server.trim(), plan_name: draft.plan_name.trim(), kind: draft.kind,
     count, ttl, pre: draft.pre, route: draft.route,
+    use_api_credentials: !!draft.use_api_credentials, use_proxy_credentials: !!draft.use_proxy_credentials,
     // TNB's public export formatter keeps selected levels and normalizes hyphens.
     geo: [country, region, city].filter((code): code is string => !!code).map((code) => code.replace(/-/g, "_")).join("_"),
     ...Object.fromEntries((["pool", "isp", "asn", "ip", "sid"] as const).map((key) => [key, draft[key]?.trim() || undefined])),
@@ -39,6 +40,8 @@ export function tnbRequest(draft: TnbDraft): TnbExtractRequest | null {
 
 export function tnbErrorText(t: (key: string) => string, error: unknown): string {
   switch (String(error instanceof Error ? error.message : error)) {
+    case "tnb_api_credentials_required": case "tnb_proxy_credentials_required": case "tnb_credentials_unavailable": return t("provider.credentialsRequired");
+    case "tnb_auth_required": return t("provider.authFailed");
     case "tnb_invalid_request": return t("tnb.errorInvalid");
     case "tnb_timeout": return t("tnb.errorTimeout");
     case "tnb_route_failed": return t("tnb.errorRoute");
@@ -75,6 +78,11 @@ export function TnbExtractForm({ value, onChange, disabled, error }: {
       </div>
       <p className="m-0 text-secondary text-text-sub-600">{value.route === "first_hop" ? t("tnb.firstHopHint") : t("tnb.directHint")}</p>
       <p className="m-0 text-secondary text-text-sub-600">{t("tnb.whitelist")}</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Checkbox label={t("provider.useApi")} checked={!!value.use_api_credentials} disabled={disabled} onCheckedChange={(v) => set("use_api_credentials", v)} />
+        <Checkbox label={t("provider.useProxy")} checked={!!value.use_proxy_credentials} disabled={disabled} onCheckedChange={(v) => set("use_proxy_credentials", v)} />
+      </div>
+      <p className="m-0 text-help text-text-sub-600">{t("provider.authSeparation")}</p>
       <details>
         <summary className="cursor-pointer text-ui text-text-sub-600">{t("tnb.advanced")}</summary>
         <div className="mt-3 grid grid-cols-2 gap-3">

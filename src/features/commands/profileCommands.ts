@@ -1,12 +1,12 @@
 import { t } from "../../shared/i18n";
 import {
-  AddIcon, ChangePasswordIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, CopyIcon, DeleteIcon, DownloadIcon, EditIcon, FolderIcon, FolderMinusIconApp, IdCardIcon,
+  ComputerIcon, AddIcon, ChangePasswordIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, CopyIcon, DeleteIcon, DownloadIcon, EditIcon, FolderIcon, FolderMinusIconApp, IdCardIcon,
   PasswordIcon, PeekIcon, PinIconApp, PlayIcon, RegenerateIcon, RemovePasswordIcon, RenameIcon, RouteIcon, StopIcon, SyncIcon, SyncedIcon, SyncOffIcon, TagIcon,
   UnpinIconApp, UploadIcon,
 } from "../../shared/icons";
 import { syncConnected, useSync } from "../../entities/sync";
 import { openHereInstead, setProfilesSync } from "../profile-sync";
-import { processList, profileFocusWindow } from "../../entities/profile";
+import { processList, profileFocusWindow, profileCreateDesktopShortcut } from "../../entities/profile";
 import { clip } from "../../shared/lib/clipboard";
 import { toast } from "../../shared/model/toast";
 import { useNav } from "../../shared/model/navigation";
@@ -149,6 +149,20 @@ export const PROFILE_COMMANDS: readonly Command[] = [
       // page with a debugger trap notices an open DevTools.
       await clip.write(cdp.web_socket_debugger_url);
       toast.ok(t("commands.copiedCdp"));
+    },
+  },
+  {
+    ...LIST, id: "profile.createDesktopShortcut", scope: "selection", group: "open", icon: ComputerIcon,
+    label: () => t("commands.createDesktopShortcut"),
+    surfaces: ["rowMenu", "pinnedMenu", "paletteActions", "peekMenu"],
+    when: (s) => s.ids.length === 1 && personalRows(s),
+    run: async (s) => {
+      const one = metas(s)[0];
+      if (!one) return;
+      try {
+        await profileCreateDesktopShortcut(one.id);
+        toast.ok(t("commands.desktopShortcutCreated"));
+      } catch (detail) { toast.fail({ title: t("commands.desktopShortcutFailed"), detail }); }
     },
   },
   {

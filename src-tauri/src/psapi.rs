@@ -178,6 +178,7 @@ pub async fn import_order_proxies(t: &crate::space::Ticket, order_id: i64, kind:
         }
         entries.push(ProxyEntry {
             proxy_chain_policy: Default::default(),
+        provider_id: String::new(), credential_ref: String::new(), provider_options: Default::default(), capabilities: Default::default(),
             id: String::new(),
             name: format!("{label} ({ip})"),
             kind: proxy_kind,
@@ -407,6 +408,7 @@ pub async fn residential_proxy(req: ResiRequest<'_>) -> Result<ProxyEntry> {
 
     Ok(ProxyEntry {
         proxy_chain_policy: Default::default(),
+        provider_id: String::new(), credential_ref: String::new(), provider_options: Default::default(), capabilities: Default::default(),
         id: String::new(),
         name: format!("resi {plan}"),
         kind,

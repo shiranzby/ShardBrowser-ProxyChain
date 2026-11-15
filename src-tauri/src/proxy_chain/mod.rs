@@ -470,6 +470,7 @@ fn system_entry(hop: &ProxyHop) -> ProxyEntry {
     };
     ProxyEntry {
         proxy_chain_policy: Default::default(),
+        provider_id: String::new(), credential_ref: String::new(), provider_options: Default::default(), capabilities: Default::default(),
         id: String::new(),
         name: String::new(),
         kind: match hop.kind {

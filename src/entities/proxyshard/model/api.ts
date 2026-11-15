@@ -8,9 +8,6 @@ export const psOrders = (params: { status: string; offset?: number; limit?: numb
 export const psOrder = (id: number) => invoke<any>("ps_order", { id });
 export const psRenew = (id: number) => invoke("ps_renew", { id });
 export const psProducts = () => invoke<any>("ps_products");
-/** The public trial offer. Takes no API key: the server decides whether there
- *  is one, how large it is and where to claim it. */
-export const psTrialOffer = () => invoke<any>("ps_trial_offer");
 export const psCalculate = (params: { product: string; location: string | null; cycle: string | null; quantity: number; promoCode: string | null; addonsJson: string | null }) => invoke<any>("ps_calculate", params);
 export const psPurchase = (body: any) => invoke<any>("ps_purchase", { body });
 export const psAvailableCount = () => invoke<any>("ps_available_count");

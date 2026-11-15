@@ -14,7 +14,6 @@ import { UnsavedGuard } from "../widgets/UnsavedGuard/UnsavedGuard";
 import { StarModal } from "../widgets/StarModal/StarModal";
 import { HelperWatcher } from "../widgets/HelperWatcher";
 import { WhatsNewGate } from "../widgets/WhatsNewGate";
-import { PsTrialModal } from "../features/proxyshard";
 import { ProfilesPage } from "../pages/profiles";
 import { ShellWindowControls } from "../widgets/WindowControls/WindowControls";
 import { AssignProxiesHost, FolderDialog } from "../features/manage-profiles";
@@ -39,6 +38,7 @@ import { useTeamTrash, useTeamTrashShown, wireTeamTrash } from "../features/team
 import { trashList } from "../entities/trash";
 import { useStoreChanged } from "../shared/hooks/useStoreChanged";
 import { useQuitGuard } from "../shared/hooks/useQuitGuard";
+import { useProfileShortcuts } from "./useProfileShortcuts";
 import { useLauncherWarning } from "../shared/hooks/useLauncherWarning";
 import { trackSection } from "../shared/lib/analytics";
 import { focusIsLost, focusPageStart, landOnPage } from "../shared/lib/focus";
@@ -217,6 +217,7 @@ export function App() {
 
   useEffect(() => { void trackSection(section); }, [section]);
   useLauncherWarning();
+  useProfileShortcuts();
   // The profile list loads while the engine check runs, not after it (PERF-18):
   // it reads files only. The fingerprint library is read again after a first
   // download (the gate raises "fingerprints").
@@ -356,7 +357,6 @@ function Shell() {
       <CommandPalette />
       <ShortcutSheet />
       <WelcomeDialog />
-      <PsTrialModal />
       <TourLayer />
       <TourEndCard />
       <ShellWindowControls />

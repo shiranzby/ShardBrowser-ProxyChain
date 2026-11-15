@@ -1,5 +1,19 @@
 import type { ChainPolicy, ProxyChainRoute } from "../../../shared/model/proxyChain";
 
+export type ProxyProviderId = "manual" | "1024proxy" | "tnbproxy" | "custom" | (string & {});
+
+/** Capabilities are declarations or verified observations, not execution switches. */
+export type ProxyCapabilities = {
+  http?: boolean;
+  https?: boolean;
+  socks5?: boolean;
+  socks5_tls?: boolean;
+  connect?: boolean;
+  udp?: boolean;
+  ipv4?: boolean;
+  ipv6?: boolean;
+};
+
 export type ProxyEntry = {
   proxy_chain_policy?: ChainPolicy;
   id: string;
@@ -9,8 +23,19 @@ export type ProxyEntry = {
   port: number;
   username: string;
   password: string;
+  provider_id?: ProxyProviderId;
+  credential_ref?: string;
+  provider_options?: Record<string, string>;
+  capabilities?: ProxyCapabilities;
   country: string;
   notes: string;
+};
+
+export type ContentVerification = {
+  status: "passed" | "failed" | "unknown";
+  http_status?: number | null;
+  bytes?: number | null;
+  error?: string | null;
 };
 
 export type ProxyTestSnapshot = {
@@ -31,6 +56,8 @@ export type ProxyTestSnapshot = {
   /** Why this snapshot has no location. */
   geo_error: string | null;
   provider: string;
+  /** A bounded real HTTP response body read through the tested route. Missing means old history. */
+  content?: ContentVerification | null;
   /** Missing in observations from before the proxy-chain patch. */
   transport?: "direct" | "proxy_chain";
   /** The selected route for this observation, never inferred from its exit IP. */

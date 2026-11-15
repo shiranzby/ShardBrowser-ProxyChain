@@ -19,6 +19,7 @@ export function Details({ proxy: p }: { proxy: ProxyEntry }) {
   const t = useT();
   const [shown, setShown] = useState(false);
   const none = t("proxyPeek.none");
+  const capability = p.kind === "https" ? t("provider.httpsCapability") : p.kind === "http" ? t("provider.httpCapability") : t("provider.socksCapability");
   const row = (id: string, label: string, value: ReactNode, opts: { empty?: boolean; wrap?: boolean; mono?: boolean; selectable?: boolean } = {}) => (
     <PropertyRow id={id} label={label}>
       {() => (
@@ -32,6 +33,9 @@ export function Details({ proxy: p }: { proxy: ProxyEntry }) {
     <PropertySheet>
       {/* 2 px between 32 px rows, as the profile panel's. */}
       <div className="flex flex-col gap-[2px]">
+        {row("provider", t("tnb.source"), p.provider_id || t("tnb.custom"))}
+        {row("capabilities", t("provider.capabilities"), capability, { wrap: true })}
+        {row("unverified", t("provider.unverified"), t("provider.unverifiedHelp"), { wrap: true })}
         {row("type", t("proxyEditor.typeLabel"), KIND[p.kind])}
         {row("chain-policy", t("proxyChain.policyLabel"), t(
           p.proxy_chain_policy === "enabled" ? "proxyChain.policyEnabled"

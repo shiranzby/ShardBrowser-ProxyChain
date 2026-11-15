@@ -211,6 +211,7 @@ pub fn proxy(row: &ProxyRow, login: Option<&str>) -> ProxyEntry {
     });
     let mut e = read.unwrap_or_else(|| ProxyEntry {
         proxy_chain_policy: Default::default(),
+        provider_id: String::new(), credential_ref: String::new(), provider_options: Default::default(), capabilities: Default::default(),
         id: String::new(),
         name: String::new(),
         kind: ProxyKind::Socks5,

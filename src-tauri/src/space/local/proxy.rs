@@ -14,24 +14,42 @@ pub enum ProxyKind {
     Https,
 }
 
+/// Declared transport capabilities of a proxy endpoint.
+/// These flags are declarations or verified observations; they do not change
+/// the execution protocol. A SOCKS5 endpoint is not HTTPS merely because the
+/// target URL is HTTPS. `socks5_tls` means explicit SOCKS5-over-TLS support.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProxyCapabilities {
+    #[serde(default)] pub http: bool,
+    #[serde(default)] pub https: bool,
+    #[serde(default)] pub socks5: bool,
+    #[serde(default)] pub socks5_tls: bool,
+    #[serde(default)] pub connect: bool,
+    #[serde(default)] pub udp: bool,
+    #[serde(default)] pub ipv4: bool,
+    #[serde(default)] pub ipv6: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyEntry {
-    #[serde(default)]
-    pub id: String,
+    #[serde(default)] pub id: String,
     pub name: String,
     pub kind: ProxyKind,
     pub host: String,
     pub port: u16,
-    #[serde(default)]
-    pub username: String,
-    #[serde(default)]
-    pub password: String,
+    #[serde(default)] pub username: String,
+    #[serde(default)] pub password: String,
+    /// Non-secret provider identifier, such as `manual`, `1024proxy`, or `tnbproxy`.
+    #[serde(default)] pub provider_id: String,
+    /// Reserved metadata. Currently empty; credentials use the existing store format.
+    #[serde(default)] pub credential_ref: String,
+    /// Provider-specific non-secret options (plan, region codes, and so on).
+    #[serde(default)] pub provider_options: HashMap<String, String>,
+    #[serde(default)] pub capabilities: ProxyCapabilities,
     /// "PL", "US", …
-    #[serde(default)]
-    pub country: String,
+    #[serde(default)] pub country: String,
     /// Free-form note.
-    #[serde(default)]
-    pub notes: String,
+    #[serde(default)] pub notes: String,
     #[serde(default, skip_serializing_if = "crate::proxy_chain::policy::ChainPolicy::is_inherit")]
     pub proxy_chain_policy: crate::proxy_chain::policy::ChainPolicy,
 }
@@ -575,6 +593,7 @@ fn parse_one(line: &str, default_kind: &ProxyKind) -> Option<ProxyEntry> {
     let name = name_parts.join(" ");
     Some(ProxyEntry {
         proxy_chain_policy: Default::default(),
+        provider_id: String::new(), credential_ref: String::new(), provider_options: Default::default(), capabilities: Default::default(),
         // ID assigned now so pre-save test snapshots key under the kept uuid.
         id: uuid::Uuid::new_v4().to_string(),
         name: if name.is_empty() { format!("{host}:{port}") } else { name },
@@ -1299,6 +1318,16 @@ impl From<crate::proxy_chain::error::ChainError> for ChainTestError {
 
 /// One observation of a proxy's exit state; same-IP consecutive entries collapse.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentVerification {
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 pub struct TestSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<String>,
@@ -1329,6 +1358,8 @@ pub struct TestSnapshot {
     #[serde(default)]
     pub geo_error: Option<String>,
     pub provider: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<ContentVerification>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -1502,10 +1533,35 @@ pub(in crate::space) async fn measure(entry: &ProxyEntry) -> TestSnapshot {
             TestSnapshot {
             transport: Some("proxy_chain".into()), udp_state: Some("unsupported_by_chain".into()),
             route: partial.as_ref().map(|(_,route,_)|route.as_str().into()), first_hop_error_code: error.first_hop_error_code.map(str::to_owned),
-            first_seen: String::new(), last_seen: unix_now(), ip: String::new(), country_code: String::new(), country: String::new(), region: String::new(), city: String::new(), isp: String::new(), timezone: String::new(), latitude: 0.0, longitude: 0.0, tcp_ms: partial.map(|(_,_,ms)|ms), udp_ms: None, udp_error: None, geo_error: Some(error.message.clone()), chain_error: Some(error.into()), provider: String::new(),
+            first_seen: String::new(), last_seen: unix_now(), ip: String::new(), country_code: String::new(), country: String::new(), region: String::new(), city: String::new(), isp: String::new(), timezone: String::new(), latitude: 0.0, longitude: 0.0, tcp_ms: partial.map(|(_,_,ms)|ms), udp_ms: None, udp_error: None, geo_error: Some(error.message.clone()), chain_error: Some(error.into()), provider: String::new(), content: None,
             }
         },
     }
+}
+
+async fn verify_content(entry: &ProxyEntry) -> ContentVerification {
+    let proxy = match reqwest::Proxy::all(entry.to_proxy_server_arg()) {
+        Ok(proxy) => proxy,
+        Err(_) => return ContentVerification { status: "failed".into(), http_status: None, bytes: None, error: Some("proxy configuration is invalid".into()) },
+    };
+    let client = match reqwest::Client::builder().timeout(std::time::Duration::from_secs(6)).connect_timeout(std::time::Duration::from_secs(3)).proxy(proxy).build() {
+        Ok(client) => client,
+        Err(_) => return ContentVerification { status: "failed".into(), http_status: None, bytes: None, error: Some("content client could not be created".into()) },
+    };
+    let response = match client.get("https://example.com/").send().await {
+        Ok(response) => response,
+        Err(_) => return ContentVerification { status: "failed".into(), http_status: None, bytes: None, error: Some("target connection or response failed".into()) },
+    };
+    let status = response.status().as_u16();
+    if !(200..400).contains(&status) {
+        return ContentVerification { status: "failed".into(), http_status: Some(status), bytes: None, error: Some("target returned a non-success HTTP status".into()) };
+    }
+    let body = match response.bytes().await {
+        Ok(body) if !body.is_empty() && body.len() <= 64 * 1024 => body,
+        Ok(_) => return ContentVerification { status: "failed".into(), http_status: Some(status), bytes: None, error: Some("target response body was empty or too large".into()) },
+        Err(_) => return ContentVerification { status: "failed".into(), http_status: Some(status), bytes: None, error: Some("target response body could not be read".into()) },
+    };
+    ContentVerification { status: "passed".into(), http_status: Some(status), bytes: Some(body.len() as u64), error: None }
 }
 
 async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_chain::PreparedProxy>, verification_error: Option<&crate::proxy_chain::error::ChainError>) -> TestSnapshot {
@@ -1537,8 +1593,10 @@ async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_cha
         else if let Some(error)=verification_error {Err(error.clone().into())}
         else { probe(entry).await }
     };
-    let (tcp_res, udp_res, (geo_res, geo_ms)) =
-        tokio::join!(tcp_fut, udp_fut, geo_fut);
+    let content_entry = prepared.map(|p| &p.effective).unwrap_or(entry);
+    let content_fut = verify_content(content_entry);
+    let (tcp_res, udp_res, (geo_res, geo_ms), content) =
+        tokio::join!(tcp_fut, udp_fut, geo_fut, content_fut);
 
     // An answer from a geo service IS the proxy working: the request went out
     // through it and came back. So its address is kept whenever it arrived,
@@ -1610,6 +1668,7 @@ async fn measure_on_route(entry: &ProxyEntry, prepared: Option<&crate::proxy_cha
             .and_then(|r| r.as_ref().err().map(|e| e.to_string())),
         geo_error,
         provider,
+        content: Some(content),
     }
 }
 
@@ -2310,4 +2369,31 @@ mod tests {
         let err = probe(&e).await.expect_err("a refused CONNECT is a failure");
         assert!(err.to_string().contains("ruleset"), "says why: {err}");
     }
+    #[test]
+    fn legacy_proxy_defaults_leave_new_capabilities_unverified() {
+        let legacy = serde_json::json!({"id":"old", "name":"Legacy", "kind":"socks5", "host":"127.0.0.1", "port":1080});
+        let entry: ProxyEntry = serde_json::from_value(legacy).unwrap();
+        assert!(entry.provider_id.is_empty());
+        assert!(entry.credential_ref.is_empty());
+        assert!(entry.provider_options.is_empty());
+        assert_eq!(entry.capabilities, ProxyCapabilities::default());
+    }
+
+    #[test]
+    fn provider_metadata_round_trips_without_changing_protocol_identity() {
+        let mut first = entry("socks5://example.invalid:1080");
+        let mut second = first.clone();
+        first.provider_id = "1024proxy".into();
+        first.provider_options.insert("country".into(), "EG".into());
+        first.capabilities.socks5 = true;
+        second.provider_id = "manual".into();
+        assert!(first.same_proxy(&second));
+        let decoded: ProxyEntry = serde_json::from_str(&serde_json::to_string(&first).unwrap()).unwrap();
+        assert_eq!(decoded.provider_id, "1024proxy");
+        assert_eq!(decoded.provider_options.get("country").map(String::as_str), Some("EG"));
+        assert!(decoded.capabilities.socks5);
+        assert!(!decoded.capabilities.socks5_tls);
+    }
+
+
 }

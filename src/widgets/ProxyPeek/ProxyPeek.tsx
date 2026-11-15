@@ -10,7 +10,7 @@ import { ChainRouteSummary } from "../../shared/ui/ChainRouteSummary";
 import { fmtTs } from "../../shared/lib/utils";
 import { focusProxyRow } from "../../shared/lib/focusRow";
 import { useT } from "../../shared/i18n";
-import { proxyHistory, proxyReadyWithUnknownGeo, proxyStatus, useProxy, type ProxyEntry, type ProxyTestSnapshot } from "../../entities/proxy";
+import { proxyCheckSummary, proxyHistory, proxyReadyWithUnknownGeo, proxyStatus, useProxy, type ProxyEntry, type ProxyTestSnapshot } from "../../entities/proxy";
 import { useProfileUi } from "../../entities/profile";
 import { onProxy, teamRefusal, useRightsChange } from "../../entities/space";
 import { capOf, command, menuItemsFor } from "../../features/commands";
@@ -176,10 +176,14 @@ function TestSection({ proxy }: { proxy: ProxyEntry }) {
 function Result({ proxy, snap }: { proxy: ProxyEntry; snap: ProxyTestSnapshot }) {
   const t = useT();
   const readyGeoUnknown = proxyReadyWithUnknownGeo(snap);
+  const check = proxyCheckSummary(snap);
+  const checkState = check.state === "passed" ? t("provider.checkPassed") : check.state === "failed" ? t("provider.checkFailed") : t("provider.checkUnverified");
+  const stageNames = { untested: t("provider.stageUntested"), configuration: t("provider.stageConfiguration"), tcp: "TCP", tls: "TLS", authentication: t("provider.stageAuth"), target: t("provider.stageTarget"), content: t("provider.stageContent"), exit: t("provider.stageExit") };
   const place = [snap.region, snap.city].filter(Boolean).join(", ") || snap.country;
   return (
     // The last test's facts, strong 13 px, 14 px apart (owner, "more air").
     <div data-test-result className="flex flex-col gap-[14px] text-ui text-text-strong-950">
+      <p className="m-0 text-help text-text-sub-600" data-proxy-check-stage>{stageNames[check.stage]}, {checkState}</p>
       {snap.ip && <Line icon={<GlobeIcon className="size-3.5" />}><span className="mono">{snap.ip}</span></Line>}
       {place && (
         <Line icon={snap.country_code ? <CountryFlag cc={snap.country_code} height={14} /> : <GlobeIcon className="size-3.5" />}>{place}</Line>

@@ -812,6 +812,7 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
         };
         crate::space::proxy::ProxyEntry {
             proxy_chain_policy: Default::default(),
+        provider_id: String::new(), credential_ref: String::new(), provider_options: Default::default(), capabilities: Default::default(),
             id: String::new(),
             name: String::new(),
             kind,

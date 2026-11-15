@@ -5,4 +5,3 @@ export { PsOrdersCard } from "./ui/PsOrdersCard";
 export { PsBuyDialog } from "./ui/PsBuyDialog";
 export { PsTopupModal } from "./ui/PsTopupModal";
 export { tierLabel } from "./lib/tier";
-export { PsTrialModal } from "./ui/PsTrialModal";

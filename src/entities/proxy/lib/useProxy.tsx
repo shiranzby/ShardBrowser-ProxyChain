@@ -1,3 +1,4 @@
+import { confirmModal } from "../../../shared/lib/confirm";
 import { create } from 'zustand'
 import { listOrder } from '../../../shared/model/listOrder';
 import { orderItems } from '../../../shared/lib/listOrder';
@@ -295,7 +296,7 @@ export type ProxyStore = {
     /** Deletes the given proxies, or the selection the list shows, behind an Undo toast. */
     bulkDelete: (ids?: string[]) => Promise<void>,
     /** Copies the given proxies, or the selection the list shows, in the import format. */
-    bulkExport: (ids?: string[]) => void,
+    bulkExport: (ids?: string[]) => Promise<void>,
     bulkImportClipboard: () => Promise<void>,
 }
 /** About the rows of a tall window: their test results load first. */
@@ -573,12 +574,24 @@ export const useProxy = create<ProxyStore>((set, get) => ({
         deleteProxies(get, set, ids.flatMap((id) => byId.get(id) ?? []));
     },
     // Export in bulk-import format so a round-trip preserves the name.
-    bulkExport: (given) => {
+    bulkExport: async (given) => {
         const wanted = new Set(given ?? selectedVisibleIds());
         const targets = get().proxies.filter((p) => wanted.has(p.id));
         if (targets.length === 0) return;
+        const hasCredentials = targets.some((p) => p.username || p.password);
+        const choice = hasCredentials ? await confirmModal({
+            title: t("useProxy.exportTitle"), message: t("useProxy.exportDescription"),
+            buttons: [
+                { label: t("confirm.cancel"), value: false },
+                { label: t("useProxy.exportCredentials"), value: "credentials" },
+                { label: t("useProxy.exportAddresses"), value: "addresses", primary: true },
+            ],
+        }) : "addresses";
+        if (!choice) return;
+        const includeCredentials = choice === "credentials";
         const lines = targets.map((p) => {
-            const auth = p.username || p.password ? `${p.username}:${p.password}@` : "";
+            const auth = includeCredentials && (p.username || p.password)
+                ? `${encodeURIComponent(p.username)}:${encodeURIComponent(p.password)}@` : "";
             const base = `${p.kind}://${auth}${p.host}:${p.port}`;
             // Only the name: the country is derived by the test on import, so
             // writing it down would just be a second copy to go stale.
@@ -587,7 +600,7 @@ export const useProxy = create<ProxyStore>((set, get) => ({
         });
         const text = lines.join("\n");
         // Lines with credentials leave the clipboard after a minute (SEC-11).
-        const secret = targets.some((p) => p.username || p.password);
+        const secret = includeCredentials && hasCredentials;
         (secret ? copySecret(text) : clip.write(text)).then(
             () => toast.ok(
                 targets.length === 1 ? t("useProxy.copiedOne") : t("useProxy.copiedMany", { n: targets.length }),

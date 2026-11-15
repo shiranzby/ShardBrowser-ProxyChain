@@ -20,6 +20,10 @@ pub enum Route { Direct, FirstHop }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExtractRequest {
+    #[serde(default)]
+    pub use_api_credentials: bool,
+    #[serde(default)]
+    pub use_proxy_credentials: bool,
     pub server: String,
     pub plan_name: String,
     pub kind: String,
@@ -122,6 +126,13 @@ fn parse_response(body: &[u8], request: &ExtractRequest, server: &str) -> Result
             || entry.username.chars().chain(entry.password.chars()).any(char::is_control)
         { return Err("tnb_invalid_response"); }
         entry.name = format!("TNBProxy {}:{}", entry.host, entry.port);
+        entry.provider_id = "tnbproxy".into();
+        entry.provider_options = std::collections::HashMap::from([("server".into(),server.into()),("plan_name".into(),request.plan_name.clone())]);
+        if request.use_proxy_credentials && entry.username.is_empty() && entry.password.is_empty() {
+            let credentials=crate::proxy_providers::tnb_credentials(false).map_err(|_|"tnb_credentials_unavailable")?;
+            if credentials.username.is_empty() || credentials.password.is_empty() {return Err("tnb_proxy_credentials_required");}
+            entry.username=credentials.username; entry.password=credentials.password;
+        }
         // Reuses the durable notes field, which already survives edit/export/
         // team sync. No change/clean URL is guessed and no management call runs.
         entry.notes = format!("TNBProxy\n{}", serde_json::json!({
@@ -137,14 +148,14 @@ fn request_error(error: reqwest::Error) -> &'static str {
     if error.is_timeout() { "tnb_timeout" } else { "tnb_request_failed" }
 }
 
-async fn download(client: reqwest::Client, url: Url, host: Option<String>, json_body: Option<serde_json::Value>) -> Result<Vec<u8>> {
-    let metadata = json_body.is_some();
+async fn download(client: reqwest::Client, url: Url, host: Option<String>, json_body: Option<serde_json::Value>, auth: Option<crate::proxy_providers::Credential>) -> Result<Vec<u8>> {
     let mut request = if let Some(body) = json_body {
         client.post(url).json(&body).header(reqwest::header::ACCEPT, "application/json")
     } else { client.get(url).header(reqwest::header::ACCEPT, "text/plain") };
     if let Some(host) = host { request = request.header(reqwest::header::HOST, host); }
+    if let Some(auth)=auth { request=request.basic_auth(auth.username,Some(auth.password)); }
     let mut response = request.send().await.map_err(request_error)?;
-    if metadata && matches!(response.status().as_u16(), 401 | 403) { return Err("tnb_auth_required"); }
+    if matches!(response.status().as_u16(), 401 | 403) { return Err("tnb_auth_required"); }
     if !response.status().is_success() { return Err("tnb_http_status"); }
     if response.content_length().is_some_and(|n| n > MAX_BODY as u64) { return Err("tnb_response_too_large"); }
     let mut body = Vec::new();
@@ -163,12 +174,13 @@ async fn extract_with_timeout(request: ExtractRequest, timeout: Duration) -> Res
     let _slot = REQUESTS.try_acquire().map_err(|_| "tnb_busy")?;
     let url = request_url(&request)?;
     let server = origin(&url);
-    let body = fetch_on_route(url, request.route, None, timeout).await?;
+    let auth=if request.use_api_credentials { let c=crate::proxy_providers::tnb_credentials(true).map_err(|_|"tnb_credentials_unavailable")?; if c.username.is_empty()||c.password.is_empty(){return Err("tnb_api_credentials_required");} Some(c) } else {None};
+    let body = fetch_on_route(url, request.route, None, timeout, auth).await?;
     let entries = parse_response(&body, &request, &server)?;
     Ok(Extraction { entries, route: request.route, server, requested_count: request.count })
 }
 
-async fn fetch_on_route(mut url: Url, route: Route, json_body: Option<serde_json::Value>, timeout: Duration) -> Result<Vec<u8>> {
+async fn fetch_on_route(mut url: Url, route: Route, json_body: Option<serde_json::Value>, timeout: Duration, auth: Option<crate::proxy_providers::Credential>) -> Result<Vec<u8>> {
     let client = reqwest::Client::builder().no_proxy()
         .redirect(reqwest::redirect::Policy::none()).http1_only()
         .pool_max_idle_per_host(0).connect_timeout(Duration::from_secs(8))
@@ -193,7 +205,7 @@ async fn fetch_on_route(mut url: Url, route: Route, json_body: Option<serde_json
             url.set_port(Some(bound.addr().port())).map_err(|_| "tnb_invalid_request")?;
             tunnel = Some(bound);
         }
-        download(client, url, host, json_body).await
+        download(client, url, host, json_body, auth).await
     }).await.map_err(|_| "tnb_timeout").and_then(|r| r);
     if let Some(tunnel) = tunnel {
         let failed = tunnel.last_error().is_some();
@@ -295,7 +307,7 @@ async fn locations_using(request: LocationsRequest, endpoint: Url, timeout: Dura
         return Ok(Locations { items: Vec::new(), supported: false, source: "" });
     }
     let _slot = LOCATION_REQUESTS.try_acquire().map_err(|_| "tnb_locations_busy")?;
-    let bytes = fetch_on_route(endpoint, request.route, Some(body), timeout).await.map_err(locations_error)?;
+    let bytes = fetch_on_route(endpoint, request.route, Some(body), timeout, None).await.map_err(locations_error)?;
     Ok(Locations { items: parse_locations(&bytes, &request)?, supported: true, source: LOCATIONS_SOURCE })
 }
 
@@ -305,7 +317,7 @@ mod tests {
     use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
 
     fn request(server: String) -> ExtractRequest {
-        ExtractRequest { server, plan_name: "advanced_traffic".into(), kind: "http".into(), count: 10, geo: "us_california_los angeles".into(), ttl: 15, pre: true, route: Route::Direct, pool: None, isp: None, asn: None, ip: None, sid: Some("fixture-session".into()) }
+        ExtractRequest { use_api_credentials:false, use_proxy_credentials:false, server, plan_name: "advanced_traffic".into(), kind: "http".into(), count: 10, geo: "us_california_los angeles".into(), ttl: 15, pre: true, route: Route::Direct, pool: None, isp: None, asn: None, ip: None, sid: Some("fixture-session".into()) }
     }
 
     async fn read_head(stream: &mut TcpStream) -> String {
@@ -495,7 +507,7 @@ mod tests {
         let chunk = "x".repeat(MAX_BODY + 1);
         for (reply, error) in [
             ("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/gen\r\nContent-Length: 0\r\n\r\n".into(), "tnb_http_status"),
-            ("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n".into(), "tnb_http_status"),
+            ("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n".into(), "tnb_auth_required"),
             (format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", MAX_BODY + 1), "tnb_response_too_large"),
             (format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{chunk}\r\n0\r\n\r\n", chunk.len()), "tnb_response_too_large"),
             (ok("whitelist denied: secret credential"), "tnb_invalid_response"),
@@ -571,4 +583,33 @@ mod tests {
         assert_eq!(extract(r).await.err(), Some("tnb_route_failed"));
         task.await.unwrap();
     }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn tnb_extraction_and_proxy_authentication_are_independent() {
+        let _root=crate::store::test_root("tnb-provider-auth");
+        let mut saved=serde_json::to_value(crate::proxy_providers::get().unwrap()).unwrap();
+        saved["tnb_api_username"]="api-user".into(); saved["tnb_api_password"]="api-secret".into();
+        saved["tnb_proxy_username"]="exit-user".into(); saved["tnb_proxy_password"]="exit-secret".into();
+        crate::proxy_providers::save(serde_json::from_value(saved).unwrap()).unwrap();
+        let (server,task)=fixture(ok("198.51.100.7:1234:response-user:response-secret
+203.0.113.9:5678
+")).await;
+        let mut r=request(server); r.use_api_credentials=true; r.use_proxy_credentials=true;
+        let result=extract(r).await.unwrap();
+        assert_eq!(result.entries[0].username,"response-user");
+        assert_eq!(result.entries[0].password,"response-secret");
+        assert_eq!(result.entries[1].username,"exit-user");
+        assert_eq!(result.entries[1].password,"exit-secret");
+        let head=task.await.unwrap().to_ascii_lowercase();
+        use base64::Engine;
+        assert!(head.contains(&format!("authorization: basic {}",base64::engine::general_purpose::STANDARD.encode("api-user:api-secret")).to_ascii_lowercase()));
+        assert!(!head.contains("exit-user"));
+        let (server,task)=fixture(ok("198.51.100.7:1234
+")).await;
+        let result=extract(request(server)).await.unwrap();
+        assert!(result.entries[0].username.is_empty()); assert!(result.entries[0].password.is_empty());
+        assert!(!task.await.unwrap().to_ascii_lowercase().contains("authorization:"));
+    }
+
 }

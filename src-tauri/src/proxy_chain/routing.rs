@@ -52,7 +52,7 @@ pub fn is_direct(route: &ProfileProxyRoute) -> bool {
 
 async fn system() -> anyhow::Result<PreparedProxy> {
     let tunnel=Tunnel::bind_system().await?;
-    let effective=ProxyEntry {proxy_chain_policy:Default::default(),id:String::new(),name:String::new(),kind:ProxyKind::Socks5,host:"127.0.0.1".into(),port:tunnel.addr().port(),username:String::new(),password:String::new(),country:String::new(),notes:String::new()};
+    let effective=ProxyEntry {proxy_chain_policy:Default::default(),provider_id:String::new(),credential_ref:String::new(),provider_options:Default::default(),capabilities:Default::default(),id:String::new(),name:String::new(),kind:ProxyKind::Socks5,host:"127.0.0.1".into(),port:tunnel.addr().port(),username:String::new(),password:String::new(),country:String::new(),notes:String::new()};
     let mut prepared=PreparedProxy{effective,tunnel,route:Route::ExplicitSystem,first_hop_error:None,verified_geo:None,verified_https:false,geo_failure:None,verified_tcp_ms:None};
     if let Err(error)=verify_prepared(&mut prepared).await {
         let error=if prepared.verified_tcp_ms.is_some(){error}else{prepared.tunnel.last_error().unwrap_or(error)};

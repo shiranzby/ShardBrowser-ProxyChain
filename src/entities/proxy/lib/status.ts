@@ -19,9 +19,12 @@ export function proxyStatus(snap: ProxyTestSnapshot | undefined): "ok" | "failed
   if (!snap) return "untested";
   // Only an explicit current readiness proof can keep unknown Geo usable.
   // Older partial results must not be inferred ready from their TCP time.
-  if (proxyReadyWithUnknownGeo(snap)) return "ok";
+  if (proxyReadyWithUnknownGeo(snap) && snap.content?.status === "passed") return "ok";
+  // A transport or Geo response alone is insufficient. Green means the same
+  // route also returned a readable target body; old history stays unverified.
+  if (snap.content?.status !== "passed") return "failed";
   if (snap.transport === "proxy_chain" && (snap.chain_error || snap.geo_error || snap.tcp_ms == null || !snap.ip)) return "failed";
-  return snap.tcp_ms != null || snap.ip !== "" ? "ok" : "failed";
+  return "ok";
 }
 
 /// Owner feedback 5i: the one mapping from a proxy's Test result to its

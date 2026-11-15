@@ -1,3 +1,4 @@
+import { ProviderDefaultsPanel } from "../../../features/manage-proxies/ui/ProviderDefaultsPanel";
 import { useEffect, useRef, useState } from "react";
 import { Button, Input, Switch } from "@proxyshard/shardx-ui-kit";
 import {
@@ -77,6 +78,7 @@ export function ProxySection({ s, setS }: SettingsProps) {
 
   return (
     <div className="flex flex-col gap-[32px]">
+      <SettingsGroup title={t("provider.defaultsTitle")}><ProviderDefaultsPanel /></SettingsGroup>
       <SettingsGroup title={t("proxyChain.connectionTitle")}>
         <SettingRow
           id="proxy-chain-enabled"
