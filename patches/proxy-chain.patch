@@ -4656,7 +4656,7 @@ index 10be256..c0af4c7 100644
      let page = s.page().ok_or_else(|| anyhow!("no page attached"))?;
      s.call(method, params, Some(&page)).await
 diff --git a/src-tauri/src/launch.rs b/src-tauri/src/launch.rs
-index ea97c92..dbea059 100644
+index ea97c92..15832c6 100644
 --- a/src-tauri/src/launch.rs
 +++ b/src-tauri/src/launch.rs
 @@ -278,6 +278,7 @@ pub struct LaunchInput {
@@ -5115,11 +5115,6 @@ index ea97c92..dbea059 100644
      /// #126: off in Settings, the engine is told to show no name, and the pill colour goes too.
      #[test]
      fn the_profile_name_can_be_hidden() {
-@@ -2080,3 +2259,4 @@ mod tests {
-         assert_eq!(back.config.get("ui_language"), Some(&json!("profile")));
-     }
- }
-+
 diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
 index bd61530..eeece2b 100644
 --- a/src-tauri/src/lib.rs
@@ -5801,10 +5796,10 @@ index 0000000..bc59126
 +}
 diff --git a/src-tauri/src/profile_shortcut.rs b/src-tauri/src/profile_shortcut.rs
 new file mode 100644
-index 0000000..84aadc3
+index 0000000..d20b0f0
 --- /dev/null
 +++ b/src-tauri/src/profile_shortcut.rs
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,129 @@
 +//! Desktop links carry only a profile ID. The UI starts through its normal guarded path.
 +use anyhow::{bail, Context, Result};
 +use std::sync::Mutex;
@@ -5934,10 +5929,6 @@ index 0000000..84aadc3
 +    }
 +
 +}
-+
-+
-+
-+
 diff --git a/src-tauri/src/proxy_chain/auto_windows.rs b/src-tauri/src/proxy_chain/auto_windows.rs
 new file mode 100644
 index 0000000..4b186bb
