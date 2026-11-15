@@ -19,7 +19,7 @@ fn unavailable()->ChainError {
 struct ConnectionTask(tokio::task::JoinHandle<()>);
 impl Drop for ConnectionTask {fn drop(&mut self){self.0.abort();}}
 
-pub(super) async fn verify(entry:&ProxyEntry,tunnel:&Tunnel)->Result<u128,ChainError> {
+pub(crate) async fn verify(entry:&ProxyEntry,tunnel:&Tunnel)->Result<u128,ChainError> {
     let start=Instant::now();
     let (targets,config)=configuration()?;
     let hop=ProxyHop{kind:match entry.kind {ProxyKind::Http=>connector::ProxyKind::Http,ProxyKind::Https=>connector::ProxyKind::Https,ProxyKind::Socks5=>connector::ProxyKind::Socks5},
@@ -97,3 +97,4 @@ impl Drop for TestConfiguration {fn drop(&mut self){TEST_CONFIGURATION.with(|val
 pub(super) fn test_configuration(targets:Vec<String>,config:Arc<rustls::ClientConfig>)->TestConfiguration {
     TestConfiguration(TEST_CONFIGURATION.with(|value|value.replace(Some((targets,config)))))
 }
+
