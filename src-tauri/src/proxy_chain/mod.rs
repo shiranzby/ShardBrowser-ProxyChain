@@ -180,7 +180,18 @@ async fn verify_prepared_inner(prepared: &mut PreparedProxy) -> Result<(), Chain
             // its original credentials. It is neither cached nor a new route.
             prepared.verified_tcp_ms=prepared.verified_tcp_ms.or(Some(geo_start.elapsed().as_millis()));
             prepared.verified_geo=Some(geo);
-            Ok(())
+            // A Geo response proves the route reached an exit service, but it
+            // does not prove that browser HTTPS traffic can return a body.
+            // Reuse the same prepared tunnel for a bounded webpage response;
+            // the snapshot can then rely on `verified_https` without opening a
+            // second, incompatible proxy client against the local listener.
+            match readiness::verify(&prepared.effective, &prepared.tunnel).await {
+                Ok(_) => {
+                    prepared.verified_https=true;
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            }
         },
         Err(cause)=>{
             if let Some(error)=cause.downcast_ref::<ChainError>().filter(|error|matches!(error.code,"proxy_chain_profile_auth_failed"|"system_proxy_auth_failed")) {
