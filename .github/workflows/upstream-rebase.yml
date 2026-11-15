@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   verify:
+    timeout-minutes: 180
     if: github.repository == 'shiranzby/ShardBrowser-ProxyChain'
     runs-on: windows-latest
     permissions:
@@ -95,3 +96,4 @@ jobs:
             const body = `Patch application, tests, Portable build, or acceptance failed. Automatic conflict resolution and publication were stopped. Inspect the verification artifact and workflow logs.\n\nRun: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const {data: issues} = await github.rest.issues.listForRepo({...context.repo,state:'open',per_page:100});
             if (!issues.some(x => !x.pull_request && x.title === title)) await github.rest.issues.create({...context.repo,title,body});
+
