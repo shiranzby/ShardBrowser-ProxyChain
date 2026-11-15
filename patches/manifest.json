@@ -6,7 +6,7 @@
   "base_commit": "99e780e2e685e5b3b5357c5baee8796e10b3ce1e",
   "patch_file": "proxy-chain.patch",
   "patch_sha256": "142036dd712f997534383b5ec0df9c6057bcd99014d53f5a07d77a6d37931c1b",
-  "patch_commit": "b1003dd",
+  "patch_commit": "b1003dda533fb2c947087851584292c611c58aa7",
   "ready": true,
   "required_rust_filter": "proxy_chain",
   "required_ui_test": "e2e/proxy-chain-settings.spec.ts"
