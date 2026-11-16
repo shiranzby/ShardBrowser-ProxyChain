@@ -172,6 +172,8 @@ const RULES: &[(&str, Need)] = &[
     ("profile_focus_window", Nothing),
     ("profile_shortcut::profile_create_desktop_shortcut", Machine),
     ("profile_shortcut::profile_shortcut_take_pending", Machine),
+    ("profile_shortcut::profile_shortcut_launch_is_silent", Machine),
+    ("profile_shortcut::profile_shortcut_show_launcher", Machine),
     // Starting and running.
     ("launch", START),
     ("sync_launch", START),
