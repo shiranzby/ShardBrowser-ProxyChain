@@ -19716,10 +19716,10 @@ index 0000000..80814fe
 +void run();
 diff --git a/src-tauri/src/tnbproxy.rs b/src-tauri/src/tnbproxy.rs
 new file mode 100644
-index 0000000..393c13f
+index 0000000..def5a61
 --- /dev/null
 +++ b/src-tauri/src/tnbproxy.rs
-@@ -0,0 +1,654 @@
+@@ -0,0 +1,656 @@
 +//! TNB's IP-allowlisted extraction API. Only explicit user actions call /gen;
 +//! returned entries remain previews until the existing bulk-save command runs.
 +use crate::proxy_chain::{connector::Target, tunnel::Tunnel};
@@ -20100,7 +20100,9 @@ index 0000000..393c13f
 +        (server, task)
 +    }
 +
-+    fn ok_status(status: u16, body: &str) -> String { format!("HTTP/1.1 {status} Error\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()) }`r`n`r`n    fn ok(body: &str) -> String { ok_status(200, body) }
++    fn ok_status(status: u16, body: &str) -> String { format!("HTTP/1.1 {status} Error\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()) }
++
++    fn ok(body: &str) -> String { ok_status(200, body) }
 +
 +    fn locations_request(level: LocationLevel, country: Option<&str>, state: Option<&str>) -> LocationsRequest {
 +        LocationsRequest { server: "http://usdata.adv.tnbproxy.com:9090".into(), route: Route::Direct, level, country: country.map(str::to_owned), state: state.map(str::to_owned) }
