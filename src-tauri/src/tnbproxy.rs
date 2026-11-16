@@ -378,7 +378,7 @@ mod tests {
         (server, task)
     }
 
-    fn ok(body: &str) -> String { format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()) }
+    fn ok_status(status: u16, body: &str) -> String { format!("HTTP/1.1 {status} Error\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()) }`r`n`r`n    fn ok(body: &str) -> String { ok_status(200, body) }
 
     fn locations_request(level: LocationLevel, country: Option<&str>, state: Option<&str>) -> LocationsRequest {
         LocationsRequest { server: "http://usdata.adv.tnbproxy.com:9090".into(), route: Route::Direct, level, country: country.map(str::to_owned), state: state.map(str::to_owned) }
