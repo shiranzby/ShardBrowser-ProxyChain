@@ -28,8 +28,10 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
   const [tnb, setTnb] = useState(newTnbDraft);
   const [country, setCountry] = useState("");
   const [state, setState] = useState("");
+  const authSwitchTouched = useRef({ api: false, proxy: false });
   useEffect(() => {
     if (!open) return;
+    authSwitchTouched.current = { api: false, proxy: false };
     let live = true;
     void providerDefaultsGet().then((v) => {
       if (!live) return;
@@ -211,7 +213,7 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
         {rows.length === 0 ? (
           <>
             <Select label={t("tnb.source")} size="xsmall" value={source} disabled={extracting} onChange={setSource} options={[{ value: "custom", label: t("tnb.custom") }, { value: "tnb", label: t("tnb.provider") }, { value: "1024proxy", label: t("provider.name1024") }]} />
-            {source !== "custom" && <details className="text-secondary"><summary className="cursor-pointer py-1 text-text-sub-600">{t("provider.defaultsTitle")}</summary><div className="py-3"><ProviderDefaultsPanel provider={source === "tnb" ? "tnbproxy" : "1024proxy"} onSaved={(v) => setTnb((d) => ({ ...d, server: v.tnb_server, plan_name: v.tnb_plan, kind: v.tnb_kind, use_api_credentials: Boolean(v.tnb_api_username.trim() || v.tnb_api_password_saved), use_proxy_credentials: Boolean(v.tnb_proxy_username.trim() || v.tnb_proxy_password_saved) }))} /></div></details>}
+            {source !== "custom" && <details className="text-secondary"><summary className="cursor-pointer py-1 text-text-sub-600">{t("provider.defaultsTitle")}</summary><div className="py-3"><ProviderDefaultsPanel provider={source === "tnb" ? "tnbproxy" : "1024proxy"} onSaved={(v) => setTnb((d) => ({ ...d, server: v.tnb_server, plan_name: v.tnb_plan, kind: v.tnb_kind, use_api_credentials: authSwitchTouched.current.api ? d.use_api_credentials : Boolean(v.tnb_api_username.trim() || v.tnb_api_password_saved), use_proxy_credentials: authSwitchTouched.current.proxy ? d.use_proxy_credentials : Boolean(v.tnb_proxy_username.trim() || v.tnb_proxy_password_saved) }))} /></div></details>}
             {source === "1024proxy" ? <div className="flex flex-col gap-3">
               <SelectField
                 label={t("tnbGeo.country")}
@@ -227,7 +229,7 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
               <Input inputSize="xsmall" label={t("provider.stateCode")} placeholder={t("provider.statePlaceholder")} value={state} disabled={!country} onChange={(e) => setState(e.target.value)} />
               <p className="m-0 text-help text-text-sub-600">{t("provider.regionHelp")}</p>
               {extractError && <p role="alert" className="m-0 text-help text-error-text">{extractError}</p>}
-            </div> : source === "tnb" ? <TnbExtractForm value={tnb} onChange={(next) => { setTnb(next); setExtractError(null); }} disabled={extracting} error={extractError} /> : <>
+            </div> : source === "tnb" ? <TnbExtractForm value={tnb} onChange={(next) => { if (next.use_api_credentials !== tnb.use_api_credentials) authSwitchTouched.current.api = true; if (next.use_proxy_credentials !== tnb.use_proxy_credentials) authSwitchTouched.current.proxy = true; setTnb(next); setExtractError(null); }} disabled={extracting} error={extractError} /> : <>
             <Select
               label={t("proxyBulkImporter.defaultTypeLabel")}
               size="xsmall"
