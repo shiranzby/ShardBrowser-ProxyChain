@@ -976,15 +976,15 @@ index 2292baa..f48b432 100644
  // One line goes through the preview too, so the proxy can be tested before
 diff --git a/e2e/pc17-theme-shortcuts.spec.ts b/e2e/pc17-theme-shortcuts.spec.ts
 new file mode 100644
-index 0000000..ddea6f5
+index 0000000..c05e4b8
 --- /dev/null
 +++ b/e2e/pc17-theme-shortcuts.spec.ts
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,127 @@
 +import { expect, test, type Page } from "@playwright/test";
 +import { openApp, reloadApp } from "./support/app";
 +
 +type MockWindow = Window & {
-+  __shardxMockShortcutPending?: string[];
++  __shardxMockShortcutPending?: Array<string | { id: string; silent_launcher: boolean }>;
 +  __shardxMock: {
 +    calls: Record<string, number>;
 +    log: { cmd: string; args: Record<string, unknown> }[];
@@ -1028,7 +1028,7 @@ index 0000000..ddea6f5
 +  await page.getByRole("menuitem", { name: "Create desktop shortcut", exact: true }).click();
 +  await expect.poll(() => calls(page, "profile_create_desktop_shortcut")).toBe(1);
 +  const args = await page.evaluate(() => (window as MockWindow).__shardxMock.log.find((e) => e.cmd === "profile_create_desktop_shortcut")?.args);
-+  expect(args).toEqual({ profileId: id });
++  expect(args).toEqual({ profileId: id, silent: false });
 +  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Desktop shortcut created", { exact: true })).toBeVisible();
 +});
 +
@@ -1085,6 +1085,27 @@ index 0000000..ddea6f5
 +    return log.slice(0, launched).some((entry) => entry.cmd === "profile_list");
 +  });
 +  expect(listedBeforeStart).toBe(true);
++});
++
++
++test("silent shortcut is selectable and preserves normal guarded launch", async ({ page }) => {
++  await openApp(page);
++  const row = page.locator("[role='row'][data-profile-id]", { hasText: "Sandbox" });
++  const id = (await row.getAttribute("data-profile-id"))!;
++  await row.click({ button: "right" });
++  await page.getByRole("menuitem", { name: "Create silent desktop shortcut", exact: true }).click();
++  await expect.poll(() => calls(page, "profile_create_desktop_shortcut")).toBe(1);
++  const args = await page.evaluate(() => (window as MockWindow).__shardxMock.log.find((e) => e.cmd === "profile_create_desktop_shortcut")?.args);
++  expect(args).toEqual({ profileId: id, silent: true });
++  await page.evaluate((id) => {
++    const w = window as MockWindow;
++    w.__shardxMockShortcutPending = [{ id, silent_launcher: true }];
++    w.__shardxMock.emit("profile-shortcut-requested");
++  }, id);
++  expect(await calls(page, "profile_shortcut_show_launcher")).toBe(0);
++  await expect.poll(() => calls(page, "launch")).toBe(1);
++  expect(await calls(page, "process_kill")).toBe(0);
++  expect(await calls(page, "profile_shortcut_show_launcher")).toBe(0);
 +});
 diff --git a/e2e/personalization.spec.ts b/e2e/personalization.spec.ts
 new file mode 100644
@@ -1351,6 +1372,50 @@ index 0000000..fb5117e
 +  expect(await writes()).toMatchObject({ proxy: before.proxy + 1, count: before.count + 1 });
 +  const made = Object.values(await profiles(page)).find((p) => p.name === "Corrected startup")!;
 +  expect(made.startup_url).toBe("https://example.com/start");
++});
+diff --git a/e2e/profile-inline-extensions.spec.ts b/e2e/profile-inline-extensions.spec.ts
+new file mode 100644
+index 0000000..b67c237
+--- /dev/null
++++ b/e2e/profile-inline-extensions.spec.ts
+@@ -0,0 +1,38 @@
++import { expect, test, type Page } from "@playwright/test";
++import { openApp } from "./support/app";
++
++async function openExtensions(page: Page) {
++  await openApp(page);
++  await page.getByRole("button", { name: "New profile", exact: true }).first().click();
++  const form = page.getByRole("dialog", { name: "New profile", exact: true });
++  await form.getByRole("tab", { name: "Extensions", exact: true }).click();
++  await form.getByRole("button", { name: "Add extension", exact: true }).click();
++  await page.getByRole("menuitem", { name: "From a link", exact: true }).click();
++  return form;
++}
++
++test("Profile extension import stays in the draft and reloads the extension picker", async ({ page }) => {
++  const form = await openExtensions(page);
++  await form.getByRole("textbox", { name: "Web Store page, extension id, or a .crx / .zip link" }).fill("abcdefghijklmnopabcdefghijklmnop");
++  await form.getByRole("button", { name: "Download", exact: true }).click();
++  await expect(form.locator("[data-extension-import]")).toHaveCount(0);
++  await expect(form.getByRole("option", { name: /Web Store abcd/ })).toBeVisible();
++  await form.getByRole("option", { name: /Web Store abcd/ }).click();
++  await expect(form.getByRole("option", { name: /Web Store abcd/ })).toHaveAttribute("aria-selected", "true");
++  await expect(form).toBeVisible();
++  await expect(page.locator("main [data-page-title]")).toHaveText("All profiles");
++});
++
++test("Profile extension download failure preserves the entered link for retry", async ({ page }) => {
++  const form = await openExtensions(page);
++  const link = form.getByRole("textbox", { name: "Web Store page, extension id, or a .crx / .zip link" });
++  await link.fill("abcdefghijklmnopabcdefghijklmnop");
++  await page.evaluate(() => { (window as unknown as { __shardxMockFail: Record<string, number> }).__shardxMockFail = { extension_import_url: 1 }; });
++  await form.getByRole("button", { name: "Download", exact: true }).click();
++  await expect(page.locator("[data-toast]").getByText("Couldn’t download the extension. Check the link and your connection, then try again.", { exact: true })).toBeVisible();
++  await expect(link).toHaveValue("abcdefghijklmnopabcdefghijklmnop");
++  await expect(form).toBeVisible();
++  await form.getByRole("button", { name: "Download", exact: true }).click();
++  await expect(form.locator("[data-extension-import]")).toHaveCount(0);
++  await expect(form.getByRole("option", { name: /Web Store abcd/ })).toBeVisible();
 +});
 diff --git a/e2e/profile-route-summary.spec.ts b/e2e/profile-route-summary.spec.ts
 new file mode 100644
@@ -2221,10 +2286,10 @@ index 0000000..cfd7dba
 +}
 diff --git a/e2e/proxy-chain-settings.spec.ts b/e2e/proxy-chain-settings.spec.ts
 new file mode 100644
-index 0000000..b523553
+index 0000000..4fc0c83
 --- /dev/null
 +++ b/e2e/proxy-chain-settings.spec.ts
-@@ -0,0 +1,382 @@
+@@ -0,0 +1,399 @@
 +import { expect, test, type Page } from "@playwright/test";
 +import { appModule, openApp, reloadApp, waitForIdle } from "./support/app";
 +
@@ -2538,7 +2603,8 @@ index 0000000..b523553
 +    st.setState({ snapshots: { ...st.getState().snapshots, "px-jp-1": { ...previous, transport: "proxy_chain", udp_state: "unsupported_by_chain", udp_ms: null } } });
 +  });
 +  await page.locator("[role='row'][data-proxy-id='px-jp-1'] [data-cell='name']").click();
-+  await expect(page.locator("[data-chain-udp-unsupported]")).toContainText("UDP unavailable in proxy chain");
++  await expect(page.locator("aside[data-peek='proxy'] [data-chain-udp-unsupported]")).toContainText("UDP unavailable in proxy chain");
++  await expect(page.locator("[role='row'][data-proxy-id='px-jp-1'] [data-cell='test'] [data-chain-udp-unsupported]")).toContainText("UDP unavailable in proxy chain");
 +  await expect(page.locator("aside[data-peek='proxy']")).toContainText("Test route: system proxy chain");
 +});
 +
@@ -2607,6 +2673,22 @@ index 0000000..b523553
 +    await page.screenshot({ path: info.outputPath(`proxy-chain-${lang}-1024x680-result.png`) });
 +  });
 +}
++
++
++test("global first layer selects a library proxy without copying its password", async ({ page }) => {
++  await openProxy(page);
++  await page.getByRole("combobox", { name: "Configuration method", exact: true }).click();
++  await page.getByRole("option", { name: "Select a saved proxy", exact: true }).click();
++  const chosen = page.getByRole("combobox", { name: "First-layer proxy", exact: true });
++  await expect(chosen).toBeVisible();
++  await chosen.click();
++  await page.getByRole("option").nth(1).click();
++  await save(page);
++  await expect.poll(async () => (await mock(page)).state.settings.proxy_chain.mode).toBe("selected");
++  const config = (await mock(page)).state.settings.proxy_chain;
++  expect(config.selected_proxy_id).toBeTruthy();
++  expect(config.password).toBeUndefined();
++});
 diff --git a/e2e/proxy-export-safety.spec.ts b/e2e/proxy-export-safety.spec.ts
 new file mode 100644
 index 0000000..5a71eba
@@ -3424,6 +3506,21 @@ index 0000000..c5f1dee
 +  ]);
 +  expect(await requests(page, "tnbproxy_extract")).toHaveLength(0);
 +});
+diff --git a/index.html b/index.html
+index 8c88966..f1cb3bf 100644
+--- a/index.html
++++ b/index.html
+@@ -22,7 +22,9 @@
+           var tauri = window.__TAURI_INTERNALS__;
+           if (tauri && !/[?&](syncPanel|helperPanel|fleet)=/.test(location.hash)) {
+             setTimeout(function () {
+-              tauri.invoke("plugin:window|show", { label: "main" }).catch(function () {});
++              tauri.invoke("profile_shortcut_launch_is_silent").then(function (silent) {
++                if (!silent) return tauri.invoke("plugin:window|show", { label: "main" });
++              }).catch(function () {});
+             }, 4000);
+           }
+         } catch (e) {}
 diff --git a/openapi.yaml b/openapi.yaml
 index 65ab307..cb00dc7 100644
 --- a/openapi.yaml
@@ -6718,7 +6815,7 @@ index ea97c92..0ce6253 100644
      #[test]
      fn the_profile_name_can_be_hidden() {
 diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
-index bd61530..12a3fd9 100644
+index bd61530..f6b42f9 100644
 --- a/src-tauri/src/lib.rs
 +++ b/src-tauri/src/lib.rs
 @@ -1,7 +1,9 @@
@@ -7075,22 +7172,25 @@ index bd61530..12a3fd9 100644
      with_app_menu(tauri::Builder::default())
          // Must be the first plugin: a second launch focuses the running window.
 -        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+-            show_main_window(app);
 +        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-             show_main_window(app);
++            if !profile_shortcut::silent_launcher(&argv) { show_main_window(app); }
 +            profile_shortcut::receive(&argv);
          }))
          .plugin(tauri_plugin_opener::init())
          .plugin(tauri_plugin_dialog::init())
-@@ -2680,6 +2910,8 @@ pub fn run() {
+@@ -2680,6 +2910,10 @@ pub fn run() {
              helper_fields,
              helper_fill,
              profile_focus_window,
 +            profile_shortcut::profile_create_desktop_shortcut,
 +            profile_shortcut::profile_shortcut_take_pending,
++            profile_shortcut::profile_shortcut_show_launcher,
++            profile_shortcut::profile_shortcut_launch_is_silent,
              helper_show,
              helper_close,
              helper_dismiss,
-@@ -2745,6 +2977,7 @@ pub fn run() {
+@@ -2745,6 +2979,7 @@ pub fn run() {
              folder_list,
              folder_add,
              folder_meta_set,
@@ -7098,7 +7198,7 @@ index bd61530..12a3fd9 100644
              folder_import,
              data_root_get,
              data_root_migrate,
-@@ -2770,6 +3003,9 @@ pub fn run() {
+@@ -2770,6 +3005,9 @@ pub fn run() {
              read_text_file,
              process_list,
              process_kill,
@@ -7108,7 +7208,7 @@ index bd61530..12a3fd9 100644
              proxy_list,
              proxy_save,
              proxy_delete,
-@@ -2781,9 +3017,15 @@ pub fn run() {
+@@ -2781,9 +3019,15 @@ pub fn run() {
              proxy_last_test,
              proxy_bulk_import,
              proxy_bulk_parse,
@@ -7124,7 +7224,7 @@ index bd61530..12a3fd9 100644
              settings_save,
              settings_load_error,
              host_screen,
-@@ -2865,6 +3107,7 @@ pub fn run() {
+@@ -2865,6 +3109,7 @@ pub fn run() {
          ])
          .setup(|app| {
              let _ = APP_HANDLE.set(app.handle().clone());
@@ -7132,7 +7232,7 @@ index bd61530..12a3fd9 100644
  
              {
                  use tauri::menu::{Menu, MenuItem};
-@@ -2882,9 +3125,7 @@ pub fn run() {
+@@ -2882,9 +3127,7 @@ pub fn run() {
                      builder
                          .tooltip("ShardBrowser Launcher")
                          .menu(&menu)
@@ -7143,7 +7243,7 @@ index bd61530..12a3fd9 100644
                          .on_menu_event(|app, e| match e.id.as_ref() {
                              "tray_show" => show_main_window(app),
                              "tray_quit" => crate::quit(app),
-@@ -2991,18 +3232,7 @@ pub fn run() {
+@@ -2991,18 +3234,7 @@ pub fn run() {
          .build(tauri::generate_context!())
          .expect("error while building tauri application")
          .run(|app, event| {
@@ -7163,7 +7263,7 @@ index bd61530..12a3fd9 100644
              // Mid-reset nothing ends the app but its own restart.
              if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
                  if reset::active() && code != Some(tauri::RESTART_EXIT_CODE) {
-@@ -3021,6 +3251,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
+@@ -3021,6 +3253,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
      use std::sync::atomic::Ordering::SeqCst;
      static CLOSING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
      if !space::open::any_open() && !space::profile::any_unsealed() {
@@ -7171,7 +7271,7 @@ index bd61530..12a3fd9 100644
          app.exit(code);
          return;
      }
-@@ -3033,6 +3264,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
+@@ -3033,6 +3266,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
          space::open::close_all(space::open::QUIT_WAIT).await;
          space::profile::close_unsealed(space::open::QUIT_WAIT).await;
          CLOSING.store(false, SeqCst);
@@ -7713,15 +7813,21 @@ index 0000000..bc59126
 +}
 diff --git a/src-tauri/src/profile_shortcut.rs b/src-tauri/src/profile_shortcut.rs
 new file mode 100644
-index 0000000..5d7e09f
+index 0000000..6448ac5
 --- /dev/null
 +++ b/src-tauri/src/profile_shortcut.rs
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,166 @@
 +//! Desktop links carry only a profile ID. The UI starts through its normal guarded path.
 +use anyhow::{bail, Context, Result};
 +use std::sync::Mutex;
 +
-+static PENDING: Mutex<Vec<String>> = Mutex::new(Vec::new());
++#[derive(Clone, Debug, serde::Serialize)]
++pub struct ShortcutRequest {
++    pub id: String,
++    pub silent_launcher: bool,
++}
++
++static PENDING: Mutex<Vec<ShortcutRequest>> = Mutex::new(Vec::new());
 +
 +fn requested_id(args: &[String]) -> Option<String> {
 +    let mut found = None;
@@ -7737,19 +7843,36 @@ index 0000000..5d7e09f
 +    found
 +}
 +
++pub fn silent_launcher(args: &[String]) -> bool {
++    requested_id(args).is_some() && args.iter().any(|arg| arg == "--silent-launcher")
++}
++
++#[tauri::command]
++pub fn profile_shortcut_launch_is_silent() -> bool {
++    silent_launcher(&std::env::args().collect::<Vec<_>>())
++}
++
 +pub fn receive(args: &[String]) {
 +    if let Some(id) = requested_id(args) {
 +        let mut pending = PENDING.lock().unwrap_or_else(|e| e.into_inner());
-+        if !pending.contains(&id) { pending.push(id); }
++        let request = ShortcutRequest { id, silent_launcher: silent_launcher(args) };
++        if !pending.iter().any(|item| item.id == request.id) { pending.push(request); }
 +        drop(pending);
 +        crate::notify_event("profile-shortcut-requested", serde_json::Value::Null);
 +    }
 +}
 +
 +#[tauri::command]
-+pub fn profile_shortcut_take_pending() -> Vec<String> {
++pub fn profile_shortcut_take_pending() -> Vec<ShortcutRequest> {
 +    std::mem::take(&mut *PENDING.lock().unwrap_or_else(|e| e.into_inner()))
 +}
++
++/// A silent launch shows its error or password prompt without bypassing guards.
++#[tauri::command]
++pub fn profile_shortcut_show_launcher(app: tauri::AppHandle) {
++    crate::show_main_window(&app);
++}
++
 +
 +fn safe_name(name: &str) -> String {
 +    let value: String = name.chars().map(|c| {
@@ -7760,11 +7883,11 @@ index 0000000..5d7e09f
 +}
 +
 +#[tauri::command]
-+pub async fn profile_create_desktop_shortcut(profile_id: String) -> Result<String, String> {
-+    create(&profile_id).await.map_err(|e| e.to_string())
++pub async fn profile_create_desktop_shortcut(profile_id: String, silent: Option<bool>) -> Result<String, String> {
++    create(&profile_id, silent.unwrap_or(false)).await.map_err(|e| e.to_string())
 +}
 +
-+async fn create(id: &str) -> Result<String> {
++async fn create(id: &str, silent: bool) -> Result<String> {
 +    crate::space::ready().await;
 +    if crate::team::active_team().is_some() { bail!(crate::space::PERSONAL_ONLY); }
 +    uuid::Uuid::parse_str(id).context("invalid profile ID")?;
@@ -7772,10 +7895,11 @@ index 0000000..5d7e09f
 +        .find(|profile| profile.id == id).context("Profile no longer exists")?.name;
 +    let executable = std::env::current_exe()?;
 +    let desktop = dirs::desktop_dir().context("Desktop directory is unavailable")?;
-+    let path = desktop.join(format!("{} - ShardBrowser - {}.lnk", safe_name(&name), id));
++    let suffix = if silent { " - silent" } else { "" };
++    let path = desktop.join(format!("{} - ShardBrowser{} - {}.lnk", safe_name(&name), suffix, id));
 +    #[cfg(windows)]
 +    {
-+        write_link(&path, &executable, id, &name)?;
++        write_link(&path, &executable, id, &name, silent)?;
 +        Ok(path.display().to_string())
 +    }
 +    #[cfg(not(windows))]
@@ -7784,16 +7908,17 @@ index 0000000..5d7e09f
 +
 +
 +#[cfg(windows)]
-+const WRITE_LINK_PS: &str = r#"$ErrorActionPreference='Stop'; $w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($env:SHARD_LINK); $s.TargetPath=$env:SHARD_EXE; $s.Arguments='--profile-id '+$env:SHARD_PROFILE; $s.WorkingDirectory=[IO.Path]::GetDirectoryName($env:SHARD_EXE); $s.Description=$env:SHARD_TITLE; $s.IconLocation=$env:SHARD_EXE+',0'; $s.Save()"#;
++const WRITE_LINK_PS: &str = r#"$ErrorActionPreference='Stop'; $w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($env:SHARD_LINK); $s.TargetPath=$env:SHARD_EXE; $s.Arguments='--profile-id '+$env:SHARD_PROFILE+$env:SHARD_SILENT; $s.WorkingDirectory=[IO.Path]::GetDirectoryName($env:SHARD_EXE); $s.Description=$env:SHARD_TITLE; $s.IconLocation=$env:SHARD_EXE+',0'; $s.Save()"#;
 +
 +#[cfg(windows)]
-+fn write_link(path: &std::path::Path, executable: &std::path::Path, id: &str, name: &str) -> Result<()> {
++fn write_link(path: &std::path::Path, executable: &std::path::Path, id: &str, name: &str, silent: bool) -> Result<()> {
 +    use std::os::windows::process::CommandExt;
 +    // Static script; paths and user names never become PowerShell source.
 +    let output = std::process::Command::new("powershell.exe")
 +        .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", WRITE_LINK_PS])
 +        .env("SHARD_LINK", path).env("SHARD_EXE", executable)
 +        .env("SHARD_PROFILE", id).env("SHARD_TITLE", format!("ShardBrowser: {}", name))
++        .env("SHARD_SILENT", if silent { " --silent-launcher" } else { "" })
 +        .creation_flags(0x08000000).output().context("create desktop shortcut")?;
 +    if !output.status.success() { bail!("Windows could not create the desktop shortcut"); }
 +    if !path.is_file() { bail!("Desktop shortcut was not created"); }
@@ -7815,6 +7940,9 @@ index 0000000..5d7e09f
 +        assert!(requested_id(&args(&["app.exe", "--profile-id", "../bad"])).is_none());
 +        assert!(requested_id(&args(&["app.exe", "--profile-id", id, "--profile-id", id])).is_none());
 +        assert!(requested_id(&args(&["app.exe", "--reap"])).is_none());
++        assert!(silent_launcher(&args(&["app.exe", "--profile-id", id, "--silent-launcher"])));
++        assert!(!silent_launcher(&args(&["app.exe", "--profile-id", id])));
++        assert!(!silent_launcher(&args(&["app.exe", "--silent-launcher"])));
 +    }
 +    #[test]
 +    fn desktop_name_cannot_escape_desktop() {
@@ -7833,7 +7961,7 @@ index 0000000..5d7e09f
 +        // Keep the native COM round-trip fixture ASCII: Windows PowerShell runner output is code-page encoded.
 +        // Unicode profile names are covered by safe_name() above and by the UI tests.
 +        let name = "profile test \"quoted\" 'literal' $env:USERNAME";
-+        write_link(&link, &executable, id, name).unwrap();
++        write_link(&link, &executable, id, name, false).unwrap();
 +        // Reopen the link without Save or Run; this does not start the target.
 +        let output = std::process::Command::new("powershell.exe")
 +            .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", READ_LINK_PS])
@@ -7844,6 +7972,14 @@ index 0000000..5d7e09f
 +        assert_eq!(read["arguments"], format!("--profile-id {id}"));
 +        assert_eq!(read["directory"].as_str().unwrap(), executable.parent().unwrap().to_str().unwrap());
 +        assert_eq!(read["description"], format!("ShardBrowser: {name}"));
++        // The silent link is read back without executing either target.
++        write_link(&link, &executable, id, name, true).unwrap();
++        let output = std::process::Command::new("powershell.exe")
++            .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", READ_LINK_PS])
++            .env("SHARD_LINK", &link).creation_flags(0x08000000).output().unwrap();
++        assert!(output.status.success());
++        let read: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
++        assert_eq!(read["arguments"], format!("--profile-id {id} --silent-launcher"));
 +    }
 +
 +}
@@ -8343,10 +8479,10 @@ index 0000000..4b186bb
 +}
 diff --git a/src-tauri/src/proxy_chain/config.rs b/src-tauri/src/proxy_chain/config.rs
 new file mode 100644
-index 0000000..e244275
+index 0000000..1d7722b
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/config.rs
-@@ -0,0 +1,248 @@
+@@ -0,0 +1,284 @@
 +use super::{
 +    connector::{self, ProxyHop, ProxyKind, Target},
 +    credentials, detect_windows,
@@ -8393,6 +8529,8 @@ index 0000000..e244275
 +pub struct ProxyChainSettings {
 +    pub enabled: bool,
 +    pub mode: String,
++    /// Library binding resolved at each connection; credentials remain in the proxy store.
++    pub selected_proxy_id: Option<String>,
 +    pub host: String,
 +    pub port: u16,
 +    pub username: String,
@@ -8414,6 +8552,7 @@ index 0000000..e244275
 +        Self {
 +            enabled: false,
 +            mode: "auto".into(),
++            selected_proxy_id: None,
 +            host: "127.0.0.1".into(),
 +            port: 7890,
 +            username: String::new(),
@@ -8472,17 +8611,21 @@ index 0000000..e244275
 +        Ok(())
 +    }
 +    pub fn validate(&self) -> Result<(), ChainError> {
-+        if self.invalid || !matches!(self.mode.as_str(), "auto" | "http" | "socks5") {
++        if self.invalid || !matches!(self.mode.as_str(), "auto" | "selected" | "http" | "https" | "socks5") {
 +            return Err(ChainError::new(
 +                "proxy_chain_invalid_config",
 +                "configuration",
 +                "The proxy-chain settings are invalid. Configure the system proxy before starting.",
 +            ));
 +        }
-+        if self.mode != "auto" {
++        if self.mode == "selected" {
++            self.selected_hop()?;
++        } else if self.mode != "auto" {
 +            let hop = ProxyHop {
 +                kind: if self.mode == "http" {
 +                    ProxyKind::Http
++                } else if self.mode == "https" {
++                    ProxyKind::Https
 +                } else {
 +                    ProxyKind::Socks5
 +                },
@@ -8495,11 +8638,27 @@ index 0000000..e244275
 +        }
 +        Ok(())
 +    }
++    fn selected_hop(&self) -> Result<ProxyHop, ChainError> {
++        let missing = || ChainError::new("proxy_chain_invalid_config", "configuration", "Select an existing first-layer proxy in this space before connecting.");
++        let id = self.selected_proxy_id.as_deref().filter(|id| !id.trim().is_empty()).ok_or_else(missing)?;
++        let entry = crate::space::proxy::get(id).map_err(|_| missing())?.ok_or_else(missing)?;
++        let hop = ProxyHop {
++            kind: match entry.kind {
++                crate::space::proxy::ProxyKind::Http => ProxyKind::Http,
++                crate::space::proxy::ProxyKind::Https => ProxyKind::Https,
++                crate::space::proxy::ProxyKind::Socks5 => ProxyKind::Socks5,
++            },
++            host: entry.host, port: entry.port, username: entry.username, password: entry.password,
++        };
++        connector::validate(&hop, &Target::new("example.com", 443)?)?;
++        Ok(hop)
++    }
 +    pub fn hop(&self, saved: &Self) -> Result<ProxyHop, ChainError> {
 +        self.validate()?;
 +        if self.mode == "auto" {
 +            return detect_windows::resolve();
 +        }
++        if self.mode == "selected" { return self.selected_hop(); }
 +        let password = match &self.password {
 +            PasswordUpdate::Replace(p) => p.clone(),
 +            PasswordUpdate::Clear => String::new(),
@@ -8513,6 +8672,8 @@ index 0000000..e244275
 +        let hop = ProxyHop {
 +            kind: if self.mode == "http" {
 +                ProxyKind::Http
++            } else if self.mode == "https" {
++                ProxyKind::Https
 +            } else {
 +                ProxyKind::Socks5
 +            },
@@ -8553,6 +8714,17 @@ index 0000000..e244275
 +        #[serde(default, deserialize_with = "deserialize")]
 +        proxy_chain: ProxyChainSettings,
 +    }
++    #[test]
++    fn global_selected_proxy_requires_a_binding_and_https_stays_tls() {
++        let missing = ProxyChainSettings { enabled: true, mode: "selected".into(), ..Default::default() };
++        assert_eq!(missing.validate().unwrap_err().code, "proxy_chain_invalid_config");
++        let manual = ProxyChainSettings { enabled: true, mode: "https".into(), host: "proxy.example".into(), port: 443, ..Default::default() };
++        assert!(matches!(manual.hop(&manual).unwrap().kind, ProxyKind::Https));
++        let old: ProxyChainSettings = serde_json::from_str(r#"{"enabled":true,"mode":"http","host":"127.0.0.1","port":7890}"#).unwrap();
++        assert!(old.selected_proxy_id.is_none());
++        assert!(matches!(old.hop(&old).unwrap().kind, ProxyKind::Http));
++    }
++
 +    #[test]
 +    fn fallback_permission_cannot_be_injected_through_settings_json() {
 +        let config: ProxyChainSettings = serde_json::from_str(r#"{"enabled":true,"mode":"http","host":"127.0.0.1","port":7890,"allow_assigned_fallback":true}"#).unwrap();
@@ -20425,6 +20597,29 @@ index 9ffa73a..3e2ad74 100644
        <TourLayer />
        <TourEndCard />
        <ShellWindowControls />
+diff --git a/src/app/showWindow.ts b/src/app/showWindow.ts
+index 2659eb2..83c4212 100644
+--- a/src/app/showWindow.ts
++++ b/src/app/showWindow.ts
+@@ -1,4 +1,4 @@
+-import { isTauri } from "@tauri-apps/api/core";
++import { invoke, isTauri } from "@tauri-apps/api/core";
+ import { getCurrentWindow } from "@tauri-apps/api/window";
+ 
+ /** How long the launcher may stay hidden at most, ms, whatever it shows. */
+@@ -13,8 +13,11 @@ const SHOW_AT_LATEST_MS = 2_500;
+ /// without a jump, and waiting past it held the window for the full 2.5 s. A safety timer shows it
+ /// anyway after 2.5 s, and index.html's own after 4 s should this code never
+ /// run. A browser or mock build has no window to show: nothing happens there.
+-export function showWindowWhenPainted() {
++export async function showWindowWhenPainted() {
+   if (!isTauri()) return;
++  // Both paint and fallback paths ask before showing, so cold silent launch
++  // never flashes the launcher in front of its browser.
++  try { if (await invoke<boolean>("profile_shortcut_launch_is_silent")) return; } catch {}
+   const root = document.getElementById("root");
+   let shown = false;
+   const show = () => {
 diff --git a/src/app/styles/app.css b/src/app/styles/app.css
 index a00ed32..3b146f9 100644
 --- a/src/app/styles/app.css
@@ -20439,10 +20634,10 @@ index a00ed32..3b146f9 100644
  @media (forced-colors: active) { .brand-mark { color: CanvasText; } }
 diff --git a/src/app/useProfileShortcuts.ts b/src/app/useProfileShortcuts.ts
 new file mode 100644
-index 0000000..282d006
+index 0000000..fd3aa4a
 --- /dev/null
 +++ b/src/app/useProfileShortcuts.ts
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,67 @@
 +import { useEffect } from "react";
 +import { listen } from "@tauri-apps/api/event";
 +import { invoke } from "@tauri-apps/api/core";
@@ -20450,6 +20645,8 @@ index 0000000..282d006
 +import { inTeam } from "../entities/space";
 +import { toast } from "../shared/model/toast";
 +import { t } from "../shared/i18n";
++
++type ShortcutRequest = { id: string; silent_launcher: boolean };
 +
 +/** A link asks the GUI to use the same password and launch path as Start. */
 +export function useProfileShortcuts() {
@@ -20462,24 +20659,41 @@ index 0000000..282d006
 +    const consume = () => {
 +      work = work.then(async () => {
 +        if (disposed) return;
-+        const ids = await invoke<string[]>("profile_shortcut_take_pending");
-+        for (const id of ids) {
++        const ids = await invoke<Array<string | ShortcutRequest>>("profile_shortcut_take_pending");
++        for (const request of ids) {
 +          if (disposed) return;
-+          if (inTeam()) { toast.err(t("commands.shortcutPersonalOnly")); continue; }
++          const id = typeof request === "string" ? request : request.id;
++          const silentLauncher = typeof request !== "string" && request.silent_launcher;
++          if (inTeam()) { await invoke("profile_shortcut_show_launcher"); toast.err(t("commands.shortcutPersonalOnly")); continue; }
 +          await useProfile.getState().reload();
 +          const state = useProfile.getState();
 +          const profile = state.profiles.find((p) => p.id === id);
-+          if (!profile) { toast.err(t("commands.shortcutMissing")); continue; }
++          if (!profile) { await invoke("profile_shortcut_show_launcher"); toast.err(t("commands.shortcutMissing")); continue; }
 +          const running = await processList();
 +          if (running.some((p) => p.profile_id === id)) {
 +            await profileFocusWindow(id);
 +          } else if (!state.startBusy.has(id)) {
 +            // startStop keeps password prompts, permission checks and current
 +            // on-disk route resolution, without enabling a debugging port.
-+            await state.startStop(profile, { startOnly: true });
++            // A protected/direct route can ask for confirmation. Reveal the
++            // launcher only if that guarded path actually presents a dialog.
++            const prompts = new MutationObserver(() => {
++              if (document.querySelector('[role="dialog"], [role="alertdialog"]')) {
++                prompts.disconnect();
++                void invoke("profile_shortcut_show_launcher");
++              }
++            });
++            if (silentLauncher) prompts.observe(document.body, { childList: true, subtree: true });
++            try {
++              const failure = await state.startStop(profile, { startOnly: true });
++              if (failure && silentLauncher) await invoke("profile_shortcut_show_launcher");
++            } finally { prompts.disconnect(); }
 +          }
 +        }
-+      }).catch((detail) => { toast.fail({ title: t("commands.shortcutStartFailed"), detail }); });
++      }).catch((detail) => {
++        void invoke("profile_shortcut_show_launcher");
++        toast.fail({ title: t("commands.shortcutStartFailed"), detail });
++      });
 +    };
 +    // Subscribe first, then drain: cold startup and a second instance cannot
 +    // lose a request between the native setup and the first webview render.
@@ -20572,7 +20786,7 @@ index 63ef7db..e9e6ea3 100644
      api: { enabled: true, port: 40325, base_url: "http://127.0.0.1:40325", token: "shx_mock_00000000000000000000000000" },
      psKey: "psk_test_mock_000000000000000000000000",
 diff --git a/src/dev/mock/handlers.ts b/src/dev/mock/handlers.ts
-index 41d96a9..280196c 100644
+index 41d96a9..2728418 100644
 --- a/src/dev/mock/handlers.ts
 +++ b/src/dev/mock/handlers.ts
 @@ -14,7 +14,7 @@ import { alreadyInLibrary, extProfileClosed, extUpdateHandlers, importSame } fro
@@ -20708,10 +20922,12 @@ index 41d96a9..280196c 100644
    api_info: (_a, { state }) => state.api,
    api_regenerate_token: (_a, ctx) => {
      // As the backend: a new signing key on disk, and a token signed with it.
-@@ -527,6 +606,12 @@ export const handlers: Record<string, Handler> = {
+@@ -527,6 +606,14 @@ export const handlers: Record<string, Handler> = {
    },
  
    // ---- profiles ---------------------------------------------------------------
++  profile_shortcut_show_launcher: () => null,
++  profile_shortcut_launch_is_silent: () => false,
 +  profile_shortcut_take_pending: () => {
 +    const w = window as { __shardxMockShortcutPending?: string[] };
 +    return w.__shardxMockShortcutPending?.splice(0) ?? [];
@@ -20721,7 +20937,7 @@ index 41d96a9..280196c 100644
    profile_list: (_a, { state }) => state.order.map((id) => metaOf(state.profiles[id])),
    // A protected profile's answer is a stub: its name and the open part of `_meta` (#127).
    profile_get: ({ id }, { state }) => { const p = profile(state, id); return p._meta.lock ? stubOf(p) : p; },
-@@ -777,7 +862,13 @@ export const handlers: Record<string, Handler> = {
+@@ -777,7 +864,13 @@ export const handlers: Record<string, Handler> = {
      }
      // As folders.rs: a folder never kept makes no file.
      const f = ctx.state.folders;
@@ -20736,7 +20952,7 @@ index 41d96a9..280196c 100644
      // As the backend: store-changed is for API writes only.
      ctx.save();
      return ids.length;
-@@ -852,6 +943,29 @@ export const handlers: Record<string, Handler> = {
+@@ -852,6 +945,29 @@ export const handlers: Record<string, Handler> = {
      ctx.save();
      return null;
    },
@@ -20766,7 +20982,7 @@ index 41d96a9..280196c 100644
    folder_import: ({ state: given }, ctx) => {
      personalOnly(ctx.state);
      if (ctx.state.folders) return false;
-@@ -908,6 +1022,45 @@ export const handlers: Record<string, Handler> = {
+@@ -908,6 +1024,45 @@ export const handlers: Record<string, Handler> = {
    proxy_last_test: ({ id }, { state }) => { const h = state.snapshots[id]; return h?.length ? h[h.length - 1] : null; },
    proxy_history: ({ id }, { state }) => state.snapshots[id] ?? [],
    proxy_bulk_parse: ({ text, kind }) => parseProxyLines(String(text ?? ""), kind),
@@ -20812,7 +21028,7 @@ index 41d96a9..280196c 100644
    proxy_bulk_save: ({ entries }, ctx) => addProxies(entries as ProxyEntry[], ctx),
    proxy_bulk_import: ({ text, kind }, ctx) => addProxies(parseProxyLines(String(text ?? ""), kind), ctx),
  
-@@ -1090,7 +1243,7 @@ export const handlers: Record<string, Handler> = {
+@@ -1090,7 +1245,7 @@ export const handlers: Record<string, Handler> = {
    // going, which is what a developer should see.
    ps_trial_offer: async () => (window as { __shardxMockTrialOffer?: unknown }).__shardxMockTrialOffer ?? { show: false },
    ps_set_key: ({ key }, ctx) => { ctx.state.psKey = String(key ?? ""); ctx.save(); return null; },
@@ -20862,6 +21078,33 @@ index 99cd449..83d1745 100644
    ];
    // Another space: its own records, none of the old ones.
    const offSpace = onSpaceMoved(() => {
+diff --git a/src/entities/extension/lib/useExtensions.tsx b/src/entities/extension/lib/useExtensions.tsx
+index ced36be..4525ef7 100644
+--- a/src/entities/extension/lib/useExtensions.tsx
++++ b/src/entities/extension/lib/useExtensions.tsx
+@@ -74,7 +74,7 @@ export type ExtensionStore = {
+   setSearch: (q: string) => void;
+   setLinkOpen: (open: boolean) => void;
+   /** `separate`: a copy beside the one the library holds (§3.1.6). */
+-  importUrl: (url: string, separate?: boolean) => Promise<void>;
++  importUrl: (url: string, separate?: boolean) => Promise<ExtensionEntry | undefined>;
+   importFiles: () => Promise<void>;
+   importFolder: () => Promise<void>;
+   remove: (e: ExtensionEntry) => Promise<void>;
+@@ -122,11 +122,12 @@ export const useExtensions = create<ExtensionStore>((set, get) => ({
+       await get().reload();
+       set({ linkOpen: false });
+       toast.ok(t("useExtensions.addedNamed", { name: extensionName(added) }));
++      return added;
+     } catch (e) {
+       const found = parseAlreadyInLibrary(e);
+       if (found && !separate) {
+         set({ linkOpen: false });
+-        void askAlreadyThere(found, () => get().importUrl(link, true));
++        void askAlreadyThere(found, async () => { await get().importUrl(link, true); });
+       } else toast.fail({ title: t("useExtensions.downloadFailed"), detail: e });
+     }
+     finally { set({ busy: false }); }
 diff --git a/src/entities/fingerprint/lib/selectors.ts b/src/entities/fingerprint/lib/selectors.ts
 index 707e3c6..3cc3cfe 100644
 --- a/src/entities/fingerprint/lib/selectors.ts
@@ -21651,7 +21894,7 @@ index fcc78d7..da26ece 100644
    const only = inputs.only;
    const list = sorted.out.filter(only ? (p) => only.has(p.id) && keep(p) : keep);
 diff --git a/src/entities/profile/model/api.ts b/src/entities/profile/model/api.ts
-index 4b97c1a..bf3bc79 100644
+index 4b97c1a..a8ce406 100644
 --- a/src/entities/profile/model/api.ts
 +++ b/src/entities/profile/model/api.ts
 @@ -1,5 +1,12 @@
@@ -21685,8 +21928,8 @@ index 4b97c1a..bf3bc79 100644
  export const enrichPicksForPreset = (presetId: string) => invoke<{ hardware_concurrency?: number; device_memory?: number; platform_version?: string }>("enrich_picks_for_preset", { presetId });
  export const hostPlatform = () => invoke<string>("host_platform");
 +
-+export const profileCreateDesktopShortcut = (profileId: string) =>
-+  invoke<string>("profile_create_desktop_shortcut", { profileId });
++export const profileCreateDesktopShortcut = (profileId: string, silent = false) =>
++  invoke<string>("profile_create_desktop_shortcut", { profileId, silent });
 diff --git a/src/entities/profile/model/form.ts b/src/entities/profile/model/form.ts
 index 41ac7e0..fa14f6a 100644
 --- a/src/entities/profile/model/form.ts
@@ -22237,7 +22480,7 @@ index 21cd2af..5b2d56c 100644
   *  the change, not what runs. A failed save changes nothing, so it does not
   *  count (Pair 34 ruling, M3); one still on its way makes a read unsure. */
 diff --git a/src/entities/settings/model/types.ts b/src/entities/settings/model/types.ts
-index 8f97bc0..ad3d0c1 100644
+index 8f97bc0..7e419a8 100644
 --- a/src/entities/settings/model/types.ts
 +++ b/src/entities/settings/model/types.ts
 @@ -1,4 +1,8 @@
@@ -22249,7 +22492,7 @@ index 8f97bc0..ad3d0c1 100644
    browser_path: string | null;
    theme: string;
    geo_checker?: string | null;
-@@ -19,8 +23,116 @@ export type Settings = {
+@@ -19,8 +23,117 @@ export type Settings = {
    minimize_to_tray?: boolean;
    /** Appended to every launch, one per line. Applied last, so a repeat wins. */
    extra_args?: string;
@@ -22284,7 +22527,8 @@ index 8f97bc0..ad3d0c1 100644
 +  /** An unreadable saved chain must be explicitly repaired before use. */
 +  invalid?: boolean;
 +  enabled: boolean;
-+  mode: "auto" | "http" | "socks5";
++  mode: "auto" | "selected" | "http" | "https" | "socks5";
++  selected_proxy_id?: string | null;
 +  host: string;
 +  port: number;
 +  username: string;
@@ -22537,7 +22781,7 @@ index 29f1d21..f96fe7e 100644
      ...FOLDER, id: "folder.open", group: "open", icon: FolderIcon,
      label: () => t("commands.openFolder"),
 diff --git a/src/features/commands/profileCommands.ts b/src/features/commands/profileCommands.ts
-index c209f33..08baec4 100644
+index c209f33..0eb31e2 100644
 --- a/src/features/commands/profileCommands.ts
 +++ b/src/features/commands/profileCommands.ts
 @@ -1,12 +1,12 @@
@@ -22555,7 +22799,7 @@ index c209f33..08baec4 100644
  import { clip } from "../../shared/lib/clipboard";
  import { toast } from "../../shared/model/toast";
  import { useNav } from "../../shared/model/navigation";
-@@ -151,6 +151,20 @@ export const PROFILE_COMMANDS: readonly Command[] = [
+@@ -151,6 +151,34 @@ export const PROFILE_COMMANDS: readonly Command[] = [
        toast.ok(t("commands.copiedCdp"));
      },
    },
@@ -22570,6 +22814,20 @@ index c209f33..08baec4 100644
 +      try {
 +        await profileCreateDesktopShortcut(one.id);
 +        toast.ok(t("commands.desktopShortcutCreated"));
++      } catch (detail) { toast.fail({ title: t("commands.desktopShortcutFailed"), detail }); }
++    },
++  },
++  {
++    ...LIST, id: "profile.createSilentDesktopShortcut", scope: "selection", group: "open", icon: ComputerIcon,
++    label: () => t("commands.createSilentDesktopShortcut"),
++    surfaces: ["rowMenu", "pinnedMenu", "paletteActions", "peekMenu"],
++    when: (s) => s.ids.length === 1 && personalRows(s),
++    run: async (s) => {
++      const one = metas(s)[0];
++      if (!one) return;
++      try {
++        await profileCreateDesktopShortcut(one.id, true);
++        toast.ok(t("commands.silentDesktopShortcutCreated"));
 +      } catch (detail) { toast.fail({ title: t("commands.desktopShortcutFailed"), detail }); }
 +    },
 +  },
@@ -22601,6 +22859,56 @@ index e60fdd7..5272160 100644
    if (!folder) return false;
    void leaveList(() => {
      useProfileUi.getState().setFolder(folder);
+diff --git a/src/features/manage-extensions/ui/AddExtensionMenu.tsx b/src/features/manage-extensions/ui/AddExtensionMenu.tsx
+index f3d27fa..4875597 100644
+--- a/src/features/manage-extensions/ui/AddExtensionMenu.tsx
++++ b/src/features/manage-extensions/ui/AddExtensionMenu.tsx
+@@ -7,7 +7,7 @@ import { teamRefusal, useRightsChange } from "../../../entities/space";
+ /// One "Add extension" with the three ways to add one (CRAFT-29): the
+ /// primary names the goal, the menu names the source. The two imports wait
+ /// while one runs (the store has no guard of its own).
+-export function AddExtensionMenu() {
++export function AddExtensionMenu({ onAddFromLink }: { onAddFromLink?: () => void } = {}) {
+   const t = useT();
+   const busy = useExtensions((s) => s.busy);
+   const importFiles = useExtensions((s) => s.importFiles);
+@@ -22,7 +22,7 @@ export function AddExtensionMenu() {
+       tour="add-extension"
+       trigger={{ label: t("extensions.addExtension"), icon: <AddIcon className="size-3.5" /> }}
+       items={[
+-        { label: t("extensions.addFromLink"), icon: <GlobeIcon className="size-3.5" />, onSelect: () => setLinkOpen(true), ...closed },
++        { label: t("extensions.addFromLink"), icon: <GlobeIcon className="size-3.5" />, onSelect: () => onAddFromLink ? onAddFromLink() : setLinkOpen(true), ...closed },
+         { label: t("extensions.addFromFile"), icon: <DownloadIcon className="size-3.5" />, disabled: busy, onSelect: () => void importFiles(), ...closed },
+         { label: t("extensions.addUnpacked"), icon: <FolderIcon className="size-3.5" />, disabled: busy, onSelect: () => void importFolder(), ...closed },
+       ]}
+diff --git a/src/features/manage-profiles/ui/ExtensionPicker.tsx b/src/features/manage-profiles/ui/ExtensionPicker.tsx
+index 4f80471..bba2404 100644
+--- a/src/features/manage-profiles/ui/ExtensionPicker.tsx
++++ b/src/features/manage-profiles/ui/ExtensionPicker.tsx
+@@ -27,11 +27,13 @@ function Icon({ e, className }: { e: ExtensionEntry; className?: string }) {
+  *  list alone, open, for a popover that is already its frame (Peek's
+  *  Extensions row): the chips and the toggle would be a second step there. */
+ export function ExtensionPicker({
+-  value, onChange, listOnly = false,
++  value, onChange, listOnly = false, onAdd,
+ }: {
+   value: string[];
+   onChange: (v: string[]) => void;
+   listOnly?: boolean;
++  /** The Profile form adds to the library in place instead of leaving its draft. */
++  onAdd?: () => void;
+ }) {
+   const t = useT();
+   const items = useExtensions((s) => s.items);
+@@ -53,7 +55,7 @@ export function ExtensionPicker({
+     return (
+       <p className={cn("m-0 text-secondary text-text-soft-400", listOnly && "p-3")}>
+         {t("extensionPicker.emptyLibrary")}{" "}
+-        <Button mode="link" size="3xsmall" onClick={() => go("extensions")}>
++        <Button mode="link" size="3xsmall" onClick={() => onAdd ? onAdd() : go("extensions")}>
+           {t("extensionPicker.addOne")}
+         </Button>
+       </p>
 diff --git a/src/features/manage-profiles/ui/FolderDialog.tsx b/src/features/manage-profiles/ui/FolderDialog.tsx
 index b79a1e8..02be3f7 100644
 --- a/src/features/manage-profiles/ui/FolderDialog.tsx
@@ -22794,15 +23102,17 @@ index 4ac3ecc..eb5ba91 100644
          aria-description={why ?? undefined}
 diff --git a/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
 new file mode 100644
-index 0000000..7adf396
+index 0000000..4e349bc
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,70 @@
 +import { useEffect, useState } from "react";
++import { openUrl } from "@tauri-apps/plugin-opener";
 +import { Button, Input } from "@proxyshard/shardx-ui-kit";
 +import { providerDefaultsGet, providerDefaultsSave, type ProviderDefaults, type ProviderUpdate } from "../../../entities/proxy";
 +import { SelectField } from "../../../shared/ui/SelectField";
 +import { useT } from "../../../shared/i18n";
++import { toast } from "../../../shared/model/toast";
 +
 +/** Explicit save: provider defaults never change existing proxy bindings. */
 +export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?: "all" | "1024proxy" | "tnbproxy"; onSaved?: (value: ProviderDefaults) => void }) {
@@ -22821,6 +23131,7 @@ index 0000000..7adf396
 +    catch { setError(true); }
 +    finally { setBusy(false); }
 +  };
++  const website = (url: string, whitelist = false) => <Button variant="neutral" mode="ghost" size="3xsmall" onClick={() => { void openUrl(url).catch(() => toast.err(t("provider.openWebsiteFailed"))); }}>{whitelist ? t("provider.openWhitelist") : t("provider.openWebsite")}</Button>;
 +  const password = (key: "password" | "tnb_api_password" | "tnb_proxy_password", has: boolean, label: string) => <div className="flex flex-col gap-1.5">
 +    <Input secret type="password" inputSize="xsmall" label={label} value={secrets[key] ?? ""} autoComplete="new-password" placeholder={has ? t("provider.keepPassword") : ""} onChange={(e) => { setSecrets((v) => ({ ...v, [key]: e.target.value })); setSaved(false); }} />
 +    {has && <Button variant="neutral" mode="ghost" size="3xsmall" onClick={() => { setSecrets((v) => ({ ...v, [key]: "" })); setSaved(false); }}>{secrets[key] === "" ? t("provider.willClear") : t("provider.clearPassword")}</Button>}
@@ -22830,7 +23141,8 @@ index 0000000..7adf396
 +      <p className="m-0 text-help text-text-sub-600">{t("provider.defaultsHelp")}</p>
 +      {value && <>
 +        {provider !== "tnbproxy" && <div className="flex flex-col gap-3">
-+          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("provider.name1024")}</h3><a className="text-help text-text-sub-600 underline" href="https://1024proxy.io" target="_blank" rel="noreferrer">{t("provider.openWebsite")}</a></div>
++          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("provider.name1024")}</h3>{website("https://1024proxy.io")}</div>
++          <h4 className="m-0 text-secondary font-medium text-text-strong-950">{t("provider.accountSection")}</h4>
 +          <Input inputSize="xsmall" label={t("provider.relay")} value={value.relay} onChange={(e) => patch({ relay: e.target.value })} />
 +          <div className="grid grid-cols-2 gap-3">
 +            <Input inputSize="xsmall" label={t("provider.account")} value={value.username} onChange={(e) => patch({ username: e.target.value })} />
@@ -22840,7 +23152,8 @@ index 0000000..7adf396
 +          <p className="m-0 text-help text-text-sub-600">{t("provider.templateHelp")}</p>
 +        </div>}
 +        {provider !== "1024proxy" && <div className="flex flex-col gap-3">
-+          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("tnb.provider")}</h3><a className="text-help text-text-sub-600 underline" href="https://dash.tnbproxy.com" target="_blank" rel="noreferrer">{t("provider.openWebsite")}</a></div>
++          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("tnb.provider")}</h3>{website("https://dash.tnbproxy.com", true)}</div>
++          <h4 className="m-0 text-secondary font-medium text-text-strong-950">{t("provider.apiSection")}</h4>
 +          <Input inputSize="xsmall" label={t("tnb.server")} value={value.tnb_server} onChange={(e) => patch({ tnb_server: e.target.value })} />
 +          <div className="grid grid-cols-2 gap-3">
 +            <Input inputSize="xsmall" label={t("tnb.plan")} value={value.tnb_plan} onChange={(e) => patch({ tnb_plan: e.target.value })} />
@@ -22850,6 +23163,9 @@ index 0000000..7adf396
 +          <div className="grid grid-cols-2 gap-3">
 +            <Input inputSize="xsmall" label={t("provider.apiUsername")} value={value.tnb_api_username} onChange={(e) => patch({ tnb_api_username: e.target.value })} />
 +            {password("tnb_api_password", value.tnb_api_password_saved, t("provider.apiPassword"))}
++          </div>
++          <h4 className="m-0 text-secondary font-medium text-text-strong-950">{t("provider.accountSection")}</h4>
++          <div className="grid grid-cols-2 gap-3">
 +            <Input inputSize="xsmall" label={t("provider.proxyUsername")} value={value.tnb_proxy_username} onChange={(e) => patch({ tnb_proxy_username: e.target.value })} />
 +            {password("tnb_proxy_password", value.tnb_proxy_password_saved, t("provider.proxyPassword"))}
 +          </div>
@@ -23463,6 +23779,72 @@ index 1b1d09d..e3240a0 100644
        <PropertySheet>
          {/* 2 px between 32 px rows, as Peek's sheet. */}
          <div className="flex flex-col gap-[2px]">
+diff --git a/src/features/profile-form/ui/ExtensionsTab.tsx b/src/features/profile-form/ui/ExtensionsTab.tsx
+index 6b4917a..cf01e3b 100644
+--- a/src/features/profile-form/ui/ExtensionsTab.tsx
++++ b/src/features/profile-form/ui/ExtensionsTab.tsx
+@@ -1,11 +1,58 @@
++import { useState } from "react";
++import { Button, Input } from "@proxyshard/shardx-ui-kit";
++import { extensionLinkAllowed, isStoreLink, normalizeExtensionLink, useExtensions } from "../../../entities/extension";
++import { useT } from "../../../shared/i18n";
++import { AddExtensionMenu } from "../../manage-extensions";
+ import { ExtensionPicker } from "../../manage-profiles";
+ import { patchForm, type ProfileFormDraft } from "../model/useProfileForm";
+ 
+-/// Extensions: the library's extensions, the ones this profile loads checked.
++/// The library and its import actions stay inside the Profile's Extensions tab.
+ export function ExtensionsTab({ draft }: { draft: ProfileFormDraft }) {
++  const t = useT();
++  const [addingLink, setAddingLink] = useState(false);
++  const [url, setUrl] = useState("");
++  const busy = useExtensions((s) => s.busy);
++  const importUrl = useExtensions((s) => s.importUrl);
++  const link = normalizeExtensionLink(url);
++  const allowed = link !== "" && extensionLinkAllowed(link);
++  const addLink = async () => {
++    // The existing store owns import errors, duplicate handling and library reload.
++    const added = await importUrl(link);
++    if (added) {
++      setAddingLink(false);
++      setUrl("");
++    }
++  };
+   return (
+-    <div data-tour="form-extensions">
+-      <ExtensionPicker listOnly value={draft.form.extensions} onChange={(extensions) => patchForm({ extensions })} />
++    <div data-tour="form-extensions" className="flex flex-col gap-3">
++      <div className="flex justify-end">
++        <AddExtensionMenu onAddFromLink={() => setAddingLink(true)} />
++      </div>
++      {addingLink && (
++        <div data-extension-import className="tile flex flex-col gap-3 p-3">
++          <Input
++            label={t("extensions.linkFieldLabel")}
++            inputSize="xsmall"
++            className="mono"
++            value={url}
++            disabled={busy}
++            onChange={(e) => setUrl(e.target.value)}
++            placeholder="https://chromewebstore.google.com/detail/…"
++            error={link !== "" && !allowed ? t("extensions.linkHttp") : undefined}
++            hint={allowed && !isStoreLink(link) ? t("extensions.linkOffStore") : undefined}
++          />
++          <p className="m-0 text-secondary text-text-soft-400">{t("extensions.linkHelp")}</p>
++          <div className="flex justify-end gap-2">
++            <Button variant="neutral" mode="stroke" size="xsmall" disabled={busy} onClick={() => { setAddingLink(false); setUrl(""); }}>
++              {t("extensions.cancel")}
++            </Button>
++            <Button size="xsmall" disabled={busy || !allowed} onClick={() => void addLink()}>
++              {busy ? t("extensions.downloading") : t("extensions.download")}
++            </Button>
++          </div>
++        </div>
++      )}
++      <ExtensionPicker listOnly value={draft.form.extensions} onChange={(extensions) => patchForm({ extensions })} onAdd={() => setAddingLink(true)} />
+     </div>
+   );
+ }
 diff --git a/src/features/profile-form/ui/ProfileFormDialog.tsx b/src/features/profile-form/ui/ProfileFormDialog.tsx
 index ecd3342..547d0c5 100644
 --- a/src/features/profile-form/ui/ProfileFormDialog.tsx
@@ -24005,6 +24387,103 @@ index af50f2a..ea92ef3 100644
                ...first,
                ...(first.length > 0 ? [{ type: "separator" as const }] : []),
                { label: t("extensions.removeItem"), icon: rowActionIcons.trash({ className: "size-3.5" }), danger: true, disabled: !!noRemove, hint: noRemove ?? undefined, onSelect: () => void remove(e) },
+diff --git a/src/pages/proxyshard/index.tsx b/src/pages/proxyshard/index.tsx
+index 069eceb..7992f18 100644
+--- a/src/pages/proxyshard/index.tsx
++++ b/src/pages/proxyshard/index.tsx
+@@ -1,6 +1,9 @@
+ import { useEffect, useState } from "react";
+ import { Button } from "@proxyshard/shardx-ui-kit";
+ import { HeaderMenu, PageBody, PageHeader } from "../../widgets/PageHeader";
++import { ProviderDefaultsPanel } from "../../features/manage-proxies/ui/ProviderDefaultsPanel";
++import { useNav } from "../../shared/model/navigation";
++import { useProxy } from "../../entities/proxy";
+ import { usePsAccount } from "../../entities/proxyshard";
+ import { OpenDashboardButton, PsBuyDialog, PsKeyDialog, PsKeySetup } from "../../features/proxyshard";
+ import { PsHeaderFacts } from "../../widgets/ProxyShard/PsHeaderFacts";
+@@ -8,26 +11,23 @@ import { PsManagementPanels } from "../../widgets/ProxyShard/PsManagementPanels"
+ import { KeyIcon, RefreshIcon } from "../../shared/icons";
+ import { useDialogLife } from "../../shared/lib/useDialogLife";
+ import { useT } from "../../shared/i18n";
+-import { showMeAround } from "../../features/tour";
+ 
+ type View = "panels" | "setup";
+ 
+-/// The stat tiles, Usage and Orders, across the window's width (owner,
+-/// 2026-10-23: no 1120 px cap). Buy proxies sits in the header's actions,
+-/// before Open dashboard (owner, 2026-10-02). Without a
+-/// working key the key card is the page; with one, the key moves to the `…`
+-/// menu (craft target state, rank 2).
++/// Provider defaults are the primary page. Existing ProxyShard account tools
++/// remain available on demand without loading its account on every visit.
+ export function ProxyShardPage() {
+   const t = useT();
+   const init = usePsAccount((s) => s.init);
+   const key = usePsAccount((s) => s.key);
+   const status = usePsAccount((s) => s.status);
+   const refreshMe = usePsAccount((s) => s.refreshMe);
++  const [accountOpen, setAccountOpen] = useState(false);
+   const [keyOpen, setKeyOpen] = useState(false);
+   const keyLife = useDialogLife(keyOpen);
+   const [buying, setBuying] = useState(false);
+   const buyLife = useDialogLife(buying);
+-  useEffect(() => { init(); }, [init]);
++  useEffect(() => { if (accountOpen) init(); }, [accountOpen, init]);
+   // While a key is being read or checked, the body keeps what it showed (the
+   // header says "Checking your key…"): empty before the first answer, so the
+   // setup card never flashes, and no swap during Check again or a new key.
+@@ -39,28 +39,31 @@ export function ProxyShardPage() {
+   return (
+     <>
+       <PageHeader
+-        title="ProxyShard"
+-        help={{ title: t("pageHelp.proxyshard.title"), body: t("pageHelp.proxyshard.body"), onTour: () => showMeAround("proxyshard") }}
+-        after={<PsHeaderFacts />}
+-        actions={
+-          <>
+-            {view === "panels" && (
+-              <Button variant="neutral" mode="stroke" size="xsmall" onClick={() => setBuying(true)}>{t("psBuyCard.open")}</Button>
+-            )}
+-            <OpenDashboardButton />
+-            {view === "panels" && (
+-              <HeaderMenu
+-                items={[
+-                  { label: t("psKey.changeItem"), icon: <KeyIcon className="size-3.5" />, onSelect: () => setKeyOpen(true) },
+-                  { label: t("psKey.checkItem"), icon: <RefreshIcon className="size-3.5" />, onSelect: () => void refreshMe() },
+-                ]}
+-              />
+-            )}
+-          </>
+-        }
++        title={t("provider.managementTitle")}
++        help={{ title: t("provider.managementTitle"), body: t("provider.managementHelp") }}
++        actions={<Button variant="primary" mode="filled" size="xsmall" onClick={() => { void useNav.getState().setSection("proxies").then((moved) => { if (moved) useProxy.getState().setBulkOpen(true); }); }}>{t("proxyBulkImporter.title")}</Button>}
+       />
+       <PageBody>
+-        {view === "panels" ? <PsManagementPanels /> : view === "setup" ? <PsKeySetup /> : null}
++        <div className="flex flex-col gap-6" data-provider-management>
++          <ProviderDefaultsPanel />
++          <div className="border-t border-stroke-soft-200 pt-4">
++            <Button variant="neutral" mode="ghost" size="xsmall" aria-expanded={accountOpen} onClick={() => setAccountOpen((open) => !open)}>{t("provider.legacyAccount")}</Button>
++            {accountOpen && <div className="flex flex-col gap-4 pt-3">
++              <h3 className="m-0 text-section-label text-text-strong-950">{t("pageHelp.proxyshard.title")}</h3>
++              <p className="m-0 text-help text-text-sub-600">{t("pageHelp.proxyshard.body")}</p>
++              <PsHeaderFacts />
++              <div className="flex items-center gap-2">
++                {view === "panels" && <Button variant="neutral" mode="stroke" size="xsmall" onClick={() => setBuying(true)}>{t("psBuyCard.open")}</Button>}
++                <OpenDashboardButton />
++                {view === "panels" && <HeaderMenu items={[
++                  { label: t("psKey.changeItem"), icon: <KeyIcon className="size-3.5" />, onSelect: () => setKeyOpen(true) },
++                  { label: t("psKey.checkItem"), icon: <RefreshIcon className="size-3.5" />, onSelect: () => void refreshMe() },
++                ]} />}
++              </div>
++              {view === "panels" ? <PsManagementPanels /> : view === "setup" ? <PsKeySetup /> : null}
++            </div>}
++          </div>
++        </div>
+       </PageBody>
+       {buyLife.mounted && <PsBuyDialog key={buyLife.session} open={buying} onClose={() => setBuying(false)} />}
+       {keyLife.mounted && <PsKeyDialog key={keyLife.session} open={keyOpen} onClose={() => setKeyOpen(false)} />}
 diff --git a/src/pages/settings/SettingRow.tsx b/src/pages/settings/SettingRow.tsx
 index 0e39a24..c508721 100644
 --- a/src/pages/settings/SettingRow.tsx
@@ -24350,10 +24829,11 @@ index 2fd3c31..73edf45 100644
  
 diff --git a/src/pages/settings/sections/Proxy.tsx b/src/pages/settings/sections/Proxy.tsx
 new file mode 100644
-index 0000000..5da096b
+index 0000000..049bfc5
 --- /dev/null
 +++ b/src/pages/settings/sections/Proxy.tsx
-@@ -0,0 +1,263 @@
+@@ -0,0 +1,256 @@
++import { FirstHopSourceField } from "../../../shared/ui/FirstHopSourceField";
 +import { ProviderDefaultsPanel } from "../../../features/manage-proxies/ui/ProviderDefaultsPanel";
 +import { useEffect, useRef, useState } from "react";
 +import { Button, Input, Switch } from "@proxyshard/shardx-ui-kit";
@@ -24452,17 +24932,9 @@ index 0000000..5da096b
 +        <SettingRow
 +          id="proxy-chain-mode"
 +          title={t("proxyChain.mode")}
-+          control={({ labelId, helpId }) => (
++          control={() => (
 +            <div className="w-[240px]">
-+              <SelectField
-+                aria-labelledby={labelId} aria-describedby={helpId} value={config.mode}
-+                onChange={(mode) => patch({ mode })}
-+                options={[
-+                  { value: "auto", label: t("proxyChain.modeAuto") },
-+                  { value: "http", label: t("proxyChain.modeHttp") },
-+                  { value: "socks5", label: t("proxyChain.modeSocks") },
-+                ]}
-+              />
++              <FirstHopSourceField config={config} onChange={patch} />
 +            </div>
 +          )}
 +        />
@@ -24487,7 +24959,7 @@ index 0000000..5da096b
 +              </div>
 +            ) : undefined}
 +          />
-+        ) : (
++        ) : config.mode !== "selected" ? (
 +          <>
 +            <SettingRow id="proxy-chain-host" title={t("proxyChain.host")} control={({ labelId }) => (
 +              <div className="w-[240px]">
@@ -24529,7 +25001,7 @@ index 0000000..5da096b
 +              }
 +            />
 +          </>
-+        )}
++        ) : null}
 +      </SettingsGroup>
 +
 +      <SettingsGroup title={t("proxyChain.testsTitle")} help={t("proxyChain.testsHelp")}>
@@ -24933,15 +25405,17 @@ index 0000000..c2bf0d9
 +  }, [kind, allIds, visibleIds, selected, groupOf, onReorder, dragHandle, resetSavedOrder, t, scope]);
 +}
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index ce72a51..a47375d 100644
+index ce72a51..981624c 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
-@@ -1,4 +1,37 @@
+@@ -1,4 +1,39 @@
  {
 +  "useProxy.exportTitle": "Export proxies",
 +  "useProxy.exportDescription": "Choose whether to include login credentials.",
 +  "useProxy.exportAddresses": "Copy addresses only",
 +  "useProxy.exportCredentials": "Copy with credentials",
++  "commands.createSilentDesktopShortcut": "Create silent desktop shortcut",
++  "commands.silentDesktopShortcutCreated": "Silent desktop shortcut created",
 +  "commands.createDesktopShortcut": "Create desktop shortcut",
 +  "commands.desktopShortcutCreated": "Desktop shortcut created",
 +  "commands.desktopShortcutFailed": "Could not create desktop shortcut",
@@ -24974,7 +25448,7 @@ index ce72a51..a47375d 100644
    "accent.custom": "Custom color",
    "actionMenu.byPosition": "{what}, by position",
    "actionMenu.clear": "Clear field",
-@@ -1929,7 +1962,7 @@
+@@ -1929,7 +1964,7 @@
    "projectEditor.worldMain": "Main",
    "proxies.title": "Proxies",
    "proxiesMoreMenu.buy": "Buy proxies",
@@ -24983,7 +25457,7 @@ index ce72a51..a47375d 100644
    "proxyBulkImporter.active": "Active",
    "proxyBulkImporter.addFailed": "Couldn’t add the proxies",
    "proxyBulkImporter.back": "Back",
-@@ -2307,11 +2340,6 @@
+@@ -2307,11 +2342,6 @@
    "settings.aboutUpdatesLabel": "Updates",
    "settings.aboutVersionLabel": "Version",
    "settings.aboutWebsiteLabel": "Website",
@@ -24995,7 +25469,7 @@ index ce72a51..a47375d 100644
    "settings.apiAuthHeaderHint": "Send it as ",
    "settings.apiBaseUrlLabel": "Base URL",
    "settings.apiDetailsTitle": "Connection",
-@@ -2393,9 +2421,99 @@
+@@ -2393,9 +2423,99 @@
    "settings.tabAbout": "About",
    "settings.tabApi": "API & MCP",
    "settings.tabAppearance": "Appearance",
@@ -25096,7 +25570,16 @@ index ce72a51..a47375d 100644
    "settings.tabProfiles": "Profile defaults",
    "settings.tabStorage": "Storage",
    "settings.tabSync": "Sync",
-@@ -3366,14 +3484,6 @@
+@@ -2486,7 +2606,7 @@
+   "sidebar.groupPinned": "Pinned",
+   "sidebar.groupViews": "Views",
+   "sidebar.launcherVersion": "ShardBrowser v{v}",
+-  "sidebar.navAccountShop": "ProxyShard",
++  "sidebar.navAccountShop": "Proxy providers",
+   "sidebar.navBookmarks": "Bookmarks",
+   "sidebar.navExtensions": "Extensions",
+   "sidebar.navFingerprints": "Fingerprints",
+@@ -3366,14 +3486,6 @@
    "profileSync.offDetail": "Your other computers keep their copy; it no longer updates.",
    "profileSync.conflictMade": "A profile changed on two computers: your changes from here are in “{name}”.",
    "profileSync.conflictDetail": "Both versions were kept. Don’t run both: they share one fingerprint and cookies.",
@@ -25111,7 +25594,7 @@ index ce72a51..a47375d 100644
    "sync.intro": "Sync keeps your profiles and the rest the same on every computer you use. They meet on a sync server: one you run yourself, or your team’s.",
    "sync.teamHelp": "Sync through the server of a team you have joined.",
    "sync.teamTitle": "Use a team server",
-@@ -3481,5 +3591,202 @@
+@@ -3481,5 +3593,224 @@
    "sync.guideWhere": "Run it on a computer that stays on and that all your computers can reach: a small VPS or a home server.",
    "sync.syncFirst": "Sync first",
    "sync.unsentMany": "{n} changes made here haven’t reached the server: they stay on this computer only.",
@@ -25313,18 +25796,42 @@ index ce72a51..a47375d 100644
 +  "provider.checkUnverified": "Unverified",
 +  "provider.name1024": "1024Proxy",
 +  "tnb.errorWhitelist": "The TNB extraction request came from an IP outside the allowlist. Add the current request IP to the provider allowlist and retry.",
-+  "provider.openWebsite": "Open provider website"
++  "provider.openWebsite": "Open provider website",
++  "proxyChain.firstSource": "First-layer source",
++  "proxyChain.modeSelected": "Select a saved proxy",
++  "proxyChain.modeHttps": "HTTPS proxy",
++  "proxyChain.selectedFirst": "First-layer proxy",
++  "proxyChain.selectFirst": "Select a first-layer proxy",
++  "proxyChain.defaultFirstHelp": "Saved as the default first layer. Explicit profile routes take priority. The second layer uses the profile’s assigned proxy."
++,
++"provider.managementTitle": "Proxy providers"
++,
++"provider.managementHelp": "Manage provider defaults, API extraction authentication and proxy account credentials. Defaults apply to new proxies; existing profile bindings stay unchanged."
++,
++"provider.accountSection": "Proxy account"
++,
++"provider.apiSection": "API extraction"
++,
++"provider.openWhitelist": "Open provider console and whitelist"
++,
++"provider.openWebsiteFailed": "Could not open the provider website."
++,
++"provider.legacyAccount": "ProxyShard account tools",
++  "proxyChain.loadingFirst": "Loading saved proxies…",
++  "proxyChain.noFirstProxy": "No saved proxy is available in this space."
  }
 diff --git a/src/shared/i18n/locales/ru.json b/src/shared/i18n/locales/ru.json
-index 7276e13..c9dc07e 100644
+index 7276e13..55eb05a 100644
 --- a/src/shared/i18n/locales/ru.json
 +++ b/src/shared/i18n/locales/ru.json
-@@ -1,4 +1,37 @@
+@@ -1,4 +1,39 @@
  {
 +  "useProxy.exportTitle": "Экспорт прокси",
 +  "useProxy.exportDescription": "Выберите, включать ли учётные данные.",
 +  "useProxy.exportAddresses": "Копировать только адреса",
 +  "useProxy.exportCredentials": "Копировать с учётными данными",
++  "commands.createSilentDesktopShortcut": "Создать тихий ярлык на рабочем столе",
++  "commands.silentDesktopShortcutCreated": "Тихий ярлык создан",
 +  "commands.createDesktopShortcut": "Создать ярлык на рабочем столе",
 +  "commands.desktopShortcutCreated": "Ярлык создан",
 +  "commands.desktopShortcutFailed": "Не удалось создать ярлык",
@@ -25357,7 +25864,7 @@ index 7276e13..c9dc07e 100644
    "accent.custom": "Свой цвет",
    "actionMenu.byPosition": "{what} (по координатам)",
    "actionMenu.clear": "Очистить поле",
-@@ -1929,7 +1962,7 @@
+@@ -1929,7 +1964,7 @@
    "projectEditor.worldMain": "Основная",
    "proxies.title": "Прокси",
    "proxiesMoreMenu.buy": "Купить прокси",
@@ -25366,7 +25873,7 @@ index 7276e13..c9dc07e 100644
    "proxyBulkImporter.active": "Работает",
    "proxyBulkImporter.addFailed": "Не удалось добавить прокси",
    "proxyBulkImporter.back": "Назад",
-@@ -2307,11 +2340,6 @@
+@@ -2307,11 +2342,6 @@
    "settings.aboutUpdatesLabel": "Обновления",
    "settings.aboutVersionLabel": "Версия",
    "settings.aboutWebsiteLabel": "Сайт",
@@ -25378,7 +25885,7 @@ index 7276e13..c9dc07e 100644
    "settings.apiAuthHeaderHint": "Передавайте токен в заголовке ",
    "settings.apiBaseUrlLabel": "Базовый URL",
    "settings.apiDetailsTitle": "Подключение",
-@@ -2393,9 +2421,99 @@
+@@ -2393,9 +2423,99 @@
    "settings.tabAbout": "О программе",
    "settings.tabApi": "API и MCP",
    "settings.tabAppearance": "Внешний вид",
@@ -25479,7 +25986,16 @@ index 7276e13..c9dc07e 100644
    "settings.tabProfiles": "Новые профили",
    "settings.tabStorage": "Хранилище",
    "settings.tabSync": "Синхронизация",
-@@ -3366,14 +3484,6 @@
+@@ -2486,7 +2606,7 @@
+   "sidebar.groupPinned": "Закреплённые",
+   "sidebar.groupViews": "Сохранённые фильтры",
+   "sidebar.launcherVersion": "ShardBrowser v{v}",
+-  "sidebar.navAccountShop": "ProxyShard",
++  "sidebar.navAccountShop": "Поставщики прокси",
+   "sidebar.navBookmarks": "Закладки",
+   "sidebar.navExtensions": "Расширения",
+   "sidebar.navFingerprints": "Отпечатки",
+@@ -3366,14 +3486,6 @@
    "profileSync.offDetail": "Другие ваши компьютеры сохранят свою копию, но она больше не обновляется.",
    "profileSync.conflictMade": "Профиль изменился на двух компьютерах: ваши изменения отсюда — в «{name}».",
    "profileSync.conflictDetail": "Обе версии сохранены. Не запускайте обе: у них один отпечаток и одни cookie.",
@@ -25494,7 +26010,7 @@ index 7276e13..c9dc07e 100644
    "sync.intro": "Синхронизация делает профили и остальное одинаковыми на всех ваших компьютерах. Данные передаются через сервер синхронизации: ваш собственный или сервер вашей команды.",
    "sync.teamHelp": "Синхронизация через сервер команды, в которую вы вступили.",
    "sync.teamTitle": "Использовать сервер команды",
-@@ -3481,5 +3591,202 @@
+@@ -3481,5 +3593,224 @@
    "sync.guideWhere": "Запускайте его на компьютере, который всегда включён и доступен всем вашим компьютерам: на небольшом VPS или домашнем сервере.",
    "sync.syncFirst": "Сначала синхронизировать",
    "sync.unsentMany": "{n} {n|изменение, сделанное здесь, не дошло|изменения, сделанные здесь, не дошли|изменений, сделанных здесь, не дошли} до сервера: они останутся только на этом компьютере.",
@@ -25696,18 +26212,42 @@ index 7276e13..c9dc07e 100644
 +  "provider.checkUnverified": "Unverified",
 +  "provider.name1024": "1024Proxy",
 +  "tnb.errorWhitelist": "IP запроса TNB отсутствует в белом списке. Добавьте текущий IP запроса в список провайдера и повторите попытку.",
-+  "provider.openWebsite": "Открыть сайт провайдера"
++  "provider.openWebsite": "Открыть сайт провайдера",
++  "proxyChain.firstSource": "Источник первого уровня",
++  "proxyChain.modeSelected": "Выбрать сохранённый прокси",
++  "proxyChain.modeHttps": "HTTPS вручную",
++  "proxyChain.selectedFirst": "Прокси первого уровня",
++  "proxyChain.selectFirst": "Выберите прокси первого уровня",
++  "proxyChain.defaultFirstHelp": "Первый уровень по умолчанию. Явный маршрут профиля имеет приоритет. Второй уровень использует назначенный прокси."
++,
++"provider.managementTitle": "Поставщики прокси"
++,
++"provider.managementHelp": "Параметры поставщиков, авторизация API и учётные данные прокси. Значения применяются к новым прокси; существующие привязки не меняются."
++,
++"provider.accountSection": "Учётная запись прокси"
++,
++"provider.apiSection": "Получение через API"
++,
++"provider.openWhitelist": "Открыть кабинет и список разрешённых IP"
++,
++"provider.openWebsiteFailed": "Не удалось открыть сайт поставщика."
++,
++"provider.legacyAccount": "Управление аккаунтом ProxyShard",
++  "proxyChain.loadingFirst": "Загрузка сохранённых прокси…",
++  "proxyChain.noFirstProxy": "В этом пространстве нет доступных сохранённых прокси。"
  }
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index e646200..b64aadc 100644
+index e646200..24f451b 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
-@@ -1,4 +1,37 @@
+@@ -1,4 +1,39 @@
  {
 +  "useProxy.exportTitle": "导出代理",
 +  "useProxy.exportDescription": "默认复制不含账号密码的代理地址；仅在确需迁移时包含凭据。",
 +  "useProxy.exportAddresses": "复制地址（不含凭据）",
 +  "useProxy.exportCredentials": "复制地址和凭据",
++  "commands.createSilentDesktopShortcut": "创建静默桌面快捷方式",
++  "commands.silentDesktopShortcutCreated": "已创建静默桌面快捷方式",
 +  "commands.createDesktopShortcut": "创建桌面快捷方式",
 +  "commands.desktopShortcutCreated": "已创建桌面快捷方式",
 +  "commands.desktopShortcutFailed": "无法创建桌面快捷方式",
@@ -25740,7 +26280,7 @@ index e646200..b64aadc 100644
    "accent.custom": "自定义颜色",
    "actionMenu.byPosition": "{what}（按位置）",
    "actionMenu.clear": "清空字段",
-@@ -1929,7 +1962,7 @@
+@@ -1929,7 +1964,7 @@
    "projectEditor.worldMain": "主环境",
    "proxies.title": "代理",
    "proxiesMoreMenu.buy": "购买代理",
@@ -25749,7 +26289,7 @@ index e646200..b64aadc 100644
    "proxyBulkImporter.active": "可用",
    "proxyBulkImporter.addFailed": "无法添加这些代理",
    "proxyBulkImporter.back": "返回",
-@@ -2307,11 +2340,6 @@
+@@ -2307,11 +2342,6 @@
    "settings.aboutUpdatesLabel": "更新",
    "settings.aboutVersionLabel": "版本",
    "settings.aboutWebsiteLabel": "网站",
@@ -25761,7 +26301,7 @@ index e646200..b64aadc 100644
    "settings.apiAuthHeaderHint": "发送时使用 ",
    "settings.apiBaseUrlLabel": "基础 URL",
    "settings.apiDetailsTitle": "连接",
-@@ -2393,9 +2421,99 @@
+@@ -2393,9 +2423,99 @@
    "settings.tabAbout": "关于",
    "settings.tabApi": "API 与 MCP",
    "settings.tabAppearance": "外观",
@@ -25862,7 +26402,16 @@ index e646200..b64aadc 100644
    "settings.tabProfiles": "配置默认值",
    "settings.tabStorage": "存储",
    "settings.tabSync": "同步",
-@@ -3366,14 +3484,6 @@
+@@ -2486,7 +2606,7 @@
+   "sidebar.groupPinned": "置顶",
+   "sidebar.groupViews": "视图",
+   "sidebar.launcherVersion": "ShardBrowser v{v}",
+-  "sidebar.navAccountShop": "ProxyShard",
++  "sidebar.navAccountShop": "代理供应商",
+   "sidebar.navBookmarks": "书签",
+   "sidebar.navExtensions": "扩展",
+   "sidebar.navFingerprints": "指纹",
+@@ -3366,14 +3486,6 @@
    "profileSync.offDetail": "你的其他电脑会保留它们的副本，但不再更新。",
    "profileSync.conflictMade": "一个配置在两台电脑上都被修改：你在这里的更改在“{name}”中。",
    "profileSync.conflictDetail": "两个版本都已保留。不要同时运行两者：它们共用同一个指纹和 Cookie。",
@@ -25877,7 +26426,7 @@ index e646200..b64aadc 100644
    "sync.intro": "同步让你的配置和其他数据在你使用的每台电脑上保持一致。它们通过同步服务器汇合：你自己运行的，或你团队的。",
    "sync.teamHelp": "通过你已加入的团队的服务器同步。",
    "sync.teamTitle": "使用团队服务器",
-@@ -3481,5 +3591,202 @@
+@@ -3481,5 +3593,224 @@
    "sync.guideWhere": "在一台始终开机、你所有电脑都能访问的电脑上运行它：小型 VPS 或家用服务器。",
    "sync.syncFirst": "先同步",
    "sync.unsentMany": "这里做的 {n} 项更改还没送达服务器：它们只会留在这台电脑上。",
@@ -26079,7 +26628,29 @@ index e646200..b64aadc 100644
 +  "provider.checkUnverified": "未验证",
 +  "provider.name1024": "1024Proxy",
 +  "tnb.errorWhitelist": "TNB 提取请求的出口 IP 不在白名单中，请将当前请求出口 IP 加入供应商白名单后重试。",
-+  "provider.openWebsite": "打开供应商网站"
++  "provider.openWebsite": "打开供应商网站",
++  "proxyChain.firstSource": "第一层代理来源",
++  "proxyChain.modeSelected": "选择已保存的代理",
++  "proxyChain.modeHttps": "手动 HTTPS",
++  "proxyChain.selectedFirst": "第一层代理",
++  "proxyChain.selectFirst": "请选择第一层代理",
++  "proxyChain.defaultFirstHelp": "保存为默认第一层；环境中明确指定的连接方式优先。第二层沿用环境绑定的代理。"
++,
++"provider.managementTitle": "代理供应商"
++,
++"provider.managementHelp": "统一管理供应商默认参数、API 提取认证和代理账号凭据。默认值只用于新代理，现有配置绑定保持不变。"
++,
++"provider.accountSection": "代理账号"
++,
++"provider.apiSection": "API 提取"
++,
++"provider.openWhitelist": "打开供应商控制台与白名单"
++,
++"provider.openWebsiteFailed": "无法打开供应商网站。"
++,
++"provider.legacyAccount": "ProxyShard 账号工具",
++  "proxyChain.loadingFirst": "正在加载已保存的代理…",
++  "proxyChain.noFirstProxy": "当前空间没有可用的已保存代理。"
  }
 diff --git a/src/shared/lib/analytics.ts b/src/shared/lib/analytics.ts
 index ee99e6f..62a2d62 100644
@@ -26944,6 +27515,47 @@ index 0000000..b4bef45
 +    {error && <p data-chain-first-attempt className="m-0 break-words">{t("proxyChain.firstAttemptFailed", { reason: error })}</p>}
 +  </div>;
 +}
+diff --git a/src/shared/ui/FirstHopSourceField.tsx b/src/shared/ui/FirstHopSourceField.tsx
+new file mode 100644
+index 0000000..baa94b7
+--- /dev/null
++++ b/src/shared/ui/FirstHopSourceField.tsx
+@@ -0,0 +1,35 @@
++import { useProxy } from "../../entities/proxy";
++import { useEffect } from "react";
++import type { ProxyChainSettings } from "../../entities/settings";
++import { useT } from "../i18n";
++import { SelectField } from "./SelectField";
++
++/** Shared global first-hop choice. A library reference never copies credentials into settings. */
++export function FirstHopSourceField({ config, onChange, disabled = false }: {
++  config: ProxyChainSettings; onChange: (patch: Partial<ProxyChainSettings>) => void; disabled?: boolean;
++}) {
++  const t = useT();
++  const proxies = useProxy((s) => s.proxies);
++  const proxyStatus = useProxy((s) => s.status);
++  useEffect(() => { void useProxy.getState().init(); }, []);
++  return <div className="flex min-w-0 flex-col gap-2" data-global-first-hop>
++    <p className="m-0 text-help text-text-sub-600">{t("proxyChain.firstSource")}</p>
++    <SelectField aria-label={t("proxyChain.mode")} value={config.mode} disabled={disabled}
++      options={[
++        { value: "auto", label: t("proxyChain.modeAuto") },
++        { value: "selected", label: t("proxyChain.modeSelected") },
++        { value: "http", label: t("proxyChain.modeHttp") },
++        { value: "https", label: t("proxyChain.modeHttps") },
++        { value: "socks5", label: t("proxyChain.modeSocks") },
++      ]}
++      onChange={(mode: ProxyChainSettings["mode"]) => onChange({ mode,
++        ...(mode === "selected" ? { selected_proxy_id: config.selected_proxy_id || proxies[0]?.id || "" } : {}) })} />
++    {config.mode === "selected" && proxyStatus === "loading" && <p className="m-0 text-help text-text-sub-600">{t("proxyChain.loadingFirst")}</p>}
++    {config.mode === "selected" && proxyStatus !== "loading" && <SelectField aria-label={t("proxyChain.selectedFirst")}
++      disabled={disabled} value={config.selected_proxy_id ?? ""}
++      options={[{ value: "", label: t("proxyChain.selectFirst") }, ...proxies.map((p) => ({ value: p.id, label: `${p.name || p.host} (${p.kind.toUpperCase()} ${p.host}:${p.port})` }))]}
++      onChange={(selected_proxy_id: string) => onChange({ selected_proxy_id })} />}
++    {config.mode === "selected" && proxyStatus === "ready" && proxies.length === 0 && <p className="m-0 text-help text-warning-text">{t("proxyChain.noFirstProxy")}</p>}
++    <p className="m-0 text-help text-text-sub-600">{t("proxyChain.defaultFirstHelp")}</p>
++  </div>;
++}
 diff --git a/src/shared/ui/StatusPill.tsx b/src/shared/ui/StatusPill.tsx
 index 66845c8..e6926f5 100644
 --- a/src/shared/ui/StatusPill.tsx
@@ -27322,10 +27934,11 @@ index 43537a4..3b2eda7 100644
              columns={columns}
 diff --git a/src/widgets/ProfileTable/ProxyQuickControl.tsx b/src/widgets/ProfileTable/ProxyQuickControl.tsx
 new file mode 100644
-index 0000000..7ff7943
+index 0000000..d206496
 --- /dev/null
 +++ b/src/widgets/ProfileTable/ProxyQuickControl.tsx
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,151 @@
++import { FirstHopSourceField } from "../../shared/ui/FirstHopSourceField";
 +import { useEffect, useId, useRef, useState } from "react";
 +import { Button, Input, Switch } from "@proxyshard/shardx-ui-kit";
 +import { defaultProxyChain, proxyChainSetEnabled, proxyChainTest, settingsGet, settingsSave, type ProxyChainSettings, type ProxyChainTestResult } from "../../entities/settings";
@@ -27337,7 +27950,6 @@ index 0000000..7ff7943
 +import { fmtTs } from "../../shared/lib/utils";
 +import { StatusDot } from "../../shared/ui/StatusDot";
 +import { NumField } from "../../shared/ui/NumField";
-+import { SelectField } from "../../shared/ui/SelectField";
 +
 +/** Saved global routing and a fresh first-hop probe, never a profile's exit. */
 +export function ProxyQuickControl() {
@@ -27445,20 +28057,21 @@ index 0000000..7ff7943
 +      <p className="my-2 text-help text-text-sub-600">{t("proxyQuick.nextLaunch")}</p>
 +      {config && <div className="mt-3 flex flex-col gap-2" data-proxy-quick-route>
 +        <div className="text-help text-text-sub-600">{t("proxyChain.mode")}</div>
-+        <SelectField
-+          aria-label={t("proxyChain.mode")}
-+          value={config.mode}
-+          options={[
-+            { value: "auto", label: t("proxyChain.modeAuto") },
-+            { value: "http", label: t("proxyChain.modeHttp") },
-+            { value: "socks5", label: t("proxyChain.modeSocks") },
-+          ]}
-+          onChange={(mode: ProxyChainSettings["mode"]) => void saveRoute({ mode })}
-+        />
-+        {config.mode !== "auto" && <div className="flex items-center gap-2">
++        <FirstHopSourceField config={config} disabled={saving} onChange={(patch) => void saveRoute(patch)} />
++        {config.mode !== "auto" && config.mode !== "selected" && <div className="flex items-center gap-2">
 +          <Input aria-label={t("proxyChain.host")} inputSize="xsmall" technical className="min-w-0 flex-1" value={config.host} onChange={(e) => setConfig({ ...config, host: e.target.value })} onBlur={() => void saveRoute({ host: config.host })} />
 +          <NumField aria-label={t("proxyChain.port")} value={config.port} min={1} max={65535} onChange={(port) => { setConfig({ ...config, port }); void saveRoute({ port }); }} />
 +        </div>}
++        {config.mode !== "auto" && config.mode !== "selected" && <>
++          <Input aria-label={t("proxyChain.username")} inputSize="xsmall" value={config.username} autoComplete="off"
++            onChange={(e) => setConfig({ ...config, username: e.target.value })} onBlur={() => void saveRoute({ username: config.username })} />
++          <Input aria-label={t("proxyChain.password")} inputSize="xsmall" type="password" autoComplete="new-password"
++            value={config.password ?? ""} placeholder={config.password_saved ? t("proxyChain.passwordSaved") : t("proxyChain.passwordHelp")}
++            onChange={(e) => setConfig({ ...config, password: e.target.value || undefined })}
++            onBlur={() => { if (config.password !== undefined) void saveRoute({ password: config.password }); }} />
++          <Button size="xsmall" mode="ghost" variant="neutral" disabled={saving || !config.password_saved}
++            onClick={() => void saveRoute({ password: null })}>{t("proxyChain.clearPassword")}</Button>
++        </>}
 +      </div>}
 +      <p className="my-2 text-ui">{config?.enabled ? t("proxyQuick.firstExit") : t("proxyQuick.localExit")}</p>
 +      <div role="status" aria-live="polite" className="text-help text-text-sub-600">
@@ -27601,9 +28214,16 @@ index d3b08b1..24af6c2 100644
                  top={offsetOf(i)}
                  columns={columns}
 diff --git a/src/widgets/ProxyList/ProxyListRow.tsx b/src/widgets/ProxyList/ProxyListRow.tsx
-index df7d2cb..e838455 100644
+index df7d2cb..ead8701 100644
 --- a/src/widgets/ProxyList/ProxyListRow.tsx
 +++ b/src/widgets/ProxyList/ProxyListRow.tsx
+@@ -1,5 +1,5 @@
+ import { memo, useMemo, useRef, type ReactNode } from "react";
+-import { Checkbox, cn, IconButton, swallowFollowUpClick, Tooltip, useLongPress, type ContextMenuApi } from "@proxyshard/shardx-ui-kit";
++import { Badge, Checkbox, cn, IconButton, swallowFollowUpClick, Tooltip, useLongPress, type ContextMenuApi } from "@proxyshard/shardx-ui-kit";
+ import { AlertCircleIcon, MoreIcon } from "../../shared/icons";
+ import { CountryFlag } from "../../shared/ui/CountryFlag";
+ import { RowHoverActions, rowButtonDangerHoverClass, rowButtonHoverClass } from "../../shared/ui/RowHoverActions";
 @@ -9,14 +9,16 @@ import { fmtTs, HOST_OS } from "../../shared/lib/utils";
  import { slideDelayOf } from "../../shared/lib/arrival";
  import { useT } from "../../shared/i18n";
@@ -27641,7 +28261,7 @@ index df7d2cb..e838455 100644
            </div>
          );
        case "profiles":
-@@ -154,7 +156,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
+@@ -154,12 +156,13 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
                  visually-hidden detail and the hover tooltip. */}
              <Tooltip content={detail}>
                {status === "ok"
@@ -27650,7 +28270,13 @@ index df7d2cb..e838455 100644
                  : <ProxyTestPill state={status} busy={busy} detail={detail} className="shrink-0" />}
              </Tooltip>
              {/* The address it came out at stays beside it, as before, while
-@@ -172,6 +174,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
+                 there is room; short of room, it is in the tooltip. */}
+             {ip && !ipInTip && <span className="mono min-w-0 truncate text-secondary text-text-sub-600">{ip}</span>}
++            {snap?.udp_state === "unsupported_by_chain" && <Badge color="gray" size="small" data-chain-udp-unsupported>{t("proxyChain.udpUnsupported")}</Badge>}
+           </div>
+         );
+     }
+@@ -172,6 +175,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
        aria-rowindex={rowIndex}
        aria-selected={isSel}
        data-proxy-id={p.id}
@@ -27658,6 +28284,29 @@ index df7d2cb..e838455 100644
        data-active={active || undefined}
        data-peek-open={inPeek || undefined}
        // A click anywhere on the row opens it in Peek (O5), except on the row
+diff --git a/src/widgets/ProxyList/proxyFits.ts b/src/widgets/ProxyList/proxyFits.ts
+index 24878e4..aad51d1 100644
+--- a/src/widgets/ProxyList/proxyFits.ts
++++ b/src/widgets/ProxyList/proxyFits.ts
+@@ -11,6 +11,8 @@ const TEST_PILL = 7 + 7;
+ const PROTOCOL_PILL = 6 + 6;
+ /** The test cell's gap between its pill and the IP (`gap-1.5`). */
+ const GAP = 6;
++/** The compact UDP unsupported badge shown beside a test result. */
++const UDP_PILL = 7 + 7;
+ /** A pill's 1 px system edge each side, drawn only in forced colors (`forced-edge`). */
+ const edge = () => (typeof matchMedia === "function" && matchMedia("(forced-colors: active)").matches ? 2 : 0);
+ /** The pill's word takes tabular digits: each as wide as a 0. */
+@@ -54,7 +56,8 @@ export function proxyFits({ snapshotOf, countOf }: {
+     // mono face after the cell's gap.
+     test: (p, m) => {
+       const snap = snapshotOf(p.id);
+-      return proxyStatus(snap) === "ok" && snap!.ip ? pill(p, m) + GAP + m(snap!.ip, "mono") : pill(p, m);
++      const udp = snap?.udp_state === "unsupported_by_chain" ? GAP + UDP_PILL + m(t("proxyChain.udpUnsupported"), "secondary") : 0;
++      return (proxyStatus(snap) === "ok" && snap!.ip ? pill(p, m) + GAP + m(snap!.ip, "mono") : pill(p, m)) + udp;
+     },
+   };
+   return { fits, short: { test: pill } };
 diff --git a/src/widgets/ProxyPeek/Details.tsx b/src/widgets/ProxyPeek/Details.tsx
 index 0a8b322..c13e550 100644
 --- a/src/widgets/ProxyPeek/Details.tsx
