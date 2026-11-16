@@ -200,8 +200,11 @@ test("the Add to proxies dialog names each row checkbox by its address", async (
   await openLegacyProxyShard(page);
   const grid = page.locator("[data-ps-card='orders']").getByRole("treegrid", { name: "Orders" });
   const row = grid.getByRole("row").filter({ hasText: "Datacenter USA" });
+  await row.scrollIntoViewIfNeeded();
   await row.hover();
-  await row.getByRole("button", { name: "Add to proxies" }).click();
+  const importButton = row.getByRole("button", { name: "Add to proxies" });
+  await expect(importButton).toBeVisible();
+  await importButton.click();
   const dialog = page.getByRole("dialog");
   // "Select <host>:<port>": the name a screen reader reads (SOCKS5 port by default).
   const box = dialog.getByRole("checkbox", { name: /^Select \d+\.\d+\.\d+\.\d+:\d+$/ });
@@ -219,8 +222,11 @@ test("proxies added from an order are in Proxies at once, no restart needed (own
   await expandLegacyTools(page);
   const grid = page.locator("[data-ps-card='orders']").getByRole("treegrid", { name: "Orders" });
   const row = grid.getByRole("row").filter({ hasText: "Datacenter USA" });
+  await row.scrollIntoViewIfNeeded();
   await row.hover();
-  await row.getByRole("button", { name: "Add to proxies" }).click();
+  const importButton = row.getByRole("button", { name: "Add to proxies" });
+  await expect(importButton).toBeVisible();
+  await importButton.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("checkbox", { name: /^Select \d/ }).first()).toBeVisible();
   await dialog.getByRole("button", { name: /^Add \d+$/ }).click();
