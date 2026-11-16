@@ -11,6 +11,8 @@ const TEST_PILL = 7 + 7;
 const PROTOCOL_PILL = 6 + 6;
 /** The test cell's gap between its pill and the IP (`gap-1.5`). */
 const GAP = 6;
+/** The compact UDP unsupported badge shown beside a test result. */
+const UDP_PILL = 7 + 7;
 /** A pill's 1 px system edge each side, drawn only in forced colors (`forced-edge`). */
 const edge = () => (typeof matchMedia === "function" && matchMedia("(forced-colors: active)").matches ? 2 : 0);
 /** The pill's word takes tabular digits: each as wide as a 0. */
@@ -54,7 +56,8 @@ export function proxyFits({ snapshotOf, countOf }: {
     // mono face after the cell's gap.
     test: (p, m) => {
       const snap = snapshotOf(p.id);
-      return proxyStatus(snap) === "ok" && snap!.ip ? pill(p, m) + GAP + m(snap!.ip, "mono") : pill(p, m);
+      const udp = snap?.udp_state === "unsupported_by_chain" ? GAP + UDP_PILL + m(t("proxyChain.udpUnsupported"), "secondary") : 0;
+      return (proxyStatus(snap) === "ok" && snap!.ip ? pill(p, m) + GAP + m(snap!.ip, "mono") : pill(p, m)) + udp;
     },
   };
   return { fits, short: { test: pill } };

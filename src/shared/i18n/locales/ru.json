@@ -3,6 +3,8 @@
   "useProxy.exportDescription": "Выберите, включать ли учётные данные.",
   "useProxy.exportAddresses": "Копировать только адреса",
   "useProxy.exportCredentials": "Копировать с учётными данными",
+  "commands.createSilentDesktopShortcut": "Создать тихий ярлык на рабочем столе",
+  "commands.silentDesktopShortcutCreated": "Тихий ярлык создан",
   "commands.createDesktopShortcut": "Создать ярлык на рабочем столе",
   "commands.desktopShortcutCreated": "Ярлык создан",
   "commands.desktopShortcutFailed": "Не удалось создать ярлык",
@@ -2604,7 +2606,7 @@
   "sidebar.groupPinned": "Закреплённые",
   "sidebar.groupViews": "Сохранённые фильтры",
   "sidebar.launcherVersion": "ShardBrowser v{v}",
-  "sidebar.navAccountShop": "ProxyShard",
+  "sidebar.navAccountShop": "Поставщики прокси",
   "sidebar.navBookmarks": "Закладки",
   "sidebar.navExtensions": "Расширения",
   "sidebar.navFingerprints": "Отпечатки",
@@ -3788,5 +3790,27 @@
   "provider.checkUnverified": "Unverified",
   "provider.name1024": "1024Proxy",
   "tnb.errorWhitelist": "IP запроса TNB отсутствует в белом списке. Добавьте текущий IP запроса в список провайдера и повторите попытку.",
-  "provider.openWebsite": "Открыть сайт провайдера"
+  "provider.openWebsite": "Открыть сайт провайдера",
+  "proxyChain.firstSource": "Источник первого уровня",
+  "proxyChain.modeSelected": "Выбрать сохранённый прокси",
+  "proxyChain.modeHttps": "HTTPS вручную",
+  "proxyChain.selectedFirst": "Прокси первого уровня",
+  "proxyChain.selectFirst": "Выберите прокси первого уровня",
+  "proxyChain.defaultFirstHelp": "Первый уровень по умолчанию. Явный маршрут профиля имеет приоритет. Второй уровень использует назначенный прокси."
+,
+"provider.managementTitle": "Поставщики прокси"
+,
+"provider.managementHelp": "Параметры поставщиков, авторизация API и учётные данные прокси. Значения применяются к новым прокси; существующие привязки не меняются."
+,
+"provider.accountSection": "Учётная запись прокси"
+,
+"provider.apiSection": "Получение через API"
+,
+"provider.openWhitelist": "Открыть кабинет и список разрешённых IP"
+,
+"provider.openWebsiteFailed": "Не удалось открыть сайт поставщика."
+,
+"provider.legacyAccount": "Управление аккаунтом ProxyShard",
+  "proxyChain.loadingFirst": "Загрузка сохранённых прокси…",
+  "proxyChain.noFirstProxy": "В этом пространстве нет доступных сохранённых прокси。"
 }

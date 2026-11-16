@@ -3,6 +3,8 @@
   "useProxy.exportDescription": "Choose whether to include login credentials.",
   "useProxy.exportAddresses": "Copy addresses only",
   "useProxy.exportCredentials": "Copy with credentials",
+  "commands.createSilentDesktopShortcut": "Create silent desktop shortcut",
+  "commands.silentDesktopShortcutCreated": "Silent desktop shortcut created",
   "commands.createDesktopShortcut": "Create desktop shortcut",
   "commands.desktopShortcutCreated": "Desktop shortcut created",
   "commands.desktopShortcutFailed": "Could not create desktop shortcut",
@@ -2604,7 +2606,7 @@
   "sidebar.groupPinned": "Pinned",
   "sidebar.groupViews": "Views",
   "sidebar.launcherVersion": "ShardBrowser v{v}",
-  "sidebar.navAccountShop": "ProxyShard",
+  "sidebar.navAccountShop": "Proxy providers",
   "sidebar.navBookmarks": "Bookmarks",
   "sidebar.navExtensions": "Extensions",
   "sidebar.navFingerprints": "Fingerprints",
@@ -3788,5 +3790,27 @@
   "provider.checkUnverified": "Unverified",
   "provider.name1024": "1024Proxy",
   "tnb.errorWhitelist": "The TNB extraction request came from an IP outside the allowlist. Add the current request IP to the provider allowlist and retry.",
-  "provider.openWebsite": "Open provider website"
+  "provider.openWebsite": "Open provider website",
+  "proxyChain.firstSource": "First-layer source",
+  "proxyChain.modeSelected": "Select a saved proxy",
+  "proxyChain.modeHttps": "HTTPS proxy",
+  "proxyChain.selectedFirst": "First-layer proxy",
+  "proxyChain.selectFirst": "Select a first-layer proxy",
+  "proxyChain.defaultFirstHelp": "Saved as the default first layer. Explicit profile routes take priority. The second layer uses the profile’s assigned proxy."
+,
+"provider.managementTitle": "Proxy providers"
+,
+"provider.managementHelp": "Manage provider defaults, API extraction authentication and proxy account credentials. Defaults apply to new proxies; existing profile bindings stay unchanged."
+,
+"provider.accountSection": "Proxy account"
+,
+"provider.apiSection": "API extraction"
+,
+"provider.openWhitelist": "Open provider console and whitelist"
+,
+"provider.openWebsiteFailed": "Could not open the provider website."
+,
+"provider.legacyAccount": "ProxyShard account tools",
+  "proxyChain.loadingFirst": "Loading saved proxies…",
+  "proxyChain.noFirstProxy": "No saved proxy is available in this space."
 }

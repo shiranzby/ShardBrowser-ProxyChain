@@ -1,3 +1,4 @@
+import { FirstHopSourceField } from "../../shared/ui/FirstHopSourceField";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input, Switch } from "@proxyshard/shardx-ui-kit";
 import { defaultProxyChain, proxyChainSetEnabled, proxyChainTest, settingsGet, settingsSave, type ProxyChainSettings, type ProxyChainTestResult } from "../../entities/settings";
@@ -9,7 +10,6 @@ import { explainError } from "../../shared/lib/errors";
 import { fmtTs } from "../../shared/lib/utils";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { NumField } from "../../shared/ui/NumField";
-import { SelectField } from "../../shared/ui/SelectField";
 
 /** Saved global routing and a fresh first-hop probe, never a profile's exit. */
 export function ProxyQuickControl() {
@@ -117,20 +117,21 @@ export function ProxyQuickControl() {
       <p className="my-2 text-help text-text-sub-600">{t("proxyQuick.nextLaunch")}</p>
       {config && <div className="mt-3 flex flex-col gap-2" data-proxy-quick-route>
         <div className="text-help text-text-sub-600">{t("proxyChain.mode")}</div>
-        <SelectField
-          aria-label={t("proxyChain.mode")}
-          value={config.mode}
-          options={[
-            { value: "auto", label: t("proxyChain.modeAuto") },
-            { value: "http", label: t("proxyChain.modeHttp") },
-            { value: "socks5", label: t("proxyChain.modeSocks") },
-          ]}
-          onChange={(mode: ProxyChainSettings["mode"]) => void saveRoute({ mode })}
-        />
-        {config.mode !== "auto" && <div className="flex items-center gap-2">
+        <FirstHopSourceField config={config} disabled={saving} onChange={(patch) => void saveRoute(patch)} />
+        {config.mode !== "auto" && config.mode !== "selected" && <div className="flex items-center gap-2">
           <Input aria-label={t("proxyChain.host")} inputSize="xsmall" technical className="min-w-0 flex-1" value={config.host} onChange={(e) => setConfig({ ...config, host: e.target.value })} onBlur={() => void saveRoute({ host: config.host })} />
           <NumField aria-label={t("proxyChain.port")} value={config.port} min={1} max={65535} onChange={(port) => { setConfig({ ...config, port }); void saveRoute({ port }); }} />
         </div>}
+        {config.mode !== "auto" && config.mode !== "selected" && <>
+          <Input aria-label={t("proxyChain.username")} inputSize="xsmall" value={config.username} autoComplete="off"
+            onChange={(e) => setConfig({ ...config, username: e.target.value })} onBlur={() => void saveRoute({ username: config.username })} />
+          <Input aria-label={t("proxyChain.password")} inputSize="xsmall" type="password" autoComplete="new-password"
+            value={config.password ?? ""} placeholder={config.password_saved ? t("proxyChain.passwordSaved") : t("proxyChain.passwordHelp")}
+            onChange={(e) => setConfig({ ...config, password: e.target.value || undefined })}
+            onBlur={() => { if (config.password !== undefined) void saveRoute({ password: config.password }); }} />
+          <Button size="xsmall" mode="ghost" variant="neutral" disabled={saving || !config.password_saved}
+            onClick={() => void saveRoute({ password: null })}>{t("proxyChain.clearPassword")}</Button>
+        </>}
       </div>}
       <p className="my-2 text-ui">{config?.enabled ? t("proxyQuick.firstExit") : t("proxyQuick.localExit")}</p>
       <div role="status" aria-live="polite" className="text-help text-text-sub-600">

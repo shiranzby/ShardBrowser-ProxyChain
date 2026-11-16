@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button, Input } from "@proxyshard/shardx-ui-kit";
 import { providerDefaultsGet, providerDefaultsSave, type ProviderDefaults, type ProviderUpdate } from "../../../entities/proxy";
 import { SelectField } from "../../../shared/ui/SelectField";
 import { useT } from "../../../shared/i18n";
+import { toast } from "../../../shared/model/toast";
 
 /** Explicit save: provider defaults never change existing proxy bindings. */
 export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?: "all" | "1024proxy" | "tnbproxy"; onSaved?: (value: ProviderDefaults) => void }) {
@@ -21,6 +23,7 @@ export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?
     catch { setError(true); }
     finally { setBusy(false); }
   };
+  const website = (url: string, whitelist = false) => <Button variant="neutral" mode="ghost" size="3xsmall" onClick={() => { void openUrl(url).catch(() => toast.err(t("provider.openWebsiteFailed"))); }}>{whitelist ? t("provider.openWhitelist") : t("provider.openWebsite")}</Button>;
   const password = (key: "password" | "tnb_api_password" | "tnb_proxy_password", has: boolean, label: string) => <div className="flex flex-col gap-1.5">
     <Input secret type="password" inputSize="xsmall" label={label} value={secrets[key] ?? ""} autoComplete="new-password" placeholder={has ? t("provider.keepPassword") : ""} onChange={(e) => { setSecrets((v) => ({ ...v, [key]: e.target.value })); setSaved(false); }} />
     {has && <Button variant="neutral" mode="ghost" size="3xsmall" onClick={() => { setSecrets((v) => ({ ...v, [key]: "" })); setSaved(false); }}>{secrets[key] === "" ? t("provider.willClear") : t("provider.clearPassword")}</Button>}
@@ -30,7 +33,8 @@ export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?
       <p className="m-0 text-help text-text-sub-600">{t("provider.defaultsHelp")}</p>
       {value && <>
         {provider !== "tnbproxy" && <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("provider.name1024")}</h3><a className="text-help text-text-sub-600 underline" href="https://1024proxy.io" target="_blank" rel="noreferrer">{t("provider.openWebsite")}</a></div>
+          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("provider.name1024")}</h3>{website("https://1024proxy.io")}</div>
+          <h4 className="m-0 text-secondary font-medium text-text-strong-950">{t("provider.accountSection")}</h4>
           <Input inputSize="xsmall" label={t("provider.relay")} value={value.relay} onChange={(e) => patch({ relay: e.target.value })} />
           <div className="grid grid-cols-2 gap-3">
             <Input inputSize="xsmall" label={t("provider.account")} value={value.username} onChange={(e) => patch({ username: e.target.value })} />
@@ -40,7 +44,8 @@ export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?
           <p className="m-0 text-help text-text-sub-600">{t("provider.templateHelp")}</p>
         </div>}
         {provider !== "1024proxy" && <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("tnb.provider")}</h3><a className="text-help text-text-sub-600 underline" href="https://dash.tnbproxy.com" target="_blank" rel="noreferrer">{t("provider.openWebsite")}</a></div>
+          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("tnb.provider")}</h3>{website("https://dash.tnbproxy.com", true)}</div>
+          <h4 className="m-0 text-secondary font-medium text-text-strong-950">{t("provider.apiSection")}</h4>
           <Input inputSize="xsmall" label={t("tnb.server")} value={value.tnb_server} onChange={(e) => patch({ tnb_server: e.target.value })} />
           <div className="grid grid-cols-2 gap-3">
             <Input inputSize="xsmall" label={t("tnb.plan")} value={value.tnb_plan} onChange={(e) => patch({ tnb_plan: e.target.value })} />
@@ -50,6 +55,9 @@ export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?
           <div className="grid grid-cols-2 gap-3">
             <Input inputSize="xsmall" label={t("provider.apiUsername")} value={value.tnb_api_username} onChange={(e) => patch({ tnb_api_username: e.target.value })} />
             {password("tnb_api_password", value.tnb_api_password_saved, t("provider.apiPassword"))}
+          </div>
+          <h4 className="m-0 text-secondary font-medium text-text-strong-950">{t("provider.accountSection")}</h4>
+          <div className="grid grid-cols-2 gap-3">
             <Input inputSize="xsmall" label={t("provider.proxyUsername")} value={value.tnb_proxy_username} onChange={(e) => patch({ tnb_proxy_username: e.target.value })} />
             {password("tnb_proxy_password", value.tnb_proxy_password_saved, t("provider.proxyPassword"))}
           </div>

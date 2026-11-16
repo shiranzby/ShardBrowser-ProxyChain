@@ -606,6 +606,8 @@ export const handlers: Record<string, Handler> = {
   },
 
   // ---- profiles ---------------------------------------------------------------
+  profile_shortcut_show_launcher: () => null,
+  profile_shortcut_launch_is_silent: () => false,
   profile_shortcut_take_pending: () => {
     const w = window as { __shardxMockShortcutPending?: string[] };
     return w.__shardxMockShortcutPending?.splice(0) ?? [];

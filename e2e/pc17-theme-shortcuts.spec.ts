@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { openApp, reloadApp } from "./support/app";
 
 type MockWindow = Window & {
-  __shardxMockShortcutPending?: string[];
+  __shardxMockShortcutPending?: Array<string | { id: string; silent_launcher: boolean }>;
   __shardxMock: {
     calls: Record<string, number>;
     log: { cmd: string; args: Record<string, unknown> }[];
@@ -46,7 +46,7 @@ test("profile menu creates a link using only the stable profile ID", async ({ pa
   await page.getByRole("menuitem", { name: "Create desktop shortcut", exact: true }).click();
   await expect.poll(() => calls(page, "profile_create_desktop_shortcut")).toBe(1);
   const args = await page.evaluate(() => (window as MockWindow).__shardxMock.log.find((e) => e.cmd === "profile_create_desktop_shortcut")?.args);
-  expect(args).toEqual({ profileId: id });
+  expect(args).toEqual({ profileId: id, silent: false });
   await expect(page.getByRole("region", { name: "Notifications" }).getByText("Desktop shortcut created", { exact: true })).toBeVisible();
 });
 
@@ -103,4 +103,25 @@ test("renamed profile and changed proxy are reloaded before shortcut launch", as
     return log.slice(0, launched).some((entry) => entry.cmd === "profile_list");
   });
   expect(listedBeforeStart).toBe(true);
+});
+
+
+test("silent shortcut is selectable and preserves normal guarded launch", async ({ page }) => {
+  await openApp(page);
+  const row = page.locator("[role='row'][data-profile-id]", { hasText: "Sandbox" });
+  const id = (await row.getAttribute("data-profile-id"))!;
+  await row.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Create silent desktop shortcut", exact: true }).click();
+  await expect.poll(() => calls(page, "profile_create_desktop_shortcut")).toBe(1);
+  const args = await page.evaluate(() => (window as MockWindow).__shardxMock.log.find((e) => e.cmd === "profile_create_desktop_shortcut")?.args);
+  expect(args).toEqual({ profileId: id, silent: true });
+  await page.evaluate((id) => {
+    const w = window as MockWindow;
+    w.__shardxMockShortcutPending = [{ id, silent_launcher: true }];
+    w.__shardxMock.emit("profile-shortcut-requested");
+  }, id);
+  expect(await calls(page, "profile_shortcut_show_launcher")).toBe(0);
+  await expect.poll(() => calls(page, "launch")).toBe(1);
+  expect(await calls(page, "process_kill")).toBe(0);
+  expect(await calls(page, "profile_shortcut_show_launcher")).toBe(0);
 });

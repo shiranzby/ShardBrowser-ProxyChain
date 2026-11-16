@@ -166,6 +166,20 @@ export const PROFILE_COMMANDS: readonly Command[] = [
     },
   },
   {
+    ...LIST, id: "profile.createSilentDesktopShortcut", scope: "selection", group: "open", icon: ComputerIcon,
+    label: () => t("commands.createSilentDesktopShortcut"),
+    surfaces: ["rowMenu", "pinnedMenu", "paletteActions", "peekMenu"],
+    when: (s) => s.ids.length === 1 && personalRows(s),
+    run: async (s) => {
+      const one = metas(s)[0];
+      if (!one) return;
+      try {
+        await profileCreateDesktopShortcut(one.id, true);
+        toast.ok(t("commands.silentDesktopShortcutCreated"));
+      } catch (detail) { toast.fail({ title: t("commands.desktopShortcutFailed"), detail }); }
+    },
+  },
+  {
     // Finding one browser window among a dozen is the operator's problem
     // otherwise. Only for a profile that is actually up: the browser raises
     // itself, so there is nothing to ask when there is no browser.

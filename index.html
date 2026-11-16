@@ -22,7 +22,9 @@
           var tauri = window.__TAURI_INTERNALS__;
           if (tauri && !/[?&](syncPanel|helperPanel|fleet)=/.test(location.hash)) {
             setTimeout(function () {
-              tauri.invoke("plugin:window|show", { label: "main" }).catch(function () {});
+              tauri.invoke("profile_shortcut_launch_is_silent").then(function (silent) {
+                if (!silent) return tauri.invoke("plugin:window|show", { label: "main" });
+              }).catch(function () {});
             }, 4000);
           }
         } catch (e) {}

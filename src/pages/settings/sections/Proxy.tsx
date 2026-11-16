@@ -1,3 +1,4 @@
+import { FirstHopSourceField } from "../../../shared/ui/FirstHopSourceField";
 import { ProviderDefaultsPanel } from "../../../features/manage-proxies/ui/ProviderDefaultsPanel";
 import { useEffect, useRef, useState } from "react";
 import { Button, Input, Switch } from "@proxyshard/shardx-ui-kit";
@@ -96,17 +97,9 @@ export function ProxySection({ s, setS }: SettingsProps) {
         <SettingRow
           id="proxy-chain-mode"
           title={t("proxyChain.mode")}
-          control={({ labelId, helpId }) => (
+          control={() => (
             <div className="w-[240px]">
-              <SelectField
-                aria-labelledby={labelId} aria-describedby={helpId} value={config.mode}
-                onChange={(mode) => patch({ mode })}
-                options={[
-                  { value: "auto", label: t("proxyChain.modeAuto") },
-                  { value: "http", label: t("proxyChain.modeHttp") },
-                  { value: "socks5", label: t("proxyChain.modeSocks") },
-                ]}
-              />
+              <FirstHopSourceField config={config} onChange={patch} />
             </div>
           )}
         />
@@ -131,7 +124,7 @@ export function ProxySection({ s, setS }: SettingsProps) {
               </div>
             ) : undefined}
           />
-        ) : (
+        ) : config.mode !== "selected" ? (
           <>
             <SettingRow id="proxy-chain-host" title={t("proxyChain.host")} control={({ labelId }) => (
               <div className="w-[240px]">
@@ -173,7 +166,7 @@ export function ProxySection({ s, setS }: SettingsProps) {
               }
             />
           </>
-        )}
+        ) : null}
       </SettingsGroup>
 
       <SettingsGroup title={t("proxyChain.testsTitle")} help={t("proxyChain.testsHelp")}>

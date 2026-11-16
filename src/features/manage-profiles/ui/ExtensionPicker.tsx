@@ -27,11 +27,13 @@ function Icon({ e, className }: { e: ExtensionEntry; className?: string }) {
  *  list alone, open, for a popover that is already its frame (Peek's
  *  Extensions row): the chips and the toggle would be a second step there. */
 export function ExtensionPicker({
-  value, onChange, listOnly = false,
+  value, onChange, listOnly = false, onAdd,
 }: {
   value: string[];
   onChange: (v: string[]) => void;
   listOnly?: boolean;
+  /** The Profile form adds to the library in place instead of leaving its draft. */
+  onAdd?: () => void;
 }) {
   const t = useT();
   const items = useExtensions((s) => s.items);
@@ -53,7 +55,7 @@ export function ExtensionPicker({
     return (
       <p className={cn("m-0 text-secondary text-text-soft-400", listOnly && "p-3")}>
         {t("extensionPicker.emptyLibrary")}{" "}
-        <Button mode="link" size="3xsmall" onClick={() => go("extensions")}>
+        <Button mode="link" size="3xsmall" onClick={() => onAdd ? onAdd() : go("extensions")}>
           {t("extensionPicker.addOne")}
         </Button>
       </p>

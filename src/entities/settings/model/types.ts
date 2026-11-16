@@ -53,7 +53,8 @@ export type ProxyChainSettings = {
   /** An unreadable saved chain must be explicitly repaired before use. */
   invalid?: boolean;
   enabled: boolean;
-  mode: "auto" | "http" | "socks5";
+  mode: "auto" | "selected" | "http" | "https" | "socks5";
+  selected_proxy_id?: string | null;
   host: string;
   port: number;
   username: string;

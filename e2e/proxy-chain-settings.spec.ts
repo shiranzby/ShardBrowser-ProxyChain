@@ -311,7 +311,8 @@ test("proxy Peek labels TCP-chain UDP as unavailable rather than a failed relay"
     st.setState({ snapshots: { ...st.getState().snapshots, "px-jp-1": { ...previous, transport: "proxy_chain", udp_state: "unsupported_by_chain", udp_ms: null } } });
   });
   await page.locator("[role='row'][data-proxy-id='px-jp-1'] [data-cell='name']").click();
-  await expect(page.locator("[data-chain-udp-unsupported]")).toContainText("UDP unavailable in proxy chain");
+  await expect(page.locator("aside[data-peek='proxy'] [data-chain-udp-unsupported]")).toContainText("UDP unavailable in proxy chain");
+  await expect(page.locator("[role='row'][data-proxy-id='px-jp-1'] [data-cell='test'] [data-chain-udp-unsupported]")).toContainText("UDP unavailable in proxy chain");
   await expect(page.locator("aside[data-peek='proxy']")).toContainText("Test route: system proxy chain");
 });
 
@@ -380,3 +381,19 @@ for (const lang of ["en", "zh", "ru"]) {
     await page.screenshot({ path: info.outputPath(`proxy-chain-${lang}-1024x680-result.png`) });
   });
 }
+
+
+test("global first layer selects a library proxy without copying its password", async ({ page }) => {
+  await openProxy(page);
+  await page.getByRole("combobox", { name: "Configuration method", exact: true }).click();
+  await page.getByRole("option", { name: "Select a saved proxy", exact: true }).click();
+  const chosen = page.getByRole("combobox", { name: "First-layer proxy", exact: true });
+  await expect(chosen).toBeVisible();
+  await chosen.click();
+  await page.getByRole("option").nth(1).click();
+  await save(page);
+  await expect.poll(async () => (await mock(page)).state.settings.proxy_chain.mode).toBe("selected");
+  const config = (await mock(page)).state.settings.proxy_chain;
+  expect(config.selected_proxy_id).toBeTruthy();
+  expect(config.password).toBeUndefined();
+});

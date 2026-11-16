@@ -1,4 +1,4 @@
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /** How long the launcher may stay hidden at most, ms, whatever it shows. */
@@ -13,8 +13,11 @@ const SHOW_AT_LATEST_MS = 2_500;
 /// without a jump, and waiting past it held the window for the full 2.5 s. A safety timer shows it
 /// anyway after 2.5 s, and index.html's own after 4 s should this code never
 /// run. A browser or mock build has no window to show: nothing happens there.
-export function showWindowWhenPainted() {
+export async function showWindowWhenPainted() {
   if (!isTauri()) return;
+  // Both paint and fallback paths ask before showing, so cold silent launch
+  // never flashes the launcher in front of its browser.
+  try { if (await invoke<boolean>("profile_shortcut_launch_is_silent")) return; } catch {}
   const root = document.getElementById("root");
   let shown = false;
   const show = () => {

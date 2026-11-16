@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, type ReactNode } from "react";
-import { Checkbox, cn, IconButton, swallowFollowUpClick, Tooltip, useLongPress, type ContextMenuApi } from "@proxyshard/shardx-ui-kit";
+import { Badge, Checkbox, cn, IconButton, swallowFollowUpClick, Tooltip, useLongPress, type ContextMenuApi } from "@proxyshard/shardx-ui-kit";
 import { AlertCircleIcon, MoreIcon } from "../../shared/icons";
 import { CountryFlag } from "../../shared/ui/CountryFlag";
 import { RowHoverActions, rowButtonDangerHoverClass, rowButtonHoverClass } from "../../shared/ui/RowHoverActions";
@@ -162,6 +162,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
             {/* The address it came out at stays beside it, as before, while
                 there is room; short of room, it is in the tooltip. */}
             {ip && !ipInTip && <span className="mono min-w-0 truncate text-secondary text-text-sub-600">{ip}</span>}
+            {snap?.udp_state === "unsupported_by_chain" && <Badge color="gray" size="small" data-chain-udp-unsupported>{t("proxyChain.udpUnsupported")}</Badge>}
           </div>
         );
     }

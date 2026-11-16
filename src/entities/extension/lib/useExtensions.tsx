@@ -74,7 +74,7 @@ export type ExtensionStore = {
   setSearch: (q: string) => void;
   setLinkOpen: (open: boolean) => void;
   /** `separate`: a copy beside the one the library holds (§3.1.6). */
-  importUrl: (url: string, separate?: boolean) => Promise<void>;
+  importUrl: (url: string, separate?: boolean) => Promise<ExtensionEntry | undefined>;
   importFiles: () => Promise<void>;
   importFolder: () => Promise<void>;
   remove: (e: ExtensionEntry) => Promise<void>;
@@ -122,11 +122,12 @@ export const useExtensions = create<ExtensionStore>((set, get) => ({
       await get().reload();
       set({ linkOpen: false });
       toast.ok(t("useExtensions.addedNamed", { name: extensionName(added) }));
+      return added;
     } catch (e) {
       const found = parseAlreadyInLibrary(e);
       if (found && !separate) {
         set({ linkOpen: false });
-        void askAlreadyThere(found, () => get().importUrl(link, true));
+        void askAlreadyThere(found, async () => { await get().importUrl(link, true); });
       } else toast.fail({ title: t("useExtensions.downloadFailed"), detail: e });
     }
     finally { set({ busy: false }); }

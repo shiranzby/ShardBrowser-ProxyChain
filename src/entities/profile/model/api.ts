@@ -90,5 +90,5 @@ export const cookiesImport = (profileId: string, cookies: any[]) => invoke<numbe
 export const enrichPicksForPreset = (presetId: string) => invoke<{ hardware_concurrency?: number; device_memory?: number; platform_version?: string }>("enrich_picks_for_preset", { presetId });
 export const hostPlatform = () => invoke<string>("host_platform");
 
-export const profileCreateDesktopShortcut = (profileId: string) =>
-  invoke<string>("profile_create_desktop_shortcut", { profileId });
+export const profileCreateDesktopShortcut = (profileId: string, silent = false) =>
+  invoke<string>("profile_create_desktop_shortcut", { profileId, silent });

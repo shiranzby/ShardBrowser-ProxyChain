@@ -3,6 +3,8 @@
   "useProxy.exportDescription": "默认复制不含账号密码的代理地址；仅在确需迁移时包含凭据。",
   "useProxy.exportAddresses": "复制地址（不含凭据）",
   "useProxy.exportCredentials": "复制地址和凭据",
+  "commands.createSilentDesktopShortcut": "创建静默桌面快捷方式",
+  "commands.silentDesktopShortcutCreated": "已创建静默桌面快捷方式",
   "commands.createDesktopShortcut": "创建桌面快捷方式",
   "commands.desktopShortcutCreated": "已创建桌面快捷方式",
   "commands.desktopShortcutFailed": "无法创建桌面快捷方式",
@@ -2604,7 +2606,7 @@
   "sidebar.groupPinned": "置顶",
   "sidebar.groupViews": "视图",
   "sidebar.launcherVersion": "ShardBrowser v{v}",
-  "sidebar.navAccountShop": "ProxyShard",
+  "sidebar.navAccountShop": "代理供应商",
   "sidebar.navBookmarks": "书签",
   "sidebar.navExtensions": "扩展",
   "sidebar.navFingerprints": "指纹",
@@ -3788,5 +3790,27 @@
   "provider.checkUnverified": "未验证",
   "provider.name1024": "1024Proxy",
   "tnb.errorWhitelist": "TNB 提取请求的出口 IP 不在白名单中，请将当前请求出口 IP 加入供应商白名单后重试。",
-  "provider.openWebsite": "打开供应商网站"
+  "provider.openWebsite": "打开供应商网站",
+  "proxyChain.firstSource": "第一层代理来源",
+  "proxyChain.modeSelected": "选择已保存的代理",
+  "proxyChain.modeHttps": "手动 HTTPS",
+  "proxyChain.selectedFirst": "第一层代理",
+  "proxyChain.selectFirst": "请选择第一层代理",
+  "proxyChain.defaultFirstHelp": "保存为默认第一层；环境中明确指定的连接方式优先。第二层沿用环境绑定的代理。"
+,
+"provider.managementTitle": "代理供应商"
+,
+"provider.managementHelp": "统一管理供应商默认参数、API 提取认证和代理账号凭据。默认值只用于新代理，现有配置绑定保持不变。"
+,
+"provider.accountSection": "代理账号"
+,
+"provider.apiSection": "API 提取"
+,
+"provider.openWhitelist": "打开供应商控制台与白名单"
+,
+"provider.openWebsiteFailed": "无法打开供应商网站。"
+,
+"provider.legacyAccount": "ProxyShard 账号工具",
+  "proxyChain.loadingFirst": "正在加载已保存的代理…",
+  "proxyChain.noFirstProxy": "当前空间没有可用的已保存代理。"
 }
