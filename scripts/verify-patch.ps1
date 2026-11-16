@@ -70,7 +70,14 @@ try {
     $config = New-ProxyChainPlaywrightConfig $candidate $output $node $port
     $configPath = Join-Path $output 'playwright-proxy-chain.config.mjs'
     ('export default ' + ($config | ConvertTo-Json -Depth 12) + ';') | Set-Content -LiteralPath $configPath -Encoding utf8
-    Step 'ui-browser' 'npx' (@('playwright','test','--config',$configPath) + $uiTests + @('--project=dev'))
+    # Run each browser test file in its own Playwright process. A single long-lived
+    # process can lose progress on a hosted Windows runner after many suites;
+    # per-file logs preserve the same coverage while making the failing/stuck
+    # suite independently observable and allowing the next suite to continue
+    # only after the previous process has exited.
+    foreach ($uiTest in $uiTests) {
+        Step ('ui-browser-' + [IO.Path]::GetFileNameWithoutExtension($uiTest)) 'npx' @('playwright','test','--config',$configPath,$uiTest,'--project=dev','--workers=1')
+    }
     SourceIdentity
     $receipt = [ordered]@{
         schema=1; kind='proxy-chain-verification'; result='passed'; completed_at_utc=[DateTime]::UtcNow.ToString('o')
