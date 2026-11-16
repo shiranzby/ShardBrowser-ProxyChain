@@ -35,6 +35,31 @@ function Invoke-ProxyChainLoggedCommand([string]$Name, [string]$Command, [string
     [pscustomobject]@{ id=$Name; status='passed'; log=(Split-Path -Leaf $log); sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Hash.ToLowerInvariant() }
 }
 
+# Run a browser suite behind an external watchdog. Playwright's per-test timeout does
+# not cover a wedged Node/Vite child after a suite loses its last browser event.
+function Invoke-ProxyChainTimedCommand([string]$Name, [string]$Command, [string[]]$Arguments, [string]$WorkingDirectory, [string]$OutputDirectory, [int]$TimeoutSeconds = 900) {
+    $log = Join-Path $OutputDirectory "$Name.log"
+    $stdout = Join-Path $OutputDirectory "$Name.stdout.tmp"
+    $stderr = Join-Path $OutputDirectory "$Name.stderr.tmp"
+    foreach ($path in @($log, $stdout, $stderr)) { [IO.File]::WriteAllText($path, '') }
+    $proc = Start-Process -FilePath $Command -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+    try {
+        if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
+            & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
+            throw "$Name exceeded the ${TimeoutSeconds}s browser-suite watchdog."
+        }
+        $proc.Refresh()
+        $code = $proc.ExitCode
+        $combined = ((Get-Content -Raw -LiteralPath $stdout) + (Get-Content -Raw -LiteralPath $stderr))
+        [IO.File]::WriteAllText($log, $combined)
+        Write-Host $combined
+        if ($code -ne 0) { throw "$Name failed with exit code $code. Publication is blocked." }
+        [pscustomobject]@{ id=$Name; status='passed'; log=(Split-Path -Leaf $log); sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Hash.ToLowerInvariant() }
+    } finally {
+        foreach ($path in @($stdout, $stderr)) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 function New-ProxyChainPlaywrightConfig([string]$CandidatePath, [string]$OutputDirectory, [string]$NodeExecutable, [int]$Port) {
     $candidate = [IO.Path]::GetFullPath($CandidatePath)
     $output = [IO.Path]::GetFullPath($OutputDirectory)

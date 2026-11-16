@@ -76,7 +76,9 @@ try {
     # suite independently observable and allowing the next suite to continue
     # only after the previous process has exited.
     foreach ($uiTest in $uiTests) {
-        Step ('ui-browser-' + [IO.Path]::GetFileNameWithoutExtension($uiTest)) 'npx' @('playwright','test','--config',$configPath,$uiTest,'--project=dev','--workers=1')
+        $npx = (Get-Command 'npx.cmd' -ErrorAction SilentlyContinue).Source
+        if ([string]::IsNullOrWhiteSpace($npx)) { $npx = (Get-Command 'npx').Source }
+        $script:checks += Invoke-ProxyChainTimedCommand ('ui-browser-' + [IO.Path]::GetFileNameWithoutExtension($uiTest)) $npx @('playwright','test','--config',$configPath,$uiTest,'--project=dev','--workers=1') $candidate $output 900
     }
     SourceIdentity
     $receipt = [ordered]@{
