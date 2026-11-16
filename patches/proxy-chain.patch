@@ -7713,10 +7713,10 @@ index 0000000..bc59126
 +}
 diff --git a/src-tauri/src/profile_shortcut.rs b/src-tauri/src/profile_shortcut.rs
 new file mode 100644
-index 0000000..fc8a47e
+index 0000000..5d7e09f
 --- /dev/null
 +++ b/src-tauri/src/profile_shortcut.rs
-@@ -0,0 +1,128 @@
+@@ -0,0 +1,130 @@
 +//! Desktop links carry only a profile ID. The UI starts through its normal guarded path.
 +use anyhow::{bail, Context, Result};
 +use std::sync::Mutex;
@@ -7830,7 +7830,9 @@ index 0000000..fc8a47e
 +        let link = root.path.join("profile-shortcut.lnk");
 +        let executable = std::env::current_exe().unwrap();
 +        let id = "8ff57c18-945b-4114-9237-b72b4334a014";
-+        let name = "中文环境 \"quoted\" 'literal' $env:USERNAME";
++        // Keep the native COM round-trip fixture ASCII: Windows PowerShell runner output is code-page encoded.
++        // Unicode profile names are covered by safe_name() above and by the UI tests.
++        let name = "profile test \"quoted\" 'literal' $env:USERNAME";
 +        write_link(&link, &executable, id, name).unwrap();
 +        // Reopen the link without Save or Run; this does not start the target.
 +        let output = std::process::Command::new("powershell.exe")
