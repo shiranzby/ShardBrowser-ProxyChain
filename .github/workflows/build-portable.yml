@@ -17,7 +17,7 @@ permissions:
 jobs:
   build:
     if: github.repository == 'shiranzby/ShardBrowser-ProxyChain'
-    runs-on: windows-latest
+    runs-on: windows-2022
     permissions:
       contents: read
     outputs:
