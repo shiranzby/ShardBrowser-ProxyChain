@@ -1023,7 +1023,7 @@ export const handlers: Record<string, Handler> = {
   proxy_history: ({ id }, { state }) => state.snapshots[id] ?? [],
   proxy_bulk_parse: ({ text, kind }) => parseProxyLines(String(text ?? ""), kind),
   proxy_provider_defaults_get: (_a, { state }) => {
-    const d = state.providerDefaults ?? { relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://hkdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false };
+    const d = state.providerDefaults ?? { relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://usdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false };
     const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, ...view } = d;
     return view;
   },

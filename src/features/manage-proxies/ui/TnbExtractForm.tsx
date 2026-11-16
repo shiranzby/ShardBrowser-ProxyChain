@@ -9,7 +9,7 @@ export type TnbDraft = Omit<TnbExtractRequest, "count" | "ttl" | "geo"> & TnbGeo
 };
 
 export const newTnbDraft = (): TnbDraft => ({
-  server: "http://hkdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", kind: "http",
+  server: "http://usdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", kind: "http",
   count: "1", ttl: "0", pre: false, route: "direct", country: null, region: null, city: null,
   pool: "", isp: "", asn: "", ip: "", sid: "",
 });

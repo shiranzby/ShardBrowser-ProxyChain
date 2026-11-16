@@ -34,7 +34,7 @@ test("TNB extracts a preview and saves only selected entries through the existin
   await expect(d.locator("[data-tnb-preview]")).toContainText("Received 2 proxies via Direct");
   expect(await count(page, "proxy_bulk_save")).toBe(0);
   expect(await proxies(page)).toHaveLength(7);
-  expect(await request(page)).toMatchObject({ server: "http://hkdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", count: 2, kind: "http", geo: "EG_Cairo_Cairo", ttl: 20, pre: false, route: "direct" });
+  expect(await request(page)).toMatchObject({ server: "http://usdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", count: 2, kind: "http", geo: "EG_Cairo_Cairo", ttl: 20, pre: false, route: "direct" });
   await d.getByRole("checkbox", { name: /tnb-2\.proxy\.example/ }).uncheck();
   await d.screenshot({ path: info.outputPath("tnb-preview.png"), animations: "disabled" });
   await d.getByRole("button", { name: "Add 1 proxy", exact: true }).click();
@@ -115,7 +115,7 @@ test("a failed save retains the preview; going back retains the extraction input
   expect(await proxies(page)).toHaveLength(7);
   await d.getByRole("button", { name: "Back", exact: true }).click();
   await expect(d.getByRole("spinbutton", { name: "Count (1–1000)" })).toHaveValue("2");
-  await expect(d.getByRole("textbox", { name: "Extraction server" })).toHaveValue("http://hkdata.adv.tnbproxy.com:9090");
+  await expect(d.getByRole("textbox", { name: "Extraction server" })).toHaveValue("http://usdata.adv.tnbproxy.com:9090");
 });
 
 test("the custom source still previews pasted proxies and never calls TNB", async ({ page }) => {
