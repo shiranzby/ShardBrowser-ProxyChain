@@ -12,6 +12,8 @@ import { useCompactActions } from "./compact";
 import { PageHelpButton, type PageHelp } from "./PageHelp";
 import { useScrollMemory } from "../../shared/model/scrollMemory";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
+import { ProxyQuickControl } from "../ProfileTable/ProxyQuickControl";
+import { ThemeQuickControl } from "../ProfileTable/ThemeQuickControl";
 
 type Filter = { value: string; onChange: (v: string) => void; placeholder?: string };
 
@@ -212,7 +214,11 @@ export function PageHeader({ title, lead, count, help, after, filter, actions, w
             </span>
           </div>
         )}
-        <div ref={actionsRef} data-header-actions className="flex shrink-0 items-center gap-2">{actions}</div>
+        <div ref={actionsRef} data-header-actions className="flex shrink-0 items-center gap-2">
+          <ProxyQuickControl />
+          <ThemeQuickControl />
+          {actions}
+        </div>
       </div>
     </header>
   );

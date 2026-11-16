@@ -97,6 +97,14 @@ fn origin(url: &Url) -> String { url.origin().ascii_serialization() }
 
 fn parse_response(body: &[u8], request: &ExtractRequest, server: &str) -> Result<Vec<ProxyEntry>> {
     let body = std::str::from_utf8(body).map_err(|_| "tnb_invalid_response")?;
+    // TNB may return HTTP 200 with a JSON business error. Surface the
+    // allowlist/auth failure before treating the JSON as a proxy line.
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(body.trim_start_matches('\u{feff}').trim()) {
+        if let Some(code) = value.get("code").and_then(serde_json::Value::as_i64) {
+            if code == 401 || code == 403 { return Err("tnb_whitelist_required"); }
+            if code != 0 { return Err("tnb_invalid_response"); }
+        }
+    }
     let kind = if request.kind == "http" { ProxyKind::Http } else { ProxyKind::Socks5 };
     let lines: Vec<&str> = body.trim_start_matches('\u{feff}').lines().map(str::trim).filter(|l| !l.is_empty()).collect();
     if lines.is_empty() { return Err("tnb_no_proxies"); }
@@ -511,6 +519,7 @@ mod tests {
             (format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", MAX_BODY + 1), "tnb_response_too_large"),
             (format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{chunk}\r\n0\r\n\r\n", chunk.len()), "tnb_response_too_large"),
             (ok("whitelist denied: secret credential"), "tnb_invalid_response"),
+            (ok(r#"{"code":403,"msg":"IP not in whitelist"}"#), "tnb_whitelist_required"),
         ] {
             let (server, task) = fixture(reply).await;
             assert_eq!(extract(request(server)).await.err(), Some(error));

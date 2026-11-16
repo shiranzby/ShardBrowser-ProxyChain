@@ -46,6 +46,7 @@ export function tnbErrorText(t: (key: string) => string, error: unknown): string
     case "tnb_timeout": return t("tnb.errorTimeout");
     case "tnb_route_failed": return t("tnb.errorRoute");
     case "tnb_http_status": return t("tnb.errorHttp");
+    case "tnb_whitelist_required": return t("tnb.errorWhitelist");
     case "tnb_response_too_large": return t("tnb.errorLarge");
     case "tnb_invalid_response": return t("tnb.errorResponse");
     case "tnb_no_proxies": return t("tnb.errorEmpty");

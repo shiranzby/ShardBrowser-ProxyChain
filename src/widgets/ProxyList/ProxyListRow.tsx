@@ -136,7 +136,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
         return (
           <div key="country" role="gridcell" data-cell="country" className="flex min-w-0 items-center gap-1.5 text-secondary text-text-sub-600">
             {/* A city cut by the column's width shows whole on hover (autofit review I1). */}
-            {cc ? <><CountryFlag cc={cc} /><Tooltip content={snap?.city || cc} whenTruncated warm={false}><span className="truncate">{snap?.city || cc}</span></Tooltip></> : <span className="text-text-soft-400">—</span>}
+            {cc ? <><CountryFlag cc={cc} /><span className="shrink-0 rounded-chip-sm bg-bg-weak-50 px-1 py-0.5 text-micro font-medium text-text-sub-600">{cc.slice(0, 2).toUpperCase()}</span><Tooltip content={[snap?.region, snap?.city].filter(Boolean).join(" / ") || cc} whenTruncated warm={false}><span className="truncate">{[snap?.region, snap?.city].filter(Boolean).join(" / ") || cc}</span></Tooltip></> : <span className="text-text-soft-400">—</span>}
           </div>
         );
       case "profiles":

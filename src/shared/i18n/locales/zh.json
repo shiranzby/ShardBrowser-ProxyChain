@@ -2426,7 +2426,7 @@
   "proxyChain.enable": "使用系统代理连接代理",
   "proxyChain.enableHelp": "通过系统代理连接每个配置原有的代理。网站看到的仍是配置代理的出口 IP。",
   "proxyChain.nextStart": "保存后对新启动生效。正在运行的配置需要重启才能采用新的连接方式。",
-  "proxyChain.tcpOnly": "代理链 V1 仅支持 TCP。UDP 和 QUIC 已禁用，WebRTC 仅使用 TCP。",
+  "proxyChain.tcpOnly": "代理链 V1 当前只建立 TCP 隧道；不是 HTTP、SOCKS5 本身不能承载 UDP，而是链路实现尚未提供端到端 UDP/QUIC 转发。启用 UDP 或 QUIC 会增加真实网络指纹暴露风险，后续应以单独能力测试确认，不能默认放行。",
   "proxyChain.configurationTitle": "系统代理配置",
   "proxyChain.mode": "配置方式",
   "proxyChain.modeAuto": "自动检测系统代理",
@@ -3786,5 +3786,7 @@
   "provider.checkPassed": "已通过；任意网页正文仍待验证",
   "provider.checkFailed": "失败",
   "provider.checkUnverified": "未验证",
-  "provider.name1024": "1024Proxy"
+  "provider.name1024": "1024Proxy",
+  "tnb.errorWhitelist": "TNB 提取请求的出口 IP 不在白名单中，请将当前请求出口 IP 加入供应商白名单后重试。",
+  "provider.openWebsite": "打开供应商网站"
 }

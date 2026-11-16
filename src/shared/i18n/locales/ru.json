@@ -2426,7 +2426,7 @@
   "proxyChain.enable": "Подключаться к прокси через системный прокси",
   "proxyChain.enableHelp": "Соединение с назначенным прокси профиля проходит через системный прокси. Сайты по-прежнему видят выходной IP прокси профиля.",
   "proxyChain.nextStart": "Сохранённые изменения применяются при следующем запуске. Перезапустите открытый профиль для смены подключения.",
-  "proxyChain.tcpOnly": "Цепочка прокси v1 поддерживает только TCP. UDP и QUIC отключены, WebRTC использует только TCP.",
+  "proxyChain.tcpOnly": "Версия 1 прокси-цепочки сейчас создаёт только TCP-туннели. HTTP и SOCKS5 в некоторых конфигурациях могут переносить UDP, но эта цепочка пока не поддерживает сквозную передачу UDP/QUIC. UDP и QUIC также повышают риск раскрытия сетевого отпечатка, поэтому они отключены до отдельной проверки.",
   "proxyChain.configurationTitle": "Настройка системного прокси",
   "proxyChain.mode": "Способ настройки",
   "proxyChain.modeAuto": "Определять системный прокси автоматически",
@@ -3786,5 +3786,7 @@
   "provider.checkPassed": "Passed; arbitrary page content remains unverified",
   "provider.checkFailed": "Failed",
   "provider.checkUnverified": "Unverified",
-  "provider.name1024": "1024Proxy"
+  "provider.name1024": "1024Proxy",
+  "tnb.errorWhitelist": "IP запроса TNB отсутствует в белом списке. Добавьте текущий IP запроса в список провайдера и повторите попытку.",
+  "provider.openWebsite": "Открыть сайт провайдера"
 }

@@ -30,7 +30,7 @@ export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?
       <p className="m-0 text-help text-text-sub-600">{t("provider.defaultsHelp")}</p>
       {value && <>
         {provider !== "tnbproxy" && <div className="flex flex-col gap-3">
-          <h3 className="m-0 text-section-label text-text-strong-950">{t("provider.name1024")}</h3>
+          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("provider.name1024")}</h3><a className="text-help text-text-sub-600 underline" href="https://1024proxy.io" target="_blank" rel="noreferrer">{t("provider.openWebsite")}</a></div>
           <Input inputSize="xsmall" label={t("provider.relay")} value={value.relay} onChange={(e) => patch({ relay: e.target.value })} />
           <div className="grid grid-cols-2 gap-3">
             <Input inputSize="xsmall" label={t("provider.account")} value={value.username} onChange={(e) => patch({ username: e.target.value })} />
@@ -40,7 +40,7 @@ export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?
           <p className="m-0 text-help text-text-sub-600">{t("provider.templateHelp")}</p>
         </div>}
         {provider !== "1024proxy" && <div className="flex flex-col gap-3">
-          <h3 className="m-0 text-section-label text-text-strong-950">{t("tnb.provider")}</h3>
+          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("tnb.provider")}</h3><a className="text-help text-text-sub-600 underline" href="https://dash.tnbproxy.com" target="_blank" rel="noreferrer">{t("provider.openWebsite")}</a></div>
           <Input inputSize="xsmall" label={t("tnb.server")} value={value.tnb_server} onChange={(e) => patch({ tnb_server: e.target.value })} />
           <div className="grid grid-cols-2 gap-3">
             <Input inputSize="xsmall" label={t("tnb.plan")} value={value.tnb_plan} onChange={(e) => patch({ tnb_plan: e.target.value })} />
