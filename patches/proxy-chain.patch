@@ -1756,7 +1756,7 @@ index 0000000..2ea827a
 +});
 diff --git a/e2e/provider-defaults.spec.ts b/e2e/provider-defaults.spec.ts
 new file mode 100644
-index 0000000..0be74aa
+index 0000000..bc837e2
 --- /dev/null
 +++ b/e2e/provider-defaults.spec.ts
 @@ -0,0 +1,88 @@
@@ -1824,9 +1824,9 @@ index 0000000..0be74aa
 +  await reloadApp(page);
 +  dialog = await openSource(page, "TNBProxy");
 +  await expect(dialog.getByRole("textbox", { name: "Extraction server", exact: true })).toHaveValue("https://custom.tnbproxy.com:9443");
-+  await expect(dialog.getByRole("checkbox", { name: "Use saved API authentication", exact: true })).not.toBeChecked();
-+  await expect(dialog.getByRole("checkbox", { name: "Fill missing proxy authentication", exact: true })).not.toBeChecked();
-+  await dialog.getByRole("checkbox", { name: "Fill missing proxy authentication", exact: true }).check();
++  await expect(dialog.getByRole("checkbox", { name: "Use saved API authentication", exact: true })).toBeChecked();
++  await expect(dialog.getByRole("checkbox", { name: "Fill missing proxy authentication", exact: true })).toBeChecked();
++  await dialog.getByRole("checkbox", { name: "Use saved API authentication", exact: true }).uncheck();
 +  await dialog.screenshot({ path: info.outputPath("tnb-authentication.png"), animations: "disabled" });
 +  await dialog.getByRole("button", { name: "Extract and preview", exact: true }).click();
 +  const request = await page.evaluate(() => (window as any).__shardxMock.log.filter((v: any) => v.cmd === "tnbproxy_extract").at(-1).args.request);
@@ -2221,7 +2221,7 @@ index 0000000..cfd7dba
 +}
 diff --git a/e2e/proxy-chain-settings.spec.ts b/e2e/proxy-chain-settings.spec.ts
 new file mode 100644
-index 0000000..9a4ee32
+index 0000000..b523553
 --- /dev/null
 +++ b/e2e/proxy-chain-settings.spec.ts
 @@ -0,0 +1,382 @@
@@ -2247,7 +2247,7 @@ index 0000000..9a4ee32
 +  await openApp(page, { section: "settings" });
 +  await expect(tab(page, "Proxy")).toBeVisible();
 +  await tab(page, "Proxy").click();
-+  await expect(page.getByText("Proxy chain v1 supports TCP only.")).toBeVisible();
++  await expect(page.getByText("Proxy chain v1 currently establishes TCP tunnels only. HTTP and SOCKS5 can carry UDP in some deployments, but this chain has no end-to-end UDP/QUIC relay yet. UDP and QUIC also increase network fingerprint exposure, so they stay disabled until a separate capability test passes.")).toBeVisible();
 +  await expect(page.getByRole("switch", { name: "Use system proxy to connect to proxies" })).toBeVisible();
 +  await expect(page.getByRole("button", { name: "Read Windows settings" })).toBeVisible();
 +});
