@@ -1,13 +1,13 @@
 diff --git a/.gitattributes b/.gitattributes
 new file mode 100644
-index 0000000..76675db
+index 0000000000000000000000000000000000000000..76675db103fc4e6900a2ba7a61e88448a3a48f1d
 --- /dev/null
 +++ b/.gitattributes
 @@ -0,0 +1,2 @@
 +# A patch is a byte-for-byte build input. Preserve its hash on Windows too.
 +patches/*.patch -text -whitespace
 diff --git a/README.md b/README.md
-index 56a9dad..7f04161 100644
+index 56a9dade424aca216b11e3b523f5b8d48a1190e4..7f041613a4d6b288eb5ed75752b2c1c29df166b1 100644
 --- a/README.md
 +++ b/README.md
 @@ -1,3 +1,15 @@
@@ -72,7 +72,7 @@ index 56a9dad..7f04161 100644
  Launching a profile and getting a CDP endpoint:
 diff --git a/docs/PC17-STABLE.md b/docs/PC17-STABLE.md
 new file mode 100644
-index 0000000..ffc1d9e
+index 0000000000000000000000000000000000000000..ffc1d9e19553992e8ed75b30ca2b27e993c56593
 --- /dev/null
 +++ b/docs/PC17-STABLE.md
 @@ -0,0 +1,89 @@
@@ -167,7 +167,7 @@ index 0000000..ffc1d9e
 +代理文本导出默认提供不含账密的地址；包含账密必须由用户显式选择，沿用现有一分钟后清理剪贴板的机制。定向 Mock E2E 已验证地址导出不含登录信息，以及显式凭据导出一分钟后清空；这不代表操作系统剪贴板历史或其他剪贴板管理软件中的副本也会删除。
 diff --git a/docs/PC17_IMPLEMENTATION_2026-11-15.md b/docs/PC17_IMPLEMENTATION_2026-11-15.md
 new file mode 100644
-index 0000000..41bccd5
+index 0000000000000000000000000000000000000000..41bccd54be31aa29fdceaa66a79ce7adc8561962
 --- /dev/null
 +++ b/docs/PC17_IMPLEMENTATION_2026-11-15.md
 @@ -0,0 +1,35 @@
@@ -208,7 +208,7 @@ index 0000000..41bccd5
 +正式稳定包、默认 feature 构建、真实新 EXE 原生验收和发布前全包秘密扫描仍需单独完成。当前提交是 PC17 实施阶段，不等同于稳定版交付。
 diff --git a/docs/PC7_NESTED_FOLDERS.md b/docs/PC7_NESTED_FOLDERS.md
 new file mode 100644
-index 0000000..4285de1
+index 0000000000000000000000000000000000000000..4285de17fb30056378eb62c742b2ebd9d64491e3
 --- /dev/null
 +++ b/docs/PC7_NESTED_FOLDERS.md
 @@ -0,0 +1,25 @@
@@ -239,7 +239,7 @@ index 0000000..4285de1
 +测试使用合成 mock 和临时目录；不涉及用户实际资料、运行中的前台窗口或桌面 EXE 验收。完整回归及候选构建由主任务统一执行。
 diff --git a/docs/PROFILE-DEFAULTS.md b/docs/PROFILE-DEFAULTS.md
 new file mode 100644
-index 0000000..69a55d6
+index 0000000000000000000000000000000000000000..69a55d6c36b1f4318d13d6902d0ae3ceb4f32605
 --- /dev/null
 +++ b/docs/PROFILE-DEFAULTS.md
 @@ -0,0 +1,9 @@
@@ -254,7 +254,7 @@ index 0000000..69a55d6
 +定向验证：Rust 创建/显式覆盖、设置旧 JSON 缺省、克隆/导入不覆盖与启动 argv；Playwright 新建默认、修改保存重载、旧配置编辑保留。原生 Engine 页面导航由候选产物验收另行确认。
 diff --git a/docs/PROXY-CHAIN-MAINTENANCE.md b/docs/PROXY-CHAIN-MAINTENANCE.md
 new file mode 100644
-index 0000000..4b9bb94
+index 0000000000000000000000000000000000000000..4b9bb94777fab3afef74b1f163ac33ea843b6568
 --- /dev/null
 +++ b/docs/PROXY-CHAIN-MAINTENANCE.md
 @@ -0,0 +1,54 @@
@@ -314,7 +314,7 @@ index 0000000..4b9bb94
 +`<40-hex-commit>` 必须来自同一次官方 Release 查询。不要把 API token、代理用户名/密码、认证头、真实 Profile 数据或 Cookie 放入日志、artifact、manifest 或仓库。
 diff --git a/docs/PROXY-CHAIN-POLICY.md b/docs/PROXY-CHAIN-POLICY.md
 new file mode 100644
-index 0000000..4b6eec2
+index 0000000000000000000000000000000000000000..4b6eec2bedee2097e42a1a11912306210be86b33
 --- /dev/null
 +++ b/docs/PROXY-CHAIN-POLICY.md
 @@ -0,0 +1,203 @@
@@ -523,7 +523,7 @@ index 0000000..4b6eec2
 +offers Retry instead of blindly opening another target.
 diff --git a/docs/TNB-PROXY.md b/docs/TNB-PROXY.md
 new file mode 100644
-index 0000000..22a5eee
+index 0000000000000000000000000000000000000000..22a5eee1c728b405fc931841e12182168acfc174
 --- /dev/null
 +++ b/docs/TNB-PROXY.md
 @@ -0,0 +1,26 @@
@@ -555,7 +555,7 @@ index 0000000..22a5eee
 +普通回归使用 loopback metadata 夹具。显式运行 `tnb_locations_public_egypt_contract_live` 只核验公开国家、埃及州省、Cairo 城市目录，默认忽略，不分配代理、不消耗提取端口。
 diff --git a/docs/TNB_WHITELIST_DIAGNOSIS_2026-11-16.md b/docs/TNB_WHITELIST_DIAGNOSIS_2026-11-16.md
 new file mode 100644
-index 0000000..fc914a7
+index 0000000000000000000000000000000000000000..fc914a7357f7a2a8d70f33e3679dcbbc7efe641c
 --- /dev/null
 +++ b/docs/TNB_WHITELIST_DIAGNOSIS_2026-11-16.md
 @@ -0,0 +1,42 @@
@@ -602,7 +602,7 @@ index 0000000..fc914a7
 +
 +该修复不会绕过供应商白名单，也不会将失败结果降级为直连或伪造代理实例。
 diff --git a/e2e/commands.spec.ts b/e2e/commands.spec.ts
-index d24de9a..d40a8f3 100644
+index d24de9ad18763931badb27d5bf3cb16df61788a6..d40a8f34f7716fa09df2d67f178b7c04760f5558 100644
 --- a/e2e/commands.spec.ts
 +++ b/e2e/commands.spec.ts
 @@ -223,7 +223,7 @@ test("every command has an English and a Chinese label, and no key is taken twic
@@ -629,7 +629,7 @@ index d24de9a..d40a8f3 100644
    expect(await selection()).toEqual([]);
    await runIn(page, "proxy.assign", [id], "palette");
 diff --git a/e2e/errors.spec.ts b/e2e/errors.spec.ts
-index a138242..b6c2aa3 100644
+index a138242fca317e8e458dfff59aba21d52f689433..b6c2aa3623e32e88d5c8315d53b90f0c060d437c 100644
 --- a/e2e/errors.spec.ts
 +++ b/e2e/errors.spec.ts
 @@ -13,7 +13,7 @@ const explainAll = (page: Page) =>
@@ -643,7 +643,7 @@ index a138242..b6c2aa3 100644
        explainError({ code: "something_new", message: "the raw words" }),
 diff --git a/e2e/list-order.spec.ts b/e2e/list-order.spec.ts
 new file mode 100644
-index 0000000..01c9e3c
+index 0000000000000000000000000000000000000000..01c9e3cb9a22a444769daf1d1577816053df419f
 --- /dev/null
 +++ b/e2e/list-order.spec.ts
 @@ -0,0 +1,151 @@
@@ -800,7 +800,7 @@ index 0000000..01c9e3c
 +});
 diff --git a/e2e/nested-folders.spec.ts b/e2e/nested-folders.spec.ts
 new file mode 100644
-index 0000000..76add2b
+index 0000000000000000000000000000000000000000..76add2bb619a8913f0e3cfb2a3c3c042f16c3102
 --- /dev/null
 +++ b/e2e/nested-folders.spec.ts
 @@ -0,0 +1,157 @@
@@ -962,7 +962,7 @@ index 0000000..76add2b
 +  });
 +}
 diff --git a/e2e/page-chrome.spec.ts b/e2e/page-chrome.spec.ts
-index 2292baa..f48b432 100644
+index 2292baa3185fe73878bbc396d56e3b9b4754ec53..f48b43217b1fb4f521a2551ec2b03dc30a5af93d 100644
 --- a/e2e/page-chrome.spec.ts
 +++ b/e2e/page-chrome.spec.ts
 @@ -121,7 +121,7 @@ test("Buy proxies says so when the browser cannot open", async ({ page }) => {
@@ -976,7 +976,7 @@ index 2292baa..f48b432 100644
  // One line goes through the preview too, so the proxy can be tested before
 diff --git a/e2e/pc17-theme-shortcuts.spec.ts b/e2e/pc17-theme-shortcuts.spec.ts
 new file mode 100644
-index 0000000..c05e4b8
+index 0000000000000000000000000000000000000000..c05e4b83a47762455b01462d3b346a4438eb3821
 --- /dev/null
 +++ b/e2e/pc17-theme-shortcuts.spec.ts
 @@ -0,0 +1,127 @@
@@ -1109,7 +1109,7 @@ index 0000000..c05e4b8
 +});
 diff --git a/e2e/personalization.spec.ts b/e2e/personalization.spec.ts
 new file mode 100644
-index 0000000..13dcc50
+index 0000000000000000000000000000000000000000..13dcc50de0d75850d282129e8701005d0da5aed7
 --- /dev/null
 +++ b/e2e/personalization.spec.ts
 @@ -0,0 +1,145 @@
@@ -1260,7 +1260,7 @@ index 0000000..13dcc50
 +});
 diff --git a/e2e/profile-defaults.spec.ts b/e2e/profile-defaults.spec.ts
 new file mode 100644
-index 0000000..fb5117e
+index 0000000000000000000000000000000000000000..fb5117e6bee290a93d81c2227b62cfd0923c4463
 --- /dev/null
 +++ b/e2e/profile-defaults.spec.ts
 @@ -0,0 +1,109 @@
@@ -1375,7 +1375,7 @@ index 0000000..fb5117e
 +});
 diff --git a/e2e/profile-inline-extensions.spec.ts b/e2e/profile-inline-extensions.spec.ts
 new file mode 100644
-index 0000000..b67c237
+index 0000000000000000000000000000000000000000..b67c237730f39891fa080f11dfed887d36e35474
 --- /dev/null
 +++ b/e2e/profile-inline-extensions.spec.ts
 @@ -0,0 +1,38 @@
@@ -1419,7 +1419,7 @@ index 0000000..b67c237
 +});
 diff --git a/e2e/profile-route-summary.spec.ts b/e2e/profile-route-summary.spec.ts
 new file mode 100644
-index 0000000..8b86130
+index 0000000000000000000000000000000000000000..8b861301db89cc4b044b89599b7148bb1cd178db
 --- /dev/null
 +++ b/e2e/profile-route-summary.spec.ts
 @@ -0,0 +1,33 @@
@@ -1458,7 +1458,7 @@ index 0000000..8b86130
 +});
 diff --git a/e2e/profile-route.spec.ts b/e2e/profile-route.spec.ts
 new file mode 100644
-index 0000000..2ea827a
+index 0000000000000000000000000000000000000000..2ea827af5b4cbc7f8098dd877131927ffa2ea432
 --- /dev/null
 +++ b/e2e/profile-route.spec.ts
 @@ -0,0 +1,357 @@
@@ -1821,7 +1821,7 @@ index 0000000..2ea827a
 +});
 diff --git a/e2e/provider-defaults.spec.ts b/e2e/provider-defaults.spec.ts
 new file mode 100644
-index 0000000..bc837e2
+index 0000000000000000000000000000000000000000..bc837e2e628c855dbee979fd846b7d7999defa04
 --- /dev/null
 +++ b/e2e/provider-defaults.spec.ts
 @@ -0,0 +1,88 @@
@@ -1915,7 +1915,7 @@ index 0000000..bc837e2
 +});
 diff --git a/e2e/proxy-chain-errors.spec.ts b/e2e/proxy-chain-errors.spec.ts
 new file mode 100644
-index 0000000..b7b5749
+index 0000000000000000000000000000000000000000..b7b5749bad67de2c4b5872b0d3206179ad6d36cb
 --- /dev/null
 +++ b/e2e/proxy-chain-errors.spec.ts
 @@ -0,0 +1,199 @@
@@ -2120,7 +2120,7 @@ index 0000000..b7b5749
 +});
 diff --git a/e2e/proxy-chain-policy.spec.ts b/e2e/proxy-chain-policy.spec.ts
 new file mode 100644
-index 0000000..cfd7dba
+index 0000000000000000000000000000000000000000..cfd7dba0722ac76a741988a66398d28e66dfbb43
 --- /dev/null
 +++ b/e2e/proxy-chain-policy.spec.ts
 @@ -0,0 +1,160 @@
@@ -2286,7 +2286,7 @@ index 0000000..cfd7dba
 +}
 diff --git a/e2e/proxy-chain-settings.spec.ts b/e2e/proxy-chain-settings.spec.ts
 new file mode 100644
-index 0000000..4fc0c83
+index 0000000000000000000000000000000000000000..4fc0c833060cce107513244c881ddd5515e626f7
 --- /dev/null
 +++ b/e2e/proxy-chain-settings.spec.ts
 @@ -0,0 +1,399 @@
@@ -2691,7 +2691,7 @@ index 0000000..4fc0c83
 +});
 diff --git a/e2e/proxy-export-safety.spec.ts b/e2e/proxy-export-safety.spec.ts
 new file mode 100644
-index 0000000..5a71eba
+index 0000000000000000000000000000000000000000..5a71ebaa009247b1d2646fcda8fee12f69764f1e
 --- /dev/null
 +++ b/e2e/proxy-export-safety.spec.ts
 @@ -0,0 +1,46 @@
@@ -2742,7 +2742,7 @@ index 0000000..5a71eba
 +  await expect.poll(() => clipboard(page)).toBe("");
 +});
 diff --git a/e2e/proxyshard-v2.spec.ts b/e2e/proxyshard-v2.spec.ts
-index 82ee501..c6a30a6 100644
+index 82ee5016d1f3c870376e415d3c0a944524baca37..c6a30a60aef1264ecfb87cf3e7c56ac7a6467b44 100644
 --- a/e2e/proxyshard-v2.spec.ts
 +++ b/e2e/proxyshard-v2.spec.ts
 @@ -93,16 +93,23 @@ test("narrow, the Residential tile takes the full row above the two small tiles"
@@ -2774,7 +2774,7 @@ index 82ee501..c6a30a6 100644
    expect(await edges()).toEqual([0, 0, 0, 0, 0]);
    // 1280 as before the cap went: the body's 992 px.
 diff --git a/e2e/ps-trial.spec.ts b/e2e/ps-trial.spec.ts
-index e24c81f..2c39d5e 100644
+index e24c81f68dde3e1df788ebefa6c89fab33f7e2a4..2c39d5e62b1c45fd9511c87646391e98ef52c9f7 100644
 --- a/e2e/ps-trial.spec.ts
 +++ b/e2e/ps-trial.spec.ts
 @@ -1,109 +1,29 @@
@@ -2910,7 +2910,7 @@ index e24c81f..2c39d5e 100644
 +  await expect(page.getByRole("dialog", { name: /100 MB|premium residential|高级住宅/ })).toHaveCount(0);
  });
 diff --git a/e2e/settings-save.spec.ts b/e2e/settings-save.spec.ts
-index 95b7d87..5ecf1b9 100644
+index 95b7d8752b9f334c2ce8ad724eb6addc7c517b36..5ecf1b94cf6cde7fac50acde6be09fbbb5ca791a 100644
 --- a/e2e/settings-save.spec.ts
 +++ b/e2e/settings-save.spec.ts
 @@ -375,16 +375,16 @@ test("the language previews at once, the draft survives the rebuild, and Don't s
@@ -2944,7 +2944,7 @@ index 95b7d87..5ecf1b9 100644
    await expect(bar(page)).toHaveCount(0);
  });
 diff --git a/e2e/settings.spec.ts b/e2e/settings.spec.ts
-index 3d83a40..4a76d34 100644
+index 3d83a4011eae7ceef1bbb747526f3a6fb60325f2..4a76d343b5d4d086896b9767c0b2f3bbbac8d044 100644
 --- a/e2e/settings.spec.ts
 +++ b/e2e/settings.spec.ts
 @@ -4,10 +4,10 @@ import { openApp } from "./support/app";
@@ -2962,7 +2962,7 @@ index 3d83a40..4a76d34 100644
  
 diff --git a/e2e/sidebar-simple.spec.ts b/e2e/sidebar-simple.spec.ts
 new file mode 100644
-index 0000000..e2cbce0
+index 0000000000000000000000000000000000000000..e2cbce0de8bc83c3ee8c53b207cab6dd197c7a51
 --- /dev/null
 +++ b/e2e/sidebar-simple.spec.ts
 @@ -0,0 +1,157 @@
@@ -3124,7 +3124,7 @@ index 0000000..e2cbce0
 +  for (const id of advanced) await expect(page.locator(`[data-nav='${id}']`)).toBeVisible();
 +});
 diff --git a/e2e/signals.spec.ts b/e2e/signals.spec.ts
-index 17c7b91..6ccca6c 100644
+index 17c7b910ad191900fa1075aeff6aaca850260818..6ccca6cf90b8e7ccef489fd994c36b1617dfc185 100644
 --- a/e2e/signals.spec.ts
 +++ b/e2e/signals.spec.ts
 @@ -118,8 +118,7 @@ test("Proxy balance: under 15 % left, with how long the traffic lasts at the rat
@@ -3138,7 +3138,7 @@ index 17c7b91..6ccca6c 100644
      proxy("dc", { host: "203.0.113.9" }),
    ];
 diff --git a/e2e/table-columns-autofit.spec.ts b/e2e/table-columns-autofit.spec.ts
-index 494efd7..e4a2a95 100644
+index 494efd7a9eb81eaf3fdaecb285293fdec06a5355..e4a2a95f0eec0506ac1a02f7aba42608751f7d92 100644
 --- a/e2e/table-columns-autofit.spec.ts
 +++ b/e2e/table-columns-autofit.spec.ts
 @@ -265,7 +265,7 @@ test("Profiles: one profile's two tags show whole though no other profile has an
@@ -3152,7 +3152,7 @@ index 494efd7..e4a2a95 100644
      version: 1,
 diff --git a/e2e/tnb-extract.spec.ts b/e2e/tnb-extract.spec.ts
 new file mode 100644
-index 0000000..a0a0075
+index 0000000000000000000000000000000000000000..a0a007545ae297feb7ea0c315ba4234c5a158f0a
 --- /dev/null
 +++ b/e2e/tnb-extract.spec.ts
 @@ -0,0 +1,151 @@
@@ -3309,7 +3309,7 @@ index 0000000..a0a0075
 +}
 diff --git a/e2e/tnb-locations.spec.ts b/e2e/tnb-locations.spec.ts
 new file mode 100644
-index 0000000..c5f1dee
+index 0000000000000000000000000000000000000000..c5f1dee10d9eb0f24cf2b92216cde9391ab44b2a
 --- /dev/null
 +++ b/e2e/tnb-locations.spec.ts
 @@ -0,0 +1,193 @@
@@ -3507,7 +3507,7 @@ index 0000000..c5f1dee
 +  expect(await requests(page, "tnbproxy_extract")).toHaveLength(0);
 +});
 diff --git a/index.html b/index.html
-index 8c88966..f1cb3bf 100644
+index 8c889664cbb0c69b06c75f148143e2821e088d2d..f1cb3bf8179dc043f1c963a46d68f9fb4d6cd2b4 100644
 --- a/index.html
 +++ b/index.html
 @@ -22,7 +22,9 @@
@@ -3522,7 +3522,7 @@ index 8c88966..f1cb3bf 100644
            }
          } catch (e) {}
 diff --git a/openapi.yaml b/openapi.yaml
-index 65ab307..cb00dc7 100644
+index 65ab30713968b2f22e8434b5dd2c1b5ba996830d..cb00dc74a5b735233324c6cb3ed5cdc0790fa838 100644
 --- a/openapi.yaml
 +++ b/openapi.yaml
 @@ -785,125 +785,6 @@ paths:
@@ -3772,7 +3772,7 @@ index 65ab307..cb00dc7 100644
        type: object
        properties:
 diff --git a/package-lock.json b/package-lock.json
-index 44dcc26..f6a82c1 100644
+index 44dcc26f1cb760de96b571527053c54627d1c8c6..f6a82c1d49d7427629b5ee6509371e5b2e46c2e5 100644
 --- a/package-lock.json
 +++ b/package-lock.json
 @@ -1,12 +1,12 @@
@@ -3791,7 +3791,7 @@ index 44dcc26..f6a82c1 100644
          "@fontsource-variable/jetbrains-mono": "^5.3.0",
          "@hugeicons/core-free-icons": "^4.3.0",
 diff --git a/package.json b/package.json
-index 7b709a4..21e5e4a 100644
+index 7b709a486fd2c39375482856489f49d118eb858d..21e5e4a64248f823138f9316f945d59cf76feb3a 100644
 --- a/package.json
 +++ b/package.json
 @@ -1,7 +1,7 @@
@@ -3804,7 +3804,7 @@ index 7b709a4..21e5e4a 100644
    "scripts": {
      "dev": "vite",
 diff --git a/runtime.json b/runtime.json
-index cb57096..1abb6c8 100644
+index cb57096e8ec1d4ff70e9b0ef8e4ecd811fb9867f..1abb6c845b1161b3eb337653845505adf6bc35e7 100644
 --- a/runtime.json
 +++ b/runtime.json
 @@ -1,16 +1,16 @@
@@ -3833,7 +3833,7 @@ index cb57096..1abb6c8 100644
    "grease_brand": "Not-A.Brand",
 diff --git a/scripts/apply-patch.ps1 b/scripts/apply-patch.ps1
 new file mode 100644
-index 0000000..36beaba
+index 0000000000000000000000000000000000000000..36beaba9ce696274bca5c14f71613dcd4c740c27
 --- /dev/null
 +++ b/scripts/apply-patch.ps1
 @@ -0,0 +1,74 @@
@@ -3913,7 +3913,7 @@ index 0000000..36beaba
 +Write-Output "Patch applied: $candidateCommit ($tree)"
 diff --git a/scripts/build-portable.ps1 b/scripts/build-portable.ps1
 new file mode 100644
-index 0000000..93f31b5
+index 0000000000000000000000000000000000000000..93f31b5527376802ca51cdce3c666fceee1abab6
 --- /dev/null
 +++ b/scripts/build-portable.ps1
 @@ -0,0 +1,143 @@
@@ -4062,7 +4062,7 @@ index 0000000..93f31b5
 +Write-Output "$filename SHA256=$sha; acceptance=$acceptanceState; publish_ready=$publishReady"
 diff --git a/scripts/check-upstream.ps1 b/scripts/check-upstream.ps1
 new file mode 100644
-index 0000000..3f6fb64
+index 0000000000000000000000000000000000000000..3f6fb64388150631a1d9216fb2fecd079ccc99a0
 --- /dev/null
 +++ b/scripts/check-upstream.ps1
 @@ -0,0 +1,81 @@
@@ -4148,7 +4148,7 @@ index 0000000..3f6fb64
 +$result | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $OutputPath -Encoding utf8
 +Write-Output "$tag $($object.sha): $reason"
 diff --git a/scripts/copy-rules.allow.json b/scripts/copy-rules.allow.json
-index dd1305e..95a3a9f 100644
+index dd1305ee2d7100617b845ef49fd8835c9d4a14ce..95a3a9f7a1f025ee59485c381d5000ad5a621986 100644
 --- a/scripts/copy-rules.allow.json
 +++ b/scripts/copy-rules.allow.json
 @@ -8,10 +8,10 @@
@@ -4164,7 +4164,7 @@ index dd1305e..95a3a9f 100644
      "en:sidebar.apiNameOther",
      "en:sidebar.apiOnLabel"
 diff --git a/scripts/lib/class-rules.mjs b/scripts/lib/class-rules.mjs
-index 2728094..a7a634b 100644
+index 2728094b5be739435166d6cd606210234d72a925..a7a634b22036c026601858c9a725145243df6785 100644
 --- a/scripts/lib/class-rules.mjs
 +++ b/scripts/lib/class-rules.mjs
 @@ -209,7 +209,9 @@ export function scanRules(root) {
@@ -4180,7 +4180,7 @@ index 2728094..a7a634b 100644
        else if (/\.(tsx?|jsx?)$/.test(name)) {
 diff --git a/scripts/lib/proxy-chain-build.ps1 b/scripts/lib/proxy-chain-build.ps1
 new file mode 100644
-index 0000000..9be6a6c
+index 0000000000000000000000000000000000000000..9be6a6c4a6cfe1d32b30c90bf8d72c9dc4b05fed
 --- /dev/null
 +++ b/scripts/lib/proxy-chain-build.ps1
 @@ -0,0 +1,51 @@
@@ -4237,7 +4237,7 @@ index 0000000..9be6a6c
 +}
 diff --git a/scripts/startup-page.test.mjs b/scripts/startup-page.test.mjs
 new file mode 100644
-index 0000000..18e116b
+index 0000000000000000000000000000000000000000..18e116bd1bebdc9fb7e02acdc66648a6ed0ccac3
 --- /dev/null
 +++ b/scripts/startup-page.test.mjs
 @@ -0,0 +1,74 @@
@@ -4317,7 +4317,7 @@ index 0000000..18e116b
 +});
 diff --git a/scripts/test-proxy-chain-pipeline.ps1 b/scripts/test-proxy-chain-pipeline.ps1
 new file mode 100644
-index 0000000..36eca99
+index 0000000000000000000000000000000000000000..36eca999aa6c758b69c0f5dc5555855b26603262
 --- /dev/null
 +++ b/scripts/test-proxy-chain-pipeline.ps1
 @@ -0,0 +1,280 @@
@@ -4603,7 +4603,7 @@ index 0000000..36eca99
 +}
 diff --git a/scripts/verify-patch.ps1 b/scripts/verify-patch.ps1
 new file mode 100644
-index 0000000..427020d
+index 0000000000000000000000000000000000000000..427020dfa9afda2b52bab9968e0e0fa1198340d7
 --- /dev/null
 +++ b/scripts/verify-patch.ps1
 @@ -0,0 +1,81 @@
@@ -4689,7 +4689,7 @@ index 0000000..427020d
 +    $receipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $output 'verification.json') -Encoding utf8
 +} finally { Pop-Location }
 diff --git a/sdks/node/README.md b/sdks/node/README.md
-index a4043d2..e088d79 100644
+index a4043d22824eaf85398d7bad880c8b0252df7d52..e088d79d09485faef30ea44b15538e083db63ddb 100644
 --- a/sdks/node/README.md
 +++ b/sdks/node/README.md
 @@ -1,7 +1,7 @@
@@ -4702,7 +4702,7 @@ index a4043d2..e088d79 100644
  Does **not** depend on the desktop launcher. On first use it downloads
  the patched Chromium 157 engine, Widevine CDM, and the 220-profile
 diff --git a/sdks/node/package-lock.json b/sdks/node/package-lock.json
-index 7be8256..213a8c2 100644
+index 7be8256768d01ebebe9837eb4a75cd968c8dc08e..213a8c2b6f046812c4ed173fb416c0b361f66ed3 100644
 --- a/sdks/node/package-lock.json
 +++ b/sdks/node/package-lock.json
 @@ -1,12 +1,12 @@
@@ -4721,7 +4721,7 @@ index 7be8256..213a8c2 100644
        "dependencies": {
          "adm-zip": "^0.6.1",
 diff --git a/sdks/node/package.json b/sdks/node/package.json
-index e92578b..d112ef6 100644
+index e92578bcd7b0b96aaaaeeba68570d08374d1e880..d112ef66cd7e2bdb5fe66452d7b2341d9e0e82a5 100644
 --- a/sdks/node/package.json
 +++ b/sdks/node/package.json
 @@ -1,6 +1,6 @@
@@ -4733,7 +4733,7 @@ index e92578b..d112ef6 100644
    "type": "module",
    "main": "dist/index.js",
 diff --git a/sdks/node/src/browser.ts b/sdks/node/src/browser.ts
-index 57207d8..2ac26d4 100644
+index 57207d8ba393952130f9e621a4a1590182c66e5f..2ac26d4a49f1b1a85aaa261a4b751cf5771ae82f 100644
 --- a/sdks/node/src/browser.ts
 +++ b/sdks/node/src/browser.ts
 @@ -18,7 +18,6 @@ import { hasAutoFields, resolveAutoFields } from "./autoResolve.js";
@@ -4753,7 +4753,7 @@ index 57207d8..2ac26d4 100644
      applyNoiseSeeds(profile.config, profile.id);
      const fpFile = join(udd, "fingerprint.json");
 diff --git a/sdks/node/src/index.ts b/sdks/node/src/index.ts
-index 0fdf5f1..eb78f4e 100644
+index 0fdf5f1274a2da05724ab2596cbe51a345312907..eb78f4e6a6dc28169b3b3a0ec996df55adac1f7c 100644
 --- a/sdks/node/src/index.ts
 +++ b/sdks/node/src/index.ts
 @@ -236,7 +236,7 @@ export type { LaunchOptions, WebRtcMode, ScreenMode } from "./browser.js";
@@ -4766,7 +4766,7 @@ index 0fdf5f1..eb78f4e 100644
    MACOS_PLATFORM_VERSIONS, WINDOWS_PLATFORM_VERSIONS, LINUX_PLATFORM_VERSIONS,
  } from "./randomize.js";
 diff --git a/sdks/node/src/randomize.ts b/sdks/node/src/randomize.ts
-index f056245..38ceffb 100644
+index f056245b3953fb7a5d2dd6bf9afc0ff535b74f5e..38ceffbbba89eae06dacba3737ff1068e52eef29 100644
 --- a/sdks/node/src/randomize.ts
 +++ b/sdks/node/src/randomize.ts
 @@ -8,36 +8,27 @@
@@ -4911,7 +4911,7 @@ index f056245..38ceffb 100644
   * Mutates in-place: pick fresh (hardware_concurrency, device_memory).
   *
 diff --git a/sdks/node/src/runtime.ts b/sdks/node/src/runtime.ts
-index a225fd1..b852ea7 100644
+index a225fd1b5064930bb9e22cd9ffec9308e736df6c..b852ea703068e9df2c3888cad64d1682c2d49412 100644
 --- a/sdks/node/src/runtime.ts
 +++ b/sdks/node/src/runtime.ts
 @@ -14,9 +14,9 @@ import { randomBytes } from "node:crypto";
@@ -4928,7 +4928,7 @@ index a225fd1..b852ea7 100644
  // pulled from PUB_BASE.
 diff --git a/sdks/node/test/platform-version.test.mjs b/sdks/node/test/platform-version.test.mjs
 deleted file mode 100644
-index 8844745..0000000
+index 884474531366bf0b5a4a2a419ea4fa4f8aa3d4d3..0000000000000000000000000000000000000000
 --- a/sdks/node/test/platform-version.test.mjs
 +++ /dev/null
 @@ -1,66 +0,0 @@
@@ -4999,7 +4999,7 @@ index 8844745..0000000
 -  }
 -});
 diff --git a/sdks/python/README.md b/sdks/python/README.md
-index 52581dc..91e444c 100644
+index 52581dcccbb0bb5522a5460d1f1a6f7343b8107d..91e444c3100b7351e3ffefc3f2713446d340ce99 100644
 --- a/sdks/python/README.md
 +++ b/sdks/python/README.md
 @@ -1,7 +1,7 @@
@@ -5012,7 +5012,7 @@ index 52581dc..91e444c 100644
  This package does **not** depend on the desktop launcher. On first use
  it downloads the patched Chromium 157 engine, Widevine CDM, and the
 diff --git a/sdks/python/pyproject.toml b/sdks/python/pyproject.toml
-index 1624a20..1a34340 100644
+index 1624a2040822c2f9bbed7f01c6df79029e6f212c..1a34340d06e89fe27ec49cba9e6b071c72f4b5b4 100644
 --- a/sdks/python/pyproject.toml
 +++ b/sdks/python/pyproject.toml
 @@ -1,8 +1,8 @@
@@ -5036,7 +5036,7 @@ index 1624a20..1a34340 100644
  
  [build-system]
 diff --git a/sdks/python/shardx/__init__.py b/sdks/python/shardx/__init__.py
-index 3eb294c..25fc71e 100644
+index 3eb294cdf101bed8b6e70644c2ad5be8dbdc864f..25fc71e8d607c4f97866cfb13ca0d32286f8be5a 100644
 --- a/sdks/python/shardx/__init__.py
 +++ b/sdks/python/shardx/__init__.py
 @@ -50,7 +50,7 @@ from .host import (
@@ -5064,7 +5064,7 @@ index 3eb294c..25fc71e 100644
 -__version__ = "2.1.6"
 +__version__ = "2.1.5"
 diff --git a/sdks/python/shardx/browser.py b/sdks/python/shardx/browser.py
-index fbdfceb..4154691 100644
+index fbdfceb12f2eaa29d42778e8b7611eda8242a40c..415469193d8e88e51a5751b71124c6d2c9adf288 100644
 --- a/sdks/python/shardx/browser.py
 +++ b/sdks/python/shardx/browser.py
 @@ -29,7 +29,6 @@ from .auto_resolve import has_auto_fields, resolve_auto_fields
@@ -5084,7 +5084,7 @@ index fbdfceb..4154691 100644
              apply_chrome_brand(profile.config)
          apply_noise_seeds(profile.config, profile.id)
 diff --git a/sdks/python/shardx/randomize.py b/sdks/python/shardx/randomize.py
-index 5d315d3..2a39b90 100644
+index 5d315d3b00fec6cd4b0bfce12ab56e5aec886c58..2a39b90bcb44096347e7a77b4e31994230e84673 100644
 --- a/sdks/python/shardx/randomize.py
 +++ b/sdks/python/shardx/randomize.py
 @@ -11,41 +11,32 @@ ceilinged by `host_ram_bucket_gb`.
@@ -5232,7 +5232,7 @@ index 5d315d3..2a39b90 100644
      """In-place: pick a fresh (hardware_concurrency, device_memory) pair.
  
 diff --git a/sdks/python/shardx/runtime.py b/sdks/python/shardx/runtime.py
-index 9fc57da..05324e6 100644
+index 9fc57da1feebc9476ca86cb45e911f54a08c1cae..05324e6d093c2abcde453486d2893a2fae96d52a 100644
 --- a/sdks/python/shardx/runtime.py
 +++ b/sdks/python/shardx/runtime.py
 @@ -26,9 +26,9 @@ from typing import Callable, Optional
@@ -5249,7 +5249,7 @@ index 9fc57da..05324e6 100644
  # pulled from PUB_BASE only when their etag changed.
 diff --git a/sdks/python/tests/test_platform_version.py b/sdks/python/tests/test_platform_version.py
 deleted file mode 100644
-index 43826c9..0000000
+index 43826c973013b7fbd46235f06d7e379555ca6671..0000000000000000000000000000000000000000
 --- a/sdks/python/tests/test_platform_version.py
 +++ /dev/null
 @@ -1,83 +0,0 @@
@@ -5337,7 +5337,7 @@ index 43826c9..0000000
 -if __name__ == "__main__":
 -    unittest.main()
 diff --git a/sdks/rust/Cargo.toml b/sdks/rust/Cargo.toml
-index 8da39e6..1c829bf 100644
+index 8da39e6061a81ccbd31f3dfc33250ed82f7e4033..1c829bfee9357ba1f1ed32591faba4a8b140df23 100644
 --- a/sdks/rust/Cargo.toml
 +++ b/sdks/rust/Cargo.toml
 @@ -1,6 +1,6 @@
@@ -5358,7 +5358,7 @@ index 8da39e6..1c829bf 100644
  categories = ["web-programming", "api-bindings"]
  
 diff --git a/sdks/rust/README.md b/sdks/rust/README.md
-index cf533e0..f2b5e18 100644
+index cf533e0315344821e48f6e30601a5779b49e2fc5..f2b5e18f42c037f3ac93f88fd3816aa8dd7c37aa 100644
 --- a/sdks/rust/README.md
 +++ b/sdks/rust/README.md
 @@ -1,7 +1,7 @@
@@ -5383,7 +5383,7 @@ index cf533e0..f2b5e18 100644
  
  MIT licensed.
 diff --git a/sdks/rust/src/browser.rs b/sdks/rust/src/browser.rs
-index 897c60a..a15fcbe 100644
+index 897c60ac67207864c6852c0cebb9ec4600eb76bf..a15fcbe4cdd0b6622ae13827e532af8c2fd7bc64 100644
 --- a/sdks/rust/src/browser.rs
 +++ b/sdks/rust/src/browser.rs
 @@ -252,7 +252,6 @@ impl Browser {
@@ -5395,7 +5395,7 @@ index 897c60a..a15fcbe 100644
              crate::profile::apply_chrome_brand(&mut profile.config);
          }
 diff --git a/sdks/rust/src/lib.rs b/sdks/rust/src/lib.rs
-index 28084a0..e9c87f9 100644
+index 28084a044bc71f23b1c7ded8747c98e15e09230d..e9c87f9755df4fa18edbb580b6a29ecd81e38266 100644
 --- a/sdks/rust/src/lib.rs
 +++ b/sdks/rust/src/lib.rs
 @@ -1,6 +1,6 @@
@@ -5418,7 +5418,7 @@ index 28084a0..e9c87f9 100644
  pub use runtime::{
      default_cache_dir, host_spec, Archive, HostSpec, ProgressCb, Runtime, CHROMIUM_VERSION,
 diff --git a/sdks/rust/src/randomize.rs b/sdks/rust/src/randomize.rs
-index 796fe4c..18aa0d0 100644
+index 796fe4c7e1bef99dcc0794c68d280730b60c054e..18aa0d0fdf1ad3256702eef57a37b184c7b91e2c 100644
 --- a/sdks/rust/src/randomize.rs
 +++ b/sdks/rust/src/randomize.rs
 @@ -7,31 +7,21 @@ use serde_json::{json, Value};
@@ -5642,7 +5642,7 @@ index 796fe4c..18aa0d0 100644
 -    }
 -}
 diff --git a/sdks/rust/src/runtime.rs b/sdks/rust/src/runtime.rs
-index b346b48..5471871 100644
+index b346b48dd286d8e1c515c07843d5f7a357fe3a93..5471871741ddaccee1dcc798170e2658a79de469 100644
 --- a/sdks/rust/src/runtime.rs
 +++ b/sdks/rust/src/runtime.rs
 @@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
@@ -5655,7 +5655,7 @@ index b346b48..5471871 100644
  pub const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
  /// Version manifest (GitHub raw) — one tiny GET yields every archive's current
 diff --git a/src-tauri/Cargo.lock b/src-tauri/Cargo.lock
-index ee2bbb6..9b4d8cf 100644
+index ee2bbb6404267b9b0d890704648741c7b222a015..9b4d8cfebe0f2e01c1ce2927cbcefdd34cf1e886 100644
 --- a/src-tauri/Cargo.lock
 +++ b/src-tauri/Cargo.lock
 @@ -3569,9 +3569,9 @@ dependencies = [
@@ -5741,7 +5741,7 @@ index ee2bbb6..9b4d8cf 100644
  name = "yoke"
  version = "0.8.2"
 diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
-index 8a262df..81cdf1e 100644
+index 8a262df8ab9ac142dd1484edc8be0f3d0115ecbf..81cdf1e4b962b14195d3deea26f8c6bb8a2f6059 100644
 --- a/src-tauri/Cargo.toml
 +++ b/src-tauri/Cargo.toml
 @@ -1,6 +1,6 @@
@@ -5775,7 +5775,7 @@ index 8a262df..81cdf1e 100644
      "Win32_Security",              # CreateJobObjectW's attributes
      "Win32_Security_Cryptography", # CryptProtectData / CryptUnprotectData
 diff --git a/src-tauri/build.rs b/src-tauri/build.rs
-index d860e1e..5d36fdb 100644
+index d860e1e6a7cac333c3cc0bc9cb67faf286b07d69..5d36fdbd40e30008637c830f2015d4e558a1445a 100644
 --- a/src-tauri/build.rs
 +++ b/src-tauri/build.rs
 @@ -1,3 +1,21 @@
@@ -5802,7 +5802,7 @@ index d860e1e..5d36fdb 100644
 +    }
  }
 diff --git a/src-tauri/src/api.rs b/src-tauri/src/api.rs
-index 892a379..9704809 100644
+index 892a3796e0928a0e6191c30f4bf3463c10903035..9704809c4586aaa7a0a79ee0c4dfce0479ce43e7 100644
 --- a/src-tauri/src/api.rs
 +++ b/src-tauri/src/api.rs
 @@ -208,6 +208,8 @@ async fn list_profiles() -> ApiResult {
@@ -6340,7 +6340,7 @@ index 892a379..9704809 100644
          async fn a_member_with_the_rights_writes_each_kind_of_change_to_the_team() {
              let all = [Action::See, Action::Start, Action::Edit, Action::Create, Action::Delete];
 diff --git a/src-tauri/src/cdp.rs b/src-tauri/src/cdp.rs
-index 10be256..c0af4c7 100644
+index 10be256ee963d34d5dd952626b4e67dcbe73fdb8..c0af4c720b0ce2eb0994008bf25077f1e8c9c98d 100644
 --- a/src-tauri/src/cdp.rs
 +++ b/src-tauri/src/cdp.rs
 @@ -320,6 +320,9 @@ pub fn detach(profile_id: &str) {
@@ -6354,7 +6354,7 @@ index 10be256..c0af4c7 100644
      let page = s.page().ok_or_else(|| anyhow!("no page attached"))?;
      s.call(method, params, Some(&page)).await
 diff --git a/src-tauri/src/launch.rs b/src-tauri/src/launch.rs
-index ea97c92..0ce6253 100644
+index ea97c9251cec742fcfb5929da9c5e72e25996a58..0ce62537ba54d433147ab7363141db04cc775fef 100644
 --- a/src-tauri/src/launch.rs
 +++ b/src-tauri/src/launch.rs
 @@ -278,6 +278,7 @@ pub struct LaunchInput {
@@ -6815,7 +6815,7 @@ index ea97c92..0ce6253 100644
      #[test]
      fn the_profile_name_can_be_hidden() {
 diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
-index bd61530..f6b42f9 100644
+index bd6153066faa459b330326a837f1fddc8fb43f4f..f6b42f94e21021b1739509d1d796908da580f517 100644
 --- a/src-tauri/src/lib.rs
 +++ b/src-tauri/src/lib.rs
 @@ -1,7 +1,9 @@
@@ -7281,7 +7281,7 @@ index bd61530..f6b42f9 100644
  }
 diff --git a/src-tauri/src/platform_version.rs b/src-tauri/src/platform_version.rs
 deleted file mode 100644
-index bc546a1..0000000
+index bc546a1e399cd82997de38d5ef547576bc3f8612..0000000000000000000000000000000000000000
 --- a/src-tauri/src/platform_version.rs
 +++ /dev/null
 @@ -1,218 +0,0 @@
@@ -7504,7 +7504,7 @@ index bc546a1..0000000
 -    }
 -}
 diff --git a/src-tauri/src/process.rs b/src-tauri/src/process.rs
-index 2d25d08..01621d6 100644
+index 2d25d08b51fede46ec1e7ef905c6fd11eb7e9006..01621d6c2d41e4ef0bf30e7ca73b16f0690b4276 100644
 --- a/src-tauri/src/process.rs
 +++ b/src-tauri/src/process.rs
 @@ -56,6 +56,7 @@ struct ChildEntry {
@@ -7587,7 +7587,7 @@ index 2d25d08..01621d6 100644
          if let Ok(mut g) = self.inner.lock() {
 diff --git a/src-tauri/src/profile_defaults.rs b/src-tauri/src/profile_defaults.rs
 new file mode 100644
-index 0000000..bc59126
+index 0000000000000000000000000000000000000000..bc59126615c977d3c79b533048763ce1f42da52d
 --- /dev/null
 +++ b/src-tauri/src/profile_defaults.rs
 @@ -0,0 +1,220 @@
@@ -7813,7 +7813,7 @@ index 0000000..bc59126
 +}
 diff --git a/src-tauri/src/profile_shortcut.rs b/src-tauri/src/profile_shortcut.rs
 new file mode 100644
-index 0000000..6448ac5
+index 0000000000000000000000000000000000000000..6448ac52b7e6935e0dca22e73525d1ee989e5025
 --- /dev/null
 +++ b/src-tauri/src/profile_shortcut.rs
 @@ -0,0 +1,166 @@
@@ -7985,7 +7985,7 @@ index 0000000..6448ac5
 +}
 diff --git a/src-tauri/src/proxy_chain/auto_windows.rs b/src-tauri/src/proxy_chain/auto_windows.rs
 new file mode 100644
-index 0000000..4b186bb
+index 0000000000000000000000000000000000000000..4b186bb6c271daa4277ba19789e7ee252287543a
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/auto_windows.rs
 @@ -0,0 +1,488 @@
@@ -8479,7 +8479,7 @@ index 0000000..4b186bb
 +}
 diff --git a/src-tauri/src/proxy_chain/config.rs b/src-tauri/src/proxy_chain/config.rs
 new file mode 100644
-index 0000000..1d7722b
+index 0000000000000000000000000000000000000000..1d7722b2bc2724750b097e80964459f5c7945f96
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/config.rs
 @@ -0,0 +1,284 @@
@@ -8769,7 +8769,7 @@ index 0000000..1d7722b
 +}
 diff --git a/src-tauri/src/proxy_chain/connector.rs b/src-tauri/src/proxy_chain/connector.rs
 new file mode 100644
-index 0000000..07cb41f
+index 0000000000000000000000000000000000000000..07cb41ff6a696fab37476eb869857f1db205aa32
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/connector.rs
 @@ -0,0 +1,457 @@
@@ -9232,7 +9232,7 @@ index 0000000..07cb41f
 +}
 diff --git a/src-tauri/src/proxy_chain/credentials.rs b/src-tauri/src/proxy_chain/credentials.rs
 new file mode 100644
-index 0000000..387a7de
+index 0000000000000000000000000000000000000000..387a7deb24ef4c181dddbbddc81139493e95ca71
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/credentials.rs
 @@ -0,0 +1,81 @@
@@ -9319,7 +9319,7 @@ index 0000000..387a7de
 +}
 diff --git a/src-tauri/src/proxy_chain/detect_windows.rs b/src-tauri/src/proxy_chain/detect_windows.rs
 new file mode 100644
-index 0000000..b53e5b9
+index 0000000000000000000000000000000000000000..b53e5b910df49df61865567902df08b9ae864f10
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detect_windows.rs
 @@ -0,0 +1,345 @@
@@ -9670,7 +9670,7 @@ index 0000000..b53e5b9
 +}
 diff --git a/src-tauri/src/proxy_chain/detection_tests.rs b/src-tauri/src/proxy_chain/detection_tests.rs
 new file mode 100644
-index 0000000..89a6808
+index 0000000000000000000000000000000000000000..89a68081e9a073f391f5e09a087c8b7acd5f3d14
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/detection_tests.rs
 @@ -0,0 +1,1249 @@
@@ -10925,7 +10925,7 @@ index 0000000..89a6808
 +}
 diff --git a/src-tauri/src/proxy_chain/error.rs b/src-tauri/src/proxy_chain/error.rs
 new file mode 100644
-index 0000000..1b144f9
+index 0000000000000000000000000000000000000000..1b144f9bc3fc6633ff8913d2ef1546ef08fda06f
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/error.rs
 @@ -0,0 +1,54 @@
@@ -10985,7 +10985,7 @@ index 0000000..1b144f9
 +impl std::error::Error for ChainError {}
 diff --git a/src-tauri/src/proxy_chain/integration_tests.rs b/src-tauri/src/proxy_chain/integration_tests.rs
 new file mode 100644
-index 0000000..bc80587
+index 0000000000000000000000000000000000000000..bc80587a3262f9c8e21c35532c9bfc3b878665d1
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/integration_tests.rs
 @@ -0,0 +1,848 @@
@@ -11839,7 +11839,7 @@ index 0000000..bc80587
 +}
 diff --git a/src-tauri/src/proxy_chain/live_geo_tests.rs b/src-tauri/src/proxy_chain/live_geo_tests.rs
 new file mode 100644
-index 0000000..203a12f
+index 0000000000000000000000000000000000000000..203a12f803c249967e51e0350210711d48e775bd
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/live_geo_tests.rs
 @@ -0,0 +1,370 @@
@@ -12215,7 +12215,7 @@ index 0000000..203a12f
 +}
 diff --git a/src-tauri/src/proxy_chain/live_tests.rs b/src-tauri/src/proxy_chain/live_tests.rs
 new file mode 100644
-index 0000000..f7bb892
+index 0000000000000000000000000000000000000000..f7bb892bebd3da48a4af1f8378dcddd6bf2eaa0f
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/live_tests.rs
 @@ -0,0 +1,1113 @@
@@ -13334,7 +13334,7 @@ index 0000000..f7bb892
 +}
 diff --git a/src-tauri/src/proxy_chain/mod.rs b/src-tauri/src/proxy_chain/mod.rs
 new file mode 100644
-index 0000000..5788c8f
+index 0000000000000000000000000000000000000000..5788c8f1e352cb41fdabbecf9c746b06706abbf1
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/mod.rs
 @@ -0,0 +1,626 @@
@@ -13966,7 +13966,7 @@ index 0000000..5788c8f
 +mod live_geo_tests;
 diff --git a/src-tauri/src/proxy_chain/policy.rs b/src-tauri/src/proxy_chain/policy.rs
 new file mode 100644
-index 0000000..9505ef6
+index 0000000000000000000000000000000000000000..9505ef6358558324aee1c76e8750555966cfd12c
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/policy.rs
 @@ -0,0 +1,123 @@
@@ -14095,7 +14095,7 @@ index 0000000..9505ef6
 +}
 diff --git a/src-tauri/src/proxy_chain/readiness.rs b/src-tauri/src/proxy_chain/readiness.rs
 new file mode 100644
-index 0000000..f952a7f
+index 0000000000000000000000000000000000000000..f952a7f7bf87e9e0f8a3ac28ebd97e95d0a647f5
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/readiness.rs
 @@ -0,0 +1,103 @@
@@ -14204,7 +14204,7 @@ index 0000000..f952a7f
 +}
 diff --git a/src-tauri/src/proxy_chain/readiness_tests.rs b/src-tauri/src/proxy_chain/readiness_tests.rs
 new file mode 100644
-index 0000000..f6a70c5
+index 0000000000000000000000000000000000000000..f6a70c5abb65fb3aeef57b2d51beb53027e8ed9a
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/readiness_tests.rs
 @@ -0,0 +1,253 @@
@@ -14463,7 +14463,7 @@ index 0000000..f6a70c5
 +}
 diff --git a/src-tauri/src/proxy_chain/route.rs b/src-tauri/src/proxy_chain/route.rs
 new file mode 100644
-index 0000000..eb99860
+index 0000000000000000000000000000000000000000..eb9986006a1e0c392dd3f2d6868912e1b4467a1e
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/route.rs
 @@ -0,0 +1,189 @@
@@ -14658,7 +14658,7 @@ index 0000000..eb99860
 +}
 diff --git a/src-tauri/src/proxy_chain/routing.rs b/src-tauri/src/proxy_chain/routing.rs
 new file mode 100644
-index 0000000..4065d90
+index 0000000000000000000000000000000000000000..4065d90a73f778e62ad83af420b9c436417b1dcf
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/routing.rs
 @@ -0,0 +1,206 @@
@@ -14870,7 +14870,7 @@ index 0000000..4065d90
 +}
 diff --git a/src-tauri/src/proxy_chain/same_exit_tests.rs b/src-tauri/src/proxy_chain/same_exit_tests.rs
 new file mode 100644
-index 0000000..92f6109
+index 0000000000000000000000000000000000000000..92f6109234bf89820aa7d172c8e816e3969da844
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/same_exit_tests.rs
 @@ -0,0 +1,288 @@
@@ -15164,7 +15164,7 @@ index 0000000..92f6109
 +}
 diff --git a/src-tauri/src/proxy_chain/tests.rs b/src-tauri/src/proxy_chain/tests.rs
 new file mode 100644
-index 0000000..db29488
+index 0000000000000000000000000000000000000000..db29488c379886f13162441bcf18506ecebbdb16
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tests.rs
 @@ -0,0 +1,1170 @@
@@ -16340,7 +16340,7 @@ index 0000000..db29488
 +}
 diff --git a/src-tauri/src/proxy_chain/tls.rs b/src-tauri/src/proxy_chain/tls.rs
 new file mode 100644
-index 0000000..eee9e3c
+index 0000000000000000000000000000000000000000..eee9e3c079c29e50aad74cb41b3f655bb6137ba7
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tls.rs
 @@ -0,0 +1,53 @@
@@ -16399,7 +16399,7 @@ index 0000000..eee9e3c
 +}
 diff --git a/src-tauri/src/proxy_chain/tunnel.rs b/src-tauri/src/proxy_chain/tunnel.rs
 new file mode 100644
-index 0000000..fe495c5
+index 0000000000000000000000000000000000000000..fe495c5615537cde580c9a68aac8b47a0cdff706
 --- /dev/null
 +++ b/src-tauri/src/proxy_chain/tunnel.rs
 @@ -0,0 +1,409 @@
@@ -16814,7 +16814,7 @@ index 0000000..fe495c5
 +}
 diff --git a/src-tauri/src/proxy_providers.rs b/src-tauri/src/proxy_providers.rs
 new file mode 100644
-index 0000000..9a7cddc
+index 0000000000000000000000000000000000000000..9a7cddcd8bf542e81b5ed71ba958a7403982640e
 --- /dev/null
 +++ b/src-tauri/src/proxy_providers.rs
 @@ -0,0 +1,396 @@
@@ -17215,7 +17215,7 @@ index 0000000..9a7cddc
 +    }
 +}
 diff --git a/src-tauri/src/psapi.rs b/src-tauri/src/psapi.rs
-index 958455f..7664255 100644
+index 958455f0fb3d6128a98576420d773da03abb4be2..7664255a2abd9e064463c61ce8adec26653c9b4a 100644
 --- a/src-tauri/src/psapi.rs
 +++ b/src-tauri/src/psapi.rs
 @@ -1,4 +1,4 @@
@@ -17270,7 +17270,7 @@ index 958455f..7664255 100644
          name: format!("resi {plan}"),
          kind,
 diff --git a/src-tauri/src/reset.rs b/src-tauri/src/reset.rs
-index 4d2811b..9b376ea 100644
+index 4d2811b1a45ffeffd633a7d1fcb59422696adce5..9b376ea2b0da98bd5716eb16c6a8a154199747ba 100644
 --- a/src-tauri/src/reset.rs
 +++ b/src-tauri/src/reset.rs
 @@ -1650,7 +1650,7 @@ mod tests {
@@ -17283,7 +17283,7 @@ index 4d2811b..9b376ea 100644
      }
  
 diff --git a/src-tauri/src/runtime.rs b/src-tauri/src/runtime.rs
-index 4964320..5f7e4fd 100644
+index 496432065e4dae227886da8d2747ab602a56ca5a..5f7e4fdf145d5b7342909ad61f2f9eaeb63c1761 100644
 --- a/src-tauri/src/runtime.rs
 +++ b/src-tauri/src/runtime.rs
 @@ -31,9 +31,13 @@ const MANIFEST_URL: &str =
@@ -17399,7 +17399,7 @@ index 4964320..5f7e4fd 100644
 +    }
 +}
 diff --git a/src-tauri/src/settings.rs b/src-tauri/src/settings.rs
-index 90b201e..7030465 100644
+index 90b201e8372b1f23c15160cd93979c4e8353fa6f..70304651379d1abc31a71b486fbab12a57e8c305 100644
 --- a/src-tauri/src/settings.rs
 +++ b/src-tauri/src/settings.rs
 @@ -6,6 +6,11 @@ use std::sync::Mutex;
@@ -17472,7 +17472,7 @@ index 90b201e..7030465 100644
 +    }
 +}
 diff --git a/src-tauri/src/space/client.rs b/src-tauri/src/space/client.rs
-index 93b7a07..a7b6315 100644
+index 93b7a0779c308c227bbeff00b269c2d62ccb8d52..a7b63157581ba206a0a216f07dfcdb8956613460 100644
 --- a/src-tauri/src/space/client.rs
 +++ b/src-tauri/src/space/client.rs
 @@ -1486,17 +1486,28 @@ mod tests {
@@ -17514,10 +17514,10 @@ index 93b7a07..a7b6315 100644
          let builders = code(ours).filter(|(_, l)| l.contains("Client::builder(")).count();
          assert_eq!(builders, 1, "one place makes team connections: link()");
 diff --git a/src-tauri/src/space/doors.rs b/src-tauri/src/space/doors.rs
-index 4bfef41..8c0f435 100644
+index 4bfef412da2d4539ab405dc1f73f4a4becc70e18..c96f0dda702313d0b9f155f5f8fcfea20653dc8e 100644
 --- a/src-tauri/src/space/doors.rs
 +++ b/src-tauri/src/space/doors.rs
-@@ -168,7 +168,10 @@ const RULES: &[(&str, Need)] = &[
+@@ -168,7 +168,12 @@ const RULES: &[(&str, Need)] = &[
      ("folder_meta_set", ADMIN),
      // The interface's old copy belongs to the personal space only.
      ("folder_import", Off),
@@ -17525,10 +17525,12 @@ index 4bfef41..8c0f435 100644
      ("profile_focus_window", Nothing),
 +    ("profile_shortcut::profile_create_desktop_shortcut", Machine),
 +    ("profile_shortcut::profile_shortcut_take_pending", Machine),
++    ("profile_shortcut::profile_shortcut_launch_is_silent", Machine),
++    ("profile_shortcut::profile_shortcut_show_launcher", Machine),
      // Starting and running.
      ("launch", START),
      ("sync_launch", START),
-@@ -264,6 +267,8 @@ const RULES: &[(&str, Need)] = &[
+@@ -264,6 +269,8 @@ const RULES: &[(&str, Need)] = &[
      ("proxy_bulk_import", CREATE_T),
      ("proxy_bulk_save", CREATE_T),
      ("proxy_bulk_parse", Machine),
@@ -17537,7 +17539,7 @@ index 4bfef41..8c0f435 100644
      ("ps_import_order", CREATE_T),
      // Data folder and reset.
      ("data_root_get", Machine),
-@@ -355,6 +360,13 @@ const RULES: &[(&str, Need)] = &[
+@@ -355,6 +362,13 @@ const RULES: &[(&str, Need)] = &[
      ("profile_sync_set", Off),
      ("profile_sync_take", Off),
      ("mcp_download", Machine),
@@ -17551,7 +17553,7 @@ index 4bfef41..8c0f435 100644
      ("runtime::runtime_status", Machine),
      ("runtime::runtime_install", Machine),
      ("runtime::launcher_update_check", Machine),
-@@ -388,9 +400,6 @@ const RULES: &[(&str, Need)] = &[
+@@ -388,9 +402,6 @@ const RULES: &[(&str, Need)] = &[
      ("GET /extensions", SEE_T),
      ("POST /extensions", CREATE_T),
      ("DELETE /extensions/:id", DELETE_T),
@@ -17561,7 +17563,7 @@ index 4bfef41..8c0f435 100644
      ("GET /bookmarks", SEE_T),
      ("POST /bookmarks", UPSERT_T),
      ("DELETE /bookmarks/:id", DELETE_T),
-@@ -459,7 +468,6 @@ pub const ENFORCED: &[&str] = &[
+@@ -459,7 +470,6 @@ pub const ENFORCED: &[&str] = &[
      "DELETE /proxies/:id",
      "POST /extensions",
      "DELETE /extensions/:id",
@@ -17570,7 +17572,7 @@ index 4bfef41..8c0f435 100644
      "DELETE /bookmarks/:id",
      "POST /automation/projects",
 diff --git a/src-tauri/src/space/local/extensions/updates/tests.rs b/src-tauri/src/space/local/extensions/updates/tests.rs
-index cc0b266..07f3632 100644
+index cc0b266511e4134e1ec4d7db0e863d6b837a4481..07f3632b101b6793d0b6a68bb5cd7e507b7a4d86 100644
 --- a/src-tauri/src/space/local/extensions/updates/tests.rs
 +++ b/src-tauri/src/space/local/extensions/updates/tests.rs
 @@ -346,10 +346,17 @@ async fn a_silent_store_times_out_and_an_offline_one_changes_nothing() {
@@ -17595,7 +17597,7 @@ index cc0b266..07f3632 100644
      let u = r.view(&id);
      assert_eq!((u.state, u.latest.as_deref()), (State::Available, Some("1.1")));
 diff --git a/src-tauri/src/space/local/folders.rs b/src-tauri/src/space/local/folders.rs
-index 8b1e0af..bbbd834 100644
+index 8b1e0af0c38b8b8104039c3fe8d229028b56a4ff..bbbd83441d922b190ca3cdd1f4a1e8faf4453317 100644
 --- a/src-tauri/src/space/local/folders.rs
 +++ b/src-tauri/src/space/local/folders.rs
 @@ -10,7 +10,7 @@ use std::io::Write;
@@ -17817,7 +17819,7 @@ index 8b1e0af..bbbd834 100644
 +    }
  }
 diff --git a/src-tauri/src/space/local/profile.rs b/src-tauri/src/space/local/profile.rs
-index 991e4aa..09bf336 100644
+index 991e4aa4ffc4e3d4ea65bb4945d5b957581e156d..09bf336c50e93fb34e40cbedb512a3a4b75a883b 100644
 --- a/src-tauri/src/space/local/profile.rs
 +++ b/src-tauri/src/space/local/profile.rs
 @@ -52,6 +52,10 @@ fn write_atomic(path: &Path, body: &[u8]) -> Result<()> {
@@ -17911,7 +17913,7 @@ index 991e4aa..09bf336 100644
          name,
          notes: src
 diff --git a/src-tauri/src/space/local/protect.rs b/src-tauri/src/space/local/protect.rs
-index 0b822fb..0dec4b3 100644
+index 0b822fb2e3f1c6aa20d8e6881e8daa295bb210b9..0dec4b34bf41bc979e16b1a4fca8cb461a1ce56a 100644
 --- a/src-tauri/src/space/local/protect.rs
 +++ b/src-tauri/src/space/local/protect.rs
 @@ -23,9 +23,13 @@ const SEALED: &str = "sealed";
@@ -18046,7 +18048,7 @@ index 0b822fb..0dec4b3 100644
 +    }
  }
 diff --git a/src-tauri/src/space/local/proxy.rs b/src-tauri/src/space/local/proxy.rs
-index 63d3972..b72e35d 100644
+index 63d3972b4adf061dbddbd0a79026b32912897e64..b72e35dc8e743d2966ef0b25d35c44d279cb6e2f 100644
 --- a/src-tauri/src/space/local/proxy.rs
 +++ b/src-tauri/src/space/local/proxy.rs
 @@ -14,24 +14,44 @@ pub enum ProxyKind {
@@ -19281,7 +19283,7 @@ index 63d3972..b72e35d 100644
 +
  }
 diff --git a/src-tauri/src/space/local/trash.rs b/src-tauri/src/space/local/trash.rs
-index f926201..5f66d12 100644
+index f926201a97976a34dfb2bcf43653330890ab42a6..5f66d12d169b0a218ec298ade5c7b86beec069ba 100644
 --- a/src-tauri/src/space/local/trash.rs
 +++ b/src-tauri/src/space/local/trash.rs
 @@ -217,6 +217,8 @@ pub(in crate::space) fn restore(id: &str) -> Result<profile::ProfileMeta> {
@@ -19294,7 +19296,7 @@ index f926201..5f66d12 100644
          name: stored
              .config
 diff --git a/src-tauri/src/space/mod.rs b/src-tauri/src/space/mod.rs
-index 8b607aa..10bbb41 100644
+index 8b607aa9813f4edfba4c862ab7585f087738b152..10bbb41d122d5c739609460b33f3e6f19e014a67 100644
 --- a/src-tauri/src/space/mod.rs
 +++ b/src-tauri/src/space/mod.rs
 @@ -79,9 +79,7 @@ impl Ticket {
@@ -19621,7 +19623,7 @@ index 8b607aa..10bbb41 100644
      }
  }
 diff --git a/src-tauri/src/space/open.rs b/src-tauri/src/space/open.rs
-index 6d1be7a..1e31f61 100644
+index 6d1be7a87bca5b0d4e2e75b29d09968588e713e6..1e31f6144be9a027fd24afa62052fed15e534d40 100644
 --- a/src-tauri/src/space/open.rs
 +++ b/src-tauri/src/space/open.rs
 @@ -352,7 +352,11 @@ pub async fn open_team(team: &str, start: &Granted<Start>, cdp: bool) -> Result<
@@ -19638,7 +19640,7 @@ index 6d1be7a..1e31f61 100644
      Ok(Opened { stored, proxy, udd: session.udd(), ext: session.work.join("ext"), hand })
  }
 diff --git a/src-tauri/src/space/remote.rs b/src-tauri/src/space/remote.rs
-index b4c9b61..ab1506f 100644
+index b4c9b614500c502f644f0d168479d8e2a4c72f1a..ab1506fe057df77be0864aee8997f6d8ef309e37 100644
 --- a/src-tauri/src/space/remote.rs
 +++ b/src-tauri/src/space/remote.rs
 @@ -143,6 +143,8 @@ fn open_on(lease: &Lease, device_id: &str) -> OpenOn {
@@ -19700,7 +19702,7 @@ index b4c9b61..ab1506f 100644
      fn the_settings_keep_the_teams_fields_over_the_blob() {
          let blob = b64(json!({
 diff --git a/src-tauri/src/space/write.rs b/src-tauri/src/space/write.rs
-index 82712bd..28905c0 100644
+index 82712bdb661f0826e69651de52ad564212f6aa0c..28905c0959be1554b31748a2c444113d74090e17 100644
 --- a/src-tauri/src/space/write.rs
 +++ b/src-tauri/src/space/write.rs
 @@ -449,6 +449,7 @@ pub async fn save_proxy_for_binding(
@@ -19713,7 +19715,7 @@ index 82712bd..28905c0 100644
      match own {
 diff --git a/src-tauri/src/startup_page.rs b/src-tauri/src/startup_page.rs
 new file mode 100644
-index 0000000..304b4bd
+index 0000000000000000000000000000000000000000..304b4bd80acd83300f89e8733c8c343caa29c80d
 --- /dev/null
 +++ b/src-tauri/src/startup_page.rs
 @@ -0,0 +1,69 @@
@@ -19788,7 +19790,7 @@ index 0000000..304b4bd
 +}
 diff --git a/src-tauri/src/startup_page/logic.js b/src-tauri/src/startup_page/logic.js
 new file mode 100644
-index 0000000..968c612
+index 0000000000000000000000000000000000000000..968c612f20a30ad015e649b4fde450027b0a5204
 --- /dev/null
 +++ b/src-tauri/src/startup_page/logic.js
 @@ -0,0 +1,46 @@
@@ -19840,7 +19842,7 @@ index 0000000..968c612
 +}
 diff --git a/src-tauri/src/startup_page/start.js b/src-tauri/src/startup_page/start.js
 new file mode 100644
-index 0000000..80814fe
+index 0000000000000000000000000000000000000000..80814fe14406783a32f0a2b90c6fc5f8674ca5bb
 --- /dev/null
 +++ b/src-tauri/src/startup_page/start.js
 @@ -0,0 +1,42 @@
@@ -19888,7 +19890,7 @@ index 0000000..80814fe
 +void run();
 diff --git a/src-tauri/src/tnbproxy.rs b/src-tauri/src/tnbproxy.rs
 new file mode 100644
-index 0000000..def5a61
+index 0000000000000000000000000000000000000000..def5a6182493a61f1302407030763905806de395
 --- /dev/null
 +++ b/src-tauri/src/tnbproxy.rs
 @@ -0,0 +1,656 @@
@@ -20549,7 +20551,7 @@ index 0000000..def5a61
 +
 +}
 diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
-index 5101e18..63f5fb9 100644
+index 5101e1871ce52620a22433ffca012ad524759486..63f5fb98a12055f8ca906b068914301f1b40aa5f 100644
 --- a/src-tauri/tauri.conf.json
 +++ b/src-tauri/tauri.conf.json
 @@ -1,7 +1,7 @@
@@ -20562,7 +20564,7 @@ index 5101e18..63f5fb9 100644
    "build": {
      "beforeDevCommand": "npm run dev",
 diff --git a/src/app/App.tsx b/src/app/App.tsx
-index 9ffa73a..3e2ad74 100644
+index 9ffa73ae28be905731ac177de25e6b95f859ecd1..3e2ad744fbed2446fad105ccb6607169e02458fc 100644
 --- a/src/app/App.tsx
 +++ b/src/app/App.tsx
 @@ -14,7 +14,6 @@ import { UnsavedGuard } from "../widgets/UnsavedGuard/UnsavedGuard";
@@ -20598,7 +20600,7 @@ index 9ffa73a..3e2ad74 100644
        <TourEndCard />
        <ShellWindowControls />
 diff --git a/src/app/showWindow.ts b/src/app/showWindow.ts
-index 2659eb2..83c4212 100644
+index 2659eb2f9ca8e7e8bd6331de1a1505f4550e22e2..83c4212514a976e2f46553cc7e6434a1bcd230b9 100644
 --- a/src/app/showWindow.ts
 +++ b/src/app/showWindow.ts
 @@ -1,4 +1,4 @@
@@ -20621,7 +20623,7 @@ index 2659eb2..83c4212 100644
    let shown = false;
    const show = () => {
 diff --git a/src/app/styles/app.css b/src/app/styles/app.css
-index a00ed32..3b146f9 100644
+index a00ed32dea183c661ff9f55dc141b42fcb90482b..3b146f9d6607c9abbccdf7bcfac3717c47e42dd1 100644
 --- a/src/app/styles/app.css
 +++ b/src/app/styles/app.css
 @@ -441,4 +441,7 @@ header[data-compact="3"] [data-title-block] > :not([data-page-title]) {
@@ -20634,7 +20636,7 @@ index a00ed32..3b146f9 100644
  @media (forced-colors: active) { .brand-mark { color: CanvasText; } }
 diff --git a/src/app/useProfileShortcuts.ts b/src/app/useProfileShortcuts.ts
 new file mode 100644
-index 0000000..fd3aa4a
+index 0000000000000000000000000000000000000000..fd3aa4a154adcb7bd5d48bd6a6ced07a686f3913
 --- /dev/null
 +++ b/src/app/useProfileShortcuts.ts
 @@ -0,0 +1,67 @@
@@ -20706,7 +20708,7 @@ index 0000000..fd3aa4a
 +  }, [ready]);
 +}
 diff --git a/src/dev/mock/fixtures.ts b/src/dev/mock/fixtures.ts
-index 63ef7db..e9e6ea3 100644
+index 63ef7db90f9b75dd7e48e16e452460a802fa998f..e9e6ea3133019c5d7370191a9a58bfaf8ff043f0 100644
 --- a/src/dev/mock/fixtures.ts
 +++ b/src/dev/mock/fixtures.ts
 @@ -27,6 +27,8 @@ export const DEFAULT_BLOCKED_PORTS = [3389, 5900, 5901, 5800, 7070, 6568, 5938,
@@ -20786,7 +20788,7 @@ index 63ef7db..e9e6ea3 100644
      api: { enabled: true, port: 40325, base_url: "http://127.0.0.1:40325", token: "shx_mock_00000000000000000000000000" },
      psKey: "psk_test_mock_000000000000000000000000",
 diff --git a/src/dev/mock/handlers.ts b/src/dev/mock/handlers.ts
-index 41d96a9..2728418 100644
+index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..27284180d0d55e9ba145f608498edb5a2a9e552b 100644
 --- a/src/dev/mock/handlers.ts
 +++ b/src/dev/mock/handlers.ts
 @@ -14,7 +14,7 @@ import { alreadyInLibrary, extProfileClosed, extUpdateHandlers, importSame } fro
@@ -21038,7 +21040,7 @@ index 41d96a9..2728418 100644
      const active = (o: { expires_at: string | null }) => !!o.expires_at && Date.parse(o.expires_at) > Date.now();
      const all = state.psOrders.filter((o) => status === "all" ? true : status === "active" ? active(o) : status === "cancelled" ? !active(o) : false);
 diff --git a/src/dev/mock/install.ts b/src/dev/mock/install.ts
-index 78fcaa6..7215399 100644
+index 78fcaa68e72a41066ac084aea3b0cb98592896c4..72153991db5c9da9a2656dd5a1ed30c0a922ec43 100644
 --- a/src/dev/mock/install.ts
 +++ b/src/dev/mock/install.ts
 @@ -35,7 +35,7 @@ type Callback = (payload: unknown) => void;
@@ -21051,7 +21053,7 @@ index 78fcaa6..7215399 100644
  
  function install(): void {
 diff --git a/src/dev/mock/teamRights.ts b/src/dev/mock/teamRights.ts
-index 7b3b658..e27eba6 100644
+index 7b3b6581d0c4e4f897c9bca785c53b3386a1c8bd..e27eba6836b9708f7c5610659d7cd1ceabe45dfd 100644
 --- a/src/dev/mock/teamRights.ts
 +++ b/src/dev/mock/teamRights.ts
 @@ -195,7 +195,7 @@ export function teamDoor(state: MockState, cmd: string, args: Record<string, unk
@@ -21064,7 +21066,7 @@ index 7b3b658..e27eba6 100644
      case "profile_create_from_template":
        return inFolder("");
 diff --git a/src/entities/extension/lib/useExtensionUpdates.tsx b/src/entities/extension/lib/useExtensionUpdates.tsx
-index 99cd449..83d1745 100644
+index 99cd449c28db492c5696a5b3e5b97f7cfad23625..83d17455f96e69ad21c19bb520eb732fab73bb53 100644
 --- a/src/entities/extension/lib/useExtensionUpdates.tsx
 +++ b/src/entities/extension/lib/useExtensionUpdates.tsx
 @@ -241,10 +241,6 @@ export function watchExtensionUpdates(): () => void {
@@ -21079,7 +21081,7 @@ index 99cd449..83d1745 100644
    // Another space: its own records, none of the old ones.
    const offSpace = onSpaceMoved(() => {
 diff --git a/src/entities/extension/lib/useExtensions.tsx b/src/entities/extension/lib/useExtensions.tsx
-index ced36be..4525ef7 100644
+index ced36bec7eedf069f30887eddd21f8dd646f34b8..4525ef7ea9bc4df7203d1bc6b37cf86a2a8836d5 100644
 --- a/src/entities/extension/lib/useExtensions.tsx
 +++ b/src/entities/extension/lib/useExtensions.tsx
 @@ -74,7 +74,7 @@ export type ExtensionStore = {
@@ -21106,7 +21108,7 @@ index ced36be..4525ef7 100644
      }
      finally { set({ busy: false }); }
 diff --git a/src/entities/fingerprint/lib/selectors.ts b/src/entities/fingerprint/lib/selectors.ts
-index 707e3c6..3cc3cfe 100644
+index 707e3c612a6f0d08ac79c18248053c7c3effa367..3cc3cfe67c44ccd6e0f06223c03ef2b3b583f61f 100644
 --- a/src/entities/fingerprint/lib/selectors.ts
 +++ b/src/entities/fingerprint/lib/selectors.ts
 @@ -2,13 +2,16 @@ import { useMemo } from "react";
@@ -21128,7 +21130,7 @@ index 707e3c6..3cc3cfe 100644
  
  /// The visible entries grouped by OS (macOS, Windows, Linux, Android, then others).
 diff --git a/src/entities/profile/index.ts b/src/entities/profile/index.ts
-index 4cb0e43..e51ec89 100644
+index 4cb0e43e07bc90da4adaf5299055f750ecb02eb1..e51ec89b5355413e02af8a9caab5a0802b1ff3d7 100644
 --- a/src/entities/profile/index.ts
 +++ b/src/entities/profile/index.ts
 @@ -10,6 +10,7 @@ export * from "./lib/overviewFolds";
@@ -21140,7 +21142,7 @@ index 4cb0e43..e51ec89 100644
  export * from "./lib/selectors";
  export * from "./lib/rights";
 diff --git a/src/entities/profile/lib/folderMeta.ts b/src/entities/profile/lib/folderMeta.ts
-index cad95a8..e7f45f0 100644
+index cad95a8ff433887a8786807e363bde4d5a93db32..e7f45f0db5a2582eabb40244ee44796181577956 100644
 --- a/src/entities/profile/lib/folderMeta.ts
 +++ b/src/entities/profile/lib/folderMeta.ts
 @@ -7,7 +7,8 @@ import { writeQueue } from "../../../shared/lib/writeQueue";
@@ -21228,7 +21230,7 @@ index cad95a8..e7f45f0 100644
  
 diff --git a/src/entities/profile/lib/folderTree.test.ts b/src/entities/profile/lib/folderTree.test.ts
 new file mode 100644
-index 0000000..fe3707a
+index 0000000000000000000000000000000000000000..fe3707a60d8b845fbcdd35d0a02de51f2365417d
 --- /dev/null
 +++ b/src/entities/profile/lib/folderTree.test.ts
 @@ -0,0 +1,40 @@
@@ -21274,7 +21276,7 @@ index 0000000..fe3707a
 +});
 diff --git a/src/entities/profile/lib/folderTree.ts b/src/entities/profile/lib/folderTree.ts
 new file mode 100644
-index 0000000..3fce987
+index 0000000000000000000000000000000000000000..3fce987e6ab89830beef7360d195f88051a39e20
 --- /dev/null
 +++ b/src/entities/profile/lib/folderTree.ts
 @@ -0,0 +1,58 @@
@@ -21337,7 +21339,7 @@ index 0000000..3fce987
 +    .map(([child, p]) => [child, p === name ? parent : p]));
 +}
 diff --git a/src/entities/profile/lib/formCache.ts b/src/entities/profile/lib/formCache.ts
-index 567e183..49fef6e 100644
+index 567e183f77ccca0dd3488bdf675411cf9adae9f0..49fef6e08f43ea9780134f68790956747ed938c0 100644
 --- a/src/entities/profile/lib/formCache.ts
 +++ b/src/entities/profile/lib/formCache.ts
 @@ -36,6 +36,7 @@ export function forgetForm(id: string) {
@@ -21349,7 +21351,7 @@ index 567e183..49fef6e 100644
  
  /** A row that changed (an edit elsewhere, a reload with news) in a field the
 diff --git a/src/entities/profile/lib/listing.ts b/src/entities/profile/lib/listing.ts
-index fba17ac..ba84af6 100644
+index fba17ac7d507374e739deb4f80d3297fb653fa80..ba84af6cf191066c4d319f399dabcea3c5c5efba 100644
 --- a/src/entities/profile/lib/listing.ts
 +++ b/src/entities/profile/lib/listing.ts
 @@ -1,6 +1,8 @@
@@ -21471,7 +21473,7 @@ index fba17ac..ba84af6 100644
 +  return sortProfiles(profiles.filter(makeProfileFilter(proxies, search, folder, filters, running, tagsOf, now, undefined, profiles, parents)), sort, running, now);
  }
 diff --git a/src/entities/profile/lib/optimistic.ts b/src/entities/profile/lib/optimistic.ts
-index aca8469..c3f8ec7 100644
+index aca8469b2b11073e616609c94901cac27d0824be..c3f8ec799beaf8cbc899d052b73e79a0f4b060a7 100644
 --- a/src/entities/profile/lib/optimistic.ts
 +++ b/src/entities/profile/lib/optimistic.ts
 @@ -156,7 +156,7 @@ export function sameMeta(a: ProfileMeta, b: ProfileMeta): boolean {
@@ -21484,7 +21486,7 @@ index aca8469..c3f8ec7 100644
    });
  }
 diff --git a/src/entities/profile/lib/selectors.ts b/src/entities/profile/lib/selectors.ts
-index b9745fd..3a3d5c5 100644
+index b9745fd14b565dec817554f9f5c69bacfe6b3362..3a3d5c54cc6ee3f6bbab5686402cef1ddd086c40 100644
 --- a/src/entities/profile/lib/selectors.ts
 +++ b/src/entities/profile/lib/selectors.ts
 @@ -1,5 +1,6 @@
@@ -21619,7 +21621,7 @@ index b9745fd..3a3d5c5 100644
    // out until the first tag is made.
    const noTags = useTags((s) => s.tags.length === 0);
 diff --git a/src/entities/profile/lib/useProfile.tsx b/src/entities/profile/lib/useProfile.tsx
-index e3afa77..3d4499d 100644
+index e3afa7742ea59472cdfda18ad4b303c140519f38..3d4499d955a2c87bcda33d4b2f8c775f735c1a89 100644
 --- a/src/entities/profile/lib/useProfile.tsx
 +++ b/src/entities/profile/lib/useProfile.tsx
 @@ -22,7 +22,7 @@ import {
@@ -21757,7 +21759,7 @@ index e3afa77..3d4499d 100644
      if (todo.length === 0) return failed;
      // One toast for the whole batch instead of one per profile (IFACE-06):
 diff --git a/src/entities/profile/lib/useProfileUi.tsx b/src/entities/profile/lib/useProfileUi.tsx
-index 285833a..b689f15 100644
+index 285833a983abd8f5bd0c8114d1f6d2bd1df2d2c4..b689f154cad3a8986c08c998b1d1aee22b383d19 100644
 --- a/src/entities/profile/lib/useProfileUi.tsx
 +++ b/src/entities/profile/lib/useProfileUi.tsx
 @@ -1,4 +1,5 @@
@@ -21805,7 +21807,7 @@ index 285833a..b689f15 100644
  // by its tags. A deleted tag stops filtering: no row could ever match it. That
  // holds for the list's own query kept under a View too.
 diff --git a/src/entities/profile/lib/views.ts b/src/entities/profile/lib/views.ts
-index 8ce7fd5..400eb63 100644
+index 8ce7fd5d02e3c742ec515248863dd5d538ced774..400eb637a84655fdf2f587bccc9df6bbfdca4c9b 100644
 --- a/src/entities/profile/lib/views.ts
 +++ b/src/entities/profile/lib/views.ts
 @@ -86,7 +86,7 @@ export function sameQuery(a: ViewQuery, b: ViewQuery): boolean {
@@ -21818,7 +21820,7 @@ index 8ce7fd5..400eb63 100644
    status: (v) => v === "all" || v === "running" || v === "idle",
    country: (v) => typeof v === "string",
 diff --git a/src/entities/profile/lib/visible.ts b/src/entities/profile/lib/visible.ts
-index fcc78d7..da26ece 100644
+index fcc78d70885879d23032b15a1cfc4a77e702552c..da26ece6de866e8f394c81cdfd571f7c009cbe65 100644
 --- a/src/entities/profile/lib/visible.ts
 +++ b/src/entities/profile/lib/visible.ts
 @@ -1,6 +1,9 @@
@@ -21894,7 +21896,7 @@ index fcc78d7..da26ece 100644
    const only = inputs.only;
    const list = sorted.out.filter(only ? (p) => only.has(p.id) && keep(p) : keep);
 diff --git a/src/entities/profile/model/api.ts b/src/entities/profile/model/api.ts
-index 4b97c1a..a8ce406 100644
+index 4b97c1aa8bbbc9a5e4046d484023a14857de31b4..a8ce40678c27a42da443f9dfe3eaf80711414d76 100644
 --- a/src/entities/profile/model/api.ts
 +++ b/src/entities/profile/model/api.ts
 @@ -1,5 +1,12 @@
@@ -21931,7 +21933,7 @@ index 4b97c1a..a8ce406 100644
 +export const profileCreateDesktopShortcut = (profileId: string, silent = false) =>
 +  invoke<string>("profile_create_desktop_shortcut", { profileId, silent });
 diff --git a/src/entities/profile/model/form.ts b/src/entities/profile/model/form.ts
-index 41ac7e0..fa14f6a 100644
+index 41ac7e0504e9212d5f4e9a3a3022d39265e895c2..fa14f6a7b8a63d41852aabd37c5b0c35e275c496 100644
 --- a/src/entities/profile/model/form.ts
 +++ b/src/entities/profile/model/form.ts
 @@ -63,6 +63,8 @@ export function fromStored(stored: any): ProfileForm {
@@ -21976,7 +21978,7 @@ index 41ac7e0..fa14f6a 100644
    base.webrtc = f.webrtc;
  
 diff --git a/src/entities/profile/model/types.ts b/src/entities/profile/model/types.ts
-index 51cf42d..a705b75 100644
+index 51cf42d6b4cb6afeb896b2c1a2363d38145b1daf..a705b75ebd6af1fe0fba064d54e23cc0283d78d3 100644
 --- a/src/entities/profile/model/types.ts
 +++ b/src/entities/profile/model/types.ts
 @@ -1,4 +1,5 @@
@@ -22013,7 +22015,7 @@ index 51cf42d..a705b75 100644
    /// The browser's own menus: this computer's language, or the profile's.
    /// Stored as top-level `ui_language: "profile"` only when chosen.
 diff --git a/src/entities/proxy/index.ts b/src/entities/proxy/index.ts
-index 0e0702f..948d054 100644
+index 0e0702f310655322c6c15a85d5c218dd3d6911c7..948d054b013cd467d4bfbb7b6b23d0d2bf6841e5 100644
 --- a/src/entities/proxy/index.ts
 +++ b/src/entities/proxy/index.ts
 @@ -6,3 +6,4 @@ export * from "./lib/columns";
@@ -22023,7 +22025,7 @@ index 0e0702f..948d054 100644
 +export * from "./lib/capabilities";
 diff --git a/src/entities/proxy/lib/capabilities.test.ts b/src/entities/proxy/lib/capabilities.test.ts
 new file mode 100644
-index 0000000..a544bdb
+index 0000000000000000000000000000000000000000..a544bdb3499201eef390c04d20e9a526c010e5fe
 --- /dev/null
 +++ b/src/entities/proxy/lib/capabilities.test.ts
 @@ -0,0 +1,23 @@
@@ -22052,7 +22054,7 @@ index 0000000..a544bdb
 +});
 diff --git a/src/entities/proxy/lib/capabilities.ts b/src/entities/proxy/lib/capabilities.ts
 new file mode 100644
-index 0000000..ad2ef94
+index 0000000000000000000000000000000000000000..ad2ef94452f1941152401943ca470d01ae415173
 --- /dev/null
 +++ b/src/entities/proxy/lib/capabilities.ts
 @@ -0,0 +1,37 @@
@@ -22094,7 +22096,7 @@ index 0000000..ad2ef94
 +  return { stage: "exit", state: snapshot.ip ? "passed" : "unverified" };
 +}
 diff --git a/src/entities/proxy/lib/selectors.ts b/src/entities/proxy/lib/selectors.ts
-index dd700fc..a1b7c27 100644
+index dd700fc45211faa239a6322b523e280aaad58c49..a1b7c27354a32d53d54db6e7c9b7121881d4cbda 100644
 --- a/src/entities/proxy/lib/selectors.ts
 +++ b/src/entities/proxy/lib/selectors.ts
 @@ -1,9 +1,11 @@
@@ -22122,7 +22124,7 @@ index dd700fc..a1b7c27 100644
  
 diff --git a/src/entities/proxy/lib/status.test.ts b/src/entities/proxy/lib/status.test.ts
 new file mode 100644
-index 0000000..a451161
+index 0000000000000000000000000000000000000000..a45116119f644a46847806fc70905837db35d521
 --- /dev/null
 +++ b/src/entities/proxy/lib/status.test.ts
 @@ -0,0 +1,43 @@
@@ -22170,7 +22172,7 @@ index 0000000..a451161
 +  }
 +});
 diff --git a/src/entities/proxy/lib/status.ts b/src/entities/proxy/lib/status.ts
-index 8a35492..d37a0d8 100644
+index 8a354921532a2d36ea0144e9eb358296ae043e28..d37a0d8c557d2b9e2d9db39a06c11ec717bcd287 100644
 --- a/src/entities/proxy/lib/status.ts
 +++ b/src/entities/proxy/lib/status.ts
 @@ -9,9 +9,22 @@ import type { ProxyTestSnapshot } from "../model/types";
@@ -22198,7 +22200,7 @@ index 8a35492..d37a0d8 100644
  
  /// Owner feedback 5i: the one mapping from a proxy's Test result to its
 diff --git a/src/entities/proxy/lib/useProxy.tsx b/src/entities/proxy/lib/useProxy.tsx
-index 4886b7b..e463048 100644
+index 4886b7be337526199c17ba28c4e7be7b976a7c4d..e46304866c33a0459da0c12266716b4fac62d16c 100644
 --- a/src/entities/proxy/lib/useProxy.tsx
 +++ b/src/entities/proxy/lib/useProxy.tsx
 @@ -1,4 +1,7 @@
@@ -22276,7 +22278,7 @@ index 4886b7b..e463048 100644
              () => toast.ok(
                  targets.length === 1 ? t("useProxy.copiedOne") : t("useProxy.copiedMany", { n: targets.length }),
 diff --git a/src/entities/proxy/model/api.ts b/src/entities/proxy/model/api.ts
-index 3fb4833..db20bf4 100644
+index 3fb48333e1a10ec7020df12bdaf8e7b6fecd9a81..db20bf49a935ba54bc5d788a57f54a2808320379 100644
 --- a/src/entities/proxy/model/api.ts
 +++ b/src/entities/proxy/model/api.ts
 @@ -13,6 +13,10 @@ export const emptyProxy = (): ProxyEntry => ({
@@ -22317,7 +22319,7 @@ index 3fb4833..db20bf4 100644
 +export const providerDefaultsSave = (value: ProviderUpdate) => invoke<ProviderDefaults>("proxy_provider_defaults_save", { value });
 +export const providerGenerate = (country: string, state: string) => invoke<ProxyEntry>("proxy_provider_generate", { request: { country, state } });
 diff --git a/src/entities/proxy/model/types.ts b/src/entities/proxy/model/types.ts
-index f974aad..d4a6974 100644
+index f974aadf7b17aad26835b5e71742e38dbf29d984..d4a6974ed3b75a7ed9320f5028fb31049ec311f8 100644
 --- a/src/entities/proxy/model/types.ts
 +++ b/src/entities/proxy/model/types.ts
 @@ -1,4 +1,21 @@
@@ -22382,7 +22384,7 @@ index f974aad..d4a6974 100644
  
  export type BulkRowState = {
 diff --git a/src/entities/proxyshard/lib/planTier.ts b/src/entities/proxyshard/lib/planTier.ts
-index cbea806..3de871c 100644
+index cbea8062610411943882d2d8f87b6d8f7d467d4b..3de871c488eed0075de79da24bc90eb23326c7fc 100644
 --- a/src/entities/proxyshard/lib/planTier.ts
 +++ b/src/entities/proxyshard/lib/planTier.ts
 @@ -24,10 +24,9 @@ export type PlanUsage = {
@@ -22399,7 +22401,7 @@ index cbea806..3de871c 100644
    return token ? TOKEN_TIER[token] ?? null : null;
  }
 diff --git a/src/entities/proxyshard/lib/usePsAccount.tsx b/src/entities/proxyshard/lib/usePsAccount.tsx
-index b53a7ee..9c59930 100644
+index b53a7eeb2072ee5e3e4db47ff62338a34be97e29..9c59930d1ddf49ccd38b183c895fc87a527c1807 100644
 --- a/src/entities/proxyshard/lib/usePsAccount.tsx
 +++ b/src/entities/proxyshard/lib/usePsAccount.tsx
 @@ -49,7 +49,7 @@ export const usePsAccount = create<PsAccountStore>((set, get) => ({
@@ -22412,7 +22414,7 @@ index b53a7ee..9c59930 100644
          set({ status: "checking", err: "" });
          try {
 diff --git a/src/entities/proxyshard/model/api.ts b/src/entities/proxyshard/model/api.ts
-index 6b4147a..d67ca50 100644
+index 6b4147aea511fc8c5d3d470d2507349670fd18ab..d67ca504c09e76088483e8f89ffbb6f1d174ce8b 100644
 --- a/src/entities/proxyshard/model/api.ts
 +++ b/src/entities/proxyshard/model/api.ts
 @@ -8,9 +8,6 @@ export const psOrders = (params: { status: string; offset?: number; limit?: numb
@@ -22426,7 +22428,7 @@ index 6b4147a..d67ca50 100644
  export const psPurchase = (body: any) => invoke<any>("ps_purchase", { body });
  export const psAvailableCount = () => invoke<any>("ps_available_count");
 diff --git a/src/entities/proxyshard/model/constants.ts b/src/entities/proxyshard/model/constants.ts
-index 1620bda..f4a1f75 100644
+index 1620bda4c72c3372c9857c37f3a22f1198d24a25..f4a1f757eef49723053405304fcc18e59dee98ae 100644
 --- a/src/entities/proxyshard/model/constants.ts
 +++ b/src/entities/proxyshard/model/constants.ts
 @@ -17,9 +17,9 @@ export const PS_SIGNATURES: { value: string; label: string }[] = [
@@ -22443,7 +22445,7 @@ index 1620bda..f4a1f75 100644
  
  // Relay ports differ by protocol: HTTP 8080, SOCKS5 1080.
 diff --git a/src/entities/settings/model/api.ts b/src/entities/settings/model/api.ts
-index 21cd2af..5b2d56c 100644
+index 21cd2afa3542896c92ceb89852819af943113846..5b2d56c7bd5fc39c5c799ab57f31e80ac61bfc1f 100644
 --- a/src/entities/settings/model/api.ts
 +++ b/src/entities/settings/model/api.ts
 @@ -1,15 +1,31 @@
@@ -22480,7 +22482,7 @@ index 21cd2af..5b2d56c 100644
   *  the change, not what runs. A failed save changes nothing, so it does not
   *  count (Pair 34 ruling, M3); one still on its way makes a read unsure. */
 diff --git a/src/entities/settings/model/types.ts b/src/entities/settings/model/types.ts
-index 8f97bc0..7e419a8 100644
+index 8f97bc0f390b920d84c69c8bb3b9c1a7e79df135..7e419a8b3bf1ab3476534435064b2a8c3842df2b 100644
 --- a/src/entities/settings/model/types.ts
 +++ b/src/entities/settings/model/types.ts
 @@ -1,4 +1,8 @@
@@ -22612,7 +22614,7 @@ index 8f97bc0..7e419a8 100644
  
  /** Where profiles, user-data, extensions and the trash live. */
 diff --git a/src/entities/signals/signals.ts b/src/entities/signals/signals.ts
-index 281c51a..7dc6efe 100644
+index 281c51a646d24ccec42ef3e6e10275714967744a..7dc6efec5c2bb5d8af1847e21b217e91e830e888 100644
 --- a/src/entities/signals/signals.ts
 +++ b/src/entities/signals/signals.ts
 @@ -4,6 +4,7 @@ import { planTierOf, type PlanUsage } from "../proxyshard/lib/planTier";
@@ -22655,7 +22657,7 @@ index 281c51a..7dc6efe 100644
      if (px && proxyStatus(snapshots[px]) === "failed") on.set(px, [...(on.get(px) ?? []), p.id]);
    }
 diff --git a/src/entities/signals/useSignals.ts b/src/entities/signals/useSignals.ts
-index 04be1f5..f2f6f22 100644
+index 04be1f5bdd262a5c3104d3358819437bd29211d5..f2f6f225a0b7afd6cd2d9187f5e6b83e0102d8ab 100644
 --- a/src/entities/signals/useSignals.ts
 +++ b/src/entities/signals/useSignals.ts
 @@ -1,13 +1,14 @@
@@ -22720,7 +22722,7 @@ index 04be1f5..f2f6f22 100644
    const input = useMemo<SignalInput>(
      () => ({ profiles, scopeIds, running, proxies, snapshots, locales, startFailed, failReasons, plans, now }),
 diff --git a/src/entities/space/model/store.ts b/src/entities/space/model/store.ts
-index bcb41aa..96f310d 100644
+index bcb41aafed7c8559d0e778f718681e5734c08653..96f310d40cce323cfec0e8a33f7c18c8c181ca33 100644
 --- a/src/entities/space/model/store.ts
 +++ b/src/entities/space/model/store.ts
 @@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
@@ -22740,7 +22742,7 @@ index bcb41aa..96f310d 100644
      setSpaceEpoch(state.epoch);
    };
 diff --git a/src/features/commands/appCommands.ts b/src/features/commands/appCommands.ts
-index 8b2a63b..5da2ca0 100644
+index 8b2a63b991ff6e1a249d418a11ee3c1ef8c82d3e..5da2ca022fce628a3f83a68fa38630ebfa837fc3 100644
 --- a/src/features/commands/appCommands.ts
 +++ b/src/features/commands/appCommands.ts
 @@ -64,7 +64,7 @@ export const SETTINGS_TABS: Record<SettingsTab, () => string> = {
@@ -22753,7 +22755,7 @@ index 8b2a63b..5da2ca0 100644
  };
  export const SETTINGS_TAB_IDS = Object.keys(SETTINGS_TABS) as SettingsTab[];
 diff --git a/src/features/commands/folderCommands.ts b/src/features/commands/folderCommands.ts
-index 29f1d21..f96fe7e 100644
+index 29f1d21608e5a288c822e89711148cd4171144e4..f96fe7ed63dd6275902e594de182e0c1687beae2 100644
 --- a/src/features/commands/folderCommands.ts
 +++ b/src/features/commands/folderCommands.ts
 @@ -3,7 +3,7 @@ import { DeleteIcon, EditIcon, FolderIcon } from "../../shared/icons";
@@ -22781,7 +22783,7 @@ index 29f1d21..f96fe7e 100644
      ...FOLDER, id: "folder.open", group: "open", icon: FolderIcon,
      label: () => t("commands.openFolder"),
 diff --git a/src/features/commands/profileCommands.ts b/src/features/commands/profileCommands.ts
-index c209f33..0eb31e2 100644
+index c209f33807df5bb706ff7b0ddb7a0f6bc103cb8f..0eb31e2d9d6becc34e68b1dbc98fb70e88a55bab 100644
 --- a/src/features/commands/profileCommands.ts
 +++ b/src/features/commands/profileCommands.ts
 @@ -1,12 +1,12 @@
@@ -22835,7 +22837,7 @@ index c209f33..0eb31e2 100644
      // Finding one browser window among a dozen is the operator's problem
      // otherwise. Only for a profile that is actually up: the browser raises
 diff --git a/src/features/commands/useAppKeys.ts b/src/features/commands/useAppKeys.ts
-index e60fdd7..5272160 100644
+index e60fdd71522b54ee37ce61c1156aacde7ac71bbf..52721609f07faf508efaf5f49f985aad42ecd129 100644
 --- a/src/features/commands/useAppKeys.ts
 +++ b/src/features/commands/useAppKeys.ts
 @@ -5,7 +5,9 @@ import {
@@ -22860,7 +22862,7 @@ index e60fdd7..5272160 100644
    void leaveList(() => {
      useProfileUi.getState().setFolder(folder);
 diff --git a/src/features/manage-extensions/ui/AddExtensionMenu.tsx b/src/features/manage-extensions/ui/AddExtensionMenu.tsx
-index f3d27fa..4875597 100644
+index f3d27fab2f07ad6a653c6e2f9de9364f8efdfc02..48755975eb245052f035ca7b2c6f21437ca447dc 100644
 --- a/src/features/manage-extensions/ui/AddExtensionMenu.tsx
 +++ b/src/features/manage-extensions/ui/AddExtensionMenu.tsx
 @@ -7,7 +7,7 @@ import { teamRefusal, useRightsChange } from "../../../entities/space";
@@ -22882,7 +22884,7 @@ index f3d27fa..4875597 100644
          { label: t("extensions.addUnpacked"), icon: <FolderIcon className="size-3.5" />, disabled: busy, onSelect: () => void importFolder(), ...closed },
        ]}
 diff --git a/src/features/manage-profiles/ui/ExtensionPicker.tsx b/src/features/manage-profiles/ui/ExtensionPicker.tsx
-index 4f80471..bba2404 100644
+index 4f804711dd099661be81f2c3f7b47f22ffb6debc..bba24043e5e553dc135d7bef9ac879e28d835d12 100644
 --- a/src/features/manage-profiles/ui/ExtensionPicker.tsx
 +++ b/src/features/manage-profiles/ui/ExtensionPicker.tsx
 @@ -27,11 +27,13 @@ function Icon({ e, className }: { e: ExtensionEntry; className?: string }) {
@@ -22910,7 +22912,7 @@ index 4f80471..bba2404 100644
          </Button>
        </p>
 diff --git a/src/features/manage-profiles/ui/FolderDialog.tsx b/src/features/manage-profiles/ui/FolderDialog.tsx
-index b79a1e8..02be3f7 100644
+index b79a1e80531156b200a7971ef47086acf24b771f..02be3f7036e46ab93d528e4f5faf66011b0a7e61 100644
 --- a/src/features/manage-profiles/ui/FolderDialog.tsx
 +++ b/src/features/manage-profiles/ui/FolderDialog.tsx
 @@ -6,11 +6,12 @@ import { onRadioKeys } from "../../../shared/lib/radioKeys";
@@ -23042,7 +23044,7 @@ index b79a1e8..02be3f7 100644
    );
  }
 diff --git a/src/features/manage-profiles/ui/ProfileDisplayMenu.tsx b/src/features/manage-profiles/ui/ProfileDisplayMenu.tsx
-index d34d560..fca04e6 100644
+index d34d56025188a06d8f22e159f7f0b408061a244d..fca04e6fd7191ece72cdd857f04626c431edbdfd 100644
 --- a/src/features/manage-profiles/ui/ProfileDisplayMenu.tsx
 +++ b/src/features/manage-profiles/ui/ProfileDisplayMenu.tsx
 @@ -55,6 +55,7 @@ export function ProfileDisplayMenu() {
@@ -23054,7 +23056,7 @@ index d34d560..fca04e6 100644
              { value: "name-asc", label: t("profileFilterBar.orderNameAsc") },
              { value: "name-desc", label: t("profileFilterBar.orderNameDesc") },
 diff --git a/src/features/manage-proxies/lib/buyProxies.ts b/src/features/manage-proxies/lib/buyProxies.ts
-index ee0ab1e..f6474c5 100644
+index ee0ab1e0d7febf0d75e35295fe6bf93e238ed48e..f6474c53a4896e22715d010ec6b41171e0720fce 100644
 --- a/src/features/manage-proxies/lib/buyProxies.ts
 +++ b/src/features/manage-proxies/lib/buyProxies.ts
 @@ -7,5 +7,5 @@ import { t } from "../../../shared/i18n";
@@ -23065,7 +23067,7 @@ index ee0ab1e..f6474c5 100644
 +  openUrl(withUtm("https://proxyshard.com")).catch(() => { toast.err(t("proxiesMoreMenu.buyFailed")); });
  }
 diff --git a/src/features/manage-proxies/ui/EditProxyDialog.tsx b/src/features/manage-proxies/ui/EditProxyDialog.tsx
-index 592692c..fba5e29 100644
+index 592692c8e26a79668df25bac717498322179702f..fba5e29c767d8153f7ab3fab12ae8aa163258bee 100644
 --- a/src/features/manage-proxies/ui/EditProxyDialog.tsx
 +++ b/src/features/manage-proxies/ui/EditProxyDialog.tsx
 @@ -11,8 +11,9 @@ import { NumField } from "../../../shared/ui/NumField";
@@ -23089,7 +23091,7 @@ index 592692c..fba5e29 100644
        </fieldset>
      </DialogModal>
 diff --git a/src/features/manage-proxies/ui/NewProxyButton.tsx b/src/features/manage-proxies/ui/NewProxyButton.tsx
-index 4ac3ecc..eb5ba91 100644
+index 4ac3ecc21e9fced9ce1d42981298ce45c5732053..eb5ba91a816b394155d7f45ae25ddc7fb8a3eb1a 100644
 --- a/src/features/manage-proxies/ui/NewProxyButton.tsx
 +++ b/src/features/manage-proxies/ui/NewProxyButton.tsx
 @@ -24,6 +24,7 @@ export function NewProxyButton({ className }: { className?: string }) {
@@ -23102,7 +23104,7 @@ index 4ac3ecc..eb5ba91 100644
          aria-description={why ?? undefined}
 diff --git a/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
 new file mode 100644
-index 0000000..4e349bc
+index 0000000000000000000000000000000000000000..4e349bcc0bf8eee8d2db174b9a854226975da424
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
 @@ -0,0 +1,70 @@
@@ -23177,7 +23179,7 @@ index 0000000..4e349bc
 +  </fieldset>;
 +}
 diff --git a/src/features/manage-proxies/ui/ProxyBulkImporter.tsx b/src/features/manage-proxies/ui/ProxyBulkImporter.tsx
-index b6faf8e..2ecae4d 100644
+index b6faf8e8e6c368a2f1dc18bf77509100514e80f4..2ecae4d9a77cba651105efd356befe02578f7005 100644
 --- a/src/features/manage-proxies/ui/ProxyBulkImporter.tsx
 +++ b/src/features/manage-proxies/ui/ProxyBulkImporter.tsx
 @@ -7,7 +7,14 @@ import { WindowedRows } from "../../../shared/ui/WindowedRows";
@@ -23336,7 +23338,7 @@ index b6faf8e..2ecae4d 100644
                    variant="neutral"
                    mode="stroke"
 diff --git a/src/features/manage-proxies/ui/ProxyDisplayMenu.tsx b/src/features/manage-proxies/ui/ProxyDisplayMenu.tsx
-index 00a9dbe..585efa1 100644
+index 00a9dbe506ed261a951b0a2e6fd40c04ef7c53dd..585efa12e8d96353e126a3ae6a947f73ab78e9fb 100644
 --- a/src/features/manage-proxies/ui/ProxyDisplayMenu.tsx
 +++ b/src/features/manage-proxies/ui/ProxyDisplayMenu.tsx
 @@ -52,6 +52,7 @@ export function ProxyDisplayMenu() {
@@ -23349,7 +23351,7 @@ index 00a9dbe..585efa1 100644
              { value: "latency", label: t("proxyDisplay.orderLatency") },
 diff --git a/src/features/manage-proxies/ui/TnbExtractForm.tsx b/src/features/manage-proxies/ui/TnbExtractForm.tsx
 new file mode 100644
-index 0000000..cb4e3e5
+index 0000000000000000000000000000000000000000..cb4e3e5dcfc26915498eaae106cc350bc38acb48
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/TnbExtractForm.tsx
 @@ -0,0 +1,101 @@
@@ -23456,7 +23458,7 @@ index 0000000..cb4e3e5
 +}
 diff --git a/src/features/manage-proxies/ui/TnbGeoFields.tsx b/src/features/manage-proxies/ui/TnbGeoFields.tsx
 new file mode 100644
-index 0000000..fc3fdff
+index 0000000000000000000000000000000000000000..fc3fdff9625564a946e46f01d0b8a97e6cbaaebd
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/TnbGeoFields.tsx
 @@ -0,0 +1,35 @@
@@ -23497,7 +23499,7 @@ index 0000000..fc3fdff
 +}
 diff --git a/src/features/manage-proxies/ui/TnbLocationPicker.tsx b/src/features/manage-proxies/ui/TnbLocationPicker.tsx
 new file mode 100644
-index 0000000..fabe76a
+index 0000000000000000000000000000000000000000..fabe76a714ab11bb3d00d04089564dd3c54dccb1
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/TnbLocationPicker.tsx
 @@ -0,0 +1,95 @@
@@ -23598,7 +23600,7 @@ index 0000000..fabe76a
 +}
 diff --git a/src/features/manage-proxies/ui/useTnbLocations.ts b/src/features/manage-proxies/ui/useTnbLocations.ts
 new file mode 100644
-index 0000000..4d20d08
+index 0000000000000000000000000000000000000000..4d20d081228e6fa9cbaa652b6db1dc0033c23798
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/useTnbLocations.ts
 @@ -0,0 +1,23 @@
@@ -23626,7 +23628,7 @@ index 0000000..4d20d08
 +  return { state: current.key === key ? current.state : EMPTY, load };
 +}
 diff --git a/src/features/profile-form/model/useProfileForm.ts b/src/features/profile-form/model/useProfileForm.ts
-index cdb837b..3c85ab8 100644
+index cdb837b11c1efa9edc94930d068bd1d6c68978ca..3c85ab8e5b85ea49c45e49fcb1fd4c15941430aa 100644
 --- a/src/features/profile-form/model/useProfileForm.ts
 +++ b/src/features/profile-form/model/useProfileForm.ts
 @@ -4,9 +4,13 @@ import { toast } from "../../../shared/model/toast";
@@ -23748,7 +23750,7 @@ index cdb837b..3c85ab8 100644
        if (here()) set({ draft });
      } catch (e) {
 diff --git a/src/features/profile-form/ui/BasicsTab.tsx b/src/features/profile-form/ui/BasicsTab.tsx
-index 1b1d09d..e3240a0 100644
+index 1b1d09d12e0cc0540b31ad61cc7f8d257cfac5ed..e3240a0cc686ee0cadc9358d8fe88650ee109ace 100644
 --- a/src/features/profile-form/ui/BasicsTab.tsx
 +++ b/src/features/profile-form/ui/BasicsTab.tsx
 @@ -19,7 +19,9 @@ export function BasicsTab({ draft, nameRef }: { draft: ProfileFormDraft; nameRef
@@ -23780,7 +23782,7 @@ index 1b1d09d..e3240a0 100644
          {/* 2 px between 32 px rows, as Peek's sheet. */}
          <div className="flex flex-col gap-[2px]">
 diff --git a/src/features/profile-form/ui/ExtensionsTab.tsx b/src/features/profile-form/ui/ExtensionsTab.tsx
-index 6b4917a..cf01e3b 100644
+index 6b4917a415c064ee84d777d746474c94f89927bc..cf01e3b133f56157bb78440f1bf3550057190132 100644
 --- a/src/features/profile-form/ui/ExtensionsTab.tsx
 +++ b/src/features/profile-form/ui/ExtensionsTab.tsx
 @@ -1,11 +1,58 @@
@@ -23846,7 +23848,7 @@ index 6b4917a..cf01e3b 100644
    );
  }
 diff --git a/src/features/profile-form/ui/ProfileFormDialog.tsx b/src/features/profile-form/ui/ProfileFormDialog.tsx
-index ecd3342..547d0c5 100644
+index ecd3342203ac27f52876d2dc342a567ce450b250..547d0c5891a2912255cdc0e6c83f06c4f54e7138 100644
 --- a/src/features/profile-form/ui/ProfileFormDialog.tsx
 +++ b/src/features/profile-form/ui/ProfileFormDialog.tsx
 @@ -95,7 +95,8 @@ export function ProfileFormDialog() {
@@ -23870,7 +23872,7 @@ index ecd3342..547d0c5 100644
      : s.badFields.length > 0 ? t("profileForm.numberInvalid")
 diff --git a/src/features/profile-form/ui/ProfileRouteResult.tsx b/src/features/profile-form/ui/ProfileRouteResult.tsx
 new file mode 100644
-index 0000000..96c8e5b
+index 0000000000000000000000000000000000000000..96c8e5b1e8aee3a46e6ed6b61ea8bac3e2a64de5
 --- /dev/null
 +++ b/src/features/profile-form/ui/ProfileRouteResult.tsx
 @@ -0,0 +1,74 @@
@@ -23949,7 +23951,7 @@ index 0000000..96c8e5b
 +  </div>;
 +}
 diff --git a/src/features/profile-form/ui/ProxyTab.tsx b/src/features/profile-form/ui/ProxyTab.tsx
-index ad42268..7164366 100644
+index ad42268f83a576ac9e16f54147183dfdb5e92c63..7164366b2efa44492a43c48f413d5439b828da38 100644
 --- a/src/features/profile-form/ui/ProxyTab.tsx
 +++ b/src/features/profile-form/ui/ProxyTab.tsx
 @@ -1,25 +1,115 @@
@@ -24086,7 +24088,7 @@ index ad42268..7164366 100644
 +  </div>;
  }
 diff --git a/src/features/proxyshard/index.ts b/src/features/proxyshard/index.ts
-index 69acaff..e1fd2f6 100644
+index 69acaff8172655047c0381b52dc801615b65481d..e1fd2f6a1fd5d36f51dda3782f703f1499a5fbb3 100644
 --- a/src/features/proxyshard/index.ts
 +++ b/src/features/proxyshard/index.ts
 @@ -5,4 +5,3 @@ export { PsOrdersCard } from "./ui/PsOrdersCard";
@@ -24096,7 +24098,7 @@ index 69acaff..e1fd2f6 100644
 -export { PsTrialModal } from "./ui/PsTrialModal";
 diff --git a/src/features/proxyshard/ui/PsTrialModal.tsx b/src/features/proxyshard/ui/PsTrialModal.tsx
 deleted file mode 100644
-index 7890ebb..0000000
+index 7890ebb50a2c2dbef5e57557081b7a962c8dd087..0000000000000000000000000000000000000000
 --- a/src/features/proxyshard/ui/PsTrialModal.tsx
 +++ /dev/null
 @@ -1,148 +0,0 @@
@@ -24249,7 +24251,7 @@ index 7890ebb..0000000
 -  );
 -}
 diff --git a/src/pages/automation/ProjectsList.tsx b/src/pages/automation/ProjectsList.tsx
-index 76b45b7..137fb57 100644
+index 76b45b7dc0cfb81afbf81a516d7f5977b6b4e4bd..137fb572e45fd667867ffc076160e48433c511ad 100644
 --- a/src/pages/automation/ProjectsList.tsx
 +++ b/src/pages/automation/ProjectsList.tsx
 @@ -8,6 +8,9 @@ import { useLang, useT, type Lang, type T } from "../../shared/i18n";
@@ -24289,7 +24291,7 @@ index 76b45b7..137fb57 100644
          getName={(p) => p.name}
          labels={{ selectAll: t("dataList.selectAll"), select: (name) => t("dataList.select", { name }), more: t("pageHeader.more"), actions: t("profileTable.colActions") }}
 diff --git a/src/pages/bookmarks/index.tsx b/src/pages/bookmarks/index.tsx
-index b990120..2d01e74 100644
+index b990120b409d16dab4c29dc5fa1b815c0c9888d9..2d01e748778a36828042ab926dfe963e4046d9bf 100644
 --- a/src/pages/bookmarks/index.tsx
 +++ b/src/pages/bookmarks/index.tsx
 @@ -1,5 +1,8 @@
@@ -24339,7 +24341,7 @@ index b990120..2d01e74 100644
                { type: "separator" },
                { label: t("bookmarks.delete"), icon: rowActionIcons.trash({ className: "size-3.5" }), danger: true, disabled: !!noDelete, hint: noDelete ?? undefined, onSelect: () => void remove(r.bookmark) },
 diff --git a/src/pages/extensions/index.tsx b/src/pages/extensions/index.tsx
-index af50f2a..ea92ef3 100644
+index af50f2add1ee4575cbe9f651add6680392c33880..ea92ef3d7ce8b1d37791cc16384b72d9e9cd27bc 100644
 --- a/src/pages/extensions/index.tsx
 +++ b/src/pages/extensions/index.tsx
 @@ -1,5 +1,8 @@
@@ -24388,7 +24390,7 @@ index af50f2a..ea92ef3 100644
                ...(first.length > 0 ? [{ type: "separator" as const }] : []),
                { label: t("extensions.removeItem"), icon: rowActionIcons.trash({ className: "size-3.5" }), danger: true, disabled: !!noRemove, hint: noRemove ?? undefined, onSelect: () => void remove(e) },
 diff --git a/src/pages/proxyshard/index.tsx b/src/pages/proxyshard/index.tsx
-index 069eceb..7992f18 100644
+index 069ecebc2aa1ec63fcf670cef699858977df78a2..7992f18a759c8c4d16114ee5222abb7334c45dcc 100644
 --- a/src/pages/proxyshard/index.tsx
 +++ b/src/pages/proxyshard/index.tsx
 @@ -1,6 +1,9 @@
@@ -24485,7 +24487,7 @@ index 069eceb..7992f18 100644
        {buyLife.mounted && <PsBuyDialog key={buyLife.session} open={buying} onClose={() => setBuying(false)} />}
        {keyLife.mounted && <PsKeyDialog key={keyLife.session} open={keyOpen} onClose={() => setKeyOpen(false)} />}
 diff --git a/src/pages/settings/SettingRow.tsx b/src/pages/settings/SettingRow.tsx
-index 0e39a24..c508721 100644
+index 0e39a2403d5612ed8ce5fd5a82cb7517b95e3a59..c5087216ee876a29da786fc4b09621a4c166ba9c 100644
 --- a/src/pages/settings/SettingRow.tsx
 +++ b/src/pages/settings/SettingRow.tsx
 @@ -12,6 +12,7 @@ export type SettingsProps = {
@@ -24497,7 +24499,7 @@ index 0e39a24..c508721 100644
  
  /// One setting (LAYOUT-16): its name and at most one line of help leading,
 diff --git a/src/pages/settings/index.tsx b/src/pages/settings/index.tsx
-index a7c8b9b..63be93b 100644
+index a7c8b9b5bebb80043bc0a2f9fa75db521f30f51d..63be93bc1ea8cdffdd342270a24e12aa47f8f219 100644
 --- a/src/pages/settings/index.tsx
 +++ b/src/pages/settings/index.tsx
 @@ -20,7 +20,7 @@ import { ApiSection } from "./sections/Api";
@@ -24546,7 +24548,7 @@ index a7c8b9b..63be93b 100644
            </TabPanel>
          </div>
 diff --git a/src/pages/settings/localPrefs.ts b/src/pages/settings/localPrefs.ts
-index f382315..2133e88 100644
+index f3823150fa1eac8f6698d00912d9682888139db7..2133e880510d504602c2ecfe04d2f7bd5a4dcf46 100644
 --- a/src/pages/settings/localPrefs.ts
 +++ b/src/pages/settings/localPrefs.ts
 @@ -1,10 +1,10 @@
@@ -24589,7 +24591,7 @@ index f382315..2133e88 100644
      stored: () => useDirectStart.getState().ask,
      commit: (v) => useDirectStart.getState().setAsk(v),
 diff --git a/src/pages/settings/sections/About.tsx b/src/pages/settings/sections/About.tsx
-index 2615045..448459c 100644
+index 2615045643f77a3055b1d06c4fb7fb62579b3b60..448459cf20ad4cc4d7d3e5fad370162e9f7bcb54 100644
 --- a/src/pages/settings/sections/About.tsx
 +++ b/src/pages/settings/sections/About.tsx
 @@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
@@ -24629,7 +24631,7 @@ index 2615045..448459c 100644
          </Button>
        </div>
 diff --git a/src/pages/settings/sections/Api.tsx b/src/pages/settings/sections/Api.tsx
-index 6ed830f..758c2b3 100644
+index 6ed830f35e4cdf0a071cb4e06b70a4f9b528935f..758c2b32c7976511df05e438093be50542952f0a 100644
 --- a/src/pages/settings/sections/Api.tsx
 +++ b/src/pages/settings/sections/Api.tsx
 @@ -16,7 +16,7 @@ import { holdSave } from "../useSettingsDraft";
@@ -24642,7 +24644,7 @@ index 6ed830f..758c2b3 100644
  
  export function ApiSection({ s, saved, setS, api, setApi, apiError, retryApi }: SettingsProps & {
 diff --git a/src/pages/settings/sections/Appearance.tsx b/src/pages/settings/sections/Appearance.tsx
-index af6397c..9edf2e3 100644
+index af6397cdcb17e645cd0d85e7bb5aca7902032814..9edf2e323e55b34137ae3ca4a769f4a24c5bebcb 100644
 --- a/src/pages/settings/sections/Appearance.tsx
 +++ b/src/pages/settings/sections/Appearance.tsx
 @@ -1,4 +1,5 @@
@@ -24688,7 +24690,7 @@ index af6397c..9edf2e3 100644
    );
  }
 diff --git a/src/pages/settings/sections/General.tsx b/src/pages/settings/sections/General.tsx
-index 0332258..28cb947 100644
+index 033225840a2c31f4fc1eeabfcc5fa594749620b9..28cb947011f8c8b2fc013d2535a1c15c1a6345a8 100644
 --- a/src/pages/settings/sections/General.tsx
 +++ b/src/pages/settings/sections/General.tsx
 @@ -48,7 +48,7 @@ export function GeneralSection({ s, setS, p, setP }: SettingsProps) {
@@ -24702,7 +24704,7 @@ index 0332258..28cb947 100644
      </SettingsGroup>
 diff --git a/src/pages/settings/sections/Other.tsx b/src/pages/settings/sections/Other.tsx
 deleted file mode 100644
-index 1be1833..0000000
+index 1be1833411e467b92c914cf0cd1981cc5da2df90..0000000000000000000000000000000000000000
 --- a/src/pages/settings/sections/Other.tsx
 +++ /dev/null
 @@ -1,45 +0,0 @@
@@ -24752,7 +24754,7 @@ index 1be1833..0000000
 -  );
 -}
 diff --git a/src/pages/settings/sections/ProfileDefaults.tsx b/src/pages/settings/sections/ProfileDefaults.tsx
-index 2fd3c31..73edf45 100644
+index 2fd3c31f1a744d42e696410399ae4b368a84325f..73edf4592785d64489395f9f6e70de75c9aa627e 100644
 --- a/src/pages/settings/sections/ProfileDefaults.tsx
 +++ b/src/pages/settings/sections/ProfileDefaults.tsx
 @@ -1,12 +1,61 @@
@@ -24829,7 +24831,7 @@ index 2fd3c31..73edf45 100644
  
 diff --git a/src/pages/settings/sections/Proxy.tsx b/src/pages/settings/sections/Proxy.tsx
 new file mode 100644
-index 0000000..049bfc5
+index 0000000000000000000000000000000000000000..049bfc58de9dfd2ab1ba4ef3571b54a4fedf7e71
 --- /dev/null
 +++ b/src/pages/settings/sections/Proxy.tsx
 @@ -0,0 +1,256 @@
@@ -25090,7 +25092,7 @@ index 0000000..049bfc5
 +  );
 +}
 diff --git a/src/pages/settings/useSettingsDraft.ts b/src/pages/settings/useSettingsDraft.ts
-index 6813336..3c2259c 100644
+index 68133368ae2a4580ff3f52b2f436cb23412a3c76..3c2259cc48eca3836822fd52baedbef83022e8fc 100644
 --- a/src/pages/settings/useSettingsDraft.ts
 +++ b/src/pages/settings/useSettingsDraft.ts
 @@ -9,11 +9,11 @@ import { riskyLaunchArgs } from "../../shared/lib/launchArgs";
@@ -25158,7 +25160,7 @@ index 6813336..3c2259c 100644
    };
    const dirty = ready && isDirty({ edits, tagOps, viewOps, prefs }, tags, views);
 diff --git a/src/shared/api/backendWarnings.test.ts b/src/shared/api/backendWarnings.test.ts
-index b00b5ad..7f10e95 100644
+index b00b5adb3b0f80a9b5ad069280967eee68cb3f68..7f10e956e25e16311c704dc7234d4c8fb3aea363 100644
 --- a/src/shared/api/backendWarnings.test.ts
 +++ b/src/shared/api/backendWarnings.test.ts
 @@ -10,12 +10,15 @@ import { TEAM_WARNINGS, UNNAMED_TEAM, warningRe } from "./backendWarnings.ts";
@@ -25180,7 +25182,7 @@ index b00b5ad..7f10e95 100644
      notSaved: TEAM_WARNINGS.notSaved("{}", "{why}"),
      // The Unsent reason's own format; notSaved wraps it.
 diff --git a/src/shared/api/backendWarnings.ts b/src/shared/api/backendWarnings.ts
-index 78b57a3..d69bfa8 100644
+index 78b57a37912caea841617471f07ca43ad35c5808..d69bfa837d7c165db4a7b72179fbbb398babcd0d 100644
 --- a/src/shared/api/backendWarnings.ts
 +++ b/src/shared/api/backendWarnings.ts
 @@ -4,6 +4,9 @@
@@ -25194,7 +25196,7 @@ index 78b57a3..d69bfa8 100644
    stale: (name: string) => `${name} was saved from another device while it was open here, so the changes made here were not kept.`,
    /** Its session could not be sent back (Outcome::NotSaved). */
 diff --git a/src/shared/api/epochWrites.test.ts b/src/shared/api/epochWrites.test.ts
-index 3f16575..aeb1aa9 100644
+index 3f16575f946d2bb4bb5a61c677a3af88d20d1adf..aeb1aa95ddca125c791851254dd566fa9bd1489d 100644
 --- a/src/shared/api/epochWrites.test.ts
 +++ b/src/shared/api/epochWrites.test.ts
 @@ -5,7 +5,7 @@ import assert from "node:assert/strict";
@@ -25232,7 +25234,7 @@ index 3f16575..aeb1aa9 100644
      if (writes.length && !viaWrapper.test(src)) stray.push(`${file.slice(SRC.length + 1)}: ${writes.join(", ")}`);
    }
 diff --git a/src/shared/api/epochWrites.ts b/src/shared/api/epochWrites.ts
-index a088189..76cdea4 100644
+index a0881899cb13c13fb6e98d4309558adff20c279a..76cdea402373855bff3803bfa27e8ba6993932b5 100644
 --- a/src/shared/api/epochWrites.ts
 +++ b/src/shared/api/epochWrites.ts
 @@ -1,11 +1,11 @@
@@ -25262,7 +25264,7 @@ index a088189..76cdea4 100644
  export const SPACE_REFUSALS = {
    /** space/mod.rs NO_EPOCH: a team write sent without its edition. Never shown when the app works. */
 diff --git a/src/shared/api/invoke.ts b/src/shared/api/invoke.ts
-index 4bf34be..1d0a774 100644
+index 4bf34bec4c760445f2270d0cdcd870a6021601ad..1d0a7741c921d2faaa088127d452f7c5dacb2437 100644
 --- a/src/shared/api/invoke.ts
 +++ b/src/shared/api/invoke.ts
 @@ -1,5 +1,5 @@
@@ -25282,7 +25284,7 @@ index 4bf34be..1d0a774 100644
    const epoch = epochForWrite() ?? (await readEdition());
    const sent = epoch === undefined ? args : { ...(args as Record<string, unknown> | undefined), epoch };
 diff --git a/src/shared/api/teamRefusals.test.ts b/src/shared/api/teamRefusals.test.ts
-index a462841..000d8c7 100644
+index a462841a05c49f535322a49c372bbe5d85d9c554..000d8c7c642dedab45e8228b453feed7946f93c9 100644
 --- a/src/shared/api/teamRefusals.test.ts
 +++ b/src/shared/api/teamRefusals.test.ts
 @@ -83,7 +83,7 @@ test("the refusals of steps 5 to 10 are the backend's words, and the app says ea
@@ -25295,7 +25297,7 @@ index a462841..000d8c7 100644
    assert.equal(vanished?.[1], SYNC_STOPS.vanished);
    assert.ok(cycle.includes(`"${SYNC_STOPS.unread("{what}", "{e:#}")}"`), "the unread stop moved");
 diff --git a/src/shared/hooks/useLauncherWarning.ts b/src/shared/hooks/useLauncherWarning.ts
-index d6d69a3..5ee6a94 100644
+index d6d69a31f886ee6db5fcb63f2b33cb790df19fff..5ee6a948b027ca6bcfda8d6356fffb05b3dff8b3 100644
 --- a/src/shared/hooks/useLauncherWarning.ts
 +++ b/src/shared/hooks/useLauncherWarning.ts
 @@ -24,6 +24,9 @@ function setDifferently(kind: string): string {
@@ -25310,7 +25312,7 @@ index d6d69a3..5ee6a94 100644
    // A team profile's session as it closed (open.rs); the reason it gives is explained.
 diff --git a/src/shared/hooks/useListReorder.ts b/src/shared/hooks/useListReorder.ts
 new file mode 100644
-index 0000000..c2bf0d9
+index 0000000000000000000000000000000000000000..c2bf0d90c6a21439ec7528289389ab903fc0b29e
 --- /dev/null
 +++ b/src/shared/hooks/useListReorder.ts
 @@ -0,0 +1,90 @@
@@ -25405,7 +25407,7 @@ index 0000000..c2bf0d9
 +  }, [kind, allIds, visibleIds, selected, groupOf, onReorder, dragHandle, resetSavedOrder, t, scope]);
 +}
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index ce72a51..981624c 100644
+index ce72a514f676461834b7f0fd67b31bd378eb3afc..981624c91d971a34b86028a44fe9bcf4f37afaa8 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
 @@ -1,4 +1,39 @@
@@ -25821,7 +25823,7 @@ index ce72a51..981624c 100644
 +  "proxyChain.noFirstProxy": "No saved proxy is available in this space."
  }
 diff --git a/src/shared/i18n/locales/ru.json b/src/shared/i18n/locales/ru.json
-index 7276e13..55eb05a 100644
+index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..55eb05a577ca4a077efacdb50b9723845e4f946d 100644
 --- a/src/shared/i18n/locales/ru.json
 +++ b/src/shared/i18n/locales/ru.json
 @@ -1,4 +1,39 @@
@@ -26237,7 +26239,7 @@ index 7276e13..55eb05a 100644
 +  "proxyChain.noFirstProxy": "В этом пространстве нет доступных сохранённых прокси。"
  }
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index e646200..24f451b 100644
+index e646200a4c87102385a3a7ebbeef91571152f1b0..24f451b2af1dc1e0126a3d99dd504162fe41425f 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
 @@ -1,4 +1,39 @@
@@ -26653,7 +26655,7 @@ index e646200..24f451b 100644
 +  "proxyChain.noFirstProxy": "当前空间没有可用的已保存代理。"
  }
 diff --git a/src/shared/lib/analytics.ts b/src/shared/lib/analytics.ts
-index ee99e6f..62a2d62 100644
+index ee99e6f25e5613a516ee83cb2f8e12016f6ec1d4..62a2d628894387ff482cdd8c3b3f03ca15b57f6a 100644
 --- a/src/shared/lib/analytics.ts
 +++ b/src/shared/lib/analytics.ts
 @@ -1,199 +1,11 @@
@@ -26865,7 +26867,7 @@ index ee99e6f..62a2d62 100644
 +
 +export async function trackSection(_section: string): Promise<void> {}
 diff --git a/src/shared/lib/errors.ts b/src/shared/lib/errors.ts
-index 2a5295a..d29519a 100644
+index 2a5295ad9fe2fc5ad48db00de827b92bcb77232d..d29519ad889be93bf49ad6fd11c4fe61deded729 100644
 --- a/src/shared/lib/errors.ts
 +++ b/src/shared/lib/errors.ts
 @@ -5,6 +5,7 @@ import { EXTENSION_TOO_BIG_RE, FORBIDDEN_RE, TEAM_REFUSALS } from "../api/teamRe
@@ -26894,7 +26896,7 @@ index 2a5295a..d29519a 100644
    if (lease) return t("errors.openElsewhere", { device: lease[1] });
 diff --git a/src/shared/lib/listOrder.test.ts b/src/shared/lib/listOrder.test.ts
 new file mode 100644
-index 0000000..399abae
+index 0000000000000000000000000000000000000000..399abaedcaca49b45c1b6fb632038cc1c1b3aa42
 --- /dev/null
 +++ b/src/shared/lib/listOrder.test.ts
 @@ -0,0 +1,27 @@
@@ -26927,7 +26929,7 @@ index 0000000..399abae
 +});
 diff --git a/src/shared/lib/listOrder.ts b/src/shared/lib/listOrder.ts
 new file mode 100644
-index 0000000..44f2fe0
+index 0000000000000000000000000000000000000000..44f2fe039045bd285025541362542ae883e1abb4
 --- /dev/null
 +++ b/src/shared/lib/listOrder.ts
 @@ -0,0 +1,25 @@
@@ -26958,7 +26960,7 @@ index 0000000..44f2fe0
 +}
 diff --git a/src/shared/lib/profileRoute.test.ts b/src/shared/lib/profileRoute.test.ts
 new file mode 100644
-index 0000000..1c6ba6d
+index 0000000000000000000000000000000000000000..1c6ba6d45636ff53843c99ab8ae5035b00289bb4
 --- /dev/null
 +++ b/src/shared/lib/profileRoute.test.ts
 @@ -0,0 +1,81 @@
@@ -27045,7 +27047,7 @@ index 0000000..1c6ba6d
 +});
 diff --git a/src/shared/lib/profileRoute.ts b/src/shared/lib/profileRoute.ts
 new file mode 100644
-index 0000000..5387e40
+index 0000000000000000000000000000000000000000..5387e40ee1c02ccde7c545022d2ae8a9e59fdb8a
 --- /dev/null
 +++ b/src/shared/lib/profileRoute.ts
 @@ -0,0 +1,64 @@
@@ -27115,7 +27117,7 @@ index 0000000..5387e40
 +}
 diff --git a/src/shared/lib/proxyChainError.test.ts b/src/shared/lib/proxyChainError.test.ts
 new file mode 100644
-index 0000000..89b33f5
+index 0000000000000000000000000000000000000000..89b33f5ec85b7db6664d2e993466b4c4be314901
 --- /dev/null
 +++ b/src/shared/lib/proxyChainError.test.ts
 @@ -0,0 +1,59 @@
@@ -27180,7 +27182,7 @@ index 0000000..89b33f5
 +});
 diff --git a/src/shared/lib/proxyChainError.ts b/src/shared/lib/proxyChainError.ts
 new file mode 100644
-index 0000000..746b21a
+index 0000000000000000000000000000000000000000..746b21ab4df8bd20c8f8a24d6eda2d5f2d2dff8e
 --- /dev/null
 +++ b/src/shared/lib/proxyChainError.ts
 @@ -0,0 +1,91 @@
@@ -27277,7 +27279,7 @@ index 0000000..746b21a
 +}
 diff --git a/src/shared/lib/startupUrl.test.ts b/src/shared/lib/startupUrl.test.ts
 new file mode 100644
-index 0000000..6756450
+index 0000000000000000000000000000000000000000..6756450072e93eb1bef5bb3cc5d583a9ff21795f
 --- /dev/null
 +++ b/src/shared/lib/startupUrl.test.ts
 @@ -0,0 +1,12 @@
@@ -27295,7 +27297,7 @@ index 0000000..6756450
 +});
 diff --git a/src/shared/lib/startupUrl.ts b/src/shared/lib/startupUrl.ts
 new file mode 100644
-index 0000000..203212d
+index 0000000000000000000000000000000000000000..203212dbc8eabaa7098346b1a3b8a50bedb02a71
 --- /dev/null
 +++ b/src/shared/lib/startupUrl.ts
 @@ -0,0 +1,11 @@
@@ -27311,7 +27313,7 @@ index 0000000..203212d
 +  } catch { return false; }
 +}
 diff --git a/src/shared/lib/utils.ts b/src/shared/lib/utils.ts
-index 7c970e1..4b15696 100644
+index 7c970e1eadf14e760daf62613de5d33981701f0e..4b15696f1edf264351958ca1f21998321de798f6 100644
 --- a/src/shared/lib/utils.ts
 +++ b/src/shared/lib/utils.ts
 @@ -132,12 +132,12 @@ export function daysUntil(unixSecs: number): number {
@@ -27331,7 +27333,7 @@ index 7c970e1..4b15696 100644
  
 diff --git a/src/shared/model/listOrder.ts b/src/shared/model/listOrder.ts
 new file mode 100644
-index 0000000..c0d01b1
+index 0000000000000000000000000000000000000000..c0d01b188521b62437cc49e78cb47a5e6e3157ff
 --- /dev/null
 +++ b/src/shared/model/listOrder.ts
 @@ -0,0 +1,37 @@
@@ -27373,7 +27375,7 @@ index 0000000..c0d01b1
 +  return useListOrderStore((s) => s.orders[JSON.stringify([s.scope, kind])] ?? EMPTY);
 +}
 diff --git a/src/shared/model/navigation.ts b/src/shared/model/navigation.ts
-index a67ced5..dcd6821 100644
+index a67ced561886b0d1e186c0bb2ff3cbcf1ce0998c..dcd6821532634a73868013caf9604563a25bc6a3 100644
 --- a/src/shared/model/navigation.ts
 +++ b/src/shared/model/navigation.ts
 @@ -3,7 +3,7 @@ import { SECTIONS, type Section } from "../types";
@@ -27396,7 +27398,7 @@ index a67ced5..dcd6821 100644
  function tabFromUrl(): SettingsTab {
 diff --git a/src/shared/model/proxyChain.ts b/src/shared/model/proxyChain.ts
 new file mode 100644
-index 0000000..734d9ef
+index 0000000000000000000000000000000000000000..734d9ef88f10b199963aadbd8e8c9dcb202bd2a5
 --- /dev/null
 +++ b/src/shared/model/proxyChain.ts
 @@ -0,0 +1,29 @@
@@ -27431,7 +27433,7 @@ index 0000000..734d9ef
 +  !route || route.mode === "proxy" || (route.mode === "chain" && route.second.mode === "proxy");
 diff --git a/src/shared/model/simpleNavigation.ts b/src/shared/model/simpleNavigation.ts
 new file mode 100644
-index 0000000..95a23d9
+index 0000000000000000000000000000000000000000..95a23d9111f82fe37ba541fe7180bd8d599d38e4
 --- /dev/null
 +++ b/src/shared/model/simpleNavigation.ts
 @@ -0,0 +1,32 @@
@@ -27469,7 +27471,7 @@ index 0000000..95a23d9
 +}));
 diff --git a/src/shared/ui/ChainPolicyField.tsx b/src/shared/ui/ChainPolicyField.tsx
 new file mode 100644
-index 0000000..07e2b71
+index 0000000000000000000000000000000000000000..07e2b712c94a055f105d38e6e4ea044755b105b3
 --- /dev/null
 +++ b/src/shared/ui/ChainPolicyField.tsx
 @@ -0,0 +1,17 @@
@@ -27492,7 +27494,7 @@ index 0000000..07e2b71
 +}
 diff --git a/src/shared/ui/ChainRouteSummary.tsx b/src/shared/ui/ChainRouteSummary.tsx
 new file mode 100644
-index 0000000..b4bef45
+index 0000000000000000000000000000000000000000..b4bef4553c02fc30de7182f204540bb7b64da4eb
 --- /dev/null
 +++ b/src/shared/ui/ChainRouteSummary.tsx
 @@ -0,0 +1,19 @@
@@ -27517,7 +27519,7 @@ index 0000000..b4bef45
 +}
 diff --git a/src/shared/ui/FirstHopSourceField.tsx b/src/shared/ui/FirstHopSourceField.tsx
 new file mode 100644
-index 0000000..baa94b7
+index 0000000000000000000000000000000000000000..baa94b7a4e0586da7ab4cb58ab8f7643877abc4e
 --- /dev/null
 +++ b/src/shared/ui/FirstHopSourceField.tsx
 @@ -0,0 +1,35 @@
@@ -27557,7 +27559,7 @@ index 0000000..baa94b7
 +  </div>;
 +}
 diff --git a/src/shared/ui/StatusPill.tsx b/src/shared/ui/StatusPill.tsx
-index 66845c8..e6926f5 100644
+index 66845c8b7a8db5a5ce7623aaaaa5f1533e728ddc..e6926f5918fcd42bd53b27103c1ee58731bc3129 100644
 --- a/src/shared/ui/StatusPill.tsx
 +++ b/src/shared/ui/StatusPill.tsx
 @@ -63,14 +63,16 @@ export function StatusPill({ status, swell = false, className, ...rest }: { stat
@@ -27595,7 +27597,7 @@ index 66845c8..e6926f5 100644
        <Word>{word}</Word>
        {/* No leading punctuation: the accessible name joins it with a space. */}
 diff --git a/src/shared/ui/listHeader/useListLayout.tsx b/src/shared/ui/listHeader/useListLayout.tsx
-index 8632128..b5e5546 100644
+index 8632128e3af5bd01a3a9e3c123b13972a3226891..b5e554643e633d61581a7a522f0fb7199aee6a85 100644
 --- a/src/shared/ui/listHeader/useListLayout.tsx
 +++ b/src/shared/ui/listHeader/useListLayout.tsx
 @@ -112,7 +112,7 @@ export function useListLayout<Id extends string, Row>({ storageKey, defs, items,
@@ -27628,7 +27630,7 @@ index 8632128..b5e5546 100644
 +  return { columns, layout, items: sorted, sortedAll, hasSort: saved.sort !== null, resetSort: () => save({ ...latest.current, sort: null }) };
  }
 diff --git a/src/widgets/FingerprintLibrary/FingerprintLibrary.tsx b/src/widgets/FingerprintLibrary/FingerprintLibrary.tsx
-index 3fa4ec9..79b3401 100644
+index 3fa4ec9c25cfb2f6a43994e67a53d4d7a6ec66eb..79b34016ae1f1cc618b2fd7f0139f654751946a1 100644
 --- a/src/widgets/FingerprintLibrary/FingerprintLibrary.tsx
 +++ b/src/widgets/FingerprintLibrary/FingerprintLibrary.tsx
 @@ -9,6 +9,7 @@ import { rowActionIcons } from "../../shared/ui/rowActionIcons";
@@ -27668,7 +27670,7 @@ index 3fa4ec9..79b3401 100644
            { type: "separator" },
            // A built-in one says why it can't go (as Peek's menu does).
 diff --git a/src/widgets/Overview/useProblemCards.tsx b/src/widgets/Overview/useProblemCards.tsx
-index e75b652..50c6825 100644
+index e75b652de558706c78583827a39814e2dc342e5a..50c6825bcf86207cd1691b30dfdd84458b428564 100644
 --- a/src/widgets/Overview/useProblemCards.tsx
 +++ b/src/widgets/Overview/useProblemCards.tsx
 @@ -8,6 +8,7 @@ import { tierLabel } from "../../features/proxyshard";
@@ -27693,7 +27695,7 @@ index e75b652..50c6825 100644
    // The backend's own words, as the end of a sentence.
    const words = raw.replace(/^Error:\s*/, "").replace(/[.\s]+$/, "");
 diff --git a/src/widgets/PageHeader/PageHeader.tsx b/src/widgets/PageHeader/PageHeader.tsx
-index b8cbbce..b5fd26d 100644
+index b8cbbce3338147fc35a678dd41ca0b66478e13af..b5fd26d7875f3e28f657c81e4e3f81c67f314c17 100644
 --- a/src/widgets/PageHeader/PageHeader.tsx
 +++ b/src/widgets/PageHeader/PageHeader.tsx
 @@ -12,6 +12,8 @@ import { useCompactActions } from "./compact";
@@ -27719,7 +27721,7 @@ index b8cbbce..b5fd26d 100644
      </header>
    );
 diff --git a/src/widgets/ProfilePeek/rows/DetailRows.tsx b/src/widgets/ProfilePeek/rows/DetailRows.tsx
-index 708f089..ecc5d3c 100644
+index 708f0898667649425d3ab3a59a50d931f1cd9b81..ecc5d3c3908f8f3efdcd4f9c0a713c5b98044d89 100644
 --- a/src/widgets/ProfilePeek/rows/DetailRows.tsx
 +++ b/src/widgets/ProfilePeek/rows/DetailRows.tsx
 @@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
@@ -27753,7 +27755,7 @@ index 708f089..ecc5d3c 100644
              <>
                {proxy.country && <CountryFlag cc={proxy.country} height={14} />}
 diff --git a/src/widgets/ProfileTable/ProfileRow.tsx b/src/widgets/ProfileTable/ProfileRow.tsx
-index 4281b97..6a54788 100644
+index 4281b97f867d790f158f34b154e1f7fca535718f..6a54788f29d5b964eccbb17255502b7c826384f5 100644
 --- a/src/widgets/ProfileTable/ProfileRow.tsx
 +++ b/src/widgets/ProfileTable/ProfileRow.tsx
 @@ -1,4 +1,4 @@
@@ -27883,7 +27885,7 @@ index 4281b97..6a54788 100644
        {folderMenu && <FolderCellMenu profile={p} anchorRef={folderCell} onClose={() => { setFolderMenu(false); focusCellButton(folderCell, p.id); }} />}
      </div>
 diff --git a/src/widgets/ProfileTable/ProfileTable.tsx b/src/widgets/ProfileTable/ProfileTable.tsx
-index 43537a4..3b2eda7 100644
+index 43537a478a57e2487082890c63f100e4800169fc..3b2eda73acef93d206fdcf3a1a862d6eeba0320f 100644
 --- a/src/widgets/ProfileTable/ProfileTable.tsx
 +++ b/src/widgets/ProfileTable/ProfileTable.tsx
 @@ -6,7 +6,7 @@ import { ProfileListEmpty } from "./ProfileListEmpty";
@@ -27934,7 +27936,7 @@ index 43537a4..3b2eda7 100644
              columns={columns}
 diff --git a/src/widgets/ProfileTable/ProxyQuickControl.tsx b/src/widgets/ProfileTable/ProxyQuickControl.tsx
 new file mode 100644
-index 0000000..d206496
+index 0000000000000000000000000000000000000000..d206496954ae74aafe48fca3575efea0f4bd35bf
 --- /dev/null
 +++ b/src/widgets/ProfileTable/ProxyQuickControl.tsx
 @@ -0,0 +1,151 @@
@@ -28091,7 +28093,7 @@ index 0000000..d206496
 +}
 diff --git a/src/widgets/ProfileTable/ThemeQuickControl.tsx b/src/widgets/ProfileTable/ThemeQuickControl.tsx
 new file mode 100644
-index 0000000..b5a6b18
+index 0000000000000000000000000000000000000000..b5a6b18d5a64909dda73c33d71b07de9c92eb04d
 --- /dev/null
 +++ b/src/widgets/ProfileTable/ThemeQuickControl.tsx
 @@ -0,0 +1,49 @@
@@ -28145,7 +28147,7 @@ index 0000000..b5a6b18
 +  </>;
 +}
 diff --git a/src/widgets/ProfileTable/profileFits.ts b/src/widgets/ProfileTable/profileFits.ts
-index c2ca30c..fe95ab4 100644
+index c2ca30c0fc2a9a5045ed22f8170e1b716d66e5cd..fe95ab416220c12af41c689d11e5cfcf4d823bf1 100644
 --- a/src/widgets/ProfileTable/profileFits.ts
 +++ b/src/widgets/ProfileTable/profileFits.ts
 @@ -5,6 +5,7 @@ import { fmtDuration } from "../../shared/lib/format";
@@ -28168,7 +28170,7 @@ index c2ca30c..fe95ab4 100644
      const x = proxyOf(p.proxy_id);
      if (!x) return m(p.origin === "team" ? hidden : missing, "secondary");
 diff --git a/src/widgets/ProxyList/ProxyList.tsx b/src/widgets/ProxyList/ProxyList.tsx
-index d3b08b1..24af6c2 100644
+index d3b08b156ae6545c25d72e5e6483272dcbd43560..24af6c2b7a8674d809205d2f20ec54c257e727fd 100644
 --- a/src/widgets/ProxyList/ProxyList.tsx
 +++ b/src/widgets/ProxyList/ProxyList.tsx
 @@ -5,7 +5,7 @@ import { buyProxies } from "../../features/manage-proxies";
@@ -28214,7 +28216,7 @@ index d3b08b1..24af6c2 100644
                  top={offsetOf(i)}
                  columns={columns}
 diff --git a/src/widgets/ProxyList/ProxyListRow.tsx b/src/widgets/ProxyList/ProxyListRow.tsx
-index df7d2cb..ead8701 100644
+index df7d2cb8628259c93fc50b889851952961f4172a..ead87018ef8ed32f38c96c802c590d364cb8ec21 100644
 --- a/src/widgets/ProxyList/ProxyListRow.tsx
 +++ b/src/widgets/ProxyList/ProxyListRow.tsx
 @@ -1,5 +1,5 @@
@@ -28285,7 +28287,7 @@ index df7d2cb..ead8701 100644
        data-peek-open={inPeek || undefined}
        // A click anywhere on the row opens it in Peek (O5), except on the row
 diff --git a/src/widgets/ProxyList/proxyFits.ts b/src/widgets/ProxyList/proxyFits.ts
-index 24878e4..aad51d1 100644
+index 24878e4b64acd6d5d7466844c2460e6e6a9e0389..aad51d1689cce3d1f1dee597847fad23fb09bda9 100644
 --- a/src/widgets/ProxyList/proxyFits.ts
 +++ b/src/widgets/ProxyList/proxyFits.ts
 @@ -11,6 +11,8 @@ const TEST_PILL = 7 + 7;
@@ -28308,7 +28310,7 @@ index 24878e4..aad51d1 100644
    };
    return { fits, short: { test: pill } };
 diff --git a/src/widgets/ProxyPeek/Details.tsx b/src/widgets/ProxyPeek/Details.tsx
-index 0a8b322..c13e550 100644
+index 0a8b322ec6e1658b105d448a1c2ff2f3a7e38861..c13e55025d1e0ac5e39bd5172474b5081932d493 100644
 --- a/src/widgets/ProxyPeek/Details.tsx
 +++ b/src/widgets/ProxyPeek/Details.tsx
 @@ -19,6 +19,7 @@ export function Details({ proxy: p }: { proxy: ProxyEntry }) {
@@ -28346,7 +28348,7 @@ index 0a8b322..c13e550 100644
      </PropertySheet>
    );
 diff --git a/src/widgets/ProxyPeek/ProxyPeek.tsx b/src/widgets/ProxyPeek/ProxyPeek.tsx
-index 3014d47..87b1f15 100644
+index 3014d476469aef5876e46ca7a20de8332154080e..87b1f1539e830aee8c4ae836964795fad9da9a9d 100644
 --- a/src/widgets/ProxyPeek/ProxyPeek.tsx
 +++ b/src/widgets/ProxyPeek/ProxyPeek.tsx
 @@ -5,10 +5,12 @@ import { CountryFlag } from "../../shared/ui/CountryFlag";
@@ -28424,7 +28426,7 @@ index 3014d47..87b1f15 100644
        )}
      </div>
 diff --git a/src/widgets/Sidebar/Sidebar.tsx b/src/widgets/Sidebar/Sidebar.tsx
-index c94ae7b..3aa9cde 100644
+index c94ae7bd3dd87f800e47d794acc3a77f251b2d85..3aa9cde85bb801ee17ca680fd5d3c5d349eed5ba 100644
 --- a/src/widgets/Sidebar/Sidebar.tsx
 +++ b/src/widgets/Sidebar/Sidebar.tsx
 @@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
@@ -28663,7 +28665,7 @@ index c94ae7b..3aa9cde 100644
          {/* The lists that grow with the user's data scroll on their own. */}
          <ScrollArea>
 diff --git a/src/widgets/Sidebar/prefs.ts b/src/widgets/Sidebar/prefs.ts
-index 39bbbf5..3387518 100644
+index 39bbbf5baaebe1b8568563025f05906e132f7b19..33875182368362995fd5816253c934ecc3ecc544 100644
 --- a/src/widgets/Sidebar/prefs.ts
 +++ b/src/widgets/Sidebar/prefs.ts
 @@ -5,15 +5,16 @@ export type GroupId = "pinned" | "folders" | "views";
@@ -28710,7 +28712,7 @@ index 39bbbf5..3387518 100644
      setOverPeek: (overPeek) => set({ overPeek }),
    };
 diff --git a/src/widgets/ToastHost/ToastHost.tsx b/src/widgets/ToastHost/ToastHost.tsx
-index 9972dea..92ee401 100644
+index 9972dea26d241515909439b2d297f9c87e76faa7..92ee4018ecf15251194fd47bb9247f0eb80ca0b0 100644
 --- a/src/widgets/ToastHost/ToastHost.tsx
 +++ b/src/widgets/ToastHost/ToastHost.tsx
 @@ -80,7 +80,10 @@ function place(stack: HTMLElement | null): Spot {
@@ -28734,7 +28736,7 @@ index 9972dea..92ee401 100644
      measure();
      return () => { window.removeEventListener("resize", measure); sizes.disconnect(); mounts.disconnect(); moves.disconnect(); };
 diff --git a/src/widgets/WhatsNewDialog/patchlog.json b/src/widgets/WhatsNewDialog/patchlog.json
-index 6f77f44..891b284 100644
+index 6f77f44d06c1d3bc0426cd9d3ac78a54e2f6ce30..891b2841ca3e7c1bed267b128bee5c7126ae5a62 100644
 --- a/src/widgets/WhatsNewDialog/patchlog.json
 +++ b/src/widgets/WhatsNewDialog/patchlog.json
 @@ -2,90 +2,6 @@
@@ -28829,7 +28831,7 @@ index 6f77f44..891b284 100644
        "version": "2.1.4",
        "date": "2026-11-06",
 diff --git a/team-server/Cargo.lock b/team-server/Cargo.lock
-index 6e36543..a5499a5 100644
+index 6e365436bd8c3c2c7d33e87a594b041dd590f63d..a5499a509aa17c870b9a7613d495594eab4fef22 100644
 --- a/team-server/Cargo.lock
 +++ b/team-server/Cargo.lock
 @@ -1038,7 +1038,7 @@ dependencies = [
@@ -28842,7 +28844,7 @@ index 6e36543..a5499a5 100644
   "aes-gcm",
   "anyhow",
 diff --git a/team-server/Cargo.toml b/team-server/Cargo.toml
-index adf25ef..b8bfa8e 100644
+index adf25ef08676406246f550e06bf5ba80a60e44d3..b8bfa8e19aaa655c8a3eeb2851a11aa514dc1208 100644
 --- a/team-server/Cargo.toml
 +++ b/team-server/Cargo.toml
 @@ -1,6 +1,6 @@
@@ -28854,7 +28856,7 @@ index adf25ef..b8bfa8e 100644
  authors = ["ProxyShard"]
  edition = "2021"
 diff --git a/ui-kit/src/App.tsx b/ui-kit/src/App.tsx
-index 1e236ac..cdaa910 100644
+index 1e236ac203e1619164169b7c054b5841904c6a5b..cdaa910483f5f08225583781d0cfd716843afbda 100644
 --- a/ui-kit/src/App.tsx
 +++ b/ui-kit/src/App.tsx
 @@ -290,7 +290,7 @@ export default function App() {
@@ -28867,7 +28869,7 @@ index 1e236ac..cdaa910 100644
            </p>
          </div>
 diff --git a/ui-kit/src/components/DataList/index.tsx b/ui-kit/src/components/DataList/index.tsx
-index dbe836e..cdc664a 100644
+index dbe836ece4bc934d01a3b490ed9857ab6bb21847..cdc664af81bd16dc66346c0e711fa32f7f67198b 100644
 --- a/ui-kit/src/components/DataList/index.tsx
 +++ b/ui-kit/src/components/DataList/index.tsx
 @@ -77,6 +77,8 @@ type Common<T> = {
