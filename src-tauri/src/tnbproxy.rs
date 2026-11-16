@@ -165,6 +165,15 @@ fn request_error(error: reqwest::Error) -> &'static str {
     if error.is_timeout() { "tnb_timeout" } else { "tnb_request_failed" }
 }
 
+fn remote_error_from_body(status: u16, body: &[u8]) -> Option<&'static str> {
+    if !matches!(status, 401 | 403) { return None; }
+    let detail = std::str::from_utf8(body).ok()?.to_ascii_lowercase();
+    if detail.contains("whitelist") || detail.contains("allowlist")
+        || (detail.contains("not in") && detail.contains("ip"))
+        || (detail.contains("ip") && detail.contains("allow"))
+    { Some("tnb_whitelist_required") } else { Some("tnb_auth_required") }
+}
+
 async fn download(client: reqwest::Client, url: Url, host: Option<String>, json_body: Option<serde_json::Value>, auth: Option<crate::proxy_providers::Credential>) -> Result<Vec<u8>> {
     let mut request = if let Some(body) = json_body {
         client.post(url).json(&body).header(reqwest::header::ACCEPT, "application/json")
@@ -172,7 +181,15 @@ async fn download(client: reqwest::Client, url: Url, host: Option<String>, json_
     if let Some(host) = host { request = request.header(reqwest::header::HOST, host); }
     if let Some(auth)=auth { request=request.basic_auth(auth.username,Some(auth.password)); }
     let mut response = request.send().await.map_err(request_error)?;
-    if matches!(response.status().as_u16(), 401 | 403) { return Err("tnb_auth_required"); }
+    let status = response.status().as_u16();
+    if matches!(status, 401 | 403) {
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(request_error)? {
+            if body.len().saturating_add(chunk.len()) > MAX_BODY { break; }
+            body.extend_from_slice(&chunk);
+        }
+        return Err(remote_error_from_body(status, &body).unwrap_or("tnb_auth_required"));
+    }
     if !response.status().is_success() { return Err("tnb_http_status"); }
     if response.content_length().is_some_and(|n| n > MAX_BODY as u64) { return Err("tnb_response_too_large"); }
     let mut body = Vec::new();
@@ -525,6 +542,8 @@ mod tests {
         for (reply, error) in [
             ("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/gen\r\nContent-Length: 0\r\n\r\n".into(), "tnb_http_status"),
             ("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n".into(), "tnb_auth_required"),
+            (ok_status(403, r#"{"error":"IP not in whitelist"}"#), "tnb_whitelist_required"),
+            (ok_status(403, r#"{"error":"bad credentials"}"#), "tnb_auth_required"),
             (format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", MAX_BODY + 1), "tnb_response_too_large"),
             (format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{chunk}\r\n0\r\n\r\n", chunk.len()), "tnb_response_too_large"),
             (ok("whitelist denied: secret credential"), "tnb_invalid_response"),
