@@ -2867,7 +2867,7 @@ pub fn run() {
     with_app_menu(tauri::Builder::default())
         // Must be the first plugin: a second launch focuses the running window.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            show_main_window(app);
+            if !profile_shortcut::silent_launcher(&argv) { show_main_window(app); }
             profile_shortcut::receive(&argv);
         }))
         .plugin(tauri_plugin_opener::init())
@@ -2912,6 +2912,8 @@ pub fn run() {
             profile_focus_window,
             profile_shortcut::profile_create_desktop_shortcut,
             profile_shortcut::profile_shortcut_take_pending,
+            profile_shortcut::profile_shortcut_show_launcher,
+            profile_shortcut::profile_shortcut_launch_is_silent,
             helper_show,
             helper_close,
             helper_dismiss,
