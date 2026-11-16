@@ -4395,10 +4395,10 @@ index 2728094..a7a634b 100644
        else if (/\.(tsx?|jsx?)$/.test(name)) {
 diff --git a/scripts/lib/proxy-chain-build.ps1 b/scripts/lib/proxy-chain-build.ps1
 new file mode 100644
-index 0000000..9be6a6c
+index 0000000..4b5a3b4
 --- /dev/null
 +++ b/scripts/lib/proxy-chain-build.ps1
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,76 @@
 +# The build script resolves relative overrides against CandidatePath, then passes
 +# an absolute CARGO_TARGET_DIR to Tauri/Cargo so child working directories agree.
 +function Assert-ProxyChainCleanSource([string]$CandidatePath) {
@@ -4434,6 +4434,31 @@ index 0000000..9be6a6c
 +    $code = $LASTEXITCODE
 +    if ($code -ne 0) { throw "$Name failed with exit code $code. Publication is blocked." }
 +    [pscustomobject]@{ id=$Name; status='passed'; log=(Split-Path -Leaf $log); sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Hash.ToLowerInvariant() }
++}
++
++# Run a browser suite behind an external watchdog. Playwright's per-test timeout does
++# not cover a wedged Node/Vite child after a suite loses its last browser event.
++function Invoke-ProxyChainTimedCommand([string]$Name, [string]$Command, [string[]]$Arguments, [string]$WorkingDirectory, [string]$OutputDirectory, [int]$TimeoutSeconds = 900) {
++    $log = Join-Path $OutputDirectory "$Name.log"
++    $stdout = Join-Path $OutputDirectory "$Name.stdout.tmp"
++    $stderr = Join-Path $OutputDirectory "$Name.stderr.tmp"
++    foreach ($path in @($log, $stdout, $stderr)) { [IO.File]::WriteAllText($path, '') }
++    $proc = Start-Process -FilePath $Command -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
++    try {
++        if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
++            & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
++            throw "$Name exceeded the ${TimeoutSeconds}s browser-suite watchdog."
++        }
++        $proc.Refresh()
++        $code = $proc.ExitCode
++        $combined = ((Get-Content -Raw -LiteralPath $stdout) + (Get-Content -Raw -LiteralPath $stderr))
++        [IO.File]::WriteAllText($log, $combined)
++        Write-Host $combined
++        if ($code -ne 0) { throw "$Name failed with exit code $code. Publication is blocked." }
++        [pscustomobject]@{ id=$Name; status='passed'; log=(Split-Path -Leaf $log); sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Hash.ToLowerInvariant() }
++    } finally {
++        foreach ($path in @($stdout, $stderr)) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
++    }
 +}
 +
 +function New-ProxyChainPlaywrightConfig([string]$CandidatePath, [string]$OutputDirectory, [string]$NodeExecutable, [int]$Port) {
@@ -4532,7 +4557,7 @@ index 0000000..18e116b
 +});
 diff --git a/scripts/test-proxy-chain-pipeline.ps1 b/scripts/test-proxy-chain-pipeline.ps1
 new file mode 100644
-index 0000000..077d9ff
+index 0000000..278f756
 --- /dev/null
 +++ b/scripts/test-proxy-chain-pipeline.ps1
 @@ -0,0 +1,280 @@
@@ -4748,7 +4773,7 @@ index 0000000..077d9ff
 +        foreach ($name in @('ps-trial.spec.ts', 'pc17-theme-shortcuts.spec.ts', 'proxy-export-safety.spec.ts', 'provider-defaults.spec.ts')) { Assert ($name -in $listed) "The canonical stable-release UI gate omits $name" }
 +        Assert (($listed | Sort-Object -Unique).Count -eq $listed.Count) 'The canonical UI test list has duplicates.'
 +        Assert ($verify.Contains('foreach ($uiTest in $uiTests)') -and $verify.Contains('Test-Path -LiteralPath (Join-Path $candidate "e2e/$uiTest") -PathType Leaf')) 'Every required UI test must be checked before running.'
-+        Assert ($verify.Contains("foreach (`$uiTest in `$uiTests)") -and $verify.Contains("Step ('ui-browser-' + [IO.Path]::GetFileNameWithoutExtension(`$uiTest)) 'npx'")) 'Playwright must consume the checked canonical UI test list.'
++        Assert ($verify.Contains("foreach (`$uiTest in `$uiTests)") -and $verify.Contains("Invoke-ProxyChainTimedCommand ('ui-browser-' + [IO.Path]::GetFileNameWithoutExtension(`$uiTest))")) 'Playwright must consume the checked canonical UI test list.'
 +    }
 +    Case 'portable-build-never-enters-an-installer-bundler' {
 +        $script=Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'build-portable.ps1')
@@ -4818,10 +4843,10 @@ index 0000000..077d9ff
 +}
 diff --git a/scripts/verify-patch.ps1 b/scripts/verify-patch.ps1
 new file mode 100644
-index 0000000..4ac781d
+index 0000000..c76843d
 --- /dev/null
 +++ b/scripts/verify-patch.ps1
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,90 @@
 +[CmdletBinding()]
 +param(
 +    [Parameter(Mandatory)][string]$CandidatePath,
@@ -4900,7 +4925,9 @@ index 0000000..4ac781d
 +    # suite independently observable and allowing the next suite to continue
 +    # only after the previous process has exited.
 +    foreach ($uiTest in $uiTests) {
-+        Step ('ui-browser-' + [IO.Path]::GetFileNameWithoutExtension($uiTest)) 'npx' @('playwright','test','--config',$configPath,$uiTest,'--project=dev','--workers=1')
++        $npx = (Get-Command 'npx.cmd' -ErrorAction SilentlyContinue).Source
++        if ([string]::IsNullOrWhiteSpace($npx)) { $npx = (Get-Command 'npx').Source }
++        $script:checks += Invoke-ProxyChainTimedCommand ('ui-browser-' + [IO.Path]::GetFileNameWithoutExtension($uiTest)) $npx @('playwright','test','--config',$configPath,$uiTest,'--project=dev','--workers=1') $candidate $output 900
 +    }
 +    SourceIdentity
 +    $receipt = [ordered]@{
