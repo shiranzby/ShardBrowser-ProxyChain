@@ -211,7 +211,7 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
         {rows.length === 0 ? (
           <>
             <Select label={t("tnb.source")} size="xsmall" value={source} disabled={extracting} onChange={setSource} options={[{ value: "custom", label: t("tnb.custom") }, { value: "tnb", label: t("tnb.provider") }, { value: "1024proxy", label: t("provider.name1024") }]} />
-            {source !== "custom" && <details className="text-secondary"><summary className="cursor-pointer py-1 text-text-sub-600">{t("provider.defaultsTitle")}</summary><div className="py-3"><ProviderDefaultsPanel provider={source === "tnb" ? "tnbproxy" : "1024proxy"} onSaved={(v) => setTnb((d) => ({ ...d, server: v.tnb_server, plan_name: v.tnb_plan, kind: v.tnb_kind }))} /></div></details>}
+            {source !== "custom" && <details className="text-secondary"><summary className="cursor-pointer py-1 text-text-sub-600">{t("provider.defaultsTitle")}</summary><div className="py-3"><ProviderDefaultsPanel provider={source === "tnb" ? "tnbproxy" : "1024proxy"} onSaved={(v) => setTnb((d) => ({ ...d, server: v.tnb_server, plan_name: v.tnb_plan, kind: v.tnb_kind, use_api_credentials: Boolean(v.tnb_api_username.trim() || v.tnb_api_password_saved), use_proxy_credentials: Boolean(v.tnb_proxy_username.trim() || v.tnb_proxy_password_saved) }))} /></div></details>}
             {source === "1024proxy" ? <div className="flex flex-col gap-3">
               <SelectField
                 label={t("tnbGeo.country")}
