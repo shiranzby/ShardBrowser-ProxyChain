@@ -4532,7 +4532,7 @@ index 0000000..18e116b
 +});
 diff --git a/scripts/test-proxy-chain-pipeline.ps1 b/scripts/test-proxy-chain-pipeline.ps1
 new file mode 100644
-index 0000000..36eca99
+index 0000000..077d9ff
 --- /dev/null
 +++ b/scripts/test-proxy-chain-pipeline.ps1
 @@ -0,0 +1,280 @@
@@ -4748,7 +4748,7 @@ index 0000000..36eca99
 +        foreach ($name in @('ps-trial.spec.ts', 'pc17-theme-shortcuts.spec.ts', 'proxy-export-safety.spec.ts', 'provider-defaults.spec.ts')) { Assert ($name -in $listed) "The canonical stable-release UI gate omits $name" }
 +        Assert (($listed | Sort-Object -Unique).Count -eq $listed.Count) 'The canonical UI test list has duplicates.'
 +        Assert ($verify.Contains('foreach ($uiTest in $uiTests)') -and $verify.Contains('Test-Path -LiteralPath (Join-Path $candidate "e2e/$uiTest") -PathType Leaf')) 'Every required UI test must be checked before running.'
-+        Assert ($verify.Contains("Step 'ui-browser' 'npx' (@('playwright','test','--config',`$configPath) + `$uiTests + @('--project=dev'))")) 'Playwright must consume the checked canonical UI test list.'
++        Assert ($verify.Contains("foreach (`$uiTest in `$uiTests)") -and $verify.Contains("Step ('ui-browser-' + [IO.Path]::GetFileNameWithoutExtension(`$uiTest)) 'npx'")) 'Playwright must consume the checked canonical UI test list.'
 +    }
 +    Case 'portable-build-never-enters-an-installer-bundler' {
 +        $script=Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'build-portable.ps1')
