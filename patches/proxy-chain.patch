@@ -3070,7 +3070,7 @@ index 494efd7..e4a2a95 100644
      version: 1,
 diff --git a/e2e/tnb-extract.spec.ts b/e2e/tnb-extract.spec.ts
 new file mode 100644
-index 0000000..d3d8d77
+index 0000000..a0a0075
 --- /dev/null
 +++ b/e2e/tnb-extract.spec.ts
 @@ -0,0 +1,151 @@
@@ -3110,7 +3110,7 @@ index 0000000..d3d8d77
 +  await expect(d.locator("[data-tnb-preview]")).toContainText("Received 2 proxies via Direct");
 +  expect(await count(page, "proxy_bulk_save")).toBe(0);
 +  expect(await proxies(page)).toHaveLength(7);
-+  expect(await request(page)).toMatchObject({ server: "http://hkdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", count: 2, kind: "http", geo: "EG_Cairo_Cairo", ttl: 20, pre: false, route: "direct" });
++  expect(await request(page)).toMatchObject({ server: "http://usdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", count: 2, kind: "http", geo: "EG_Cairo_Cairo", ttl: 20, pre: false, route: "direct" });
 +  await d.getByRole("checkbox", { name: /tnb-2\.proxy\.example/ }).uncheck();
 +  await d.screenshot({ path: info.outputPath("tnb-preview.png"), animations: "disabled" });
 +  await d.getByRole("button", { name: "Add 1 proxy", exact: true }).click();
@@ -3191,7 +3191,7 @@ index 0000000..d3d8d77
 +  expect(await proxies(page)).toHaveLength(7);
 +  await d.getByRole("button", { name: "Back", exact: true }).click();
 +  await expect(d.getByRole("spinbutton", { name: "Count (1–1000)" })).toHaveValue("2");
-+  await expect(d.getByRole("textbox", { name: "Extraction server" })).toHaveValue("http://hkdata.adv.tnbproxy.com:9090");
++  await expect(d.getByRole("textbox", { name: "Extraction server" })).toHaveValue("http://usdata.adv.tnbproxy.com:9090");
 +});
 +
 +test("the custom source still previews pasted proxies and never calls TNB", async ({ page }) => {
@@ -20550,7 +20550,7 @@ index 63ef7db..e9e6ea3 100644
      api: { enabled: true, port: 40325, base_url: "http://127.0.0.1:40325", token: "shx_mock_00000000000000000000000000" },
      psKey: "psk_test_mock_000000000000000000000000",
 diff --git a/src/dev/mock/handlers.ts b/src/dev/mock/handlers.ts
-index 41d96a9..3928490 100644
+index 41d96a9..280196c 100644
 --- a/src/dev/mock/handlers.ts
 +++ b/src/dev/mock/handlers.ts
 @@ -14,7 +14,7 @@ import { alreadyInLibrary, extProfileClosed, extUpdateHandlers, importSame } fro
@@ -20749,7 +20749,7 @@ index 41d96a9..3928490 100644
    proxy_history: ({ id }, { state }) => state.snapshots[id] ?? [],
    proxy_bulk_parse: ({ text, kind }) => parseProxyLines(String(text ?? ""), kind),
 +  proxy_provider_defaults_get: (_a, { state }) => {
-+    const d = state.providerDefaults ?? { relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://hkdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false };
++    const d = state.providerDefaults ?? { relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://usdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false };
 +    const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, ...view } = d;
 +    return view;
 +  },
@@ -23009,7 +23009,7 @@ index 00a9dbe..585efa1 100644
              { value: "latency", label: t("proxyDisplay.orderLatency") },
 diff --git a/src/features/manage-proxies/ui/TnbExtractForm.tsx b/src/features/manage-proxies/ui/TnbExtractForm.tsx
 new file mode 100644
-index 0000000..fbe6501
+index 0000000..cb4e3e5
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/TnbExtractForm.tsx
 @@ -0,0 +1,101 @@
@@ -23024,7 +23024,7 @@ index 0000000..fbe6501
 +};
 +
 +export const newTnbDraft = (): TnbDraft => ({
-+  server: "http://hkdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", kind: "http",
++  server: "http://usdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", kind: "http",
 +  count: "1", ttl: "0", pre: false, route: "direct", country: null, region: null, city: null,
 +  pool: "", isp: "", asn: "", ip: "", sid: "",
 +});
