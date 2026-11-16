@@ -5,7 +5,7 @@
   "base_tag": "v2.1.5",
   "base_commit": "99e780e2e685e5b3b5357c5baee8796e10b3ce1e",
   "patch_file": "proxy-chain.patch",
-  "patch_sha256": "0cd9bab38ee0562e9a53b39cc59a92d336586c9c09b8cc7b3e3c6883709abe0c",
+  "patch_sha256": "835248bdb20562430ec716f1198f6a4ffba4f4544503a48c1e75cae03da60959",
   "patch_commit": "0f52d8c359ccf01ee1cb999a9c391a82bf2a9740",
   "ready": true,
   "required_rust_filter": "proxy_chain",
