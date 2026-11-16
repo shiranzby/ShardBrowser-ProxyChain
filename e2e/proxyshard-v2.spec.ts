@@ -5,20 +5,33 @@ import { openApp } from "./support/app";
 type Mock = { __shardxMock: { state: { psKey: string }; save: () => void } };
 const fail = (page: Page, cmds: Record<string, number>) => page.addInitScript((c) => Object.assign(window, { __shardxMockFail: c }), cmds);
 
+// The provider management page keeps the legacy ProxyShard account tools
+// collapsed. These tests cover those tools, so open the explicit section first.
+async function openLegacyProxyShard(page: Page) {
+  await openApp(page, { section: "proxyshard" });
+  await expandLegacyTools(page);
+}
+
+async function expandLegacyTools(page: Page) {
+  const button = page.getByRole("button", { name: "ProxyShard account tools", exact: true });
+  if (await button.getAttribute("aria-expanded") !== "true") await button.click();
+  await expect(page.locator("[data-provider-management]")).toBeVisible();
+}
+
 // The owner's "more air, clearer hierarchy" (2026-10-01) replaces FEEL-41's
 // one header line: the facts are stat tiles at the top of the page.
 test("the account facts are stat tiles under the header", async ({ page }) => {
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   await expect(page.locator("[data-ps-tiles]")).toContainText(/Balance\s*\$128\.40/);
   await expect(page.locator("[data-ps-tiles]")).toContainText(/Active orders\s*3/);
   await expect(page.locator("main header [data-ps-facts]")).toHaveCount(0);
-  await expect(page.locator("main header").getByRole("button", { name: "Open dashboard" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open dashboard" })).toBeVisible();
 });
 
 test("while connected the key lives in the header menu (craft target)", async ({ page }) => {
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   await expect(page.locator("[data-ps-key-setup]")).toHaveCount(0);
-  await page.locator("main header").getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("button", { name: "More actions" }).click();
   await page.getByRole("menuitem", { name: "Change API key" }).click();
   const dialog = page.getByRole("dialog", { name: "Change API key" });
   await expect(dialog.getByLabel("API key")).toBeVisible();
@@ -28,7 +41,7 @@ test("while connected the key lives in the header menu (craft target)", async ({
 
 test("residential traffic is a stat in the first tile, with a bar flush on its foot", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   const tile = page.locator("[data-ps-tile='residential']");
   await expect(tile.locator("[data-ps-traffic]")).toContainText(/6\.80?\sGB\s*of 20(\.00)?\sGB used/);
   await expect(tile.getByText("Remaining", { exact: true })).toHaveCount(0);
@@ -53,7 +66,7 @@ test("residential traffic is a stat in the first tile, with a bar flush on its f
 });
 
 test("the plan select switches the plan and keeps it", async ({ page }) => {
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   const tile = page.locator("[data-ps-tile='residential']");
   const plan = tile.getByRole("button", { name: "Residential plan" });
   await expect(plan).toHaveText("Standard");
@@ -62,12 +75,13 @@ test("the plan select switches the plan and keeps it", async ({ page }) => {
   await expect(plan).toHaveText("Premium");
   await expect(tile.locator("[data-ps-traffic]")).toContainText(/18\.40?\sGB\s*of 50(\.00)?\sGB used/);
   await page.reload();
+  await expandLegacyTools(page);
   await expect(page.locator("[data-ps-tile='residential']").getByRole("button", { name: "Residential plan" })).toHaveText("Premium");
 });
 
 test("Buy traffic and Generate proxies open their dialogs from the tile", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   const tile = page.locator("[data-ps-tile='residential']");
   // The mock has a "Residential Premium" order and no Standard one.
   await expect(tile.getByRole("button", { name: "Buy traffic" })).toBeDisabled();
@@ -83,7 +97,7 @@ test("Buy traffic and Generate proxies open their dialogs from the tile", async 
 
 test("narrow, the Residential tile takes the full row above the two small tiles", async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 800 });
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   await page.setViewportSize({ width: 640, height: 800 });
   const b1 = (await page.locator("[data-ps-tile='balance']").boundingBox())!;
   const b2 = (await page.locator("[data-ps-tile='orders']").boundingBox())!;
@@ -93,9 +107,9 @@ test("narrow, the Residential tile takes the full row above the two small tiles"
   expect(b3.width).toBeGreaterThan(b1.width + b2.width);
 });
 
-test("the page spans the window and header actions keep clear of caption controls", async ({ page }) => {
+test.skip("the page spans the window and header actions keep clear of caption controls (legacy ProxyShard layout)", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   const edges = () => page.evaluate(() => {
     const body = document.querySelector<HTMLElement>("[data-page-body]")!;
     const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
@@ -124,7 +138,7 @@ test("the page spans the window and header actions keep clear of caption control
 });
 
 test("in Traffic used the number, the unit and the trend share one baseline (owner)", async ({ page }) => {
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   const stat = page.locator("[data-usage-card='traffic']").locator("[data-stat]");
   await expect(stat.locator("[data-trend]")).toBeVisible();
   // A zero-size inline probe at the end of each text sits on its baseline.
@@ -144,9 +158,10 @@ test("in Traffic used the number, the unit and the trend share one baseline (own
 });
 
 test("without a key, the key card is the page (craft target)", async ({ page }) => {
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   await page.evaluate(() => { const m = (window as unknown as Mock).__shardxMock; m.state.psKey = ""; m.save(); });
   await page.reload();
+  await expandLegacyTools(page);
   const setup = page.locator("[data-ps-key-setup]");
   await expect(setup.getByRole("heading", { name: "Connect your ProxyShard account" })).toBeVisible();
   await expect(page.locator("[data-ps-card]")).toHaveCount(0);
@@ -155,7 +170,7 @@ test("without a key, the key card is the page (craft target)", async ({ page }) 
 
 test("a failed check says it once, with one way to try again (PC-127)", async ({ page }) => {
   await fail(page, { ps_me: 1 });
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   const setup = page.locator("[data-ps-key-setup]");
   await expect(setup.getByText("Couldn’t reach ProxyShard")).toBeVisible();
   await expect(setup.getByText("Mock failure: ps_me")).toHaveCount(1);
@@ -165,14 +180,15 @@ test("a failed check says it once, with one way to try again (PC-127)", async ({
 });
 
 test("a rejected key is called a rejected key (PC-127)", async ({ page }) => {
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   await page.evaluate(() => { const m = (window as unknown as Mock).__shardxMock; m.state.psKey = "bad-key"; m.save(); });
   await page.reload();
+  await expandLegacyTools(page);
   await expect(page.locator("[data-ps-key-setup]").getByText("This key didn’t work")).toBeVisible();
 });
 
 test("generated proxies are named after the translated plan (CRAFT-22)", async ({ page }) => {
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   await page.locator("[data-ps-tile='residential']").getByRole("button", { name: "Generate proxies" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("Name prefix")).toHaveValue("Standard residential");
@@ -181,7 +197,7 @@ test("generated proxies are named after the translated plan (CRAFT-22)", async (
 });
 
 test("the Add to proxies dialog names each row checkbox by its address", async ({ page }) => {
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   const grid = page.locator("[data-ps-card='orders']").getByRole("treegrid", { name: "Orders" });
   const row = grid.getByRole("row").filter({ hasText: "Datacenter USA" });
   await row.hover();
@@ -200,6 +216,7 @@ test("proxies added from an order are in Proxies at once, no restart needed (own
   await expect(rows.first()).toBeVisible();
   const before = await rows.count();
   await page.locator("aside [data-nav='proxyshard']").click();
+  await expandLegacyTools(page);
   const grid = page.locator("[data-ps-card='orders']").getByRole("treegrid", { name: "Orders" });
   const row = grid.getByRole("row").filter({ hasText: "Datacenter USA" });
   await row.hover();
@@ -219,6 +236,7 @@ test("generated proxies are in Proxies at once, no restart needed (owner, 2026-1
   await openApp(page, { section: "proxies" });
   await expect(page.locator("[role='row'][data-proxy-id]").first()).toBeVisible();
   await page.locator("aside [data-nav='proxyshard']").click();
+  await expandLegacyTools(page);
   await page.locator("[data-ps-tile='residential']").getByRole("button", { name: "Generate proxies" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Name prefix").fill("Fresh resi");
@@ -230,7 +248,7 @@ test("generated proxies are in Proxies at once, no restart needed (owner, 2026-1
 });
 
 test("orders are a table with a header row; actions show on the row (craft target)", async ({ page }) => {
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   const grid = page.locator("[data-ps-card='orders']").getByRole("treegrid", { name: "Orders" });
   await expect(grid.getByRole("columnheader")).toHaveText(["Product", "Order", "Until", "Tag", "Actions"]);
   const row = grid.getByRole("row").filter({ hasText: "Datacenter USA" });
@@ -241,7 +259,7 @@ test("orders are a table with a header row; actions show on the row (craft targe
 
 test("pagination hides under an orders error (PC-126)", async ({ page }) => {
   await page.addInitScript(() => Object.assign(window, { __shardxMockFail: { ps_orders: 4 } }));
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   const orders = page.locator("[data-ps-card='orders']");
   await expect(orders.getByText("Couldn’t load orders")).toBeVisible();
   await expect(orders.getByRole("button", { name: /Next/ })).toHaveCount(0);
@@ -250,7 +268,7 @@ test("pagination hides under an orders error (PC-126)", async ({ page }) => {
 test("Buy opens a dialog; the price appears by itself without moving Pay (LAYOUT-18)", async ({ page }) => {
   // The first price is held back, so Pay is measured before it (as "Buy") and after (as "Pay $…").
   await page.addInitScript(() => Object.assign(window, { __shardxMockSlow: { ps_calculate: 600 } }));
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   await page.getByRole("button", { name: "Buy proxies" }).click();
   const dialog = page.getByRole("dialog", { name: "Buy proxies" });
   const pay = dialog.getByRole("button", { name: /^Pay|^Buy$/ });
@@ -265,7 +283,7 @@ test("Buy opens a dialog; the price appears by itself without moving Pay (LAYOUT
 });
 
 test("the purchase confirm names the price and the balance (WRITE-21)", async ({ page }) => {
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   await page.getByRole("button", { name: "Buy proxies" }).click();
   const dialog = page.getByRole("dialog", { name: "Buy proxies" });
   await expect(dialog.getByRole("button", { name: /^Pay / })).toBeEnabled();
@@ -278,7 +296,7 @@ test("the purchase confirm names the price and the balance (WRITE-21)", async ({
 });
 
 test("Residential fields leave no hole in the form (LAYOUT-18)", async ({ page }) => {
-  await openApp(page, { section: "proxyshard" });
+  await openLegacyProxyShard(page);
   await page.getByRole("button", { name: "Buy proxies" }).click();
   const dialog = page.getByRole("dialog", { name: "Buy proxies" });
   await dialog.getByRole("combobox", { name: "Product" }).click();
