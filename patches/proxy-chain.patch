@@ -1756,7 +1756,7 @@ index 0000000..2ea827a
 +});
 diff --git a/e2e/provider-defaults.spec.ts b/e2e/provider-defaults.spec.ts
 new file mode 100644
-index 0000000..89e6a5b
+index 0000000..0be74aa
 --- /dev/null
 +++ b/e2e/provider-defaults.spec.ts
 @@ -0,0 +1,88 @@
@@ -1811,7 +1811,7 @@ index 0000000..89e6a5b
 +test("TNB defaults restore after reload and authentication switches remain independent", async ({ page }, info) => {
 +  await openApp(page, { section: "proxies", theme: "dark" });
 +  let dialog = await openSource(page, "TNBProxy");
-+  await expect(dialog.getByRole("textbox", { name: "Extraction server", exact: true })).toHaveValue("http://hkdata.adv.tnbproxy.com:9090");
++  await expect(dialog.getByRole("textbox", { name: "Extraction server", exact: true })).toHaveValue("http://usdata.adv.tnbproxy.com:9090");
 +  await dialog.getByText("Provider defaults", { exact: true }).click();
 +  const panel = dialog.locator("[data-provider-defaults]");
 +  await panel.getByRole("textbox", { name: "Extraction server", exact: true }).fill("https://custom.tnbproxy.com:9443");
@@ -16640,7 +16640,7 @@ index 0000000..fe495c5
 +}
 diff --git a/src-tauri/src/proxy_providers.rs b/src-tauri/src/proxy_providers.rs
 new file mode 100644
-index 0000000..f07cfc9
+index 0000000..9a7cddc
 --- /dev/null
 +++ b/src-tauri/src/proxy_providers.rs
 @@ -0,0 +1,396 @@
@@ -16677,7 +16677,7 @@ index 0000000..f07cfc9
 +        Self {
 +            relay: "us.1024proxy.io:3000".into(),
 +            username_template: "{username}{location}".into(),
-+            tnb_server: "http://hkdata.adv.tnbproxy.com:9090".into(),
++            tnb_server: "http://usdata.adv.tnbproxy.com:9090".into(),
 +            tnb_plan: "advanced_traffic".into(),
 +            tnb_kind: "http".into(),
 +            account: None,
@@ -16982,9 +16982,9 @@ index 0000000..f07cfc9
 +mod tests {
 +    use super::*;
 +    #[test]
-+    fn provider_defaults_are_non_secret_and_tnb_uses_hk() {
++    fn provider_defaults_are_non_secret_and_tnb_use_us() {
 +        let v = view(Stored::default()).unwrap();
-+        assert_eq!(v.tnb_server, "http://hkdata.adv.tnbproxy.com:9090");
++        assert_eq!(v.tnb_server, "http://usdata.adv.tnbproxy.com:9090");
 +        let json = serde_json::to_value(v).unwrap();
 +        assert!(json.get("account").is_none());
 +        assert_eq!(json["password_saved"], false);
@@ -17007,7 +17007,7 @@ index 0000000..f07cfc9
 +            username: "synthetic-user".into(),
 +            username_template: "{username}-country-{country}".into(),
 +            password,
-+            tnb_server: "http://hkdata.adv.tnbproxy.com:9090".into(),
++            tnb_server: "http://usdata.adv.tnbproxy.com:9090".into(),
 +            tnb_plan: "advanced_traffic".into(),
 +            tnb_kind: "socks5".into(),
 +            tnb_api_username: "extract-user".into(),
@@ -19714,10 +19714,10 @@ index 0000000..80814fe
 +void run();
 diff --git a/src-tauri/src/tnbproxy.rs b/src-tauri/src/tnbproxy.rs
 new file mode 100644
-index 0000000..406092e
+index 0000000..33b1cff
 --- /dev/null
 +++ b/src-tauri/src/tnbproxy.rs
-@@ -0,0 +1,624 @@
+@@ -0,0 +1,635 @@
 +//! TNB's IP-allowlisted extraction API. Only explicit user actions call /gen;
 +//! returned entries remain previews until the existing bulk-save command runs.
 +use crate::proxy_chain::{connector::Target, tunnel::Tunnel};
@@ -19821,7 +19821,16 @@ index 0000000..406092e
 +    // allowlist/auth failure before treating the JSON as a proxy line.
 +    if let Ok(value) = serde_json::from_str::<serde_json::Value>(body.trim_start_matches('\u{feff}').trim()) {
 +        if let Some(code) = value.get("code").and_then(serde_json::Value::as_i64) {
-+            if code == 401 || code == 403 { return Err("tnb_whitelist_required"); }
++            if code == 401 { return Err("tnb_auth_required"); }
++            if code == 403 {
++                let detail = [value.get("msg"), value.get("message"), value.get("error")]
++                    .into_iter().filter_map(|v| v.and_then(serde_json::Value::as_str))
++                    .collect::<Vec<_>>().join(" ").to_ascii_lowercase();
++                if detail.contains("whitelist") || detail.contains("allowlist") || detail.contains("not in") || detail.contains("ip") {
++                    return Err("tnb_whitelist_required");
++                }
++                return Err("tnb_auth_required");
++            }
 +            if code != 0 { return Err("tnb_invalid_response"); }
 +        }
 +    }
@@ -20239,7 +20248,9 @@ index 0000000..406092e
 +            (format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", MAX_BODY + 1), "tnb_response_too_large"),
 +            (format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{chunk}\r\n0\r\n\r\n", chunk.len()), "tnb_response_too_large"),
 +            (ok("whitelist denied: secret credential"), "tnb_invalid_response"),
++            (ok(r#"{"code":401,"msg":"bad credentials"}"#), "tnb_auth_required"),
 +            (ok(r#"{"code":403,"msg":"IP not in whitelist"}"#), "tnb_whitelist_required"),
++            (ok(r#"{"code":403,"msg":"bad credentials"}"#), "tnb_auth_required"),
 +        ] {
 +            let (server, task) = fixture(reply).await;
 +            assert_eq!(extract(request(server)).await.err(), Some(error));
@@ -22827,7 +22838,7 @@ index 0000000..7adf396
 +  </fieldset>;
 +}
 diff --git a/src/features/manage-proxies/ui/ProxyBulkImporter.tsx b/src/features/manage-proxies/ui/ProxyBulkImporter.tsx
-index b6faf8e..c434e1e 100644
+index b6faf8e..8499489 100644
 --- a/src/features/manage-proxies/ui/ProxyBulkImporter.tsx
 +++ b/src/features/manage-proxies/ui/ProxyBulkImporter.tsx
 @@ -7,7 +7,14 @@ import { WindowedRows } from "../../../shared/ui/WindowedRows";
@@ -22846,7 +22857,7 @@ index b6faf8e..c434e1e 100644
  
  /// `onClose` gets the id of the proxy saved when it was the only one, for the
  /// page to open in Peek (or not, when the setup checklist opened the importer).
-@@ -17,6 +24,22 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
+@@ -17,6 +24,39 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
    const [kind, setKind] = useState<ProxyEntry["kind"]>("socks5");
    const [rows, setRows] = useState<BulkRowState[]>([]);
    const [busy, setBusy] = useState(false);
@@ -22854,7 +22865,24 @@ index b6faf8e..c434e1e 100644
 +  const [tnb, setTnb] = useState(newTnbDraft);
 +  const [country, setCountry] = useState("");
 +  const [state, setState] = useState("");
-+  useEffect(() => { if (!open) return; let live = true; void providerDefaultsGet().then((v) => { if (live) setTnb((d) => ({ ...d, server: v.tnb_server, plan_name: v.tnb_plan, kind: v.tnb_kind })); }).catch(() => {}); return () => { live = false; }; }, [open]);
++  useEffect(() => {
++    if (!open) return;
++    let live = true;
++    void providerDefaultsGet().then((v) => {
++      if (!live) return;
++      setTnb((d) => ({
++        ...d,
++        server: v.tnb_server,
++        plan_name: v.tnb_plan,
++        kind: v.tnb_kind,
++        // Saved credentials enable their matching authentication switch by default.
++        // The user can still clear either switch before requesting /gen.
++        use_api_credentials: Boolean(v.tnb_api_username.trim() || v.tnb_api_password_saved),
++        use_proxy_credentials: Boolean(v.tnb_proxy_username.trim() || v.tnb_proxy_password_saved),
++      }));
++    }).catch(() => {});
++    return () => { live = false; };
++  }, [open]);
 +  const generate = async () => {
 +    if (extraction.current) return;
 +    extraction.current = true; setExtracting(true); setExtractError(null);
@@ -22869,7 +22897,7 @@ index b6faf8e..c434e1e 100644
    // A second press while the first is saving would save it again.
    const adding = useRef(false);
    // Closed while Add saved (Esc, the backdrop, Cancel): the proxies are
-@@ -24,6 +47,22 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
+@@ -24,6 +64,22 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
    const openRef = useRef(open);
    openRef.current = open;
  
@@ -22892,7 +22920,7 @@ index b6faf8e..c434e1e 100644
    const parse = async () => {
      if (!text.trim()) { toast.err(t("proxyBulkImporter.nothingToParse")); return; }
      try {
-@@ -130,21 +169,21 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
+@@ -130,21 +186,21 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
    return (
      <Modal
        open={open}
@@ -22920,7 +22948,7 @@ index b6faf8e..c434e1e 100644
                {selCount === 1 ? t("proxyBulkImporter.importCountOne") : t("proxyBulkImporter.importCount", { n: selCount })}
              </Button>
            )}
-@@ -154,6 +193,24 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
+@@ -154,6 +210,24 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
        <div className="flex min-h-0 flex-col gap-3">
          {rows.length === 0 ? (
            <>
@@ -22945,7 +22973,7 @@ index b6faf8e..c434e1e 100644
              <Select
                label={t("proxyBulkImporter.defaultTypeLabel")}
                size="xsmall"
-@@ -176,9 +233,11 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
+@@ -176,9 +250,11 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
              <p className="m-0 text-secondary text-text-soft-400">
                {t("proxyBulkImporter.duplicatesNote")}
              </p>
@@ -22957,7 +22985,7 @@ index b6faf8e..c434e1e 100644
              <div className="flex items-center gap-3 pb-1.5">
                <Checkbox
                  checked={allSel}
-@@ -188,7 +247,7 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
+@@ -188,7 +264,7 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
                  }
                />
                <div className="ml-auto flex gap-1.5">
