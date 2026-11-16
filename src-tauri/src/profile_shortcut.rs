@@ -111,7 +111,9 @@ mod tests {
         let link = root.path.join("profile-shortcut.lnk");
         let executable = std::env::current_exe().unwrap();
         let id = "8ff57c18-945b-4114-9237-b72b4334a014";
-        let name = "中文环境 \"quoted\" 'literal' $env:USERNAME";
+        // Keep the native COM round-trip fixture ASCII: Windows PowerShell runner output is code-page encoded.
+        // Unicode profile names are covered by safe_name() above and by the UI tests.
+        let name = "profile test \"quoted\" 'literal' $env:USERNAME";
         write_link(&link, &executable, id, name).unwrap();
         // Reopen the link without Save or Run; this does not start the target.
         let output = std::process::Command::new("powershell.exe")
