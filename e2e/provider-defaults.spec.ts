@@ -62,9 +62,9 @@ test("TNB defaults restore after reload and authentication switches remain indep
   await reloadApp(page);
   dialog = await openSource(page, "TNBProxy");
   await expect(dialog.getByRole("textbox", { name: "Extraction server", exact: true })).toHaveValue("https://custom.tnbproxy.com:9443");
-  await expect(dialog.getByRole("checkbox", { name: "Use saved API authentication", exact: true })).not.toBeChecked();
-  await expect(dialog.getByRole("checkbox", { name: "Fill missing proxy authentication", exact: true })).not.toBeChecked();
-  await dialog.getByRole("checkbox", { name: "Fill missing proxy authentication", exact: true }).check();
+  await expect(dialog.getByRole("checkbox", { name: "Use saved API authentication", exact: true })).toBeChecked();
+  await expect(dialog.getByRole("checkbox", { name: "Fill missing proxy authentication", exact: true })).toBeChecked();
+  await dialog.getByRole("checkbox", { name: "Use saved API authentication", exact: true }).uncheck();
   await dialog.screenshot({ path: info.outputPath("tnb-authentication.png"), animations: "disabled" });
   await dialog.getByRole("button", { name: "Extract and preview", exact: true }).click();
   const request = await page.evaluate(() => (window as any).__shardxMock.log.filter((v: any) => v.cmd === "tnbproxy_extract").at(-1).args.request);

@@ -20,7 +20,7 @@ test("Proxy is an independent settings section with a TCP-only boundary", async 
   await openApp(page, { section: "settings" });
   await expect(tab(page, "Proxy")).toBeVisible();
   await tab(page, "Proxy").click();
-  await expect(page.getByText("Proxy chain v1 supports TCP only.")).toBeVisible();
+  await expect(page.getByText("Proxy chain v1 currently establishes TCP tunnels only. HTTP and SOCKS5 can carry UDP in some deployments, but this chain has no end-to-end UDP/QUIC relay yet. UDP and QUIC also increase network fingerprint exposure, so they stay disabled until a separate capability test passes.")).toBeVisible();
   await expect(page.getByRole("switch", { name: "Use system proxy to connect to proxies" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Read Windows settings" })).toBeVisible();
 });
