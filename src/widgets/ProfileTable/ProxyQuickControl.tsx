@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Switch } from "@proxyshard/shardx-ui-kit";
-import { defaultProxyChain, proxyChainSetEnabled, proxyChainTest, settingsGet, type ProxyChainSettings, type ProxyChainTestResult } from "../../entities/settings";
+import { Button, Input, Switch } from "@proxyshard/shardx-ui-kit";
+import { defaultProxyChain, proxyChainSetEnabled, proxyChainTest, settingsGet, settingsSave, type ProxyChainSettings, type ProxyChainTestResult } from "../../entities/settings";
 import { useNav } from "../../shared/model/navigation";
 import { RouteIcon } from "../../shared/icons";
 import { useT } from "../../shared/i18n";
@@ -8,6 +8,8 @@ import { proxyChainErrorFromText, proxyChainErrorText } from "../../shared/lib/p
 import { explainError } from "../../shared/lib/errors";
 import { fmtTs } from "../../shared/lib/utils";
 import { StatusDot } from "../../shared/ui/StatusDot";
+import { NumField } from "../../shared/ui/NumField";
+import { SelectField } from "../../shared/ui/SelectField";
 
 /** Saved global routing and a fresh first-hop probe, never a profile's exit. */
 export function ProxyQuickControl() {
@@ -63,6 +65,22 @@ export function ProxyQuickControl() {
     document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
   }, [open]);
+  const saveRoute = async (patch: Partial<ProxyChainSettings>) => {
+    if (writePending.current || !config) return;
+    const generation = lifetime.current;
+    writePending.current = true;
+    ++sequence.current; setSaving(true); setBusy(false); setError(null); setResult(null);
+    try {
+      const settings = await settingsGet();
+      const value = { ...config, ...patch };
+      await settingsSave({ ...settings, proxy_chain: value });
+      if (!alive.current || generation !== lifetime.current) return;
+      ++sequence.current; setConfig(value);
+    } catch (e) { if (alive.current && generation === lifetime.current) setError(errorText(e)); }
+    finally { writePending.current = false; if (alive.current && generation === lifetime.current) setSaving(false); }
+    if (alive.current && generation === lifetime.current) void refresh(true);
+  };
+
   const toggle = async (enabled: boolean) => {
     if (writePending.current || !config) return;
     const generation = lifetime.current;
@@ -97,6 +115,23 @@ export function ProxyQuickControl() {
         <Switch aria-label={t("proxyChain.enable")} checked={config?.enabled ?? false} disabled={!config || saving} onChange={(on) => void toggle(on)} />
       </div>
       <p className="my-2 text-help text-text-sub-600">{t("proxyQuick.nextLaunch")}</p>
+      {config && <div className="mt-3 flex flex-col gap-2" data-proxy-quick-route>
+        <div className="text-help text-text-sub-600">{t("proxyChain.mode")}</div>
+        <SelectField
+          aria-label={t("proxyChain.mode")}
+          value={config.mode}
+          options={[
+            { value: "auto", label: t("proxyChain.modeAuto") },
+            { value: "http", label: t("proxyChain.modeHttp") },
+            { value: "socks5", label: t("proxyChain.modeSocks") },
+          ]}
+          onChange={(mode: ProxyChainSettings["mode"]) => void saveRoute({ mode })}
+        />
+        {config.mode !== "auto" && <div className="flex items-center gap-2">
+          <Input aria-label={t("proxyChain.host")} inputSize="xsmall" technical className="min-w-0 flex-1" value={config.host} onChange={(e) => setConfig({ ...config, host: e.target.value })} onBlur={() => void saveRoute({ host: config.host })} />
+          <NumField aria-label={t("proxyChain.port")} value={config.port} min={1} max={65535} onChange={(port) => { setConfig({ ...config, port }); void saveRoute({ port }); }} />
+        </div>}
+      </div>}
       <p className="my-2 text-ui">{config?.enabled ? t("proxyQuick.firstExit") : t("proxyQuick.localExit")}</p>
       <div role="status" aria-live="polite" className="text-help text-text-sub-600">
         {busy ? t("proxyQuick.checking") : result?.exit_ip ? <>
