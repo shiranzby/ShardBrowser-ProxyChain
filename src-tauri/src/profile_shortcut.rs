@@ -82,7 +82,7 @@ fn write_link(path: &std::path::Path, executable: &std::path::Path, id: &str, na
 }
 
 #[cfg(all(test, windows))]
-const READ_LINK_PS: &str = r#"$ErrorActionPreference='Stop'; [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); $w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($env:SHARD_LINK); @{target=$s.TargetPath; arguments=$s.Arguments; directory=$s.WorkingDirectory; description=$s.Description} | ConvertTo-Json -Compress"#;
+const READ_LINK_PS: &str = r#"$ErrorActionPreference='Stop'; $OutputEncoding=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); $w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($env:SHARD_LINK); @{target=$s.TargetPath; arguments=$s.Arguments; directory=$s.WorkingDirectory; description=$s.Description} | ConvertTo-Json -Compress"#;
 
 #[cfg(test)]
 mod tests {
@@ -111,7 +111,7 @@ mod tests {
         let link = root.path.join("profile-shortcut.lnk");
         let executable = std::env::current_exe().unwrap();
         let id = "8ff57c18-945b-4114-9237-b72b4334a014";
-        let name = "profile test \\"quoted\\" 'literal' $env:USERNAME";
+        let name = "中文环境 \"quoted\" 'literal' $env:USERNAME";
         write_link(&link, &executable, id, name).unwrap();
         // Reopen the link without Save or Run; this does not start the target.
         let output = std::process::Command::new("powershell.exe")
