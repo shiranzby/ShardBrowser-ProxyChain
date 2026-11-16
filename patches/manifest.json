@@ -5,8 +5,8 @@
   "base_tag": "v2.1.5",
   "base_commit": "99e780e2e685e5b3b5357c5baee8796e10b3ce1e",
   "patch_file": "proxy-chain.patch",
-  "patch_sha256": "ead89a694e4098136d13a4edb4f9ba7480de819b363ac2a6d1be168149180ead",
-  "patch_commit": "989548b",
+  "patch_sha256": "cf9a3daf08779e9a9749672e7ce6bca94f18d8de5131ff0c7c5058b5d0b20acc",
+  "patch_commit": "50381df",
   "ready": true,
   "required_rust_filter": "proxy_chain",
   "required_ui_test": "e2e/proxy-chain-settings.spec.ts"
