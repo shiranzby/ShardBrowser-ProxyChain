@@ -2742,7 +2742,7 @@ index 0000000..5a71eba
 +  await expect.poll(() => clipboard(page)).toBe("");
 +});
 diff --git a/e2e/proxyshard-v2.spec.ts b/e2e/proxyshard-v2.spec.ts
-index 82ee501..a7c3b71 100644
+index 82ee501..965b1ca 100644
 --- a/e2e/proxyshard-v2.spec.ts
 +++ b/e2e/proxyshard-v2.spec.ts
 @@ -5,20 +5,33 @@ import { openApp } from "./support/app";
@@ -2902,7 +2902,7 @@ index 82ee501..a7c3b71 100644
    await page.locator("[data-ps-tile='residential']").getByRole("button", { name: "Generate proxies" }).click();
    const dialog = page.getByRole("dialog");
    await expect(dialog.getByLabel("Name prefix")).toHaveValue("Standard residential");
-@@ -174,7 +197,7 @@ test("generated proxies are named after the translated plan (CRAFT-22)", async (
+@@ -174,11 +197,14 @@ test("generated proxies are named after the translated plan (CRAFT-22)", async (
  });
  
  test("the Add to proxies dialog names each row checkbox by its address", async ({ page }) => {
@@ -2910,16 +2910,32 @@ index 82ee501..a7c3b71 100644
 +  await openLegacyProxyShard(page);
    const grid = page.locator("[data-ps-card='orders']").getByRole("treegrid", { name: "Orders" });
    const row = grid.getByRole("row").filter({ hasText: "Datacenter USA" });
++  await row.scrollIntoViewIfNeeded();
    await row.hover();
-@@ -193,6 +216,7 @@ test("proxies added from an order are in Proxies at once, no restart needed (own
+-  await row.getByRole("button", { name: "Add to proxies" }).click();
++  const importButton = row.getByRole("button", { name: "Add to proxies" });
++  await expect(importButton).toBeVisible();
++  await importButton.click();
+   const dialog = page.getByRole("dialog");
+   // "Select <host>:<port>": the name a screen reader reads (SOCKS5 port by default).
+   const box = dialog.getByRole("checkbox", { name: /^Select \d+\.\d+\.\d+\.\d+:\d+$/ });
+@@ -193,10 +219,14 @@ test("proxies added from an order are in Proxies at once, no restart needed (own
    await expect(rows.first()).toBeVisible();
    const before = await rows.count();
    await page.locator("aside [data-nav='proxyshard']").click();
 +  await expandLegacyTools(page);
    const grid = page.locator("[data-ps-card='orders']").getByRole("treegrid", { name: "Orders" });
    const row = grid.getByRole("row").filter({ hasText: "Datacenter USA" });
++  await row.scrollIntoViewIfNeeded();
    await row.hover();
-@@ -212,6 +236,7 @@ test("generated proxies are in Proxies at once, no restart needed (owner, 2026-1
+-  await row.getByRole("button", { name: "Add to proxies" }).click();
++  const importButton = row.getByRole("button", { name: "Add to proxies" });
++  await expect(importButton).toBeVisible();
++  await importButton.click();
+   const dialog = page.getByRole("dialog");
+   await expect(dialog.getByRole("checkbox", { name: /^Select \d/ }).first()).toBeVisible();
+   await dialog.getByRole("button", { name: /^Add \d+$/ }).click();
+@@ -212,6 +242,7 @@ test("generated proxies are in Proxies at once, no restart needed (owner, 2026-1
    await openApp(page, { section: "proxies" });
    await expect(page.locator("[role='row'][data-proxy-id]").first()).toBeVisible();
    await page.locator("aside [data-nav='proxyshard']").click();
@@ -2927,7 +2943,7 @@ index 82ee501..a7c3b71 100644
    await page.locator("[data-ps-tile='residential']").getByRole("button", { name: "Generate proxies" }).click();
    const dialog = page.getByRole("dialog");
    await dialog.getByLabel("Name prefix").fill("Fresh resi");
-@@ -223,7 +248,7 @@ test("generated proxies are in Proxies at once, no restart needed (owner, 2026-1
+@@ -223,7 +254,7 @@ test("generated proxies are in Proxies at once, no restart needed (owner, 2026-1
  });
  
  test("orders are a table with a header row; actions show on the row (craft target)", async ({ page }) => {
@@ -2936,7 +2952,7 @@ index 82ee501..a7c3b71 100644
    const grid = page.locator("[data-ps-card='orders']").getByRole("treegrid", { name: "Orders" });
    await expect(grid.getByRole("columnheader")).toHaveText(["Product", "Order", "Until", "Tag", "Actions"]);
    const row = grid.getByRole("row").filter({ hasText: "Datacenter USA" });
-@@ -234,7 +259,7 @@ test("orders are a table with a header row; actions show on the row (craft targe
+@@ -234,7 +265,7 @@ test("orders are a table with a header row; actions show on the row (craft targe
  
  test("pagination hides under an orders error (PC-126)", async ({ page }) => {
    await page.addInitScript(() => Object.assign(window, { __shardxMockFail: { ps_orders: 4 } }));
@@ -2945,7 +2961,7 @@ index 82ee501..a7c3b71 100644
    const orders = page.locator("[data-ps-card='orders']");
    await expect(orders.getByText("Couldn’t load orders")).toBeVisible();
    await expect(orders.getByRole("button", { name: /Next/ })).toHaveCount(0);
-@@ -243,7 +268,7 @@ test("pagination hides under an orders error (PC-126)", async ({ page }) => {
+@@ -243,7 +274,7 @@ test("pagination hides under an orders error (PC-126)", async ({ page }) => {
  test("Buy opens a dialog; the price appears by itself without moving Pay (LAYOUT-18)", async ({ page }) => {
    // The first price is held back, so Pay is measured before it (as "Buy") and after (as "Pay $…").
    await page.addInitScript(() => Object.assign(window, { __shardxMockSlow: { ps_calculate: 600 } }));
@@ -2954,7 +2970,7 @@ index 82ee501..a7c3b71 100644
    await page.getByRole("button", { name: "Buy proxies" }).click();
    const dialog = page.getByRole("dialog", { name: "Buy proxies" });
    const pay = dialog.getByRole("button", { name: /^Pay|^Buy$/ });
-@@ -258,7 +283,7 @@ test("Buy opens a dialog; the price appears by itself without moving Pay (LAYOUT
+@@ -258,7 +289,7 @@ test("Buy opens a dialog; the price appears by itself without moving Pay (LAYOUT
  });
  
  test("the purchase confirm names the price and the balance (WRITE-21)", async ({ page }) => {
@@ -2963,7 +2979,7 @@ index 82ee501..a7c3b71 100644
    await page.getByRole("button", { name: "Buy proxies" }).click();
    const dialog = page.getByRole("dialog", { name: "Buy proxies" });
    await expect(dialog.getByRole("button", { name: /^Pay / })).toBeEnabled();
-@@ -271,7 +296,7 @@ test("the purchase confirm names the price and the balance (WRITE-21)", async ({
+@@ -271,7 +302,7 @@ test("the purchase confirm names the price and the balance (WRITE-21)", async ({
  });
  
  test("Residential fields leave no hole in the form (LAYOUT-18)", async ({ page }) => {
