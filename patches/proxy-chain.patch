@@ -7,7 +7,7 @@ index 0000000..76675db
 +# A patch is a byte-for-byte build input. Preserve its hash on Windows too.
 +patches/*.patch -text -whitespace
 diff --git a/README.md b/README.md
-index 56a9dad..05d3c89 100644
+index 56a9dad..7f04161 100644
 --- a/README.md
 +++ b/README.md
 @@ -1,3 +1,15 @@
@@ -26,13 +26,50 @@ index 56a9dad..05d3c89 100644
  <p align="center">
    <picture>
      <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/shardx-logo-dark.png">
-diff --git a/REBASE_REPORT.txt b/REBASE_REPORT.txt
-new file mode 100644
-index 0000000..b231157
---- /dev/null
-+++ b/REBASE_REPORT.txt
-@@ -0,0 +1 @@
-+PC17 patch against v2.1.5 was tested in isolated checkout F:/WorkSpace/ShardBrowserBuild/pc17-v215-rebase2. Original pc17 patch does NOT apply cleanly: conflicts are exactly e2e/ps-trial.spec.ts, src-tauri/src/launch.rs, src-tauri/src/lib.rs, src/shared/lib/analytics.ts. Other changes apply. Manual resolutions: ps-trial and analytics choose PC17 fork side (theirs in the v2.1.5 apply context, which disables marketing trial and usage stats); launch keeps v2.1.5 newer resolve_auto_fields signature (4 args) plus PC17 settle_platform_version; lib keeps both PC17 modules and single Tracker close_chains on RunEvent::Exit. After resolving, `cargo check --manifest-path .../src-tauri/Cargo.toml --no-default-features` passed (warnings only). A regenerated v2.1.5 patch snapshot exists at F:/WorkSpace/ShardBrowserBuild/pc17-v215-rebase2/pc17-v215.patch, SHA256 c687dbd18613d19a5f244f3962a179489e3e97bcbbc6e68cb2821d1737c2d318; 208 changed paths. Recommendation: do NOT simply change manifest base_commit while keeping old patch. Either pin CI discovery to v2.1.4 for current PC17, or regenerate/commit a new patch with base_commit=99e780e... (v2.1.5), update patch_sha256 and patch_commit. v2.1.5 likely latest stable and CI currently discovers it, so regenerate is preferable. Important: isolated manual tree had a duplicate `close_chains` during conflict resolution, removed; current cargo check passes. No main branch changes made.
+@@ -40,7 +52,7 @@
+   <a href="#usage">Usage</a>
+ </p>
+ 
+-ShardBrowser is built by the **[ShardX](https://shardx.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)** team (formerly ProxyShard).
++ShardBrowser is built by the **[ShardX](https://proxyshard.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)** team (formerly ProxyShard).
+ ProxyShard provides full **SOCKS5 UDP relay** support (RFC 1928 §7) and
+ active **p0f TCP fingerprint spoofing** at the proxy exit. This keeps the
+ operating system presented by the proxy consistent with the SYN/ACK shape
+@@ -50,11 +62,11 @@ ships a patched **Chromium 157** build that applies fingerprint changes
+ inside the browser engine.
+ 
+ <p align="center">
+-  <a href="https://shardx.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"><strong>Website</strong></a> ·
+-  <a href="https://docs.shardx.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"><strong>Documentation</strong></a> ·
+-  <a href="https://docs.shardx.com/eng/usage-instructions/shardx-browser?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"><strong>Browser guide</strong></a> ·
+-  <a href="https://docs.shardx.com/eng/technologies-and-capabilities/about-udp?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"><strong>UDP relay</strong></a> ·
+-  <a href="https://docs.shardx.com/eng/technologies-and-capabilities/p0f-spoofing?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"><strong>p0f spoofing</strong></a>
++  <a href="https://proxyshard.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"><strong>Website</strong></a> ·
++  <a href="https://docs.proxyshard.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"><strong>Documentation</strong></a> ·
++  <a href="https://docs.proxyshard.com/eng/usage-instructions/shardx-browser?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"><strong>Browser guide</strong></a> ·
++  <a href="https://docs.proxyshard.com/eng/our-products/about-udp?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"><strong>UDP relay</strong></a> ·
++  <a href="https://docs.proxyshard.com/eng/our-products/p0f-spoofing?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"><strong>p0f spoofing</strong></a>
+ </p>
+ 
+ <table>
+@@ -267,7 +279,7 @@ iframes, web workers, developer tools and headless mode.
+   machine would name it.
+ * **Local automation API:** axum HTTP server on `127.0.0.1`,
+   Bearer JWT authentication. Full reference at
+-  [docs.shardx.com/eng/shardx-launcher-api](https://docs.shardx.com/eng/shardx-launcher-api/binding-and-lifecycle?fallback=true&utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher),
++  [docs.proxyshard.com/eng/shardx-launcher-api](https://docs.proxyshard.com/eng/shardx-launcher-api/binding-and-lifecycle?fallback=true&utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher),
+   raw schema in [openapi.yaml](openapi.yaml). Create / start / stop
+   profiles and get a CDP WebSocket URL programmatically.
+ * **MCP server bundled:** connect ShardBrowser to Claude Desktop, Cursor and
+@@ -510,7 +522,7 @@ Python, Go, curl or any other HTTP client. Every endpoint except
+ `GET /health` requires the Bearer JWT shown in *Settings > Automation API*.
+ Regenerating the token rotates the signing secret immediately.
+ 
+-* **Reference docs:** [https://docs.shardx.com/eng/shardx-launcher-api/binding-and-lifecycle](https://docs.shardx.com/eng/shardx-launcher-api/binding-and-lifecycle?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
++* **Reference docs:** [https://docs.proxyshard.com/eng/shardx-launcher-api/binding-and-lifecycle](https://docs.proxyshard.com/eng/shardx-launcher-api/binding-and-lifecycle?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
+ * **OpenAPI schema:** [openapi.yaml](openapi.yaml)
+ 
+ Launching a profile and getting a CDP endpoint:
 diff --git a/docs/PC17-STABLE.md b/docs/PC17-STABLE.md
 new file mode 100644
 index 0000000..ffc1d9e
@@ -516,6 +553,54 @@ index 0000000..22a5eee
 +地区查询遵循本次 `route`，第一层失败不改走直连。响应上限 512 KiB，最多 10000 条原始记录，20 秒超时；HTTP 401/403 明确返回认证受限错误，不尝试取得浏览器认证。目录是官方通用分类，不代表某套餐当前库存；公开源码确认 `advanced_traffic` 与 `data` 复用该目录，未宣称所有其他套餐覆盖。
 +
 +普通回归使用 loopback metadata 夹具。显式运行 `tnb_locations_public_egypt_contract_live` 只核验公开国家、埃及州省、Cairo 城市目录，默认忽略，不分配代理、不消耗提取端口。
+diff --git a/docs/TNB_WHITELIST_DIAGNOSIS_2026-11-16.md b/docs/TNB_WHITELIST_DIAGNOSIS_2026-11-16.md
+new file mode 100644
+index 0000000..fc914a7
+--- /dev/null
++++ b/docs/TNB_WHITELIST_DIAGNOSIS_2026-11-16.md
+@@ -0,0 +1,42 @@
++# TNB 提取失败诊断（2026-11-16）
++
++## 结论
++
++当前 TNB 提取失败的主要原因是供应商来源 IP 白名单，不是代理节点账号密码格式，也不是 ShardBrowser 没有发出请求。
++
++对 `usdata.adv.tnbproxy.com:9090/gen` 的脱敏请求观察到：
++
++- TCP/HTTP 请求可到达服务器；
++- HTTP 状态为 200；
++- 响应体是 JSON 业务错误，`code=403`；
++- 业务含义为请求出口 IP 不在白名单。
++
++因此，HTTP 200 不能当作提取成功；必须继续解析业务响应。
++
++## 凭据边界
++
++TNB 在产品中分为两类凭据：
++
++1. API 提取凭据：只用于调用 `/gen` 的 HTTP Basic Auth；
++2. 代理出口凭据：只在 TNB 返回代理行没有用户名/密码时补到生成的代理实例。
++
++代理出口账号密码不能替代 TNB 的来源 IP 白名单。即使 API 凭据正确，白名单不满足时仍会返回业务拒绝。
++
++## 不同路由下的白名单出口
++
++TNB 检查的是它实际收到请求时看到的公网来源：
++
++| ShardBrowser 路由 | TNB 看到的来源 |
++|---|---|
++| 直连 | 本机公网出口 |
++| 系统代理 | 系统代理的公网出口 |
++| 第一层代理 | 第一层代理出口 |
++| 代理链 | 实际到达 TNB 的上游出口 |
++
++使用代理链测试 TNB 时，白名单必须包含该请求路径的真实出口，而不是本地局域网地址。
++
++## 产品处理
++
++后端现在识别 HTTP 200 + `code=401/403`，映射为 `tnb_whitelist_required`；前端显示明确的白名单提示，不再笼统显示“提取失败”。
++
++该修复不会绕过供应商白名单，也不会将失败结果降级为直连或伪造代理实例。
 diff --git a/e2e/commands.spec.ts b/e2e/commands.spec.ts
 index d24de9a..d40a8f3 100644
 --- a/e2e/commands.spec.ts
@@ -543,6 +628,19 @@ index d24de9a..d40a8f3 100644
    await expect(page.locator("[data-toast]").filter({ hasText: /Copied 1/ })).toBeVisible();
    expect(await selection()).toEqual([]);
    await runIn(page, "proxy.assign", [id], "palette");
+diff --git a/e2e/errors.spec.ts b/e2e/errors.spec.ts
+index a138242..b6c2aa3 100644
+--- a/e2e/errors.spec.ts
++++ b/e2e/errors.spec.ts
+@@ -13,7 +13,7 @@ const explainAll = (page: Page) =>
+     const { explainError } = (window as unknown as { __e: Errs }).__e;
+     return [
+       explainError(new Error("profile 7f3a2c1e-0000 is already running")),
+-      explainError("error sending request for url (https://user-api.shardx.com/me): dns error"),
++      explainError("error sending request for url (https://user-api.proxyshard.com/me): dns error"),
+       explainError("expected value at line 1 column 1"),
+       explainError({ code: "proxy_missing", message: "proxy p-1 not found" }),
+       explainError({ code: "something_new", message: "the raw words" }),
 diff --git a/e2e/list-order.spec.ts b/e2e/list-order.spec.ts
 new file mode 100644
 index 0000000..01c9e3c
@@ -863,6 +961,19 @@ index 0000000..76add2b
 +    await expect(folder(page, "Ads").locator("[data-count]")).toHaveText("3");
 +  });
 +}
+diff --git a/e2e/page-chrome.spec.ts b/e2e/page-chrome.spec.ts
+index 2292baa..f48b432 100644
+--- a/e2e/page-chrome.spec.ts
++++ b/e2e/page-chrome.spec.ts
+@@ -121,7 +121,7 @@ test("Buy proxies says so when the browser cannot open", async ({ page }) => {
+   await openApp(page, { section: "proxies" });
+   await openMore(page);
+   await menuItem(page, "Buy proxies").click();
+-  await expect(page.locator("[data-toast]").filter({ hasText: "Could not open shardx.com" })).toBeVisible();
++  await expect(page.locator("[data-toast]").filter({ hasText: "Could not open proxyshard.com" })).toBeVisible();
+ });
+ 
+ // One line goes through the preview too, so the proxy can be tested before
 diff --git a/e2e/pc17-theme-shortcuts.spec.ts b/e2e/pc17-theme-shortcuts.spec.ts
 new file mode 100644
 index 0000000..ddea6f5
@@ -1645,7 +1756,7 @@ index 0000000..2ea827a
 +});
 diff --git a/e2e/provider-defaults.spec.ts b/e2e/provider-defaults.spec.ts
 new file mode 100644
-index 0000000..89e6a5bf2cbb004096c30eb6e08852f27f191988
+index 0000000..89e6a5b
 --- /dev/null
 +++ b/e2e/provider-defaults.spec.ts
 @@ -0,0 +1,88 @@
@@ -2581,10 +2692,10 @@ index 82ee501..c6a30a6 100644
    expect(await edges()).toEqual([0, 0, 0, 0, 0]);
    // 1280 as before the cap went: the body's 992 px.
 diff --git a/e2e/ps-trial.spec.ts b/e2e/ps-trial.spec.ts
-index e24c81f..d876054 100644
+index e24c81f..2c39d5e 100644
 --- a/e2e/ps-trial.spec.ts
 +++ b/e2e/ps-trial.spec.ts
-@@ -1,109 +1,31 @@
+@@ -1,109 +1,29 @@
 -import { expect, test, type Page } from "@playwright/test";
 +import { expect, test } from "@playwright/test";
  import { openApp, reloadApp } from "./support/app";
@@ -2594,19 +2705,9 @@ index e24c81f..d876054 100644
 -// the site API's answer — the amount, the link, and whether there is an offer
 -// at all — so the test states the answer and reads the dialog built from it.
 -const OFFER = { show: true, url: "https://dashboard.shardx.example/trial", trial_gb: 0.1 };
- 
+-
 -type Mock = { state: { psKey: string }; save: () => void };
-+// Marketing trial offers are intentionally suppressed in ShardBrowser. The
-+// server endpoint remains available for upstream compatibility, but it must
-+// never interrupt startup or take focus from the operator.
-+test("does not show the ProxyShard residential trial at startup", async ({ page }) => {
-+  await page.addInitScript(() => {
-+    (window as { __shardxMockTrialOffer?: unknown }).__shardxMockTrialOffer = {
-+      show: true,
-+      url: "https://dashboard.proxyshard.example/trial",
-+      trial_gb: 0.1,
-+    };
- 
+-
 -const dialog = (page: Page) => page.getByRole("dialog");
 -const proxies = (page: Page) => page.locator("aside [data-nav='proxies']");
 -const profiles = (page: Page) => page.locator("aside [data-nav='profiles']");
@@ -2621,6 +2722,16 @@ index e24c81f..d876054 100644
 -    const m = (window as unknown as { __shardxMock: Mock }).__shardxMock;
 -    m.state.psKey = "";
 -    m.save();
++// Marketing trial offers are intentionally suppressed in ShardBrowser. The
++// server endpoint remains available for upstream compatibility, but it must
++// never interrupt startup or take focus from the operator.
++test("does not show the ProxyShard residential trial at startup", async ({ page }) => {
++  await page.addInitScript(() => {
++    (window as { __shardxMockTrialOffer?: unknown }).__shardxMockTrialOffer = {
++      show: true,
++      url: "https://dashboard.proxyshard.example/trial",
++      trial_gb: 0.1,
++    };
    });
 -  await expect
 -    .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("shardx-mock-state") ?? "{}").psKey))
@@ -2930,6 +3041,33 @@ index 0000000..e2cbce0
 +  await expect(page.locator("[data-nav='more']")).toHaveCount(0);
 +  for (const id of advanced) await expect(page.locator(`[data-nav='${id}']`)).toBeVisible();
 +});
+diff --git a/e2e/signals.spec.ts b/e2e/signals.spec.ts
+index 17c7b91..6ccca6c 100644
+--- a/e2e/signals.spec.ts
++++ b/e2e/signals.spec.ts
+@@ -118,8 +118,7 @@ test("Proxy balance: under 15 % left, with how long the traffic lasts at the rat
+ test("Proxy balance names the profiles on that plan's proxies, and the most urgent plan", async ({ page }) => {
+   await load(page);
+   const proxies = [
+-    proxy("resi", { host: "relay-eu.shardx.com", username: "plan-premium-country-us" }),
+-    // Saved before the relays moved to shardx.com: still the same plan.
++    proxy("resi", { host: "relay-eu.proxyshard.com", username: "plan-premium-country-us" }),
+     proxy("std", { host: "relay-eu.proxyshard.com", username: "plan-limited-country-de" }),
+     proxy("dc", { host: "203.0.113.9" }),
+   ];
+diff --git a/e2e/table-columns-autofit.spec.ts b/e2e/table-columns-autofit.spec.ts
+index 494efd7..e4a2a95 100644
+--- a/e2e/table-columns-autofit.spec.ts
++++ b/e2e/table-columns-autofit.spec.ts
+@@ -265,7 +265,7 @@ test("Profiles: one profile's two tags show whole though no other profile has an
+ // smallest window the lists have no room to spare, so the rare long one is cut.
+ test("at the smallest window, a cut Folder, Tag, Proxy address or Country shows whole on hover", async ({ page }) => {
+   await page.setViewportSize({ width: 1024, height: 680 });
+-  const HOST = "residential-eu-west-long-hostname-eu1.shardx.example";
++  const HOST = "residential-eu-west-long-hostname.proxyshard.example";
+   const FOLDER = "Scrapers for the pricing team";
+   await page.addInitScript(() => localStorage.setItem("shardx.tags", JSON.stringify({
+     version: 1,
 diff --git a/e2e/tnb-extract.spec.ts b/e2e/tnb-extract.spec.ts
 new file mode 100644
 index 0000000..d3d8d77
@@ -3286,6 +3424,316 @@ index 0000000..c5f1dee
 +  ]);
 +  expect(await requests(page, "tnbproxy_extract")).toHaveLength(0);
 +});
+diff --git a/openapi.yaml b/openapi.yaml
+index 65ab307..cb00dc7 100644
+--- a/openapi.yaml
++++ b/openapi.yaml
+@@ -785,125 +785,6 @@ paths:
+                   id: { type: string }
+         "401": { $ref: "#/components/responses/Unauthorized" }
+ 
+-  /extensions/updates:
+-    get:
+-      tags: [Extensions]
+-      summary: Update state of the extension library
+-      description: |
+-        One record per library extension, as the Extensions page shows it.
+-        `state` says where each one is: `unlinked` (not tied to a Web Store
+-        item, so never updated), `unchecked`, `current`, `available`,
+-        `downloading`, `ready` (downloaded and checked, goes in on apply),
+-        `waiting` (goes in once the profiles in `waiting_on` close),
+-        `applying`, `confirm` (the new version asks for more than the
+-        installed one; see `confirm`), `failed` (see `error`), `needs_engine`
+-        (see `needs_engine`) and `id_conflict`.
+-
+-        Nothing here asks the Web Store; `POST /extensions/updates/check` does.
+-        Poll this while an apply runs to follow `progress`.
+-
+-        Only this computer's own library: in a team space the call answers 409.
+-      parameters:
+-        - name: id
+-          in: query
+-          required: false
+-          description: One library id from `GET /extensions`; absent means all.
+-          schema: { type: string }
+-      responses:
+-        "200":
+-          description: The records.
+-          content:
+-            application/json:
+-              schema: { $ref: "#/components/schemas/ExtensionUpdateList" }
+-        "401": { $ref: "#/components/responses/Unauthorized" }
+-        "404":
+-          description: No extension with this id in the library.
+-          content:
+-            application/json:
+-              schema: { $ref: "#/components/schemas/Error" }
+-
+-  /extensions/updates/check:
+-    post:
+-      tags: [Extensions]
+-      summary: Check the Web Store for extension updates
+-      description: |
+-        Asks the Web Store now about every store-linked extension (one request
+-        covers them all) and answers with the fresh records. With `id`, the
+-        answer is narrowed to that extension. A check already under way is
+-        waited for, not repeated. Nothing is downloaded or installed.
+-
+-        The body is optional.
+-      requestBody:
+-        required: false
+-        content:
+-          application/json:
+-            schema: { $ref: "#/components/schemas/ExtensionUpdateRequest" }
+-      responses:
+-        "200":
+-          description: The records after the check.
+-          content:
+-            application/json:
+-              schema: { $ref: "#/components/schemas/ExtensionUpdateList" }
+-        "401": { $ref: "#/components/responses/Unauthorized" }
+-        "404":
+-          description: No extension with this id in the library.
+-          content:
+-            application/json:
+-              schema: { $ref: "#/components/schemas/Error" }
+-        "502":
+-          description: The Web Store did not answer.
+-          content:
+-            application/json:
+-              schema: { $ref: "#/components/schemas/Error" }
+-
+-  /extensions/updates/apply:
+-    post:
+-      tags: [Extensions]
+-      summary: Install extension updates
+-      description: |
+-        Installs updates one at a time through the same updater as the
+-        Extensions page, with all of its checks: the package signature and
+-        extension id, Web Store flags, the engine the new version needs,
+-        versions skipped by hand, and profiles that still have the extension
+-        open. The library id and every profile's binding stay as they are.
+-
+-        Without `id`, every extension whose `state` is `available` or `ready`
+-        and that carries no Web Store flag is updated, like Update all. New
+-        permissions are never accepted this way: such an extension comes back
+-        as `confirm` and is left as it is. Every other extension is listed as
+-        `not_eligible` with its `state`.
+-
+-        With `id`, that one extension is updated whatever its state; the
+-        updater itself refuses what it must. `confirmed: true` accepts what its
+-        already downloaded version asked about (a `confirm` result), never a
+-        package downloaded by this same call.
+-
+-        The call returns when every update has gone in, is waiting or has
+-        failed. Calling it again after a success answers `current` and
+-        installs nothing.
+-      requestBody:
+-        required: false
+-        content:
+-          application/json:
+-            schema: { $ref: "#/components/schemas/ExtensionUpdateRequest" }
+-      responses:
+-        "200":
+-          description: One result per extension, and the records afterwards.
+-          content:
+-            application/json:
+-              schema: { $ref: "#/components/schemas/ExtensionUpdateApplyResponse" }
+-        "400":
+-          description: "`confirmed` without an `id`, or a body that is not JSON."
+-          content:
+-            application/json:
+-              schema: { $ref: "#/components/schemas/Error" }
+-        "401": { $ref: "#/components/responses/Unauthorized" }
+-        "404":
+-          description: No extension with this id in the library.
+-          content:
+-            application/json:
+-              schema: { $ref: "#/components/schemas/Error" }
+-
+   /bookmarks:
+     get:
+       tags: [Bookmarks]
+@@ -1795,119 +1676,6 @@ components:
+           type: string
+           description: A local `.crx`, `.zip` or unpacked folder on the launcher's machine.
+ 
+-    ExtensionUpdateRequest:
+-      type: object
+-      properties:
+-        id:
+-          type: string
+-          description: One library id from `GET /extensions`; absent means the whole library.
+-        confirmed:
+-          type: boolean
+-          default: false
+-          description: Apply only, and only with `id`. Accepts what the downloaded version asked about.
+-    ExtensionUpdate:
+-      type: object
+-      properties:
+-        id: { type: string, description: The library id. }
+-        state:
+-          type: string
+-          enum: [unlinked, unchecked, current, available, downloading, ready, waiting, applying, confirm, failed, needs_engine, id_conflict]
+-        installed: { type: string, description: "`version_name`, else `version`." }
+-        latest: { type: string, nullable: true, description: The Web Store's version while it is newer. }
+-        size: { type: integer, nullable: true, description: Package size in bytes. }
+-        first_seen: { type: integer, nullable: true, description: When `latest` was first seen, unix seconds. }
+-        ready_since: { type: integer, nullable: true }
+-        checked_at: { type: integer, nullable: true, description: Last Web Store answer about it, unix seconds. }
+-        waiting_on:
+-          type: array
+-          description: Profiles that still have it open.
+-          items:
+-            type: object
+-            properties:
+-              id: { type: string }
+-              name: { type: string }
+-        progress:
+-          type: object
+-          nullable: true
+-          properties:
+-            phase: { type: string, enum: [download, verify, unpack, apply] }
+-            received: { type: integer }
+-            total: { type: integer }
+-        error: { type: string, nullable: true }
+-        flags:
+-          type: array
+-          description: What the Web Store reports against the item; a flagged extension is never updated.
+-          items: { type: string, enum: [malware, policy_violation, potentially_uws] }
+-        allowlisted: { type: boolean, nullable: true }
+-        skipped: { type: string, nullable: true, description: A version skipped by hand. }
+-        needs_engine: { type: string, nullable: true, description: The engine version the new version asks for. }
+-        confirm:
+-          type: object
+-          description: Present when `state` is `confirm`.
+-          properties:
+-            reason: { type: string, enum: [permissions, identity] }
+-            grown:
+-              type: array
+-              items:
+-                type: object
+-                properties:
+-                  kind: { type: string, enum: [permission, host, script_host, main_world] }
+-                  value: { type: string }
+-            names:
+-              type: object
+-              properties:
+-                old: { type: string }
+-                new: { type: string }
+-            overlap: { type: number }
+-    ExtensionUpdateList:
+-      type: object
+-      properties:
+-        checked_at: { type: integer, description: When the Web Store was last asked, unix seconds; 0 never. }
+-        items:
+-          type: array
+-          items: { $ref: "#/components/schemas/ExtensionUpdate" }
+-    ExtensionUpdateResult:
+-      type: object
+-      properties:
+-        id: { type: string }
+-        result:
+-          type: string
+-          enum: [applied, waiting, confirm, needs_engine, not_served, current, failed, not_eligible]
+-          description: |
+-            `applied`: installed (`from`, `to`). `waiting`: installs by itself
+-            once `waiting_on` close. `confirm`: asks first (`update.confirm`);
+-            apply it with `id` and `confirmed: true`. `needs_engine`: the new
+-            version wants a newer engine (`version`). `not_served`: the store
+-            no longer offers the version it named. `current`: nothing newer.
+-            `failed`: see `error`. `not_eligible`: left out of a library-wide
+-            apply; see `state` and `flags`.
+-        from: { type: string }
+-        to: { type: string }
+-        version: { type: string }
+-        waiting_on:
+-          type: array
+-          items:
+-            type: object
+-            properties:
+-              id: { type: string }
+-              name: { type: string }
+-        update: { $ref: "#/components/schemas/ExtensionUpdate" }
+-        error: { type: string }
+-        state: { type: string }
+-        flags:
+-          type: array
+-          items: { type: string }
+-    ExtensionUpdateApplyResponse:
+-      type: object
+-      properties:
+-        applied: { type: integer, description: How many went in. }
+-        results:
+-          type: array
+-          items: { $ref: "#/components/schemas/ExtensionUpdateResult" }
+-        items:
+-          type: array
+-          description: The records after the apply.
+-          items: { $ref: "#/components/schemas/ExtensionUpdate" }
+     Bookmark:
+       type: object
+       properties:
+diff --git a/package-lock.json b/package-lock.json
+index 44dcc26..f6a82c1 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,12 +1,12 @@
+ {
+   "name": "shardx-launcher",
+-  "version": "2.1.5",
++  "version": "2.1.4",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "shardx-launcher",
+-      "version": "2.1.5",
++      "version": "2.1.4",
+       "dependencies": {
+         "@fontsource-variable/jetbrains-mono": "^5.3.0",
+         "@hugeicons/core-free-icons": "^4.3.0",
+diff --git a/package.json b/package.json
+index 7b709a4..21e5e4a 100644
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "shardx-launcher",
+   "private": true,
+-  "version": "2.1.5",
++  "version": "2.1.4",
+   "type": "module",
+   "scripts": {
+     "dev": "vite",
+diff --git a/runtime.json b/runtime.json
+index cb57096..1abb6c8 100644
+--- a/runtime.json
++++ b/runtime.json
+@@ -1,16 +1,16 @@
+ {
+   "archives": {
+-    "ShardX-Fingerprints.zip": "f18ad288bed2ac5e4599313d6312667b",
+-    "ShardX-Linux.zip": "211e3d2582474c58100ccf32ad39a2a2-27",
+-    "ShardX-Mac-arm64.zip": "53061ab891a2dc5ff5f35e0eff2f90f9-21",
++    "ShardX-Fingerprints.zip": "581bb1c58b8c12f38007916a61a222b7",
++    "ShardX-Linux.zip": "d3c995bf872afc27fb63fd49b2ddcbc8-27",
++    "ShardX-Mac-arm64.zip": "fc75fc21464eab135e42dda80a6d2e72-21",
+     "ShardX-Widevine-Linux.zip": "9b7d2697bc8ede2bd9fe72ccaaa2f15f-3",
+     "ShardX-Widevine-Mac-arm64.zip": "c54f3fb0b47c47d8f4663ddd3b1f2cf4",
+     "ShardX-Widevine-Win.zip": "8852779330edb7ac2096e0d21dc3afb5",
+-    "ShardX-Windows.zip": "57a2ea084a8bb5c4199a5b436a678d1c-26"
++    "ShardX-Windows.zip": "092a8d87e72b719d2f4fdd30a15dc698-26"
+   },
+-  "chromium_version": "157.0.8103.50",
+-  "android_chromium_version": "157.0.8103.50",
+-  "engine_build": "1",
++  "chromium_version": "157.0.8103.39",
++  "android_chromium_version": "157.0.8103.38",
++  "engine_build": "3",
+   "min_launcher_version": "2.0.1",
+   "min_sdk_version": "2.1.0",
+   "grease_brand": "Not-A.Brand",
 diff --git a/scripts/apply-patch.ps1 b/scripts/apply-patch.ps1
 new file mode 100644
 index 0000000..36beaba
@@ -4143,8 +4591,974 @@ index 0000000..427020d
 +    }
 +    $receipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $output 'verification.json') -Encoding utf8
 +} finally { Pop-Location }
+diff --git a/sdks/node/README.md b/sdks/node/README.md
+index a4043d2..e088d79 100644
+--- a/sdks/node/README.md
++++ b/sdks/node/README.md
+@@ -1,7 +1,7 @@
+ # @proxyshard/shardx (Node)
+ 
+ Self-contained Node/TypeScript SDK for the **ShardBrowser anti-detect
+-browser** by the [ShardX](https://shardx.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher) team (formerly ProxyShard).
++browser** by the [ShardX](https://proxyshard.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher) team (formerly ProxyShard).
+ 
+ Does **not** depend on the desktop launcher. On first use it downloads
+ the patched Chromium 157 engine, Widevine CDM, and the 220-profile
+diff --git a/sdks/node/package-lock.json b/sdks/node/package-lock.json
+index 7be8256..213a8c2 100644
+--- a/sdks/node/package-lock.json
++++ b/sdks/node/package-lock.json
+@@ -1,12 +1,12 @@
+ {
+   "name": "@proxyshard/shardx",
+-  "version": "2.1.6",
++  "version": "2.1.5",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "@proxyshard/shardx",
+-      "version": "2.1.6",
++      "version": "2.1.5",
+       "license": "MIT",
+       "dependencies": {
+         "adm-zip": "^0.6.1",
+diff --git a/sdks/node/package.json b/sdks/node/package.json
+index e92578b..d112ef6 100644
+--- a/sdks/node/package.json
++++ b/sdks/node/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@proxyshard/shardx",
+-  "version": "2.1.6",
++  "version": "2.1.5",
+   "description": "Self-contained Node SDK for the ShardBrowser anti-detect browser — downloads the engine + Widevine + fingerprint library on first use, launches isolated profiles.",
+   "type": "module",
+   "main": "dist/index.js",
+diff --git a/sdks/node/src/browser.ts b/sdks/node/src/browser.ts
+index 57207d8..2ac26d4 100644
+--- a/sdks/node/src/browser.ts
++++ b/sdks/node/src/browser.ts
+@@ -18,7 +18,6 @@ import { hasAutoFields, resolveAutoFields } from "./autoResolve.js";
+ import { geoCheckVia, type GeoInfo } from "./geo.js";
+ import { Profile, userDataDir, adoptLibraryFields, applyAppleWebGpuFeatures, applyChromeBrand, applyEngineVersion } from "./profile.js";
+ import { parseProxy, probeUdp, proxyToArg, type ParsedProxy } from "./proxy.js";
+-import { settlePlatformVersion } from "./randomize.js";
+ import type { Runtime } from "./runtime.js";
+ import { applyScreenStrategy, defaultScreenModeFor, type ScreenStrategy } from "./screen.js";
+ 
+@@ -189,7 +188,6 @@ export class Browser {
+                        profile.claimsMobile ? this.runtime.androidChromiumVersion : undefined);
+     adoptLibraryFields(profile.config, this.runtime.fingerprintsDir);
+     applyAppleWebGpuFeatures(profile.config);
+-    settlePlatformVersion(profile.config);
+     if (profile.claimsMobile) applyChromeBrand(profile.config);
+     applyNoiseSeeds(profile.config, profile.id);
+     const fpFile = join(udd, "fingerprint.json");
+diff --git a/sdks/node/src/index.ts b/sdks/node/src/index.ts
+index 0fdf5f1..eb78f4e 100644
+--- a/sdks/node/src/index.ts
++++ b/sdks/node/src/index.ts
+@@ -236,7 +236,7 @@ export type { LaunchOptions, WebRtcMode, ScreenMode } from "./browser.js";
+ export { parseProxy, probeUdp, proxyToArg } from "./proxy.js";
+ export type { ParsedProxy } from "./proxy.js";
+ export {
+-  randomizeHardware, randomizePlatformVersion, settlePlatformVersion,
++  randomizeHardware, randomizePlatformVersion,
+   MAC_HW_CONFIGS, X86_CORES,
+   MACOS_PLATFORM_VERSIONS, WINDOWS_PLATFORM_VERSIONS, LINUX_PLATFORM_VERSIONS,
+ } from "./randomize.js";
+diff --git a/sdks/node/src/randomize.ts b/sdks/node/src/randomize.ts
+index f056245..38ceffb 100644
+--- a/sdks/node/src/randomize.ts
++++ b/sdks/node/src/randomize.ts
+@@ -8,36 +8,27 @@
+ // by core count and ceilinged by hostRamBucketGb().
+ import { hostLogicalCores, hostRamBucketGb } from "./host.js";
+ 
+-// Chrome writes major.minor.patch, never two parts. Current releases as of
+-// 2026-11 (support.apple.com/100100); Sonoma ends at 14.8.9.
+ export const MACOS_PLATFORM_VERSIONS: readonly string[] = [
+-  "14.8.8", "14.8.9",
+-  "15.7.9", "15.8.1", "15.8.2", "15.8.2",
+-  "26.6.1", "26.6.2", "26.7.1", "26.7.2", "26.7.2", "26.7.2",
+-  "27.0.1", "27.2.0", "27.2.0", "27.2.0",
++  "14.6.1", "14.7", "14.7.1", "14.7.2",
++  "15.4", "15.4.1", "15.5", "15.6", "15.6.1", "15.7",
++  "26.0", "26.0.1", "26.1",
+ ];
+ 
+-// Chrome reports the UniversalApiContract: 10 on Win10 2004+, 15 on Win11
+-// 22H2/23H2, 19 on 24H2/25H2. 13 and 16-18 exist only on Insider builds.
+ export const WINDOWS_PLATFORM_VERSIONS: readonly string[] = [
+-  "10.0.0", "10.0.0", "10.0.0", "10.0.0", "10.0.0",
+-  "15.0.0",
+-  "19.0.0", "19.0.0", "19.0.0", "19.0.0", "19.0.0", "19.0.0", "19.0.0",
++  "10.0.0",
++  "13.0.0",
++  "14.0.0", "14.0.0", "14.0.0",
++  "15.0.0", "15.0.0", "15.0.0", "15.0.0",
++  "16.0.0", "16.0.0", "16.0.0",
++  "17.0.0",
+ ];
+ 
+-// Chrome on Linux reports an empty version, and the engine since build 4 says
+-// so itself. A value is still written so an older engine does not pass on the
+-// host's own.
+ export const LINUX_PLATFORM_VERSIONS: readonly string[] = [
+   "5.15.0", "6.1.0", "6.5.0",
+   "6.6.0", "6.8.0", "6.10.0", "6.11.0", "6.12.0",
+   "6.14.0", "6.15.0", "6.16.0",
+ ];
+ 
+-/** What a version that cannot stand becomes on a Mac, and on an M4 claiming 14.x. */
+-const MACOS_SETTLED = "26.7.2";
+-const MACOS_SETTLED_M4 = "15.8.2";
+-
+ type HwPair = readonly [cores: number, gib: number];
+ 
+ export const MAC_HW_CONFIGS: Readonly<Record<string, readonly HwPair[]>> = {
+@@ -86,34 +77,14 @@ function platformOf(cfg: Record<string, unknown>): string {
+   return (nav?.["platform"] as string | undefined) ?? "";
+ }
+ 
+-/** The first macOS major the claimed Apple chip shipped with: M4 came with 15, M5 with 26. */
+-function macFirstMajor(cfg: Record<string, unknown>): number {
+-  const webgl = cfg["webgl"] as Record<string, unknown> | undefined;
+-  const renderer = webgl?.["renderer"];
+-  if (typeof renderer !== "string") return 0;
+-  const at = renderer.indexOf("Apple M");
+-  const digits = at < 0 ? null : /^\d+/.exec(renderer.slice(at + 7));
+-  const gen = digits ? Number(digits[0]) : 0;
+-  return gen >= 5 ? 26 : gen === 4 ? 15 : 0;
+-}
+-
+-function majorOf(version: string): number | null {
+-  const head = version.split(".")[0];
+-  return /^\d+$/.test(head) ? Number(head) : null;
+-}
+-
+-/**
+- * Mutates in-place: pick fresh `navigator.platform_version` (+ mirror to client_hints).
+- * A Mac gets only versions its claimed chip can run.
+- */
++/** Mutates in-place: pick fresh `navigator.platform_version` (+ mirror to client_hints). */
+ export function randomizePlatformVersion(cfg: Record<string, unknown>): void {
+   const plat = platformOf(cfg);
+-  const first = plat === "macOS" ? macFirstMajor(cfg) : 0;
+   const pool =
+-    plat === "macOS"   ? MACOS_PLATFORM_VERSIONS.filter((v) => (majorOf(v) ?? 0) >= first) :
++    plat === "macOS"   ? MACOS_PLATFORM_VERSIONS :
+     plat === "Windows" ? WINDOWS_PLATFORM_VERSIONS :
+     plat === "Linux"   ? LINUX_PLATFORM_VERSIONS : null;
+-  if (!pool || pool.length === 0) return;
++  if (!pool) return;
+   const v = pickRandom(pool);
+   const nav = (cfg["navigator"] ??= {}) as Record<string, unknown>;
+   nav["platform_version"] = v;
+@@ -121,56 +92,6 @@ export function randomizePlatformVersion(cfg: Record<string, unknown>): void {
+   if (ch && typeof ch === "object") ch["platform_version"] = v;
+ }
+ 
+-function settledWindows(version: string): string {
+-  if (["10.0.0", "14.0.0", "15.0.0", "19.0.0"].includes(version)) return version;
+-  // The engine counts an unreadable version as Windows 11, and picks its fonts by that.
+-  const major = majorOf(version);
+-  return major !== null && major < 13 ? "10.0.0" : "19.0.0";
+-}
+-
+-function settledMacos(version: string, firstMajor: number): string {
+-  const parts = version.split(".");
+-  if (!parts.every((p) => /^\d+$/.test(p))) return MACOS_SETTLED;
+-  const nums = parts.map(Number);
+-  if (nums.length < 1 || nums.length > 3 || nums[0] < 12) return MACOS_SETTLED;
+-  if (nums[0] < firstMajor) return firstMajor >= 26 ? MACOS_SETTLED : MACOS_SETTLED_M4;
+-  while (nums.length < 3) nums.push(0);
+-  return nums.join(".");
+-}
+-
+-/**
+- * Mutates in-place: a Windows or macOS `platform_version` Chrome could not
+- * report (Windows 13/16/17, a two-part macOS version, an M4 on 14.x) becomes
+- * the nearest one it can, in navigator and client_hints alike. Deterministic,
+- * so launch applies it every time. Linux is left to the engine. Returns
+- * whether anything changed. SDK equivalent of the launcher's function of the
+- * same name.
+- */
+-export function settlePlatformVersion(cfg: Record<string, unknown>): boolean {
+-  const obj = (k: string) => {
+-    const v = cfg[k];
+-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
+-  };
+-  const nav = obj("navigator");
+-  const ch = obj("client_hints");
+-  // The engine reads client_hints over navigator.
+-  const current = [ch?.["platform_version"], nav?.["platform_version"]]
+-    .find((v): v is string => typeof v === "string" && v !== "") ?? "";
+-  const plat = nav?.["platform"];
+-  let want: string;
+-  if (plat === "Windows") want = settledWindows(current);
+-  else if (plat === "macOS") want = settledMacos(current, macFirstMajor(cfg));
+-  else return false;
+-  let changed = false;
+-  for (const o of [nav, ch]) {
+-    if (o && o["platform_version"] !== want) {
+-      o["platform_version"] = want;
+-      changed = true;
+-    }
+-  }
+-  return changed;
+-}
+-
+ /**
+  * Mutates in-place: pick fresh (hardware_concurrency, device_memory).
+  *
+diff --git a/sdks/node/src/runtime.ts b/sdks/node/src/runtime.ts
+index a225fd1..b852ea7 100644
+--- a/sdks/node/src/runtime.ts
++++ b/sdks/node/src/runtime.ts
+@@ -14,9 +14,9 @@ import { randomBytes } from "node:crypto";
+ import AdmZip from "adm-zip";
+ 
+ export const PUB_BASE = "https://pub-e57a7c60f6934eb09a6600bf2fc59cdc.r2.dev";
+-export const CHROMIUM_VERSION = "157.0.8103.50";
++export const CHROMIUM_VERSION = "157.0.8103.39";
+ /** This SDK's own version, compared against the manifest's `min_sdk_version`. */
+-export const SDK_VERSION = "2.1.6";
++export const SDK_VERSION = "2.1.5";
+ // Version manifest (GitHub raw) — one tiny GET yields every archive's current
+ // etag, so we never poll R2/S3 (no per-archive HEAD). Changed archives are then
+ // pulled from PUB_BASE.
+diff --git a/sdks/node/test/platform-version.test.mjs b/sdks/node/test/platform-version.test.mjs
+deleted file mode 100644
+index 8844745..0000000
+--- a/sdks/node/test/platform-version.test.mjs
++++ /dev/null
+@@ -1,66 +0,0 @@
+-// #147: a profile reports only an OS version Chrome itself can report.
+-import { test } from "node:test";
+-import assert from "node:assert/strict";
+-import {
+-  randomizePlatformVersion, settlePlatformVersion, MACOS_PLATFORM_VERSIONS, WINDOWS_PLATFORM_VERSIONS,
+-} from "../dist/randomize.js";
+-
+-const M1 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)";
+-const M4 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)";
+-const M5 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)";
+-
+-const profile = (platform, version, renderer = "") => ({
+-  navigator: { platform, platform_version: version },
+-  client_hints: { platform_version: version },
+-  webgl: { renderer },
+-});
+-const pv = (c) => [c.navigator.platform_version, c.client_hints.platform_version];
+-
+-test("Windows keeps what Chrome reports and moves the rest", () => {
+-  for (const [from, to] of [
+-    ["10.0.0", "10.0.0"], ["14.0.0", "14.0.0"], ["15.0.0", "15.0.0"], ["19.0.0", "19.0.0"],
+-    ["13.0.0", "19.0.0"], ["16.0.0", "19.0.0"], ["17.0.0", "19.0.0"], ["20.0.0", "19.0.0"],
+-    ["5.0.0", "10.0.0"], ["12.0.0", "10.0.0"], ["", "19.0.0"], ["x", "19.0.0"],
+-  ]) {
+-    const c = profile("Windows", from);
+-    assert.equal(settlePlatformVersion(c), from !== to, from);
+-    assert.deepEqual(pv(c), [to, to], from);
+-  }
+-});
+-
+-test("a Mac gets three parts and a version its chip runs", () => {
+-  for (const [from, gpu, to] of [
+-    ["15.6.1", M1, "15.6.1"], ["15.4", M1, "15.4.0"], ["26", M1, "26.0.0"],
+-    ["14.7", M1, "14.7.0"], ["14.7", M4, "15.8.2"], ["15.6.1", M4, "15.6.1"],
+-    ["15.6.1", M5, "26.7.2"], ["26.1", M5, "26.1.0"], ["10.15.7", M1, "26.7.2"],
+-    ["", M1, "26.7.2"], ["15.6.1.2", M1, "26.7.2"],
+-  ]) {
+-    const c = profile("macOS", from, gpu);
+-    settlePlatformVersion(c);
+-    assert.deepEqual(pv(c), [to, to], `${from} on ${gpu}`);
+-    assert.equal(settlePlatformVersion(c), false, `once: ${from}`);
+-  }
+-});
+-
+-test("client_hints win and navigator is brought along", () => {
+-  const c = profile("Windows", "15.0.0");
+-  c.navigator.platform_version = "17.0.0";
+-  assert.equal(settlePlatformVersion(c), true);
+-  assert.deepEqual(pv(c), ["15.0.0", "15.0.0"]);
+-});
+-
+-test("Linux and phones are left alone", () => {
+-  assert.equal(settlePlatformVersion(profile("Linux", "6.8.0")), false);
+-  assert.equal(settlePlatformVersion(profile("Android", "16.0.0")), false);
+-});
+-
+-test("every pool value is already settled, and an M5 draws 26 or later", () => {
+-  for (const v of WINDOWS_PLATFORM_VERSIONS) assert.equal(settlePlatformVersion(profile("Windows", v)), false, v);
+-  for (const v of MACOS_PLATFORM_VERSIONS) assert.equal(settlePlatformVersion(profile("macOS", v, M1)), false, v);
+-  for (let i = 0; i < 200; i++) {
+-    const c = profile("macOS", "", M5);
+-    randomizePlatformVersion(c);
+-    assert.ok(Number(pv(c)[0].split(".")[0]) >= 26, pv(c)[0]);
+-    assert.equal(settlePlatformVersion(c), false);
+-  }
+-});
+diff --git a/sdks/python/README.md b/sdks/python/README.md
+index 52581dc..91e444c 100644
+--- a/sdks/python/README.md
++++ b/sdks/python/README.md
+@@ -1,7 +1,7 @@
+ # shardx (Python)
+ 
+ Self-contained Python SDK for the **ShardBrowser anti-detect browser** by the
+-[ShardX](https://shardx.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher) team (formerly ProxyShard).
++[ShardX](https://proxyshard.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher) team (formerly ProxyShard).
+ 
+ This package does **not** depend on the desktop launcher. On first use
+ it downloads the patched Chromium 157 engine, Widevine CDM, and the
+diff --git a/sdks/python/pyproject.toml b/sdks/python/pyproject.toml
+index 1624a20..1a34340 100644
+--- a/sdks/python/pyproject.toml
++++ b/sdks/python/pyproject.toml
+@@ -1,8 +1,8 @@
+ [project]
+ name = "shardx"
+-version = "2.1.6"
++version = "2.1.5"
+ description = "Self-contained Python SDK for the ShardBrowser anti-detect browser — downloads the engine + Widevine + fingerprint library on first use, launches isolated profiles."
+-authors = [{ name = "ProxyShard", email = "support@shardx.com" }]
++authors = [{ name = "ProxyShard", email = "support@proxyshard.com" }]
+ license = { text = "MIT" }
+ readme = "README.md"
+ requires-python = ">=3.9"
+@@ -31,7 +31,7 @@ shardx = "shardx.cli:main"
+ [project.urls]
+ Homepage      = "https://github.com/ProxyShard/ShardBrowser"
+ Repository    = "https://github.com/ProxyShard/ShardBrowser"
+-Documentation = "https://docs.shardx.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"
++Documentation = "https://docs.proxyshard.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"
+ Issues        = "https://github.com/ProxyShard/ShardBrowser/issues"
+ 
+ [build-system]
+diff --git a/sdks/python/shardx/__init__.py b/sdks/python/shardx/__init__.py
+index 3eb294c..25fc71e 100644
+--- a/sdks/python/shardx/__init__.py
++++ b/sdks/python/shardx/__init__.py
+@@ -50,7 +50,7 @@ from .host import (
+ )
+ from .profile import FingerprintLibrary, Profile
+ from .proxy import ParsedProxy, parse_proxy, probe_udp
+-from .randomize import randomize_hardware, randomize_platform_version, settle_platform_version
++from .randomize import randomize_hardware, randomize_platform_version
+ from .runtime import RUNTIME_DIR, Runtime, apply_engine_version
+ from .screen import apply_screen_strategy, default_mode_for
+ 
+@@ -273,7 +273,7 @@ __all__ = [
+     "Runtime", "RUNTIME_DIR", "apply_engine_version",
+     "Profile", "FingerprintLibrary",
+     "Browser", "BrowserSession",
+-    "randomize_hardware", "randomize_platform_version", "settle_platform_version",
++    "randomize_hardware", "randomize_platform_version",
+     "ParsedProxy", "parse_proxy", "probe_udp",
+     "host_logical_cores", "host_ram_gb", "host_ram_bucket_gb", "host_screen_size",
+     "apply_screen_strategy", "default_mode_for",
+@@ -281,4 +281,4 @@ __all__ = [
+     "has_auto_fields", "resolve_auto_fields",
+     "Motion",
+ ]
+-__version__ = "2.1.6"
++__version__ = "2.1.5"
+diff --git a/sdks/python/shardx/browser.py b/sdks/python/shardx/browser.py
+index fbdfceb..4154691 100644
+--- a/sdks/python/shardx/browser.py
++++ b/sdks/python/shardx/browser.py
+@@ -29,7 +29,6 @@ from .auto_resolve import has_auto_fields, resolve_auto_fields
+ from .geo import GeoInfo, geo_check_via
+ from .profile import Profile, user_data_dir as _user_data_dir
+ from .proxy import ParsedProxy, parse_proxy, probe_udp
+-from .randomize import settle_platform_version
+ from .runtime import Runtime, adopt_library_fields, apply_apple_webgpu_features, apply_chrome_brand, apply_engine_version
+ from .screen import apply_screen_strategy, default_mode_for
+ 
+@@ -195,7 +194,6 @@ class Browser:
+         )
+         adopt_library_fields(profile.config, self.runtime.fingerprints_dir)
+         apply_apple_webgpu_features(profile.config)
+-        settle_platform_version(profile.config)
+         if profile.claims_mobile:
+             apply_chrome_brand(profile.config)
+         apply_noise_seeds(profile.config, profile.id)
+diff --git a/sdks/python/shardx/randomize.py b/sdks/python/shardx/randomize.py
+index 5d315d3..2a39b90 100644
+--- a/sdks/python/shardx/randomize.py
++++ b/sdks/python/shardx/randomize.py
+@@ -11,41 +11,32 @@ ceilinged by `host_ram_bucket_gb`.
+ from __future__ import annotations
+ 
+ import random
+-import re
+ from typing import Optional
+ 
+ from .host import host_logical_cores, host_ram_bucket_gb
+ 
+-# Chrome writes major.minor.patch, never two parts. Current releases as of
+-# 2026-11 (support.apple.com/100100); Sonoma ends at 14.8.9.
+ MACOS_PLATFORM_VERSIONS = [
+-    "14.8.8", "14.8.9",
+-    "15.7.9", "15.8.1", "15.8.2", "15.8.2",
+-    "26.6.1", "26.6.2", "26.7.1", "26.7.2", "26.7.2", "26.7.2",
+-    "27.0.1", "27.2.0", "27.2.0", "27.2.0",
++    "14.6.1", "14.7", "14.7.1", "14.7.2",
++    "15.4", "15.4.1", "15.5", "15.6", "15.6.1", "15.7",
++    "26.0", "26.0.1", "26.1",
+ ]
+ 
+-# Chrome reports the UniversalApiContract: 10 on Win10 2004+, 15 on Win11
+-# 22H2/23H2, 19 on 24H2/25H2. 13 and 16-18 exist only on Insider builds.
++# Win 10 ("10.0.0") + Win 11 21H2..25H2 ("13".."17"), weighted to common ones.
+ WINDOWS_PLATFORM_VERSIONS = [
+-    "10.0.0", "10.0.0", "10.0.0", "10.0.0", "10.0.0",
+-    "15.0.0",
+-    "19.0.0", "19.0.0", "19.0.0", "19.0.0", "19.0.0", "19.0.0", "19.0.0",
++    "10.0.0",
++    "13.0.0",
++    "14.0.0", "14.0.0", "14.0.0",
++    "15.0.0", "15.0.0", "15.0.0", "15.0.0",
++    "16.0.0", "16.0.0", "16.0.0",
++    "17.0.0",
+ ]
+ 
+-# Chrome on Linux reports an empty version, and the engine since build 4 says
+-# so itself. A value is still written so an older engine does not pass on the
+-# host's own.
+ LINUX_PLATFORM_VERSIONS = [
+     "5.15.0", "6.1.0", "6.5.0",
+     "6.6.0", "6.8.0", "6.10.0", "6.11.0", "6.12.0",
+     "6.14.0", "6.15.0", "6.16.0",
+ ]
+ 
+-# What a version that cannot stand becomes on a Mac, and on an M4 claiming 14.x.
+-_MACOS_SETTLED = "26.7.2"
+-_MACOS_SETTLED_M4 = "15.8.2"
+-
+ # (cores, mem_GiB) combos per Apple model id — keep in sync with lib.rs.
+ MAC_HW_CONFIGS: dict[str, list[tuple[int, int]]] = {
+     "mac-m1-air13":     [(8, 8), (8, 16)],
+@@ -85,35 +76,14 @@ MAC_HW_CONFIGS: dict[str, list[tuple[int, int]]] = {
+ X86_CORES: list[int] = [4, 6, 8, 12, 16, 20, 24, 28, 32]
+ 
+ 
+-def _mac_first_major(config: dict) -> int:
+-    """The first macOS major the claimed Apple chip shipped with: M4 came with
+-    15, M5 with 26; older chips run everything in the pool."""
+-    webgl = config.get("webgl")
+-    renderer = webgl.get("renderer") if isinstance(webgl, dict) else None
+-    if not isinstance(renderer, str) or "Apple M" not in renderer:
+-        return 0
+-    digits = re.match(r"\d+", renderer[renderer.index("Apple M") + 7:], re.ASCII)
+-    gen = int(digits.group()) if digits else 0
+-    return 26 if gen >= 5 else 15 if gen == 4 else 0
+-
+-
+-def _major(version: str) -> Optional[int]:
+-    head = version.split(".")[0]
+-    return int(head) if re.fullmatch(r"\d+", head, re.ASCII) else None
+-
+-
+ def randomize_platform_version(config: dict) -> None:
+-    """In-place: pick a fresh `navigator.platform_version` (+ mirror to client_hints).
+-    A Mac gets only versions its claimed chip can run."""
++    """In-place: pick a fresh `navigator.platform_version` (+ mirror to client_hints)."""
+     platform = ((config.get("navigator") or {}).get("platform") or "")
+     pool = {
+         "macOS":   MACOS_PLATFORM_VERSIONS,
+         "Windows": WINDOWS_PLATFORM_VERSIONS,
+         "Linux":   LINUX_PLATFORM_VERSIONS,
+     }.get(platform)
+-    if platform == "macOS":
+-        first = _mac_first_major(config)
+-        pool = [v for v in MACOS_PLATFORM_VERSIONS if (_major(v) or 0) >= first]
+     if not pool:
+         return
+     v = random.choice(pool)
+@@ -124,54 +94,6 @@ def randomize_platform_version(config: dict) -> None:
+         ch["platform_version"] = v
+ 
+ 
+-def _settled_windows(version: str) -> str:
+-    if version in ("10.0.0", "14.0.0", "15.0.0", "19.0.0"):
+-        return version
+-    # The engine counts an unreadable version as Windows 11, and picks its fonts by that.
+-    major = _major(version)
+-    return "10.0.0" if major is not None and major < 13 else "19.0.0"
+-
+-
+-def _settled_macos(version: str, first_major: int) -> str:
+-    parts = version.split(".")
+-    if not all(re.fullmatch(r"\d+", p, re.ASCII) for p in parts):
+-        return _MACOS_SETTLED
+-    nums = [int(p) for p in parts]
+-    if not 1 <= len(nums) <= 3 or nums[0] < 12:
+-        return _MACOS_SETTLED
+-    if nums[0] < first_major:
+-        return _MACOS_SETTLED if first_major >= 26 else _MACOS_SETTLED_M4
+-    nums += [0] * (3 - len(nums))
+-    return ".".join(str(n) for n in nums)
+-
+-
+-def settle_platform_version(config: dict) -> bool:
+-    """In-place: a Windows or macOS `platform_version` Chrome could not report
+-    (Windows 13/16/17, a two-part macOS version, an M4 on 14.x) becomes the
+-    nearest one it can, in navigator and client_hints alike. Deterministic, so
+-    launch applies it every time. Linux is left to the engine. Returns whether
+-    anything changed. SDK equivalent of the launcher's function of the same name."""
+-    nav = config.get("navigator") if isinstance(config.get("navigator"), dict) else {}
+-    ch = config.get("client_hints") if isinstance(config.get("client_hints"), dict) else {}
+-    # The engine reads client_hints over navigator.
+-    current = next((v for v in (ch.get("platform_version"), nav.get("platform_version"))
+-                    if isinstance(v, str) and v), "")
+-    platform = nav.get("platform")
+-    if platform == "Windows":
+-        want = _settled_windows(current)
+-    elif platform == "macOS":
+-        want = _settled_macos(current, _mac_first_major(config))
+-    else:
+-        return False
+-    changed = False
+-    for key in ("navigator", "client_hints"):
+-        obj = config.get(key)
+-        if isinstance(obj, dict) and obj.get("platform_version") != want:
+-            obj["platform_version"] = want
+-            changed = True
+-    return changed
+-
+-
+ def randomize_hardware(config: dict, profile_id: Optional[str] = None) -> None:
+     """In-place: pick a fresh (hardware_concurrency, device_memory) pair.
+ 
+diff --git a/sdks/python/shardx/runtime.py b/sdks/python/shardx/runtime.py
+index 9fc57da..05324e6 100644
+--- a/sdks/python/shardx/runtime.py
++++ b/sdks/python/shardx/runtime.py
+@@ -26,9 +26,9 @@ from typing import Callable, Optional
+ import httpx
+ 
+ PUB_BASE = "https://pub-e57a7c60f6934eb09a6600bf2fc59cdc.r2.dev"
+-CHROMIUM_VERSION = "157.0.8103.50"
++CHROMIUM_VERSION = "157.0.8103.39"
+ # This SDK's own version, compared against the manifest's `min_sdk_version`.
+-SDK_VERSION = "2.1.6"
++SDK_VERSION = "2.1.5"
+ # Version manifest (GitHub raw) — one tiny GET tells us every archive's current
+ # etag, so we never poll R2/S3 (no per-archive HEAD). Updated archives are then
+ # pulled from PUB_BASE only when their etag changed.
+diff --git a/sdks/python/tests/test_platform_version.py b/sdks/python/tests/test_platform_version.py
+deleted file mode 100644
+index 43826c9..0000000
+--- a/sdks/python/tests/test_platform_version.py
++++ /dev/null
+@@ -1,83 +0,0 @@
+-"""#147: a profile reports only an OS version Chrome itself can report.
+-
+-Run: python3 -m unittest discover -s sdks/python/tests (or pytest)."""
+-import importlib.util
+-import sys
+-import types
+-import unittest
+-from pathlib import Path
+-
+-# randomize.py imports `.host`; give it a package with a stand-in for that.
+-_PKG = "shardx_pv_test"
+-_pkg = types.ModuleType(_PKG)
+-_pkg.__path__ = []
+-_host = types.ModuleType(f"{_PKG}.host")
+-_host.host_logical_cores = lambda: 8
+-_host.host_ram_bucket_gb = lambda: 16
+-sys.modules[_PKG] = _pkg
+-sys.modules[f"{_PKG}.host"] = _host
+-RANDOMIZE_PY = Path(__file__).resolve().parents[1] / "shardx" / "randomize.py"
+-_spec = importlib.util.spec_from_file_location(f"{_PKG}.randomize", RANDOMIZE_PY)
+-rz = importlib.util.module_from_spec(_spec)
+-sys.modules[_spec.name] = rz
+-_spec.loader.exec_module(rz)
+-
+-M1 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"
+-M4 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)"
+-M5 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)"
+-
+-
+-def profile(platform, version, renderer=""):
+-    return {"navigator": {"platform": platform, "platform_version": version},
+-            "client_hints": {"platform_version": version},
+-            "webgl": {"renderer": renderer}}
+-
+-
+-def pv(cfg):
+-    return cfg["navigator"]["platform_version"], cfg["client_hints"]["platform_version"]
+-
+-
+-class PlatformVersionTest(unittest.TestCase):
+-    def test_windows_keeps_what_chrome_reports_and_moves_the_rest(self):
+-        for old, new in (("10.0.0", "10.0.0"), ("14.0.0", "14.0.0"), ("15.0.0", "15.0.0"),
+-                         ("19.0.0", "19.0.0"), ("13.0.0", "19.0.0"), ("16.0.0", "19.0.0"),
+-                         ("17.0.0", "19.0.0"), ("20.0.0", "19.0.0"), ("5.0.0", "10.0.0"),
+-                         ("12.0.0", "10.0.0"), ("", "19.0.0"), ("x", "19.0.0")):
+-            cfg = profile("Windows", old)
+-            self.assertEqual(rz.settle_platform_version(cfg), old != new, old)
+-            self.assertEqual(pv(cfg), (new, new), old)
+-
+-    def test_mac_gets_three_parts_and_a_version_its_chip_runs(self):
+-        for old, gpu, new in (("15.6.1", M1, "15.6.1"), ("15.4", M1, "15.4.0"), ("26", M1, "26.0.0"),
+-                              ("14.7", M1, "14.7.0"), ("14.7", M4, "15.8.2"), ("15.6.1", M4, "15.6.1"),
+-                              ("15.6.1", M5, "26.7.2"), ("26.1", M5, "26.1.0"), ("10.15.7", M1, "26.7.2"),
+-                              ("", M1, "26.7.2"), ("15.6.1.2", M1, "26.7.2")):
+-            cfg = profile("macOS", old, gpu)
+-            rz.settle_platform_version(cfg)
+-            self.assertEqual(pv(cfg), (new, new), (old, gpu))
+-            self.assertFalse(rz.settle_platform_version(cfg), (old, "once"))
+-
+-    def test_client_hints_win_and_navigator_is_brought_along(self):
+-        cfg = profile("Windows", "15.0.0")
+-        cfg["navigator"]["platform_version"] = "17.0.0"
+-        self.assertTrue(rz.settle_platform_version(cfg))
+-        self.assertEqual(pv(cfg), ("15.0.0", "15.0.0"))
+-
+-    def test_linux_and_phones_are_left_alone(self):
+-        self.assertFalse(rz.settle_platform_version(profile("Linux", "6.8.0")))
+-        self.assertFalse(rz.settle_platform_version(profile("Android", "16.0.0")))
+-
+-    def test_every_pool_value_is_already_settled(self):
+-        for v in rz.WINDOWS_PLATFORM_VERSIONS:
+-            self.assertFalse(rz.settle_platform_version(profile("Windows", v)), v)
+-        for v in rz.MACOS_PLATFORM_VERSIONS:
+-            self.assertFalse(rz.settle_platform_version(profile("macOS", v, M1)), v)
+-        for _ in range(200):
+-            cfg = profile("macOS", "", M5)
+-            rz.randomize_platform_version(cfg)
+-            self.assertGreaterEqual(int(pv(cfg)[0].split(".")[0]), 26, pv(cfg))
+-            self.assertFalse(rz.settle_platform_version(cfg))
+-
+-
+-if __name__ == "__main__":
+-    unittest.main()
+diff --git a/sdks/rust/Cargo.toml b/sdks/rust/Cargo.toml
+index 8da39e6..1c829bf 100644
+--- a/sdks/rust/Cargo.toml
++++ b/sdks/rust/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "shardx"
+-version = "2.1.6"
++version = "2.1.5"
+ edition = "2021"
+ rust-version = "1.74"
+ description = "Self-contained Rust SDK for the ShardBrowser anti-detect browser — downloads the engine + Widevine + fingerprint library on first use, launches isolated profiles."
+@@ -9,7 +9,7 @@ license = "MIT"
+ readme = "README.md"
+ homepage = "https://github.com/ProxyShard/ShardBrowser"
+ repository = "https://github.com/ProxyShard/ShardBrowser"
+-documentation = "https://docs.shardx.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"
++documentation = "https://docs.proxyshard.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher"
+ keywords = ["anti-detect", "browser", "fingerprint", "chromium", "automation"]
+ categories = ["web-programming", "api-bindings"]
+ 
+diff --git a/sdks/rust/README.md b/sdks/rust/README.md
+index cf533e0..f2b5e18 100644
+--- a/sdks/rust/README.md
++++ b/sdks/rust/README.md
+@@ -1,7 +1,7 @@
+ # `shardx` — Rust SDK
+ 
+ Self-contained Rust SDK for the **ShardBrowser anti-detect browser** by the
+-[ShardX](https://shardx.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
++[ShardX](https://proxyshard.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
+ team (formerly ProxyShard). Same surface as the [Python](../python) and [Node](../node) SDKs: on
+ first use it downloads the engine, Widevine CDM, and the bundled fingerprint
+ library from the ProxyShard CDN into a per-user cache dir, then launches
+@@ -225,8 +225,8 @@ use shardx::{Runtime, FingerprintLibrary, parse_proxy, probe_udp, geo_check_via,
+ 
+ ## Links
+ 
+-* **Site:**  [https://shardx.com](https://shardx.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
+-* **Docs:**  [https://docs.shardx.com](https://docs.shardx.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
+-* **Usage:** [https://docs.shardx.com/eng/usage-instructions/shardx-browser](https://docs.shardx.com/eng/usage-instructions/shardx-browser?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
++* **Site:**  [https://proxyshard.com](https://proxyshard.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
++* **Docs:**  [https://docs.proxyshard.com](https://docs.proxyshard.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
++* **Usage:** [https://docs.proxyshard.com/eng/usage-instructions/shardx-browser](https://docs.proxyshard.com/eng/usage-instructions/shardx-browser?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
+ 
+ MIT licensed.
+diff --git a/sdks/rust/src/browser.rs b/sdks/rust/src/browser.rs
+index 897c60a..a15fcbe 100644
+--- a/sdks/rust/src/browser.rs
++++ b/sdks/rust/src/browser.rs
+@@ -252,7 +252,6 @@ impl Browser {
+         );
+         crate::profile::adopt_library_fields(&mut profile.config, &self.runtime.fingerprints_dir());
+         crate::profile::apply_apple_webgpu_features(&mut profile.config);
+-        crate::randomize::settle_platform_version(&mut profile.config);
+         if profile.claims_mobile() {
+             crate::profile::apply_chrome_brand(&mut profile.config);
+         }
+diff --git a/sdks/rust/src/lib.rs b/sdks/rust/src/lib.rs
+index 28084a0..e9c87f9 100644
+--- a/sdks/rust/src/lib.rs
++++ b/sdks/rust/src/lib.rs
+@@ -1,6 +1,6 @@
+ //! # ShardX Rust SDK
+ //!
+-//! Self-contained SDK for the [ShardX](https://shardx.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
++//! Self-contained SDK for the [ShardX](https://proxyshard.com?utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher)
+ //! anti-detect browser. Mirrors the Python (`shardx`) and Node
+ //! (`@proxyshard/shardx`) SDKs: on first use it downloads the engine,
+ //! Widevine CDM, and the bundled fingerprint library from the ProxyShard
+@@ -64,8 +64,8 @@ pub use host::{host_logical_cores, host_ram_bucket_gb, host_ram_gb, host_screen_
+ pub use profile::{apply_engine_version, user_data_dir, FingerprintLibrary, Profile};
+ pub use proxy::{parse_proxy, probe_udp, proxy_to_arg, ParsedProxy, ProxyScheme};
+ pub use randomize::{
+-    mac_hw_configs, randomize_hardware, randomize_platform_version, settle_platform_version,
+-    LINUX_PLATFORM_VERSIONS, MACOS_PLATFORM_VERSIONS, WINDOWS_PLATFORM_VERSIONS, X86_CORES,
++    mac_hw_configs, randomize_hardware, randomize_platform_version, LINUX_PLATFORM_VERSIONS,
++    MACOS_PLATFORM_VERSIONS, WINDOWS_PLATFORM_VERSIONS, X86_CORES,
+ };
+ pub use runtime::{
+     default_cache_dir, host_spec, Archive, HostSpec, ProgressCb, Runtime, CHROMIUM_VERSION,
+diff --git a/sdks/rust/src/randomize.rs b/sdks/rust/src/randomize.rs
+index 796fe4c..18aa0d0 100644
+--- a/sdks/rust/src/randomize.rs
++++ b/sdks/rust/src/randomize.rs
+@@ -7,31 +7,21 @@ use serde_json::{json, Value};
+ 
+ use crate::host::{host_logical_cores, host_ram_bucket_gb};
+ 
+-/// Chrome writes major.minor.patch, never two parts. Current releases as of 2026-11
+-/// (support.apple.com/100100); Sonoma ends at 14.8.9.
+ pub const MACOS_PLATFORM_VERSIONS: &[&str] = &[
+-    "14.8.8", "14.8.9", "15.7.9", "15.8.1", "15.8.2", "15.8.2", "26.6.1", "26.6.2", "26.7.1",
+-    "26.7.2", "26.7.2", "26.7.2", "27.0.1", "27.2.0", "27.2.0", "27.2.0",
++    "14.6.1", "14.7", "14.7.1", "14.7.2", "15.4", "15.4.1", "15.5", "15.6", "15.6.1", "15.7",
++    "26.0", "26.0.1", "26.1",
+ ];
+ 
+-/// Chrome reports the UniversalApiContract: 10 on Win10 2004+, 15 on Win11 22H2/23H2,
+-/// 19 on 24H2/25H2. 13 and 16-18 exist only on Insider builds.
+ pub const WINDOWS_PLATFORM_VERSIONS: &[&str] = &[
+-    "10.0.0", "10.0.0", "10.0.0", "10.0.0", "10.0.0", "15.0.0", "19.0.0", "19.0.0", "19.0.0",
+-    "19.0.0", "19.0.0", "19.0.0", "19.0.0",
++    "10.0.0", "13.0.0", "14.0.0", "14.0.0", "14.0.0", "15.0.0", "15.0.0", "15.0.0", "15.0.0",
++    "16.0.0", "16.0.0", "16.0.0", "17.0.0",
+ ];
+ 
+-/// Chrome on Linux reports an empty version, and the engine since build 4 says so itself.
+-/// A value is still written so an older engine does not pass on the host's own.
+ pub const LINUX_PLATFORM_VERSIONS: &[&str] = &[
+     "5.15.0", "6.1.0", "6.5.0", "6.6.0", "6.8.0", "6.10.0", "6.11.0", "6.12.0", "6.14.0",
+     "6.15.0", "6.16.0",
+ ];
+ 
+-/// What a version that cannot stand becomes on a Mac, and on an M4 claiming 14.x.
+-const MACOS_SETTLED: &str = "26.7.2";
+-const MACOS_SETTLED_M4: &str = "15.8.2";
+-
+ /// Real x86 logical-core counts (SMT + Intel hybrid). Same array as the launcher.
+ pub const X86_CORES: &[u64] = &[4, 6, 8, 12, 16, 20, 24, 28, 32];
+ 
+@@ -70,35 +60,13 @@ fn ensure_obj<'a>(cfg: &'a mut Value, key: &str) -> &'a mut serde_json::Map<Stri
+     cfg[key].as_object_mut().unwrap()
+ }
+ 
+-/// The first macOS major the claimed Apple chip shipped with: M4 came with 15, M5 with 26.
+-fn mac_first_major(cfg: &Value) -> u32 {
+-    let generation: Option<u32> = cfg
+-        .pointer("/webgl/renderer")
+-        .and_then(|v| v.as_str())
+-        .and_then(|r| r.find("Apple M").map(|i| &r[i + 7..]))
+-        .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok());
+-    match generation {
+-        Some(g) if g >= 5 => 26,
+-        Some(4) => 15,
+-        _ => 0,
+-    }
+-}
+-
+-fn major_of(version: &str) -> Option<u32> {
+-    version.split('.').next()?.parse().ok()
+-}
+-
+-/// Pick a fresh `navigator.platform_version` (+ mirror to client_hints). A Mac gets only
+-/// versions its claimed chip can run.
++/// Pick a fresh `navigator.platform_version` (+ mirror to client_hints).
+ pub fn randomize_platform_version(cfg: &mut Value) {
+     let plat = platform_of(cfg);
+-    let pool: Vec<&str> = match plat.as_str() {
+-        "macOS" => {
+-            let first = mac_first_major(cfg);
+-            MACOS_PLATFORM_VERSIONS.iter().copied().filter(|v| major_of(v).unwrap_or(0) >= first).collect()
+-        }
+-        "Windows" => WINDOWS_PLATFORM_VERSIONS.to_vec(),
+-        "Linux" => LINUX_PLATFORM_VERSIONS.to_vec(),
++    let pool: &[&str] = match plat.as_str() {
++        "macOS" => MACOS_PLATFORM_VERSIONS,
++        "Windows" => WINDOWS_PLATFORM_VERSIONS,
++        "Linux" => LINUX_PLATFORM_VERSIONS,
+         _ => return,
+     };
+     let mut rng = rand::thread_rng();
+@@ -110,60 +78,6 @@ pub fn randomize_platform_version(cfg: &mut Value) {
+     }
+ }
+ 
+-fn settled_windows(version: &str) -> &str {
+-    if matches!(version, "10.0.0" | "14.0.0" | "15.0.0" | "19.0.0") {
+-        return version;
+-    }
+-    // The engine counts an unreadable version as Windows 11, and picks its fonts by that.
+-    match major_of(version) {
+-        Some(m) if m < 13 => "10.0.0",
+-        _ => "19.0.0",
+-    }
+-}
+-
+-fn settled_macos(version: &str, first_major: u32) -> String {
+-    let parts: Option<Vec<u32>> = version
+-        .split('.')
+-        .map(|p| p.bytes().all(|b| b.is_ascii_digit()).then(|| p.parse().ok()).flatten())
+-        .collect();
+-    let Some(mut parts) = parts.filter(|p| (1..=3).contains(&p.len()) && p[0] >= 12) else {
+-        return MACOS_SETTLED.into();
+-    };
+-    if parts[0] < first_major {
+-        return if first_major >= 26 { MACOS_SETTLED } else { MACOS_SETTLED_M4 }.into();
+-    }
+-    parts.resize(3, 0);
+-    format!("{}.{}.{}", parts[0], parts[1], parts[2])
+-}
+-
+-/// A Windows or macOS `platform_version` Chrome could not report (Windows 13/16/17, a
+-/// two-part macOS version, an M4 on 14.x) becomes the nearest one it can, in navigator and
+-/// client_hints alike. Deterministic, so launch applies it every time; Linux is left to the
+-/// engine. Whether anything changed. SDK equivalent of the launcher's function of the same name.
+-pub fn settle_platform_version(cfg: &mut Value) -> bool {
+-    // The engine reads client_hints over navigator.
+-    let current = ["/client_hints/platform_version", "/navigator/platform_version"]
+-        .iter()
+-        .filter_map(|p| cfg.pointer(p)?.as_str())
+-        .find(|v| !v.is_empty())
+-        .unwrap_or("")
+-        .to_string();
+-    let want = match platform_of(cfg).as_str() {
+-        "Windows" => settled_windows(&current).to_string(),
+-        "macOS" => settled_macos(&current, mac_first_major(cfg)),
+-        _ => return false,
+-    };
+-    let mut changed = false;
+-    for key in ["navigator", "client_hints"] {
+-        let Some(obj) = cfg.get_mut(key).and_then(|v| v.as_object_mut()) else { continue };
+-        if obj.get("platform_version").and_then(|v| v.as_str()) != Some(want.as_str()) {
+-            obj.insert("platform_version".into(), json!(want));
+-            changed = true;
+-        }
+-    }
+-    changed
+-}
+-
+ /// Pick fresh `(hardware_concurrency, device_memory)`.
+ ///
+ /// macOS uses the curated [`mac_hw_configs`] table by profile id; Windows /
+@@ -212,81 +126,3 @@ pub fn randomize_hardware(cfg: &mut Value, profile_id: Option<&str>) {
+     nav.insert("hardware_concurrency".into(), json!(cores));
+     nav.insert("device_memory".into(), json!(mem));
+ }
+-
+-#[cfg(test)]
+-mod platform_version_tests {
+-    use super::*;
+-
+-    const M1: &str = "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)";
+-    const M4: &str = "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)";
+-    const M5: &str = "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)";
+-
+-    fn profile(platform: &str, version: &str, renderer: &str) -> Value {
+-        json!({ "navigator": { "platform": platform, "platform_version": version },
+-                "client_hints": { "platform_version": version },
+-                "webgl": { "renderer": renderer } })
+-    }
+-
+-    fn pv(c: &Value) -> (String, String) {
+-        let get = |p: &str| c.pointer(p).and_then(|v| v.as_str()).unwrap_or("").to_string();
+-        (get("/navigator/platform_version"), get("/client_hints/platform_version"))
+-    }
+-
+-    #[test]
+-    fn windows_keeps_what_chrome_reports_and_moves_the_rest() {
+-        for (from, to) in [
+-            ("10.0.0", "10.0.0"), ("14.0.0", "14.0.0"), ("15.0.0", "15.0.0"), ("19.0.0", "19.0.0"),
+-            ("13.0.0", "19.0.0"), ("16.0.0", "19.0.0"), ("17.0.0", "19.0.0"), ("20.0.0", "19.0.0"),
+-            ("5.0.0", "10.0.0"), ("12.0.0", "10.0.0"), ("", "19.0.0"), ("x", "19.0.0"),
+-        ] {
+-            let mut c = profile("Windows", from, "");
+-            assert_eq!(settle_platform_version(&mut c), from != to, "{from}");
+-            assert_eq!(pv(&c), (to.into(), to.into()), "{from}");
+-        }
+-    }
+-
+-    #[test]
+-    fn a_mac_gets_three_parts_and_a_version_its_chip_runs() {
+-        for (from, gpu, to) in [
+-            ("15.6.1", M1, "15.6.1"), ("15.4", M1, "15.4.0"), ("26", M1, "26.0.0"),
+-            ("14.7", M1, "14.7.0"), ("14.7", M4, "15.8.2"), ("15.6.1", M4, "15.6.1"),
+-            ("15.6.1", M5, "26.7.2"), ("26.1", M5, "26.1.0"), ("10.15.7", M1, "26.7.2"),
+-            ("", M1, "26.7.2"), ("15.6.1.2", M1, "26.7.2"), ("15.+4", M1, "26.7.2"),
+-        ] {
+-            let mut c = profile("macOS", from, gpu);
+-            settle_platform_version(&mut c);
+-            assert_eq!(pv(&c), (to.into(), to.into()), "{from} on {gpu}");
+-            assert!(!settle_platform_version(&mut c), "once: {from}");
+-        }
+-    }
+-
+-    #[test]
+-    fn client_hints_win_and_navigator_is_brought_along() {
+-        let mut c = profile("Windows", "15.0.0", "");
+-        c["navigator"]["platform_version"] = json!("17.0.0");
+-        assert!(settle_platform_version(&mut c));
+-        assert_eq!(pv(&c), ("15.0.0".into(), "15.0.0".into()));
+-    }
+-
+-    #[test]
+-    fn linux_and_phones_are_left_alone() {
+-        assert!(!settle_platform_version(&mut profile("Linux", "6.8.0", "")));
+-        assert!(!settle_platform_version(&mut profile("Android", "16.0.0", "")));
+-    }
+-
+-    #[test]
+-    fn every_pool_value_is_already_settled_and_an_m5_draws_26_or_later() {
+-        for v in WINDOWS_PLATFORM_VERSIONS {
+-            assert!(!settle_platform_version(&mut profile("Windows", v, "")), "{v}");
+-        }
+-        for v in MACOS_PLATFORM_VERSIONS {
+-            assert!(!settle_platform_version(&mut profile("macOS", v, M1)), "{v}");
+-        }
+-        for _ in 0..200 {
+-            let mut c = profile("macOS", "", M5);
+-            randomize_platform_version(&mut c);
+-            assert!(major_of(&pv(&c).0).unwrap() >= 26, "{:?}", pv(&c));
+-            assert!(!settle_platform_version(&mut c));
+-        }
+-    }
+-}
+diff --git a/sdks/rust/src/runtime.rs b/sdks/rust/src/runtime.rs
+index b346b48..5471871 100644
+--- a/sdks/rust/src/runtime.rs
++++ b/sdks/rust/src/runtime.rs
+@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
+ use tokio::io::AsyncWriteExt;
+ 
+ pub const PUB_BASE: &str = "https://pub-e57a7c60f6934eb09a6600bf2fc59cdc.r2.dev";
+-pub const CHROMIUM_VERSION: &str = "157.0.8103.50";
++pub const CHROMIUM_VERSION: &str = "157.0.8103.39";
+ /// This SDK's own version, compared against the manifest's `min_sdk_version`.
+ pub const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
+ /// Version manifest (GitHub raw) — one tiny GET yields every archive's current
 diff --git a/src-tauri/Cargo.lock b/src-tauri/Cargo.lock
-index ee2bbb6..87de976 100644
+index ee2bbb6..9b4d8cf 100644
 --- a/src-tauri/Cargo.lock
 +++ b/src-tauri/Cargo.lock
 @@ -3569,9 +3569,9 @@ dependencies = [
@@ -4179,6 +5593,15 @@ index ee2bbb6..87de976 100644
  [[package]]
  name = "redox_syscall"
  version = "0.5.18"
+@@ -5531,7 +5544,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "shardbrowser-launcher"
+-version = "2.1.5"
++version = "2.1.4"
+ dependencies = [
+  "ab_glyph",
+  "aes",
 @@ -5555,6 +5568,7 @@ dependencies = [
   "iana-time-zone",
   "jsonwebtoken",
@@ -4195,6 +5618,15 @@ index ee2bbb6..87de976 100644
   "reqwest 0.12.28",
   "ring",
   "rusqlite",
+@@ -5599,7 +5614,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "shardbrowser-team-server"
+-version = "2.1.5"
++version = "2.1.4"
+ dependencies = [
+  "aes-gcm",
+  "anyhow",
 @@ -8858,6 +8873,15 @@ dependencies = [
   "rustix",
  ]
@@ -4212,9 +5644,17 @@ index ee2bbb6..87de976 100644
  name = "yoke"
  version = "0.8.2"
 diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
-index 8a262df..65c5dd6 100644
+index 8a262df..81cdf1e 100644
 --- a/src-tauri/Cargo.toml
 +++ b/src-tauri/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "shardbrowser-launcher"
+-version = "2.1.5"
++version = "2.1.4"
+ description = "ShardBrowser Launcher: profiles, proxies, fingerprints and automation for the ShardBrowser engine."
+ authors = ["ProxyShard"]
+ edition = "2021"
 @@ -21,6 +21,7 @@ default = ["automation"]
  automation = ["dep:wasmtime", "dep:wreq", "dep:wreq-util", "dep:postgres", "dep:mysql", "dep:mongodb"]
  
@@ -4265,7 +5705,7 @@ index d860e1e..5d36fdb 100644
 +    }
  }
 diff --git a/src-tauri/src/api.rs b/src-tauri/src/api.rs
-index 892a379..af0982e 100644
+index 892a379..9704809 100644
 --- a/src-tauri/src/api.rs
 +++ b/src-tauri/src/api.rs
 @@ -208,6 +208,8 @@ async fn list_profiles() -> ApiResult {
@@ -4421,7 +5861,166 @@ index 892a379..af0982e 100644
              })
          })
          .collect();
-@@ -1549,6 +1591,177 @@ mod tests {
+@@ -893,114 +935,6 @@ async fn delete_extension(Extension(t): Extension<Ticket>, Path(id): Path<String
+     Ok(Json(json!({ "deleted": true, "id": id })))
+ }
+ 
+-// ---- extension updates (#150) ----
+-// The window's own updater: the same checks, the same approvals, one at a time.
+-
+-/// Both fields optional, and so is the body itself.
+-#[derive(Deserialize, Default)]
+-struct ExtUpdateReq {
+-    /// One library id from `GET /extensions`; absent means the whole library.
+-    id: Option<String>,
+-    /// Lets in what the staged version asked about (`result: "confirm"`); one id only.
+-    #[serde(default)]
+-    confirmed: bool,
+-}
+-
+-#[derive(Deserialize)]
+-struct ExtUpdateQuery {
+-    id: Option<String>,
+-}
+-
+-fn ext_update_req(raw: &[u8]) -> Result<ExtUpdateReq, ApiError> {
+-    if raw.iter().all(u8::is_ascii_whitespace) {
+-        return Ok(ExtUpdateReq::default());
+-    }
+-    serde_json::from_slice(raw).map_err(|e| err(StatusCode::BAD_REQUEST, format!("invalid body: {e}")))
+-}
+-
+-/// This machine's library only: a team's extensions are not updated yet.
+-fn ext_updates_here(t: &Ticket) -> Result<(), ApiError> {
+-    match t.team() {
+-        Some(_) => Err(refusal(&CmdError::NotOffered(space::extensions::TEAM_UPDATES_NOT_YET))),
+-        None => Ok(()),
+-    }
+-}
+-
+-/// Every library entry's update record, or the one `id` names.
+-fn ext_update_states(id: Option<&str>) -> Result<Vec<space::extensions::ExtensionUpdate>, ApiError> {
+-    let all = space::extensions::updates(crate::ext_updates::engine())
+-        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+-    let Some(id) = id else { return Ok(all) };
+-    let one: Vec<_> = all.into_iter().filter(|u| u.id == id).collect();
+-    if one.is_empty() {
+-        return Err(err(StatusCode::NOT_FOUND, format!("no extension {id} in the library")));
+-    }
+-    Ok(one)
+-}
+-
+-fn ext_updates_json(items: &[space::extensions::ExtensionUpdate]) -> Value {
+-    json!({ "checked_at": space::extensions::updates_checked_at(), "items": items })
+-}
+-
+-async fn list_extension_updates(Extension(t): Extension<Ticket>, Query(q): Query<ExtUpdateQuery>) -> ApiResult {
+-    ext_updates_here(&t)?;
+-    space::ready().await;
+-    Ok(Json(ext_updates_json(&ext_update_states(q.id.as_deref())?)))
+-}
+-
+-/// Asks the Web Store now. One request covers every linked extension, so `id`
+-/// only narrows the answer; a check already under way is waited for.
+-async fn check_extension_updates(Extension(t): Extension<Ticket>, raw: axum::body::Bytes) -> ApiResult {
+-    let req = ext_update_req(&raw)?;
+-    ext_updates_here(&t)?;
+-    space::ready().await;
+-    ext_update_states(req.id.as_deref())?;
+-    crate::ext_updates::check_now(&t).await.map_err(|e| err(StatusCode::BAD_GATEWAY, e))?;
+-    crate::notify_store_changed("extension-updates");
+-    Ok(Json(ext_updates_json(&ext_update_states(req.id.as_deref())?)))
+-}
+-
+-/// What Update all puts in without asking anyone: a newer version, no Web Store flag.
+-fn ext_update_eligible(u: &space::extensions::ExtensionUpdate) -> bool {
+-    let state = serde_json::to_value(u.state).unwrap_or_default();
+-    (state == "available" || state == "ready") && u.flags.is_empty()
+-}
+-
+-/// Updates one at a time, as the window does. With `id`, that one, whatever its
+-/// state (the updater refuses what it must). Without, every eligible one and
+-/// never `confirmed`; the rest are listed as not eligible, with their state.
+-async fn apply_extension_updates(Extension(t): Extension<Ticket>, raw: axum::body::Bytes) -> ApiResult {
+-    let req = ext_update_req(&raw)?;
+-    ext_updates_here(&t)?;
+-    space::ready().await;
+-    if req.confirmed && req.id.is_none() {
+-        return Err(err(StatusCode::BAD_REQUEST, "`confirmed` needs an `id`: updating them all never lets in new permissions"));
+-    }
+-    let engine = crate::ext_updates::engine();
+-    let mut results = Vec::new();
+-    let mut applied = 0;
+-    for u in ext_update_states(req.id.as_deref())? {
+-        if req.id.is_none() && !ext_update_eligible(&u) {
+-            results.push(json!({ "id": u.id, "result": "not_eligible", "state": u.state, "flags": u.flags }));
+-            continue;
+-        }
+-        let done = space::extensions::update(Door("POST /extensions/updates/apply"), &t, &u.id, req.confirmed, engine.clone()).await;
+-        let mut out = match done {
+-            Ok(d) => serde_json::to_value(&d).unwrap_or_else(|e| json!({ "result": "failed", "error": e.to_string() })),
+-            Err(e) => json!({ "result": "failed", "error": format!("{e:#}") }),
+-        };
+-        applied += usize::from(out["result"] == "applied");
+-        out["id"] = json!(u.id);
+-        results.push(out);
+-    }
+-    if applied > 0 {
+-        crate::notify_store_changed("extensions");
+-    }
+-    crate::notify_store_changed("extension-updates");
+-    let items = ext_update_states(req.id.as_deref()).unwrap_or_default();
+-    Ok(Json(json!({ "applied": applied, "results": results, "items": items })))
+-}
+-
+ // ---- bookmarks ----
+ 
+ async fn list_bookmarks() -> ApiResult {
+@@ -1361,9 +1295,6 @@ fn router() -> Router {
+         .route("/proxies/:id", delete(delete_proxy))
+         .route("/extensions", get(list_extensions).post(add_extension))
+         .route("/extensions/:id", delete(delete_extension))
+-        .route("/extensions/updates", get(list_extension_updates))
+-        .route("/extensions/updates/check", post(check_extension_updates))
+-        .route("/extensions/updates/apply", post(apply_extension_updates))
+         .route("/bookmarks", get(list_bookmarks).post(save_bookmark))
+         .route("/bookmarks/:id", delete(delete_bookmark))
+         .route("/trash", get(list_trash))
+@@ -1479,33 +1410,6 @@ mod tests {
+         (status, epoch, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+     }
+ 
+-    /// #150: the updater over HTTP answers for the library and keeps its rules.
+-    #[tokio::test]
+-    async fn extension_updates_answer_for_the_library_and_keep_their_rules() {
+-        let _serial = crate::migrate::serial();
+-        let _root = crate::store::test_root("api-ext-updates").with_config();
+-        let (status, _, got) = authed("GET", "/extensions/updates", None).await;
+-        assert_eq!(status, StatusCode::OK, "{got}");
+-        assert_eq!(got["items"], json!([]));
+-        assert!(got["checked_at"].is_u64(), "{got}");
+-
+-        let (status, _, got) = authed("POST", "/extensions/updates/apply", None).await;
+-        assert_eq!((status, got["applied"].as_u64(), got["results"].clone()), (StatusCode::OK, Some(0), json!([])));
+-
+-        let (status, _, got) = authed("POST", "/extensions/updates/apply", Some(json!({ "confirmed": true }))).await;
+-        assert_eq!(status, StatusCode::BAD_REQUEST, "bulk never confirms: {got}");
+-        for (method, path, body) in [
+-            ("GET", "/extensions/updates?id=nope", None),
+-            ("POST", "/extensions/updates/check", Some(json!({ "id": "nope" }))),
+-            ("POST", "/extensions/updates/apply", Some(json!({ "id": "nope" }))),
+-        ] {
+-            let (status, _, got) = authed(method, path, body).await;
+-            assert_eq!(status, StatusCode::NOT_FOUND, "{method} {path}: {got}");
+-        }
+-        let (status, _, _) = authed("POST", "/extensions/updates/check", Some(json!("not an object"))).await;
+-        assert_eq!(status, StatusCode::BAD_REQUEST);
+-    }
+-
+     #[tokio::test]
+     async fn the_personal_space_writes_as_before_and_says_its_edition() {
+         let _serial = crate::migrate::serial();
+@@ -1549,6 +1453,177 @@ mod tests {
          assert_eq!(all, json!([]));
      }
  
@@ -4599,7 +6198,7 @@ index 892a379..af0982e 100644
      /// The local API in a team's space, against a real team server in-process.
      mod in_a_team {
          use super::*;
-@@ -1895,6 +2108,43 @@ mod tests {
+@@ -1895,6 +1970,43 @@ mod tests {
              drop(t.srv);
          }
  
@@ -4658,7 +6257,7 @@ index 10be256..c0af4c7 100644
      let page = s.page().ok_or_else(|| anyhow!("no page attached"))?;
      s.call(method, params, Some(&page)).await
 diff --git a/src-tauri/src/launch.rs b/src-tauri/src/launch.rs
-index ea97c92..15832c6 100644
+index ea97c92..0ce6253 100644
 --- a/src-tauri/src/launch.rs
 +++ b/src-tauri/src/launch.rs
 @@ -278,6 +278,7 @@ pub struct LaunchInput {
@@ -4793,7 +6392,7 @@ index ea97c92..15832c6 100644
                          eprintln!(
                              "[launcher] UDP probe failed for proxy {} ({e}) while this \
                               process CAN send UDP, so the proxy has no relay; cached={cached}",
-@@ -647,15 +698,16 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -647,15 +698,12 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
      // Win/Linux profile whose resolution the operator picked in the editor is
      // left out of it, or the switch would report the host's screen over exactly
      // the one they asked for.
@@ -4804,15 +6403,13 @@ index ea97c92..15832c6 100644
      // Strip `_meta` wrapper and resolve "auto" sentinels before serialising.
      let mut raw = engine_config(&input.stored);
 -    resolve_auto_fields(&mut raw, input.proxy.as_ref()).await;
-+
+-    // A version Chrome could not report never reaches the engine, wherever the profile came from.
+-    crate::settle_platform_version(&mut raw);
 +    resolve_auto_fields(&mut raw, input.proxy.as_ref(), chain_geo.as_ref(), chain.is_some()).await;
-     // A version Chrome could not report never reaches the engine, wherever the profile came from.
-     crate::settle_platform_version(&mut raw);
-+
      // The proxy probe and the geo lookup are the slow part: a cancel made
      // while they ran stops here, before anything is written.
      check_cancel(&input.profile_id)?;
-@@ -740,25 +792,20 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -740,25 +788,20 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
          Err(e) => eprintln!("[launcher] bookmarks skipped: {e}"),
      }
  
@@ -4844,7 +6441,7 @@ index ea97c92..15832c6 100644
              fp_file: &fp_file,
              icon: icon.as_deref(),
              raw: &raw,
-@@ -771,6 +818,15 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -771,6 +814,15 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
          opts,
          &s,
      );
@@ -4860,7 +6457,7 @@ index ea97c92..15832c6 100644
      let LaunchInput { profile_id, udd, exit, cdp: enable_cdp, ext_ids, .. } = input;
      let remote = exit.session();
      // A team's profile has no launch count of its own here.
-@@ -800,7 +856,8 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -800,7 +852,8 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
          Some(_) => process::spawn_tied(cmd).await.context("start the ShardBrowser engine")?,
          None => (cmd.spawn().context("start the ShardBrowser engine")?, process::Tie::default()),
      };
@@ -4870,7 +6467,7 @@ index ea97c92..15832c6 100644
  
      if let Some(s) = &remote {
          s.spawned(tie, pid);
-@@ -841,6 +898,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
+@@ -841,6 +894,7 @@ async fn start_browser(bin: &Path, input: LaunchInput, opts: &LaunchOpts<'_>) ->
  fn engine_config(stored: &profile::StoredProfile) -> serde_json::Map<String, serde_json::Value> {
      let mut raw = stored.config.clone();
      raw.remove("_meta");
@@ -4878,7 +6475,7 @@ index ea97c92..15832c6 100644
      if raw.get("ui_language").and_then(|v| v.as_str()) != Some("profile") {
          raw.remove("ui_language");
      }
-@@ -902,8 +960,9 @@ fn command_line(
+@@ -902,8 +956,9 @@ fn command_line(
          args.push("--hide-crash-restore-bubble".into());
      }
  
@@ -4889,7 +6486,7 @@ index ea97c92..15832c6 100644
  
          // QUIC: enable only when proxy UDP relay verified; rely on Alt-Svc upgrade path.
          if ready.proxy_udp_ok {
-@@ -917,6 +976,9 @@ fn command_line(
+@@ -917,6 +972,9 @@ fn command_line(
              eprintln!("[launcher] QUIC disabled: proxy {} has no working UDP relay", p.host);
          }
      }
@@ -4899,7 +6496,7 @@ index ea97c92..15832c6 100644
  
      // WebRTC IP policy: block / tcp_only / auto (auto = relay if UDP, else tcp_only).
      let webrtc_mode = ready.raw.get("webrtc").and_then(|v| v.as_str()).unwrap_or("auto");
-@@ -1011,6 +1073,11 @@ fn command_line(
+@@ -1011,6 +1069,11 @@ fn command_line(
  
      // Operator's own switches, last so they win a repeat.
      args.extend(extra);
@@ -4911,7 +6508,7 @@ index ea97c92..15832c6 100644
      args
  }
  
-@@ -1043,10 +1110,30 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
+@@ -1043,10 +1106,30 @@ async fn read_devtools_endpoint(udd: &Path) -> Option<process::CdpInfo> {
      None
  }
  
@@ -4943,7 +6540,7 @@ index ea97c92..15832c6 100644
  ) {
      let want_tz_auto = cfg.get("timezone").and_then(|v| v.as_str()) == Some("auto");
      let want_lang_auto = cfg
-@@ -1073,13 +1160,19 @@ async fn resolve_auto_fields(
+@@ -1073,13 +1156,19 @@ async fn resolve_auto_fields(
  
      // ---- geo source ----
      let mut source = "";
@@ -4965,7 +6562,7 @@ index ea97c92..15832c6 100644
                          if !snap.country_code.is_empty() || !snap.timezone.is_empty() {
                              source = "cached-snapshot";
                              Some(proxy::GeoInfo {
-@@ -1125,10 +1218,10 @@ async fn resolve_auto_fields(
+@@ -1125,10 +1214,10 @@ async fn resolve_auto_fields(
                  }
              }
          }
@@ -4978,7 +6575,7 @@ index ea97c92..15832c6 100644
              crate::notify_warning(
                  "Could not read the proxy's location. Rather than hand a page \
                   this computer's timezone, the profile starts on UTC — which \
-@@ -1153,7 +1246,7 @@ async fn resolve_auto_fields(
+@@ -1153,7 +1242,7 @@ async fn resolve_auto_fields(
          }
          None => {
              host_warn();
@@ -4987,7 +6584,7 @@ index ea97c92..15832c6 100644
                  // A profile behind a proxy must never answer with this
                  // computer's clock. Before, the Windows branch had no way to
                  // read the host zone and landed on UTC by accident; now that
-@@ -1438,6 +1531,60 @@ mod tests {
+@@ -1438,6 +1527,60 @@ mod tests {
          v.as_object().unwrap().clone()
      }
  
@@ -5048,16 +6645,19 @@ index ea97c92..15832c6 100644
      #[test]
      fn derives_a_window_from_the_claimed_screen() {
          let mut raw = obj(json!({
-@@ -1616,7 +1763,7 @@ mod tests {
+@@ -1614,11 +1757,6 @@ mod tests {
+         }
+         // No monitor to ask (as here): the fingerprint's own screen.
          assert_eq!(crate::build_fingerprint_config(None, "t-win").unwrap()["screen"]["width"], 1920);
-         // #147: the API's answer follows the language it sets, and reports a version Chrome can.
-         let api = crate::build_fingerprint_config(None, "t-win").unwrap();
+-        // #147: the API's answer follows the language it sets, and reports a version Chrome can.
+-        let api = crate::build_fingerprint_config(None, "t-win").unwrap();
 -        assert!(api["icu_locale"].is_null());
-+        assert!(api["icu_locale"].is_null() || api["icu_locale"].as_str().map(|v| !v.trim().is_empty()).unwrap_or(false));
-         let pv = api["navigator"]["platform_version"].as_str().unwrap();
-         assert!(crate::platform_version::WINDOWS_PLATFORM_VERSIONS.contains(&pv), "{pv}");
+-        let pv = api["navigator"]["platform_version"].as_str().unwrap();
+-        assert!(crate::platform_version::WINDOWS_PLATFORM_VERSIONS.contains(&pv), "{pv}");
  
-@@ -1647,6 +1794,7 @@ mod tests {
+         // A new profile with a screen picked by hand is saved with it, marked.
+         let mut picked = template("Windows", WIN_UA);
+@@ -1647,6 +1785,7 @@ mod tests {
              profile_id: stored.meta.id.clone(),
              udd: PathBuf::from(format!("/data/user-data/{}", stored.meta.id)),
              proxy: proxy.map(|p| serde_json::from_value(p).unwrap()),
@@ -5065,7 +6665,7 @@ index ea97c92..15832c6 100644
              extensions: stored.meta.extensions.iter().map(|id| PathBuf::from(format!("/data/extensions/{id}"))).collect(),
              library: Some(PathBuf::from("/data/extensions")),
              ext_ids: Vec::new(),
-@@ -1662,6 +1810,19 @@ mod tests {
+@@ -1662,6 +1801,19 @@ mod tests {
          crate::settings::Settings { helper_enabled: true, camera_enabled: true, show_profile_name: true, ..Default::default() }
      }
  
@@ -5085,7 +6685,7 @@ index ea97c92..15832c6 100644
      /// As launched on an engine from before patch 0092's second part.
      fn argv(input: &LaunchInput, opts: &LaunchOpts, s: &crate::settings::Settings) -> Vec<String> {
          argv_on(false, input, opts, s)
-@@ -1674,6 +1835,7 @@ mod tests {
+@@ -1674,6 +1826,7 @@ mod tests {
          let fp = PathBuf::from(format!("{}/fingerprint.json", input.udd.display()));
          let icon = PathBuf::from(format!("/runtime/profile-icons/{}.png", input.profile_id));
          let ready = Ready {
@@ -5093,7 +6693,7 @@ index ea97c92..15832c6 100644
              fp_file: &fp,
              icon: Some(&icon),
              raw: &raw,
-@@ -1716,6 +1878,23 @@ mod tests {
+@@ -1716,6 +1869,23 @@ mod tests {
          );
      }
  
@@ -5118,20 +6718,21 @@ index ea97c92..15832c6 100644
      #[test]
      fn the_profile_name_can_be_hidden() {
 diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
-index bd61530..eeece2b 100644
+index bd61530..12a3fd9 100644
 --- a/src-tauri/src/lib.rs
 +++ b/src-tauri/src/lib.rs
-@@ -2,6 +2,9 @@
+@@ -1,7 +1,9 @@
+ // ShardBrowser Launcher — Tauri backend.
  
  mod profile_icon;
- mod platform_version;
+-mod platform_version;
 +mod profile_shortcut;
 +mod profile_defaults;
 +mod startup_page;
  mod api;
  mod fingerprints;
  mod gpu_caps;
-@@ -9,9 +12,12 @@ mod launch;
+@@ -9,9 +11,12 @@ mod launch;
  mod mcp_setup;
  mod migrate;
  mod process;
@@ -5144,7 +6745,64 @@ index bd61530..eeece2b 100644
  mod store;
  mod sync_bus;
  mod cdp;
-@@ -444,9 +450,13 @@ fn profile_payload(
+@@ -141,7 +146,55 @@ fn infer_gpu_preset_id(config: &serde_json::Map<String, Value>) -> Option<String
+     renderer_match
+ }
+ 
+-pub(crate) use platform_version::{randomize_platform_version, settle_platform_version};
++// ---- Realistic Sec-CH-UA-Platform-Version pools (spread per profile) ----
++
++// macOS Sonoma 14.x, Sequoia 15.x, Tahoe 26.x.
++const MACOS_PLATFORM_VERSIONS: &[&str] = &[
++    "14.6.1", "14.7", "14.7.1", "14.7.2",
++    "15.4", "15.4.1", "15.5", "15.6", "15.6.1", "15.7",
++    "26.0", "26.0.1", "26.1",
++];
++
++// Win 10 21H1+ ("10.0.0"), Win 11 21H2..25H2 ("13"–"17"); weighted to 22H2/23H2/24H2.
++const WINDOWS_PLATFORM_VERSIONS: &[&str] = &[
++    "10.0.0",
++    "13.0.0",
++    "14.0.0", "14.0.0", "14.0.0",
++    "15.0.0", "15.0.0", "15.0.0", "15.0.0",
++    "16.0.0", "16.0.0", "16.0.0",
++    "17.0.0",
++];
++
++// LTS kernels + current mainline.
++const LINUX_PLATFORM_VERSIONS: &[&str] = &[
++    "5.15.0", "6.1.0", "6.5.0",
++    "6.6.0", "6.8.0", "6.10.0", "6.11.0", "6.12.0",
++    "6.14.0", "6.15.0", "6.16.0",
++];
++
++/// Write a random platform_version into navigator + client_hints; unknown platforms left alone.
++pub(crate) fn randomize_platform_version(payload: &mut serde_json::Map<String, Value>) {
++    let platform = payload
++        .get("navigator")
++        .and_then(|n| n.get("platform"))
++        .and_then(|v| v.as_str())
++        .unwrap_or("");
++    let pool: &[&str] = match platform {
++        "macOS"   => MACOS_PLATFORM_VERSIONS,
++        "Windows" => WINDOWS_PLATFORM_VERSIONS,
++        "Linux"   => LINUX_PLATFORM_VERSIONS,
++        _         => return,
++    };
++    let pick_idx = (uuid::Uuid::new_v4().as_bytes()[0] as usize) % pool.len();
++    let version = pool[pick_idx].to_string();
++
++    if let Some(nav) = payload.get_mut("navigator").and_then(|v| v.as_object_mut()) {
++        nav.insert("platform_version".into(), Value::String(version.clone()));
++    }
++    if let Some(ch) = payload.get_mut("client_hints").and_then(|v| v.as_object_mut()) {
++        ch.insert("platform_version".into(), Value::String(version));
++    }
++}
+ 
+ /// Realistic (hardware_concurrency, deviceMemory) combos per Mac model id.
+ fn mac_hw_configs(model: &str) -> Option<&'static [(u32, u32)]> {
+@@ -444,9 +497,13 @@ fn profile_payload(
      let sent_rev = meta.and_then(|m| m.get("rev")).and_then(|v| v.as_u64()).filter(|_| !is_new);
      if is_new && enrich {
          if let Some(obj) = payload.as_object_mut() {
@@ -5158,7 +6816,7 @@ index bd61530..eeece2b 100644
      let stored = serde_json::from_value(payload).map_err(|e| e.to_string())?;
      Ok((stored, space::profile::SaveOpts { sent_rev, ..Default::default() }))
  }
-@@ -1184,6 +1194,12 @@ async fn folder_meta_set(name: String, meta: space::folders::FolderMeta, epoch:
+@@ -1184,6 +1241,12 @@ async fn folder_meta_set(name: String, meta: space::folders::FolderMeta, epoch:
      space::folders::set_meta(space::Door("folder_meta_set"), &t, &name, meta).await.map_err(|e| e.to_string())
  }
  
@@ -5171,7 +6829,16 @@ index bd61530..eeece2b 100644
  /// The folders and looks the interface kept in its own storage, taken once.
  #[tauri::command]
  fn folder_import(state: space::folders::FolderState, epoch: Option<u64>) -> Result<bool, String> {
-@@ -1410,6 +1426,7 @@ pub fn library_profile(
+@@ -1375,8 +1438,6 @@ pub fn merge_library_fingerprint(
+         nav.remove("accept_language");
+         nav.remove("languages");
+     }
+-    // Follows the language; the template's own would outrank a language set later (#147).
+-    merged.insert("icu_locale".into(), Value::Null);
+     merged.insert("geolocation".into(), serde_json::json!({ "mode": "auto" }));
+     Ok(merged)
+ }
+@@ -1410,6 +1471,7 @@ pub fn library_profile(
      host: Option<launch::HostScreen>,
  ) -> Result<serde_json::Map<String, Value>, String> {
      let mut merged = merge_library_fingerprint(template_id)?;
@@ -5179,7 +6846,18 @@ index bd61530..eeece2b 100644
      launch::claim_host_screen(&mut merged, host);
      Ok(merged)
  }
-@@ -1567,6 +1584,13 @@ async fn process_kill(profile_id: String) -> Result<bool, String> {
+@@ -1463,10 +1525,6 @@ fn enrich_picks_for_preset(preset_id: String) -> Result<PresetEnrichPicks, Strin
+         "navigator".into(),
+         serde_json::json!({ "platform": platform }),
+     );
+-    // The claimed Apple chip bounds the macOS it can report.
+-    if let Some(webgl) = entry.payload.get("webgl") {
+-        payload.insert("webgl".into(), webgl.clone());
+-    }
+     // Mirror enrich_new_config order: platform_version first, then hardware.
+     randomize_platform_version(&mut payload);
+     randomize_hardware(&mut payload);
+@@ -1567,6 +1625,13 @@ async fn process_kill(profile_id: String) -> Result<bool, String> {
          .map_err(|e| e.to_string())
  }
  
@@ -5193,7 +6871,7 @@ index bd61530..eeece2b 100644
  // ---- Proxies ----
  
  #[tauri::command]
-@@ -1643,6 +1667,18 @@ fn proxy_bulk_parse(text: String, kind: String) -> Vec<space::proxy::ProxyEntry>
+@@ -1643,6 +1708,18 @@ fn proxy_bulk_parse(text: String, kind: String) -> Vec<space::proxy::ProxyEntry>
      space::proxy::parse_bulk(&text, default_kind)
  }
  
@@ -5212,7 +6890,7 @@ index bd61530..eeece2b 100644
  /// Persist pre-tested proxies (bulk dialog).
  #[tauri::command]
  async fn proxy_bulk_save(entries: Vec<space::proxy::ProxyEntry>, epoch: Option<u64>) -> Result<usize, String> {
-@@ -2024,7 +2060,158 @@ fn cookies_import(profile_id: String, cookies: Vec<space::cookies::Cookie>) -> R
+@@ -2024,7 +2101,158 @@ fn cookies_import(profile_id: String, cookies: Vec<space::cookies::Cookie>) -> R
  
  #[tauri::command]
  fn settings_get() -> Result<settings::Settings, String> {
@@ -5372,7 +7050,7 @@ index bd61530..eeece2b 100644
  }
  
  /// The primary monitor in CSS pixels, so the editor can offer resolutions and
-@@ -2108,6 +2295,7 @@ fn settings_save(mut value: settings::Settings) -> Result<(), String> {
+@@ -2108,6 +2336,7 @@ fn settings_save(mut value: settings::Settings) -> Result<(), String> {
      // Owned by the migration, not the form — which round-trips the whole struct
      // and would reset it while the data sits on another disk.
      if let Ok(cur) = settings::load() {
@@ -5380,7 +7058,7 @@ index bd61530..eeece2b 100644
          value.data_root = cur.data_root;
          if value.api_secret.is_empty() {
              value.api_secret = cur.api_secret;
-@@ -2618,7 +2806,6 @@ async fn ps_set_tag(id: i64, tag: String) -> Result<Value, String> {
+@@ -2618,7 +2847,6 @@ async fn ps_set_tag(id: i64, tag: String) -> Result<Value, String> {
      .map_err(|e| e.to_string())
  }
  
@@ -5388,7 +7066,7 @@ index bd61530..eeece2b 100644
  /// Bring the main window back from the tray / minimized state and focus it.
  fn show_main_window(app: &tauri::AppHandle) {
      use tauri::Manager;
-@@ -2634,11 +2821,13 @@ pub fn reap_if_asked() -> Option<i32> {
+@@ -2634,11 +2862,13 @@ pub fn reap_if_asked() -> Option<i32> {
      space::reap::from_args(std::env::args_os())
  }
  
@@ -5403,7 +7081,7 @@ index bd61530..eeece2b 100644
          }))
          .plugin(tauri_plugin_opener::init())
          .plugin(tauri_plugin_dialog::init())
-@@ -2680,6 +2869,8 @@ pub fn run() {
+@@ -2680,6 +2910,8 @@ pub fn run() {
              helper_fields,
              helper_fill,
              profile_focus_window,
@@ -5412,7 +7090,7 @@ index bd61530..eeece2b 100644
              helper_show,
              helper_close,
              helper_dismiss,
-@@ -2745,6 +2936,7 @@ pub fn run() {
+@@ -2745,6 +2977,7 @@ pub fn run() {
              folder_list,
              folder_add,
              folder_meta_set,
@@ -5420,7 +7098,7 @@ index bd61530..eeece2b 100644
              folder_import,
              data_root_get,
              data_root_migrate,
-@@ -2770,6 +2962,9 @@ pub fn run() {
+@@ -2770,6 +3003,9 @@ pub fn run() {
              read_text_file,
              process_list,
              process_kill,
@@ -5430,7 +7108,7 @@ index bd61530..eeece2b 100644
              proxy_list,
              proxy_save,
              proxy_delete,
-@@ -2781,9 +2976,15 @@ pub fn run() {
+@@ -2781,9 +3017,15 @@ pub fn run() {
              proxy_last_test,
              proxy_bulk_import,
              proxy_bulk_parse,
@@ -5446,7 +7124,7 @@ index bd61530..eeece2b 100644
              settings_save,
              settings_load_error,
              host_screen,
-@@ -2865,6 +3066,7 @@ pub fn run() {
+@@ -2865,6 +3107,7 @@ pub fn run() {
          ])
          .setup(|app| {
              let _ = APP_HANDLE.set(app.handle().clone());
@@ -5454,25 +7132,38 @@ index bd61530..eeece2b 100644
  
              {
                  use tauri::menu::{Menu, MenuItem};
-@@ -2991,6 +3193,7 @@ pub fn run() {
+@@ -2882,9 +3125,7 @@ pub fn run() {
+                     builder
+                         .tooltip("ShardBrowser Launcher")
+                         .menu(&menu)
+-                        // macOS opens the menu on any click (the tray library keeps it attached),
+-                        // as menu bar extras do there; elsewhere a left click shows the window.
+-                        .show_menu_on_left_click(cfg!(target_os = "macos"))
++                        .show_menu_on_left_click(false)
+                         .on_menu_event(|app, e| match e.id.as_ref() {
+                             "tray_show" => show_main_window(app),
+                             "tray_quit" => crate::quit(app),
+@@ -2991,18 +3232,7 @@ pub fn run() {
          .build(tauri::generate_context!())
          .expect("error while building tauri application")
          .run(|app, event| {
-+
-             // A click on the Dock icon brings back a window closed to the tray (#148).
-             #[cfg(target_os = "macos")]
-             if let tauri::RunEvent::Reopen { .. } = event {
-@@ -3003,6 +3206,9 @@ pub fn run() {
-                 }
-                 return;
-             }
-+
+-            // A click on the Dock icon brings back a window closed to the tray (#148).
+-            #[cfg(target_os = "macos")]
+-            if let tauri::RunEvent::Reopen { .. } = event {
+-                use tauri::Manager;
+-                let away = app.get_webview_window("main").is_some_and(|w| {
+-                    !w.is_visible().unwrap_or(false) || w.is_minimized().unwrap_or(false)
+-                });
+-                if away {
+-                    show_main_window(app);
+-                }
+-                return;
+-            }
 +            if let tauri::RunEvent::Exit = event { process::Tracker::shared().close_chains(); }
-+
              // Mid-reset nothing ends the app but its own restart.
              if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
                  if reset::active() && code != Some(tauri::RESTART_EXIT_CODE) {
-@@ -3021,6 +3227,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
+@@ -3021,6 +3251,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
      use std::sync::atomic::Ordering::SeqCst;
      static CLOSING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
      if !space::open::any_open() && !space::profile::any_unsealed() {
@@ -5480,7 +7171,7 @@ index bd61530..eeece2b 100644
          app.exit(code);
          return;
      }
-@@ -3033,6 +3240,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
+@@ -3033,6 +3264,7 @@ fn exit_app(app: &tauri::AppHandle, code: i32) {
          space::open::close_all(space::open::QUIT_WAIT).await;
          space::profile::close_unsealed(space::open::QUIT_WAIT).await;
          CLOSING.store(false, SeqCst);
@@ -5488,6 +7179,230 @@ index bd61530..eeece2b 100644
          app.exit(code);
      });
  }
+diff --git a/src-tauri/src/platform_version.rs b/src-tauri/src/platform_version.rs
+deleted file mode 100644
+index bc546a1..0000000
+--- a/src-tauri/src/platform_version.rs
++++ /dev/null
+@@ -1,218 +0,0 @@
+-//! `platform_version`: the OS version a profile reports in Sec-CH-UA-Platform-Version and
+-//! `userAgentData.platformVersion`. Only values Chrome itself can report (#147).
+-
+-use serde_json::{Map, Value};
+-
+-// Chrome writes major.minor.patch, never two parts. Current releases as of 2026-11
+-// (support.apple.com/100100); Sonoma ends at 14.8.9.
+-pub(crate) const MACOS_PLATFORM_VERSIONS: &[&str] = &[
+-    "14.8.8", "14.8.9",
+-    "15.7.9", "15.8.1", "15.8.2", "15.8.2",
+-    "26.6.1", "26.6.2", "26.7.1", "26.7.2", "26.7.2", "26.7.2",
+-    "27.0.1", "27.2.0", "27.2.0", "27.2.0",
+-];
+-
+-// Chrome reports the UniversalApiContract: 10 on Win10 2004+, 15 on Win11 22H2/23H2,
+-// 19 on 24H2/25H2. 13 and 16-18 exist only on Insider builds.
+-pub(crate) const WINDOWS_PLATFORM_VERSIONS: &[&str] = &[
+-    "10.0.0", "10.0.0", "10.0.0", "10.0.0", "10.0.0",
+-    "15.0.0",
+-    "19.0.0", "19.0.0", "19.0.0", "19.0.0", "19.0.0", "19.0.0", "19.0.0",
+-];
+-
+-// Chrome on Linux reports an empty version, and the engine since build 4 says so itself.
+-// A value is still written so an older engine does not pass on the host's own.
+-pub(crate) const LINUX_PLATFORM_VERSIONS: &[&str] = &[
+-    "5.15.0", "6.1.0", "6.5.0",
+-    "6.6.0", "6.8.0", "6.10.0", "6.11.0", "6.12.0",
+-    "6.14.0", "6.15.0", "6.16.0",
+-];
+-
+-/// What a version that cannot stand becomes on a Mac, and on an M4 claiming 14.x.
+-const MACOS_SETTLED: &str = "26.7.2";
+-const MACOS_SETTLED_M4: &str = "15.8.2";
+-
+-fn platform_of(payload: &Map<String, Value>) -> &str {
+-    payload
+-        .get("navigator")
+-        .and_then(|n| n.get("platform"))
+-        .and_then(|v| v.as_str())
+-        .unwrap_or("")
+-}
+-
+-/// The first macOS major the claimed Apple chip shipped with: M4 came with 15, M5 with 26.
+-fn mac_first_major(payload: &Map<String, Value>) -> u32 {
+-    let generation: Option<u32> = payload
+-        .get("webgl")
+-        .and_then(|w| w.get("renderer"))
+-        .and_then(|v| v.as_str())
+-        .and_then(|r| r.find("Apple M").map(|i| &r[i + 7..]))
+-        .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok());
+-    match generation {
+-        Some(g) if g >= 5 => 26,
+-        Some(4) => 15,
+-        _ => 0,
+-    }
+-}
+-
+-fn major_of(version: &str) -> Option<u32> {
+-    version.split('.').next()?.parse().ok()
+-}
+-
+-fn write(payload: &mut Map<String, Value>, version: &str) -> bool {
+-    let mut changed = false;
+-    for key in ["navigator", "client_hints"] {
+-        let Some(obj) = payload.get_mut(key).and_then(|v| v.as_object_mut()) else { continue };
+-        if obj.get("platform_version").and_then(|v| v.as_str()) != Some(version) {
+-            obj.insert("platform_version".into(), Value::String(version.into()));
+-            changed = true;
+-        }
+-    }
+-    changed
+-}
+-
+-/// Write a random platform_version into navigator + client_hints; unknown platforms left alone.
+-pub(crate) fn randomize_platform_version(payload: &mut Map<String, Value>) {
+-    let pool: Vec<&str> = match platform_of(payload) {
+-        "macOS" => {
+-            let first = mac_first_major(payload);
+-            MACOS_PLATFORM_VERSIONS.iter().copied().filter(|v| major_of(v).unwrap_or(0) >= first).collect()
+-        }
+-        "Windows" => WINDOWS_PLATFORM_VERSIONS.to_vec(),
+-        "Linux" => LINUX_PLATFORM_VERSIONS.to_vec(),
+-        _ => return,
+-    };
+-    if pool.is_empty() {
+-        return;
+-    }
+-    let pick = pool[(uuid::Uuid::new_v4().as_bytes()[0] as usize) % pool.len()];
+-    write(payload, pick);
+-}
+-
+-fn settled_windows(version: &str) -> &str {
+-    if matches!(version, "10.0.0" | "14.0.0" | "15.0.0" | "19.0.0") {
+-        return version;
+-    }
+-    // The engine counts an unreadable version as Windows 11, and picks its fonts by that.
+-    match major_of(version) {
+-        Some(m) if m < 13 => "10.0.0",
+-        _ => "19.0.0",
+-    }
+-}
+-
+-fn settled_macos(version: &str, first_major: u32) -> String {
+-    let parts: Option<Vec<u32>> = version.split('.').map(|p| p.parse().ok()).collect();
+-    let Some(mut parts) = parts.filter(|p| (1..=3).contains(&p.len()) && p[0] >= 12) else {
+-        return MACOS_SETTLED.into();
+-    };
+-    if parts[0] < first_major {
+-        return if first_major >= 26 { MACOS_SETTLED } else { MACOS_SETTLED_M4 }.into();
+-    }
+-    parts.resize(3, 0);
+-    format!("{}.{}.{}", parts[0], parts[1], parts[2])
+-}
+-
+-/// A Windows or macOS platform_version Chrome could not report, replaced by the nearest one it
+-/// can, in navigator and client_hints alike. Deterministic, so it is safe on every start.
+-pub(crate) fn settle_platform_version(payload: &mut Map<String, Value>) -> bool {
+-    // The engine reads client_hints over navigator.
+-    let current = ["client_hints", "navigator"]
+-        .iter()
+-        .filter_map(|k| payload.get(*k)?.get("platform_version")?.as_str())
+-        .find(|v| !v.is_empty())
+-        .unwrap_or("")
+-        .to_string();
+-    let settled = match platform_of(payload) {
+-        "Windows" => settled_windows(&current).to_string(),
+-        "macOS" => settled_macos(&current, mac_first_major(payload)),
+-        _ => return false,
+-    };
+-    write(payload, &settled)
+-}
+-
+-#[cfg(test)]
+-mod tests {
+-    use super::*;
+-    use serde_json::json;
+-
+-    fn profile(platform: &str, version: &str, renderer: &str) -> Map<String, Value> {
+-        json!({
+-            "navigator": { "platform": platform, "platform_version": version },
+-            "client_hints": { "platform_version": version },
+-            "webgl": { "renderer": renderer },
+-        })
+-        .as_object()
+-        .cloned()
+-        .unwrap()
+-    }
+-
+-    fn pv(p: &Map<String, Value>) -> (String, String) {
+-        let get = |k: &str| p[k]["platform_version"].as_str().unwrap_or("").to_string();
+-        (get("navigator"), get("client_hints"))
+-    }
+-
+-    #[test]
+-    fn windows_keeps_what_chrome_reports_and_moves_the_rest() {
+-        for (from, to) in [
+-            ("10.0.0", "10.0.0"), ("14.0.0", "14.0.0"), ("15.0.0", "15.0.0"), ("19.0.0", "19.0.0"),
+-            ("13.0.0", "19.0.0"), ("16.0.0", "19.0.0"), ("17.0.0", "19.0.0"), ("20.0.0", "19.0.0"),
+-            ("5.0.0", "10.0.0"), ("12.0.0", "10.0.0"), ("", "19.0.0"), ("x", "19.0.0"),
+-        ] {
+-            let mut p = profile("Windows", from, "ANGLE (NVIDIA)");
+-            assert_eq!(settle_platform_version(&mut p), from != to, "{from}");
+-            assert_eq!(pv(&p), (to.into(), to.into()), "{from}");
+-        }
+-    }
+-
+-    #[test]
+-    fn mac_gets_three_parts_and_a_version_its_chip_runs() {
+-        let m1 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)";
+-        let m4 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)";
+-        let m5 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)";
+-        for (from, gpu, to) in [
+-            ("15.6.1", m1, "15.6.1"), ("15.4", m1, "15.4.0"), ("26", m1, "26.0.0"),
+-            ("14.7", m1, "14.7.0"), ("14.7", m4, "15.8.2"), ("15.6.1", m4, "15.6.1"),
+-            ("15.6.1", m5, "26.7.2"), ("26.1", m5, "26.1.0"), ("10.15.7", m1, "26.7.2"),
+-            ("", m1, "26.7.2"), ("15.6.1.2", m1, "26.7.2"),
+-        ] {
+-            let mut p = profile("macOS", from, gpu);
+-            settle_platform_version(&mut p);
+-            assert_eq!(pv(&p), (to.into(), to.into()), "{from} on {gpu}");
+-            assert!(!settle_platform_version(&mut p), "once: {from}");
+-        }
+-    }
+-
+-    #[test]
+-    fn client_hints_win_and_navigator_is_brought_along() {
+-        let mut p = profile("Windows", "15.0.0", "");
+-        p["navigator"]["platform_version"] = json!("17.0.0");
+-        assert!(settle_platform_version(&mut p));
+-        assert_eq!(pv(&p), ("15.0.0".into(), "15.0.0".into()));
+-    }
+-
+-    #[test]
+-    fn linux_and_phones_are_left_alone() {
+-        let mut linux = profile("Linux", "6.8.0", "");
+-        let mut phone = profile("Android", "16.0.0", "");
+-        assert!(!settle_platform_version(&mut linux));
+-        assert!(!settle_platform_version(&mut phone));
+-        assert_eq!(pv(&linux).0, "6.8.0");
+-    }
+-
+-    #[test]
+-    fn every_pool_value_is_already_settled() {
+-        let m5 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)";
+-        for v in WINDOWS_PLATFORM_VERSIONS {
+-            assert!(!settle_platform_version(&mut profile("Windows", v, "")), "{v}");
+-        }
+-        for v in MACOS_PLATFORM_VERSIONS {
+-            assert!(!settle_platform_version(&mut profile("macOS", v, "Apple M1")), "{v}");
+-        }
+-        for _ in 0..200 {
+-            let mut p = profile("macOS", "", m5);
+-            randomize_platform_version(&mut p);
+-            assert!(major_of(&pv(&p).0).unwrap() >= 26, "{:?}", pv(&p));
+-            assert!(!settle_platform_version(&mut p));
+-        }
+-    }
+-}
 diff --git a/src-tauri/src/process.rs b/src-tauri/src/process.rs
 index 2d25d08..01621d6 100644
 --- a/src-tauri/src/process.rs
@@ -5798,10 +7713,10 @@ index 0000000..bc59126
 +}
 diff --git a/src-tauri/src/profile_shortcut.rs b/src-tauri/src/profile_shortcut.rs
 new file mode 100644
-index 0000000..d20b0f0
+index 0000000..8bb436e
 --- /dev/null
 +++ b/src-tauri/src/profile_shortcut.rs
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,128 @@
 +//! Desktop links carry only a profile ID. The UI starts through its normal guarded path.
 +use anyhow::{bail, Context, Result};
 +use std::sync::Mutex;
@@ -5909,7 +7824,6 @@ index 0000000..d20b0f0
 +    }
 +    #[cfg(windows)]
 +    #[test]
-+    #[ignore = "requires interactive Windows shell and desktop COM"]
 +    fn native_windows_link_roundtrips_only_profile_id() {
 +        use std::os::windows::process::CommandExt;
 +        let root = crate::store::test_root("profile-shortcut-com");
@@ -15127,9 +17041,29 @@ index 0000000..f07cfc9
 +    }
 +}
 diff --git a/src-tauri/src/psapi.rs b/src-tauri/src/psapi.rs
-index 958455f..b06dc0a 100644
+index 958455f..7664255 100644
 --- a/src-tauri/src/psapi.rs
 +++ b/src-tauri/src/psapi.rs
+@@ -1,4 +1,4 @@
+-// ProxyShard billing/user API client (https://user-api.shardx.com).
++// ProxyShard billing/user API client (https://user-api.proxyshard.com).
+ //
+ // Every /user/api/ path takes `Authorization: Bearer <API_KEY>`.  The key
+ // lives in its own `psapi.json` (see store::psapi_path) so the Settings page,
+@@ -15,11 +15,11 @@ use serde::{Deserialize, Serialize};
+ use serde_json::Value;
+ use std::fs;
+ 
+-const BASE: &str = "https://user-api.shardx.com";
++const BASE: &str = "https://user-api.proxyshard.com";
+ 
+ /// The PUBLIC site API, which takes no key at all. Only the trial offer comes
+ /// from here; everything else in this file is the billing API above.
+-const SITE_BASE: &str = "https://site-api.shardx.com";
++const SITE_BASE: &str = "https://site-api.proxyshard.com";
+ 
+ #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+ pub struct PsConfig {
 @@ -177,6 +177,8 @@ pub async fn import_order_proxies(t: &crate::space::Ticket, order_id: i64, kind:
              continue;
          }
@@ -15139,6 +17073,19 @@ index 958455f..b06dc0a 100644
              id: String::new(),
              name: format!("{label} ({ip})"),
              kind: proxy_kind,
+@@ -258,9 +260,9 @@ fn resi_tokens(tier: &str) -> Result<(&'static str, &'static str)> {
+ /// Relay gateways and their ports, the same ones the generator card offers.
+ #[cfg(feature = "automation")]
+ const RESI_RELAYS: [&str; 3] = [
+-    "relay-eu.shardx.com",
+-    "relay-ru.shardx.com",
+-    "relay-ua.shardx.com",
++    "relay-eu.proxyshard.com",
++    "relay-ru.proxyshard.net",
++    "relay-ua.proxyshard.com",
+ ];
+ 
+ /// What a project asked for.
 @@ -405,6 +407,8 @@ pub async fn residential_proxy(req: ResiRequest<'_>) -> Result<ProxyEntry> {
      };
  
@@ -15162,10 +17109,10 @@ index 4d2811b..9b376ea 100644
      }
  
 diff --git a/src-tauri/src/runtime.rs b/src-tauri/src/runtime.rs
-index 4964320..ddce076 100644
+index 4964320..5f7e4fd 100644
 --- a/src-tauri/src/runtime.rs
 +++ b/src-tauri/src/runtime.rs
-@@ -31,7 +31,11 @@ const MANIFEST_URL: &str =
+@@ -31,9 +31,13 @@ const MANIFEST_URL: &str =
  /// Kept short on purpose: giving up early only costs this launch its update
  /// check, while waiting costs the operator a launcher that looks stuck.
  const MANIFEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
@@ -15176,9 +17123,54 @@ index 4964320..ddce076 100644
 +    None => "pc3",
 +};
  /// Chromium version baked into the current bundle (used for Mac Framework path).
- pub const CHROMIUM_VERSION: &str = "157.0.8103.50";
+-pub const CHROMIUM_VERSION: &str = "157.0.8103.50";
++pub const CHROMIUM_VERSION: &str = "157.0.8103.39";
  
-@@ -1677,26 +1681,22 @@ fn norm_ver(v: &str) -> &str {
+ #[derive(Serialize, Deserialize, Clone, Debug)]
+ pub struct ArchiveSpec {
+@@ -643,9 +647,6 @@ fn migrate_value(
+         if add_chrome_brand(cfg) {
+             changed = true;
+         }
+-        if cfg.as_object_mut().is_some_and(crate::settle_platform_version) {
+-            changed = true;
+-        }
+         changed
+     }
+ }
+@@ -708,22 +709,6 @@ fn add_apple_webgpu_features(cfg: &mut serde_json::Value) -> bool {
+     changed
+ }
+ 
+-#[cfg(test)]
+-mod platform_version_migration_tests {
+-    use super::migrate_value;
+-    use serde_json::json;
+-
+-    #[test]
+-    fn a_saved_profile_loses_a_windows_version_chrome_never_reports() {
+-        let mut p = json!({ "navigator": { "platform": "Windows", "platform_version": "17.0.0" },
+-            "client_hints": { "brand_full_version": "156.0.8078.48", "platform_version": "17.0.0" } });
+-        assert!(migrate_value(&mut p, "157.0.8103.39", None, None, None, None));
+-        assert_eq!((p["navigator"]["platform_version"].as_str(), p["client_hints"]["platform_version"].as_str()),
+-            (Some("19.0.0"), Some("19.0.0")));
+-        assert!(!migrate_value(&mut p, "157.0.8103.39", None, None, None, None), "once");
+-    }
+-}
+-
+ #[cfg(test)]
+ mod android_version_tests {
+     use super::migrate_value;
+@@ -1057,7 +1042,7 @@ pub fn migrate_unlocked(cfg: &mut serde_json::Value) -> bool {
+ 
+ /// Raised when `migrate_dir_to` learns a new fix, so a launcher update reruns it once
+ /// even on a manifest it has already applied.
+-const MIGRATION_REV: u32 = 5;
++const MIGRATION_REV: u32 = 4;
+ 
+ /// What a migration was applied for; the install path and the start share it.
+ fn migration_signature(target: &str, m: &RemoteManifest) -> String {
+@@ -1677,26 +1662,22 @@ fn norm_ver(v: &str) -> &str {
  
  /// Best-effort SemVer compare, lex fallback per component.
  fn is_newer(latest: &str, current: &str) -> bool {
@@ -15216,7 +17208,7 @@ index 4964320..ddce076 100644
  
      let url = format!("https://api.github.com/repos/{LAUNCHER_RELEASE_REPO}/releases/latest");
      let client = match reqwest::Client::builder()
-@@ -1739,3 +1739,15 @@ pub async fn launcher_update_check(app: tauri::AppHandle) -> Result<LauncherVers
+@@ -1739,3 +1720,15 @@ pub async fn launcher_update_check(app: tauri::AppHandle) -> Result<LauncherVers
      };
      Ok(LauncherVersionInfo { current, latest, update_available, release_url })
  }
@@ -15348,7 +17340,7 @@ index 93b7a07..a7b6315 100644
          let builders = code(ours).filter(|(_, l)| l.contains("Client::builder(")).count();
          assert_eq!(builders, 1, "one place makes team connections: link()");
 diff --git a/src-tauri/src/space/doors.rs b/src-tauri/src/space/doors.rs
-index 4bfef41..acc9686 100644
+index 4bfef41..8c0f435 100644
 --- a/src-tauri/src/space/doors.rs
 +++ b/src-tauri/src/space/doors.rs
 @@ -168,7 +168,10 @@ const RULES: &[(&str, Need)] = &[
@@ -15385,6 +17377,24 @@ index 4bfef41..acc9686 100644
      ("runtime::runtime_status", Machine),
      ("runtime::runtime_install", Machine),
      ("runtime::launcher_update_check", Machine),
+@@ -388,9 +400,6 @@ const RULES: &[(&str, Need)] = &[
+     ("GET /extensions", SEE_T),
+     ("POST /extensions", CREATE_T),
+     ("DELETE /extensions/:id", DELETE_T),
+-    ("GET /extensions/updates", SEE_T),
+-    ("POST /extensions/updates/check", SEE_T),
+-    ("POST /extensions/updates/apply", EDIT_T),
+     ("GET /bookmarks", SEE_T),
+     ("POST /bookmarks", UPSERT_T),
+     ("DELETE /bookmarks/:id", DELETE_T),
+@@ -459,7 +468,6 @@ pub const ENFORCED: &[&str] = &[
+     "DELETE /proxies/:id",
+     "POST /extensions",
+     "DELETE /extensions/:id",
+-    "POST /extensions/updates/apply",
+     "POST /bookmarks",
+     "DELETE /bookmarks/:id",
+     "POST /automation/projects",
 diff --git a/src-tauri/src/space/local/extensions/updates/tests.rs b/src-tauri/src/space/local/extensions/updates/tests.rs
 index cc0b266..07f3632 100644
 --- a/src-tauri/src/space/local/extensions/updates/tests.rs
@@ -17110,7 +19120,7 @@ index f926201..5f66d12 100644
          name: stored
              .config
 diff --git a/src-tauri/src/space/mod.rs b/src-tauri/src/space/mod.rs
-index 8b607aa..26bbe28 100644
+index 8b607aa..10bbb41 100644
 --- a/src-tauri/src/space/mod.rs
 +++ b/src-tauri/src/space/mod.rs
 @@ -79,9 +79,7 @@ impl Ticket {
@@ -17369,6 +19379,15 @@ index 8b607aa..26bbe28 100644
  }
  
  pub mod bookmarks {
+@@ -965,7 +1086,7 @@ pub mod extensions {
+     pub use local::{import_each, ExtensionEntry, Imported};
+ 
+     /// Updates of a team's extensions come later (design v2).
+-    pub const TEAM_UPDATES_NOT_YET: &str = "not offered for a team's extensions yet";
++    const TEAM_UPDATES_NOT_YET: &str = "not offered for a team's extensions yet";
+ 
+     pub fn list() -> Result<Vec<ExtensionEntry>> {
+         match team_now() {
 @@ -1320,19 +1441,50 @@ mod tests {
      }
  
@@ -17695,10 +19714,10 @@ index 0000000..80814fe
 +void run();
 diff --git a/src-tauri/src/tnbproxy.rs b/src-tauri/src/tnbproxy.rs
 new file mode 100644
-index 0000000..ea82dec
+index 0000000..406092e
 --- /dev/null
 +++ b/src-tauri/src/tnbproxy.rs
-@@ -0,0 +1,615 @@
+@@ -0,0 +1,624 @@
 +//! TNB's IP-allowlisted extraction API. Only explicit user actions call /gen;
 +//! returned entries remain previews until the existing bulk-save command runs.
 +use crate::proxy_chain::{connector::Target, tunnel::Tunnel};
@@ -17798,6 +19817,14 @@ index 0000000..ea82dec
 +
 +fn parse_response(body: &[u8], request: &ExtractRequest, server: &str) -> Result<Vec<ProxyEntry>> {
 +    let body = std::str::from_utf8(body).map_err(|_| "tnb_invalid_response")?;
++    // TNB may return HTTP 200 with a JSON business error. Surface the
++    // allowlist/auth failure before treating the JSON as a proxy line.
++    if let Ok(value) = serde_json::from_str::<serde_json::Value>(body.trim_start_matches('\u{feff}').trim()) {
++        if let Some(code) = value.get("code").and_then(serde_json::Value::as_i64) {
++            if code == 401 || code == 403 { return Err("tnb_whitelist_required"); }
++            if code != 0 { return Err("tnb_invalid_response"); }
++        }
++    }
 +    let kind = if request.kind == "http" { ProxyKind::Http } else { ProxyKind::Socks5 };
 +    let lines: Vec<&str> = body.trim_start_matches('\u{feff}').lines().map(str::trim).filter(|l| !l.is_empty()).collect();
 +    if lines.is_empty() { return Err("tnb_no_proxies"); }
@@ -18212,6 +20239,7 @@ index 0000000..ea82dec
 +            (format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", MAX_BODY + 1), "tnb_response_too_large"),
 +            (format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{chunk}\r\n0\r\n\r\n", chunk.len()), "tnb_response_too_large"),
 +            (ok("whitelist denied: secret credential"), "tnb_invalid_response"),
++            (ok(r#"{"code":403,"msg":"IP not in whitelist"}"#), "tnb_whitelist_required"),
 +        ] {
 +            let (server, task) = fixture(reply).await;
 +            assert_eq!(extract(request(server)).await.err(), Some(error));
@@ -18314,6 +20342,19 @@ index 0000000..ea82dec
 +    }
 +
 +}
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index 5101e18..63f5fb9 100644
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -1,7 +1,7 @@
+ {
+   "$schema": "https://schema.tauri.app/config/2",
+   "productName": "ShardBrowser Launcher",
+-  "version": "2.1.5",
++  "version": "2.1.4",
+   "identifier": "com.shardx.launcher",
+   "build": {
+     "beforeDevCommand": "npm run dev",
 diff --git a/src/app/App.tsx b/src/app/App.tsx
 index 9ffa73a..3e2ad74 100644
 --- a/src/app/App.tsx
@@ -18417,7 +20458,7 @@ index 0000000..282d006
 +  }, [ready]);
 +}
 diff --git a/src/dev/mock/fixtures.ts b/src/dev/mock/fixtures.ts
-index 63ef7db..36abf07 100644
+index 63ef7db..e9e6ea3 100644
 --- a/src/dev/mock/fixtures.ts
 +++ b/src/dev/mock/fixtures.ts
 @@ -27,6 +27,8 @@ export const DEFAULT_BLOCKED_PORTS = [3389, 5900, 5901, 5800, 7070, 6568, 5938,
@@ -18460,8 +20501,28 @@ index 63ef7db..36abf07 100644
      last_launched_at: p._meta.last_launched_at,
      created_at: p._meta.created_at,
      pinned: p._meta.pinned,
-@@ -370,6 +376,7 @@ function snapshot(p: ProxyEntry, minutesAgo: number, ok = true): ProxyTestSnapsh
-     udp_error: ok && !(p.kind === "socks5" && /proxyshard|shardx\./.test(p.host)) ? "SOCKS5 UDP ASSOCIATE refused" : null,
+@@ -330,11 +336,11 @@ function metaOpen(p: StoredProfile, ua: string, sync: ProfileSync | undefined):
+ // Hosts are .example names and documentation-range addresses (RFC 5737), and
+ // every secret is plainly fake (SEC-16).
+ const PROXIES: ProxyEntry[] = [
+-  { id: "px-us-1", name: "ProxyShard resi US", kind: "socks5", host: "relay-eu.shardx.example", port: 1080, username: "plan-premium_country-us_session-a1f9", password: "mock-pass-1", country: "US", notes: "Sticky session, premium tier" },
++  { id: "px-us-1", name: "ProxyShard resi US", kind: "socks5", host: "relay-eu.proxyshard.example", port: 1080, username: "plan-premium_country-us_session-a1f9", password: "mock-pass-1", country: "US", notes: "Sticky session, premium tier" },
+   { id: "px-us-2", name: "DC New York", kind: "socks5", host: "203.0.113.18", port: 1080, username: "shard", password: "mock-pass-2", country: "US", notes: "" },
+   { id: "px-de-1", name: "ISP Frankfurt", kind: "http", host: "198.51.100.7", port: 8080, username: "shard", password: "mock-pass-3", country: "DE", notes: "Unlimited ISP" },
+   { id: "px-jp-1", name: "DC Tokyo", kind: "socks5", host: "203.0.113.90", port: 1080, username: "shard", password: "mock-pass-4", country: "JP", notes: "" },
+-  { id: "px-mobile-1", name: "Mobile UK EE", kind: "socks5", host: "relay-ru.shardx.example", port: 1080, username: "plan-mobile_country-gb_session-77c0", password: "mock-pass-5", country: "GB", notes: "Rotates every 10 min" },
++  { id: "px-mobile-1", name: "Mobile UK EE", kind: "socks5", host: "relay-ru.proxyshard.example", port: 1080, username: "plan-mobile_country-gb_session-77c0", password: "mock-pass-5", country: "GB", notes: "Rotates every 10 min" },
+   { id: "px-dead", name: "Old datacenter (expired)", kind: "https", host: "192.0.2.66", port: 443, username: "", password: "", country: "NL", notes: "Order lapsed 2 weeks ago" },
+   // Never tested (e2e/status-dots.spec.ts): no entry in the snapshot loop
+   // below, so `proxyStatus` sees no history at all — the one seed proxy
+@@ -366,10 +372,11 @@ function snapshot(p: ProxyEntry, minutesAgo: number, ok = true): ProxyTestSnapsh
+     latitude: ok ? g[5] : 0,
+     longitude: ok ? g[6] : 0,
+     tcp_ms: ok ? 38 + base * 2 : null,
+-    udp_ms: ok && p.kind === "socks5" && /proxyshard|shardx\./.test(p.host) ? 52 + base * 2 : null,
+-    udp_error: ok && !(p.kind === "socks5" && /proxyshard|shardx\./.test(p.host)) ? "SOCKS5 UDP ASSOCIATE refused" : null,
++    udp_ms: ok && p.kind === "socks5" && p.host.includes("proxyshard") ? 52 + base * 2 : null,
++    udp_error: ok && !(p.kind === "socks5" && p.host.includes("proxyshard")) ? "SOCKS5 UDP ASSOCIATE refused" : null,
      geo_error: ok ? null : "connect timed out after 8000 ms",
      provider: "ip-api.com",
 +    content: ok ? { status: "passed", http_status: 200, bytes: 512 } : { status: "failed", http_status: null, bytes: null, error: "target connection or response failed" },
@@ -18477,7 +20538,7 @@ index 63ef7db..36abf07 100644
      api: { enabled: true, port: 40325, base_url: "http://127.0.0.1:40325", token: "shx_mock_00000000000000000000000000" },
      psKey: "psk_test_mock_000000000000000000000000",
 diff --git a/src/dev/mock/handlers.ts b/src/dev/mock/handlers.ts
-index 41d96a9..d1667ec 100644
+index 41d96a9..3928490 100644
 --- a/src/dev/mock/handlers.ts
 +++ b/src/dev/mock/handlers.ts
 @@ -14,7 +14,7 @@ import { alreadyInLibrary, extProfileClosed, extUpdateHandlers, importSame } fro
@@ -18497,6 +20558,15 @@ index 41d96a9..d1667ec 100644
  }
  
  function stopProcess(state: MockState, id: string): boolean {
+@@ -131,7 +132,7 @@ function cloneProfile(src: StoredProfile, name: string): StoredProfile {
+ 
+ function testSnapshot(entry: ProxyEntry, previous?: ProxyTestSnapshot): ProxyTestSnapshot {
+   const dead = !entry.host || entry.name.toLowerCase().includes("expired");
+-  const isShard = entry.kind === "socks5" && /proxyshard|shardx\./.test(entry.host);
++  const isShard = entry.kind === "socks5" && entry.host.includes("proxyshard");
+   const base = 30 + Math.round(Math.random() * 120);
+   return {
+     // The backend stamps "@<unix seconds>", as it does everywhere.
 @@ -151,6 +152,7 @@ function testSnapshot(entry: ProxyEntry, previous?: ProxyTestSnapshot): ProxyTes
      udp_error: dead ? null : isShard ? null : "SOCKS5 UDP ASSOCIATE refused",
      geo_error: dead ? "connect timed out after 8000 ms" : null,
@@ -18708,6 +20778,15 @@ index 41d96a9..d1667ec 100644
    proxy_bulk_save: ({ entries }, ctx) => addProxies(entries as ProxyEntry[], ctx),
    proxy_bulk_import: ({ text, kind }, ctx) => addProxies(parseProxyLines(String(text ?? ""), kind), ctx),
  
+@@ -1090,7 +1243,7 @@ export const handlers: Record<string, Handler> = {
+   // going, which is what a developer should see.
+   ps_trial_offer: async () => (window as { __shardxMockTrialOffer?: unknown }).__shardxMockTrialOffer ?? { show: false },
+   ps_set_key: ({ key }, ctx) => { ctx.state.psKey = String(key ?? ""); ctx.save(); return null; },
+-  ps_me: async (_a, { state }) => { await sleep(400); if (!state.psKey) throw "401 Unauthorized: API key missing"; if (!state.psKey.startsWith("psk_")) throw "401 Unauthorized: key rejected by user-api.shardx.com"; return { ...PS_ME, wallet_balance: state.psBalance ?? PS_ME.wallet_balance, active_orders: state.psOrders.filter((o) => o.expires_at && Date.parse(o.expires_at) > Date.now()).length }; },
++  ps_me: async (_a, { state }) => { await sleep(400); if (!state.psKey) throw "401 Unauthorized: API key missing"; if (!state.psKey.startsWith("psk_")) throw "401 Unauthorized: key rejected by user-api.proxyshard.com"; return { ...PS_ME, wallet_balance: state.psBalance ?? PS_ME.wallet_balance, active_orders: state.psOrders.filter((o) => o.expires_at && Date.parse(o.expires_at) > Date.now()).length }; },
+   ps_orders: ({ status = "all", offset = 0, limit = 20 }, { state }) => {
+     const active = (o: { expires_at: string | null }) => !!o.expires_at && Date.parse(o.expires_at) > Date.now();
+     const all = state.psOrders.filter((o) => status === "all" ? true : status === "active" ? active(o) : status === "cancelled" ? !active(o) : false);
 diff --git a/src/dev/mock/install.ts b/src/dev/mock/install.ts
 index 78fcaa6..7215399 100644
 --- a/src/dev/mock/install.ts
@@ -18734,6 +20813,21 @@ index 7b3b658..e27eba6 100644
        return NOT_IN_TEAM;
      case "profile_create_from_template":
        return inFolder("");
+diff --git a/src/entities/extension/lib/useExtensionUpdates.tsx b/src/entities/extension/lib/useExtensionUpdates.tsx
+index 99cd449..83d1745 100644
+--- a/src/entities/extension/lib/useExtensionUpdates.tsx
++++ b/src/entities/extension/lib/useExtensionUpdates.tsx
+@@ -241,10 +241,6 @@ export function watchExtensionUpdates(): () => void {
+       });
+     }),
+     listen<UpdateNews>("extension-updates:news", ({ payload }) => tellNews(payload)),
+-    // A check or an update over the local API: the cards read it again.
+-    listen<string>("store-changed", ({ payload }) => {
+-      if (payload === "extension-updates" || payload === "extensions") void useExtensionUpdates.getState().load();
+-    }),
+   ];
+   // Another space: its own records, none of the old ones.
+   const offSpace = onSpaceMoved(() => {
 diff --git a/src/entities/fingerprint/lib/selectors.ts b/src/entities/fingerprint/lib/selectors.ts
 index 707e3c6..3cc3cfe 100644
 --- a/src/entities/fingerprint/lib/selectors.ts
@@ -20010,6 +22104,36 @@ index f974aad..d4a6974 100644
  };
  
  export type BulkRowState = {
+diff --git a/src/entities/proxyshard/lib/planTier.ts b/src/entities/proxyshard/lib/planTier.ts
+index cbea806..3de871c 100644
+--- a/src/entities/proxyshard/lib/planTier.ts
++++ b/src/entities/proxyshard/lib/planTier.ts
+@@ -24,10 +24,9 @@ export type PlanUsage = {
+ const TOKEN_TIER = Object.fromEntries(Object.entries(PS_PLAN).map(([tier, token]) => [token, tier])) as Record<string, ResiType>;
+ 
+ /** The residential tier a proxy draws its traffic from: a ProxyShard relay
+- *  whose user name starts with the plan's token ("plan-premium-…"). The
+- *  relays moved to shardx.com; proxies saved on the old hosts still count. */
++ *  whose user name starts with the plan's token ("plan-premium-…"). */
+ export function planTierOf(p: { host: string; username: string }): ResiType | null {
+-  if (!/proxyshard|(?:^|\.)shardx\.(?:com|net)$/i.test(p.host)) return null;
++  if (!/proxyshard/i.test(p.host)) return null;
+   const token = /^plan-([a-z]+)/i.exec(p.username)?.[1]?.toLowerCase();
+   return token ? TOKEN_TIER[token] ?? null : null;
+ }
+diff --git a/src/entities/proxyshard/lib/usePsAccount.tsx b/src/entities/proxyshard/lib/usePsAccount.tsx
+index b53a7ee..9c59930 100644
+--- a/src/entities/proxyshard/lib/usePsAccount.tsx
++++ b/src/entities/proxyshard/lib/usePsAccount.tsx
+@@ -49,7 +49,7 @@ export const usePsAccount = create<PsAccountStore>((set, get) => ({
+             initing = false;
+         }
+     },
+-    // Validate the saved key against user-api.shardx.com and pull the wallet.
++    // Validate the saved key against user-api.proxyshard.com and pull the wallet.
+     refreshMe: async () => {
+         set({ status: "checking", err: "" });
+         try {
 diff --git a/src/entities/proxyshard/model/api.ts b/src/entities/proxyshard/model/api.ts
 index 6b4147a..d67ca50 100644
 --- a/src/entities/proxyshard/model/api.ts
@@ -20024,6 +22148,23 @@ index 6b4147a..d67ca50 100644
  export const psCalculate = (params: { product: string; location: string | null; cycle: string | null; quantity: number; promoCode: string | null; addonsJson: string | null }) => invoke<any>("ps_calculate", params);
  export const psPurchase = (body: any) => invoke<any>("ps_purchase", { body });
  export const psAvailableCount = () => invoke<any>("ps_available_count");
+diff --git a/src/entities/proxyshard/model/constants.ts b/src/entities/proxyshard/model/constants.ts
+index 1620bda..f4a1f75 100644
+--- a/src/entities/proxyshard/model/constants.ts
++++ b/src/entities/proxyshard/model/constants.ts
+@@ -17,9 +17,9 @@ export const PS_SIGNATURES: { value: string; label: string }[] = [
+ // Residential relay gateway hosts for generated proxy strings (port depends
+ // on protocol — see PS_PORT).
+ export const PS_RELAYS = [
+-  "relay-eu.shardx.com",
+-  "relay-ru.shardx.com",
+-  "relay-ua.shardx.com",
++  "relay-eu.proxyshard.com",
++  "relay-ru.proxyshard.net",
++  "relay-ua.proxyshard.com",
+ ];
+ 
+ // Relay ports differ by protocol: HTTP 8080, SOCKS5 1080.
 diff --git a/src/entities/settings/model/api.ts b/src/entities/settings/model/api.ts
 index 21cd2af..5b2d56c 100644
 --- a/src/entities/settings/model/api.ts
@@ -20570,6 +22711,17 @@ index d34d560..fca04e6 100644
              { value: "added", label: t("profileFilterBar.orderAdded") },
              { value: "name-asc", label: t("profileFilterBar.orderNameAsc") },
              { value: "name-desc", label: t("profileFilterBar.orderNameDesc") },
+diff --git a/src/features/manage-proxies/lib/buyProxies.ts b/src/features/manage-proxies/lib/buyProxies.ts
+index ee0ab1e..f6474c5 100644
+--- a/src/features/manage-proxies/lib/buyProxies.ts
++++ b/src/features/manage-proxies/lib/buyProxies.ts
+@@ -7,5 +7,5 @@ import { t } from "../../../shared/i18n";
+ /// from the empty list (CRAFT-25). When the browser cannot open, it says so
+ /// instead of doing nothing.
+ export function buyProxies() {
+-  openUrl(withUtm("https://shardx.com")).catch(() => { toast.err(t("proxiesMoreMenu.buyFailed")); });
++  openUrl(withUtm("https://proxyshard.com")).catch(() => { toast.err(t("proxiesMoreMenu.buyFailed")); });
+ }
 diff --git a/src/features/manage-proxies/ui/EditProxyDialog.tsx b/src/features/manage-proxies/ui/EditProxyDialog.tsx
 index 592692c..fba5e29 100644
 --- a/src/features/manage-proxies/ui/EditProxyDialog.tsx
@@ -20608,7 +22760,7 @@ index 4ac3ecc..eb5ba91 100644
          aria-description={why ?? undefined}
 diff --git a/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
 new file mode 100644
-index 0000000..a391e3e
+index 0000000..7adf396
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
 @@ -0,0 +1,62 @@
@@ -20644,7 +22796,7 @@ index 0000000..a391e3e
 +      <p className="m-0 text-help text-text-sub-600">{t("provider.defaultsHelp")}</p>
 +      {value && <>
 +        {provider !== "tnbproxy" && <div className="flex flex-col gap-3">
-+          <h3 className="m-0 text-section-label text-text-strong-950">{t("provider.name1024")}</h3>
++          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("provider.name1024")}</h3><a className="text-help text-text-sub-600 underline" href="https://1024proxy.io" target="_blank" rel="noreferrer">{t("provider.openWebsite")}</a></div>
 +          <Input inputSize="xsmall" label={t("provider.relay")} value={value.relay} onChange={(e) => patch({ relay: e.target.value })} />
 +          <div className="grid grid-cols-2 gap-3">
 +            <Input inputSize="xsmall" label={t("provider.account")} value={value.username} onChange={(e) => patch({ username: e.target.value })} />
@@ -20654,7 +22806,7 @@ index 0000000..a391e3e
 +          <p className="m-0 text-help text-text-sub-600">{t("provider.templateHelp")}</p>
 +        </div>}
 +        {provider !== "1024proxy" && <div className="flex flex-col gap-3">
-+          <h3 className="m-0 text-section-label text-text-strong-950">{t("tnb.provider")}</h3>
++          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("tnb.provider")}</h3><a className="text-help text-text-sub-600 underline" href="https://dash.tnbproxy.com" target="_blank" rel="noreferrer">{t("provider.openWebsite")}</a></div>
 +          <Input inputSize="xsmall" label={t("tnb.server")} value={value.tnb_server} onChange={(e) => patch({ tnb_server: e.target.value })} />
 +          <div className="grid grid-cols-2 gap-3">
 +            <Input inputSize="xsmall" label={t("tnb.plan")} value={value.tnb_plan} onChange={(e) => patch({ tnb_plan: e.target.value })} />
@@ -20828,10 +22980,10 @@ index 00a9dbe..585efa1 100644
              { value: "latency", label: t("proxyDisplay.orderLatency") },
 diff --git a/src/features/manage-proxies/ui/TnbExtractForm.tsx b/src/features/manage-proxies/ui/TnbExtractForm.tsx
 new file mode 100644
-index 0000000..f6b3130
+index 0000000..fbe6501
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/TnbExtractForm.tsx
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,101 @@
 +import { Checkbox, Input, Select } from "@proxyshard/shardx-ui-kit";
 +import { useT } from "../../../shared/i18n";
 +import type { TnbExtractRequest } from "../../../entities/proxy";
@@ -20880,6 +23032,7 @@ index 0000000..f6b3130
 +    case "tnb_timeout": return t("tnb.errorTimeout");
 +    case "tnb_route_failed": return t("tnb.errorRoute");
 +    case "tnb_http_status": return t("tnb.errorHttp");
++    case "tnb_whitelist_required": return t("tnb.errorWhitelist");
 +    case "tnb_response_too_large": return t("tnb.errorLarge");
 +    case "tnb_invalid_response": return t("tnb.errorResponse");
 +    case "tnb_no_proxies": return t("tnb.errorEmpty");
@@ -21943,6 +24096,19 @@ index 2615045..448459c 100644
            GitHub
          </Button>
        </div>
+diff --git a/src/pages/settings/sections/Api.tsx b/src/pages/settings/sections/Api.tsx
+index 6ed830f..758c2b3 100644
+--- a/src/pages/settings/sections/Api.tsx
++++ b/src/pages/settings/sections/Api.tsx
+@@ -16,7 +16,7 @@ import { holdSave } from "../useSettingsDraft";
+ 
+ // The one docs page there is (plan ruling 8). A real href gives the link its
+ // role and a copyable target; the click opens the system browser.
+-const API_DOCS = "https://docs.shardx.com/eng/shardx-launcher-api/binding-and-lifecycle?fallback=true";
++const API_DOCS = "https://docs.proxyshard.com/eng/shardx-launcher-api/binding-and-lifecycle?fallback=true";
+ const LOOPBACK = "127.0.0.1";
+ 
+ export function ApiSection({ s, saved, setS, api, setApi, apiError, retryApi }: SettingsProps & {
 diff --git a/src/pages/settings/sections/Appearance.tsx b/src/pages/settings/sections/Appearance.tsx
 index af6397c..9edf2e3 100644
 --- a/src/pages/settings/sections/Appearance.tsx
@@ -22714,7 +24880,7 @@ index 0000000..c2bf0d9
 +  }, [kind, allIds, visibleIds, selected, groupOf, onReorder, dragHandle, resetSavedOrder, t, scope]);
 +}
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index ce72a51..4b5e856 100644
+index ce72a51..a47375d 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
 @@ -1,4 +1,37 @@
@@ -22755,6 +24921,15 @@ index ce72a51..4b5e856 100644
    "accent.custom": "Custom color",
    "actionMenu.byPosition": "{what}, by position",
    "actionMenu.clear": "Clear field",
+@@ -1929,7 +1962,7 @@
+   "projectEditor.worldMain": "Main",
+   "proxies.title": "Proxies",
+   "proxiesMoreMenu.buy": "Buy proxies",
+-  "proxiesMoreMenu.buyFailed": "Could not open shardx.com",
++  "proxiesMoreMenu.buyFailed": "Could not open proxyshard.com",
+   "proxyBulkImporter.active": "Active",
+   "proxyBulkImporter.addFailed": "Couldn’t add the proxies",
+   "proxyBulkImporter.back": "Back",
 @@ -2307,11 +2340,6 @@
    "settings.aboutUpdatesLabel": "Updates",
    "settings.aboutVersionLabel": "Version",
@@ -22776,7 +24951,7 @@ index ce72a51..4b5e856 100644
 +  "proxyChain.enable": "Use system proxy to connect to proxies",
 +  "proxyChain.enableHelp": "Connect to each profile’s assigned proxy through the system proxy. Websites still see the profile proxy’s exit IP.",
 +  "proxyChain.nextStart": "Save to apply to new starts. Restart a running profile to use the changed connection.",
-+  "proxyChain.tcpOnly": "Proxy chain v1 supports TCP only. UDP and QUIC are disabled, and WebRTC uses TCP only.",
++  "proxyChain.tcpOnly": "Proxy chain v1 currently establishes TCP tunnels only. HTTP and SOCKS5 can carry UDP in some deployments, but this chain has no end-to-end UDP/QUIC relay yet. UDP and QUIC also increase network fingerprint exposure, so they stay disabled until a separate capability test passes.",
 +  "proxyChain.configurationTitle": "System proxy configuration",
 +  "proxyChain.mode": "Configuration method",
 +  "proxyChain.modeAuto": "Detect system proxy automatically",
@@ -22883,7 +25058,7 @@ index ce72a51..4b5e856 100644
    "sync.intro": "Sync keeps your profiles and the rest the same on every computer you use. They meet on a sync server: one you run yourself, or your team’s.",
    "sync.teamHelp": "Sync through the server of a team you have joined.",
    "sync.teamTitle": "Use a team server",
-@@ -3481,5 +3591,200 @@
+@@ -3481,5 +3591,202 @@
    "sync.guideWhere": "Run it on a computer that stays on and that all your computers can reach: a small VPS or a home server.",
    "sync.syncFirst": "Sync first",
    "sync.unsentMany": "{n} changes made here haven’t reached the server: they stay on this computer only.",
@@ -23083,10 +25258,12 @@ index ce72a51..4b5e856 100644
 +  "provider.checkPassed": "Passed; arbitrary page content remains unverified",
 +  "provider.checkFailed": "Failed",
 +  "provider.checkUnverified": "Unverified",
-+  "provider.name1024": "1024Proxy"
++  "provider.name1024": "1024Proxy",
++  "tnb.errorWhitelist": "The TNB extraction request came from an IP outside the allowlist. Add the current request IP to the provider allowlist and retry.",
++  "provider.openWebsite": "Open provider website"
  }
 diff --git a/src/shared/i18n/locales/ru.json b/src/shared/i18n/locales/ru.json
-index 7276e13..6b097a6 100644
+index 7276e13..c9dc07e 100644
 --- a/src/shared/i18n/locales/ru.json
 +++ b/src/shared/i18n/locales/ru.json
 @@ -1,4 +1,37 @@
@@ -23127,6 +25304,15 @@ index 7276e13..6b097a6 100644
    "accent.custom": "Свой цвет",
    "actionMenu.byPosition": "{what} (по координатам)",
    "actionMenu.clear": "Очистить поле",
+@@ -1929,7 +1962,7 @@
+   "projectEditor.worldMain": "Основная",
+   "proxies.title": "Прокси",
+   "proxiesMoreMenu.buy": "Купить прокси",
+-  "proxiesMoreMenu.buyFailed": "Не удалось открыть shardx.com",
++  "proxiesMoreMenu.buyFailed": "Не удалось открыть proxyshard.com",
+   "proxyBulkImporter.active": "Работает",
+   "proxyBulkImporter.addFailed": "Не удалось добавить прокси",
+   "proxyBulkImporter.back": "Назад",
 @@ -2307,11 +2340,6 @@
    "settings.aboutUpdatesLabel": "Обновления",
    "settings.aboutVersionLabel": "Версия",
@@ -23148,7 +25334,7 @@ index 7276e13..6b097a6 100644
 +  "proxyChain.enable": "Подключаться к прокси через системный прокси",
 +  "proxyChain.enableHelp": "Соединение с назначенным прокси профиля проходит через системный прокси. Сайты по-прежнему видят выходной IP прокси профиля.",
 +  "proxyChain.nextStart": "Сохранённые изменения применяются при следующем запуске. Перезапустите открытый профиль для смены подключения.",
-+  "proxyChain.tcpOnly": "Цепочка прокси v1 поддерживает только TCP. UDP и QUIC отключены, WebRTC использует только TCP.",
++  "proxyChain.tcpOnly": "Версия 1 прокси-цепочки сейчас создаёт только TCP-туннели. HTTP и SOCKS5 в некоторых конфигурациях могут переносить UDP, но эта цепочка пока не поддерживает сквозную передачу UDP/QUIC. UDP и QUIC также повышают риск раскрытия сетевого отпечатка, поэтому они отключены до отдельной проверки.",
 +  "proxyChain.configurationTitle": "Настройка системного прокси",
 +  "proxyChain.mode": "Способ настройки",
 +  "proxyChain.modeAuto": "Определять системный прокси автоматически",
@@ -23255,7 +25441,7 @@ index 7276e13..6b097a6 100644
    "sync.intro": "Синхронизация делает профили и остальное одинаковыми на всех ваших компьютерах. Данные передаются через сервер синхронизации: ваш собственный или сервер вашей команды.",
    "sync.teamHelp": "Синхронизация через сервер команды, в которую вы вступили.",
    "sync.teamTitle": "Использовать сервер команды",
-@@ -3481,5 +3591,200 @@
+@@ -3481,5 +3591,202 @@
    "sync.guideWhere": "Запускайте его на компьютере, который всегда включён и доступен всем вашим компьютерам: на небольшом VPS или домашнем сервере.",
    "sync.syncFirst": "Сначала синхронизировать",
    "sync.unsentMany": "{n} {n|изменение, сделанное здесь, не дошло|изменения, сделанные здесь, не дошли|изменений, сделанных здесь, не дошли} до сервера: они останутся только на этом компьютере.",
@@ -23455,10 +25641,12 @@ index 7276e13..6b097a6 100644
 +  "provider.checkPassed": "Passed; arbitrary page content remains unverified",
 +  "provider.checkFailed": "Failed",
 +  "provider.checkUnverified": "Unverified",
-+  "provider.name1024": "1024Proxy"
++  "provider.name1024": "1024Proxy",
++  "tnb.errorWhitelist": "IP запроса TNB отсутствует в белом списке. Добавьте текущий IP запроса в список провайдера и повторите попытку.",
++  "provider.openWebsite": "Открыть сайт провайдера"
  }
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index e646200..b48fc78 100644
+index e646200..b64aadc 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
 @@ -1,4 +1,37 @@
@@ -23499,6 +25687,15 @@ index e646200..b48fc78 100644
    "accent.custom": "自定义颜色",
    "actionMenu.byPosition": "{what}（按位置）",
    "actionMenu.clear": "清空字段",
+@@ -1929,7 +1962,7 @@
+   "projectEditor.worldMain": "主环境",
+   "proxies.title": "代理",
+   "proxiesMoreMenu.buy": "购买代理",
+-  "proxiesMoreMenu.buyFailed": "无法打开 shardx.com",
++  "proxiesMoreMenu.buyFailed": "无法打开 proxyshard.com",
+   "proxyBulkImporter.active": "可用",
+   "proxyBulkImporter.addFailed": "无法添加这些代理",
+   "proxyBulkImporter.back": "返回",
 @@ -2307,11 +2340,6 @@
    "settings.aboutUpdatesLabel": "更新",
    "settings.aboutVersionLabel": "版本",
@@ -23520,7 +25717,7 @@ index e646200..b48fc78 100644
 +  "proxyChain.enable": "使用系统代理连接代理",
 +  "proxyChain.enableHelp": "通过系统代理连接每个配置原有的代理。网站看到的仍是配置代理的出口 IP。",
 +  "proxyChain.nextStart": "保存后对新启动生效。正在运行的配置需要重启才能采用新的连接方式。",
-+  "proxyChain.tcpOnly": "代理链 V1 仅支持 TCP。UDP 和 QUIC 已禁用，WebRTC 仅使用 TCP。",
++  "proxyChain.tcpOnly": "代理链 V1 当前只建立 TCP 隧道；不是 HTTP、SOCKS5 本身不能承载 UDP，而是链路实现尚未提供端到端 UDP/QUIC 转发。启用 UDP 或 QUIC 会增加真实网络指纹暴露风险，后续应以单独能力测试确认，不能默认放行。",
 +  "proxyChain.configurationTitle": "系统代理配置",
 +  "proxyChain.mode": "配置方式",
 +  "proxyChain.modeAuto": "自动检测系统代理",
@@ -23627,7 +25824,7 @@ index e646200..b48fc78 100644
    "sync.intro": "同步让你的配置和其他数据在你使用的每台电脑上保持一致。它们通过同步服务器汇合：你自己运行的，或你团队的。",
    "sync.teamHelp": "通过你已加入的团队的服务器同步。",
    "sync.teamTitle": "使用团队服务器",
-@@ -3481,5 +3591,200 @@
+@@ -3481,5 +3591,202 @@
    "sync.guideWhere": "在一台始终开机、你所有电脑都能访问的电脑上运行它：小型 VPS 或家用服务器。",
    "sync.syncFirst": "先同步",
    "sync.unsentMany": "这里做的 {n} 项更改还没送达服务器：它们只会留在这台电脑上。",
@@ -23827,16 +26024,18 @@ index e646200..b48fc78 100644
 +  "provider.checkPassed": "已通过；任意网页正文仍待验证",
 +  "provider.checkFailed": "失败",
 +  "provider.checkUnverified": "未验证",
-+  "provider.name1024": "1024Proxy"
++  "provider.name1024": "1024Proxy",
++  "tnb.errorWhitelist": "TNB 提取请求的出口 IP 不在白名单中，请将当前请求出口 IP 加入供应商白名单后重试。",
++  "provider.openWebsite": "打开供应商网站"
  }
 diff --git a/src/shared/lib/analytics.ts b/src/shared/lib/analytics.ts
-index ee99e6f..0c70fe2 100644
+index ee99e6f..62a2d62 100644
 --- a/src/shared/lib/analytics.ts
 +++ b/src/shared/lib/analytics.ts
-@@ -1,199 +1,13 @@
+@@ -1,199 +1,11 @@
 -import { getVersion } from "@tauri-apps/api/app";
 -import { randomId } from "./utils";
- 
+-
 -// Launcher-window analytics only: never the panels, never a profile's browser.
 -//
 -// The hit is built and sent here rather than by gtag.js. A release window runs
@@ -23951,8 +26150,8 @@ index ee99e6f..0c70fe2 100644
 -/** Last section sent, and when — StrictMode mounts an effect twice in dev. */
 -let lastSection = "";
 -let lastSectionAt = 0;
+-
 +/** Usage statistics are disabled in this fork. */
- 
  export function initAnalytics(): Promise<void> {
 -  if (!analyticsEnabled()) return Promise.resolve();
 -  if (!ready) {
@@ -24487,6 +26686,25 @@ index 0000000..203212d
 +    return ["http:", "https:"].includes(url.protocol) && !!url.hostname;
 +  } catch { return false; }
 +}
+diff --git a/src/shared/lib/utils.ts b/src/shared/lib/utils.ts
+index 7c970e1..4b15696 100644
+--- a/src/shared/lib/utils.ts
++++ b/src/shared/lib/utils.ts
+@@ -132,12 +132,12 @@ export function daysUntil(unixSecs: number): number {
+   return Math.max(0, Math.ceil((unixSecs * 1000 - Date.now()) / 86_400_000));
+ }
+ 
+-// Single UTM tag appended to every outbound shardx.com link.
++// Single UTM tag appended to every outbound proxyshard.com link.
+ export const UTM_QS = "utm_source=shardx&utm_medium=referral&utm_campaign=shardx-launcher";
+ export const withUtm = (url: string) => url + (url.includes("?") ? "&" : "?") + UTM_QS;
+ 
+ // ProxyShard dashboard (account, billing, API key).
+-export const DASHBOARD_URL = withUtm("https://dashboard.shardx.com/");
++export const DASHBOARD_URL = withUtm("https://dashboard.proxyshard.com/");
+ 
+ export const GH_REPO_URL = "https://github.com/ProxyShard/ShardBrowser";
+ 
 diff --git a/src/shared/model/listOrder.ts b/src/shared/model/listOrder.ts
 new file mode 100644
 index 0000000..c0d01b1
@@ -24809,6 +27027,32 @@ index e75b652..50c6825 100644
    if (/port in use|address in use/i.test(raw)) return t("overview.whyPort");
    // The backend's own words, as the end of a sentence.
    const words = raw.replace(/^Error:\s*/, "").replace(/[.\s]+$/, "");
+diff --git a/src/widgets/PageHeader/PageHeader.tsx b/src/widgets/PageHeader/PageHeader.tsx
+index b8cbbce..b5fd26d 100644
+--- a/src/widgets/PageHeader/PageHeader.tsx
++++ b/src/widgets/PageHeader/PageHeader.tsx
+@@ -12,6 +12,8 @@ import { useCompactActions } from "./compact";
+ import { PageHelpButton, type PageHelp } from "./PageHelp";
+ import { useScrollMemory } from "../../shared/model/scrollMemory";
+ import { useKeyPrefs } from "../../shared/model/keyPrefs";
++import { ProxyQuickControl } from "../ProfileTable/ProxyQuickControl";
++import { ThemeQuickControl } from "../ProfileTable/ThemeQuickControl";
+ 
+ type Filter = { value: string; onChange: (v: string) => void; placeholder?: string };
+ 
+@@ -212,7 +214,11 @@ export function PageHeader({ title, lead, count, help, after, filter, actions, w
+             </span>
+           </div>
+         )}
+-        <div ref={actionsRef} data-header-actions className="flex shrink-0 items-center gap-2">{actions}</div>
++        <div ref={actionsRef} data-header-actions className="flex shrink-0 items-center gap-2">
++          <ProxyQuickControl />
++          <ThemeQuickControl />
++          {actions}
++        </div>
+       </div>
+     </header>
+   );
 diff --git a/src/widgets/ProfilePeek/rows/DetailRows.tsx b/src/widgets/ProfilePeek/rows/DetailRows.tsx
 index 708f089..ecc5d3c 100644
 --- a/src/widgets/ProfilePeek/rows/DetailRows.tsx
@@ -25023,35 +27267,15 @@ index 43537a4..3b2eda7 100644
              proxy={p.proxy_id ? proxyMap[p.proxy_id] ?? null : null}
              top={offsetOf(i)}
              columns={columns}
-diff --git a/src/widgets/ProfileTable/ProfileToolbar.tsx b/src/widgets/ProfileTable/ProfileToolbar.tsx
-index aa738ea..81ec438 100644
---- a/src/widgets/ProfileTable/ProfileToolbar.tsx
-+++ b/src/widgets/ProfileTable/ProfileToolbar.tsx
-@@ -5,11 +5,15 @@ import {
-   ProfileDisplayMenu,
-   SaveAsViewButton,
- } from "../../features/manage-profiles";
-+import { ProxyQuickControl } from "./ProxyQuickControl";
-+import { ThemeQuickControl } from "./ThemeQuickControl";
- 
- /// Filters and Display act on rows; with none they are noise (LAYOUT-20).
- export function ProfileToolbar({ empty = false }: { empty?: boolean }) {
-   return (
-     <div className="flex items-center flex-none gap-2">
-+      <ProxyQuickControl />
-+      <ThemeQuickControl />
-       {!empty && <SaveAsViewButton />}
-       {/* One box for the tour to point at: Filters and Display. */}
-       {!empty && (
 diff --git a/src/widgets/ProfileTable/ProxyQuickControl.tsx b/src/widgets/ProfileTable/ProxyQuickControl.tsx
 new file mode 100644
-index 0000000..c6462e6
+index 0000000..7ff7943
 --- /dev/null
 +++ b/src/widgets/ProfileTable/ProxyQuickControl.tsx
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,150 @@
 +import { useEffect, useId, useRef, useState } from "react";
-+import { Button, Switch } from "@proxyshard/shardx-ui-kit";
-+import { defaultProxyChain, proxyChainSetEnabled, proxyChainTest, settingsGet, type ProxyChainSettings, type ProxyChainTestResult } from "../../entities/settings";
++import { Button, Input, Switch } from "@proxyshard/shardx-ui-kit";
++import { defaultProxyChain, proxyChainSetEnabled, proxyChainTest, settingsGet, settingsSave, type ProxyChainSettings, type ProxyChainTestResult } from "../../entities/settings";
 +import { useNav } from "../../shared/model/navigation";
 +import { RouteIcon } from "../../shared/icons";
 +import { useT } from "../../shared/i18n";
@@ -25059,6 +27283,8 @@ index 0000000..c6462e6
 +import { explainError } from "../../shared/lib/errors";
 +import { fmtTs } from "../../shared/lib/utils";
 +import { StatusDot } from "../../shared/ui/StatusDot";
++import { NumField } from "../../shared/ui/NumField";
++import { SelectField } from "../../shared/ui/SelectField";
 +
 +/** Saved global routing and a fresh first-hop probe, never a profile's exit. */
 +export function ProxyQuickControl() {
@@ -25114,6 +27340,22 @@ index 0000000..c6462e6
 +    document.addEventListener("keydown", escape);
 +    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
 +  }, [open]);
++  const saveRoute = async (patch: Partial<ProxyChainSettings>) => {
++    if (writePending.current || !config) return;
++    const generation = lifetime.current;
++    writePending.current = true;
++    ++sequence.current; setSaving(true); setBusy(false); setError(null); setResult(null);
++    try {
++      const settings = await settingsGet();
++      const value = { ...config, ...patch };
++      await settingsSave({ ...settings, proxy_chain: value });
++      if (!alive.current || generation !== lifetime.current) return;
++      ++sequence.current; setConfig(value);
++    } catch (e) { if (alive.current && generation === lifetime.current) setError(errorText(e)); }
++    finally { writePending.current = false; if (alive.current && generation === lifetime.current) setSaving(false); }
++    if (alive.current && generation === lifetime.current) void refresh(true);
++  };
++
 +  const toggle = async (enabled: boolean) => {
 +    if (writePending.current || !config) return;
 +    const generation = lifetime.current;
@@ -25148,6 +27390,23 @@ index 0000000..c6462e6
 +        <Switch aria-label={t("proxyChain.enable")} checked={config?.enabled ?? false} disabled={!config || saving} onChange={(on) => void toggle(on)} />
 +      </div>
 +      <p className="my-2 text-help text-text-sub-600">{t("proxyQuick.nextLaunch")}</p>
++      {config && <div className="mt-3 flex flex-col gap-2" data-proxy-quick-route>
++        <div className="text-help text-text-sub-600">{t("proxyChain.mode")}</div>
++        <SelectField
++          aria-label={t("proxyChain.mode")}
++          value={config.mode}
++          options={[
++            { value: "auto", label: t("proxyChain.modeAuto") },
++            { value: "http", label: t("proxyChain.modeHttp") },
++            { value: "socks5", label: t("proxyChain.modeSocks") },
++          ]}
++          onChange={(mode: ProxyChainSettings["mode"]) => void saveRoute({ mode })}
++        />
++        {config.mode !== "auto" && <div className="flex items-center gap-2">
++          <Input aria-label={t("proxyChain.host")} inputSize="xsmall" technical className="min-w-0 flex-1" value={config.host} onChange={(e) => setConfig({ ...config, host: e.target.value })} onBlur={() => void saveRoute({ host: config.host })} />
++          <NumField aria-label={t("proxyChain.port")} value={config.port} min={1} max={65535} onChange={(port) => { setConfig({ ...config, port }); void saveRoute({ port }); }} />
++        </div>}
++      </div>}
 +      <p className="my-2 text-ui">{config?.enabled ? t("proxyQuick.firstExit") : t("proxyQuick.localExit")}</p>
 +      <div role="status" aria-live="polite" className="text-help text-text-sub-600">
 +        {busy ? t("proxyQuick.checking") : result?.exit_ip ? <>
@@ -25289,7 +27548,7 @@ index d3b08b1..24af6c2 100644
                  top={offsetOf(i)}
                  columns={columns}
 diff --git a/src/widgets/ProxyList/ProxyListRow.tsx b/src/widgets/ProxyList/ProxyListRow.tsx
-index df7d2cb..48d37a7 100644
+index df7d2cb..e838455 100644
 --- a/src/widgets/ProxyList/ProxyListRow.tsx
 +++ b/src/widgets/ProxyList/ProxyListRow.tsx
 @@ -9,14 +9,16 @@ import { fmtTs, HOST_OS } from "../../shared/lib/utils";
@@ -25320,6 +27579,15 @@ index df7d2cb..48d37a7 100644
    };
    const test = command("proxy.test");
    // One fill per row state, as on Profiles (E13, O5): the target is drawn,
+@@ -134,7 +136,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
+         return (
+           <div key="country" role="gridcell" data-cell="country" className="flex min-w-0 items-center gap-1.5 text-secondary text-text-sub-600">
+             {/* A city cut by the column's width shows whole on hover (autofit review I1). */}
+-            {cc ? <><CountryFlag cc={cc} /><Tooltip content={snap?.city || cc} whenTruncated warm={false}><span className="truncate">{snap?.city || cc}</span></Tooltip></> : <span className="text-text-soft-400">—</span>}
++            {cc ? <><CountryFlag cc={cc} /><span className="shrink-0 rounded-chip-sm bg-bg-weak-50 px-1 py-0.5 text-micro font-medium text-text-sub-600">{cc.slice(0, 2).toUpperCase()}</span><Tooltip content={[snap?.region, snap?.city].filter(Boolean).join(" / ") || cc} whenTruncated warm={false}><span className="truncate">{[snap?.region, snap?.city].filter(Boolean).join(" / ") || cc}</span></Tooltip></> : <span className="text-text-soft-400">—</span>}
+           </div>
+         );
+       case "profiles":
 @@ -154,7 +156,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
                  visually-hidden detail and the hover tooltip. */}
              <Tooltip content={detail}>
@@ -25763,6 +28031,139 @@ index 9972dea..92ee401 100644
      window.addEventListener("resize", measure);
      measure();
      return () => { window.removeEventListener("resize", measure); sizes.disconnect(); mounts.disconnect(); moves.disconnect(); };
+diff --git a/src/widgets/WhatsNewDialog/patchlog.json b/src/widgets/WhatsNewDialog/patchlog.json
+index 6f77f44..891b284 100644
+--- a/src/widgets/WhatsNewDialog/patchlog.json
++++ b/src/widgets/WhatsNewDialog/patchlog.json
+@@ -2,90 +2,6 @@
+   "starsRequired": 1000,
+   "repoUrl": "https://github.com/ProxyShard/ShardBrowser",
+   "releases": [
+-    {
+-      "version": "2.1.5",
+-      "date": "2026-11-11",
+-      "entries": [
+-        {
+-          "id": "chrome-security-fix",
+-          "title": "Chrome security fix",
+-          "lead": "The browser now has the security fix Chrome released on November 9.",
+-          "tag": "fix",
+-          "scope": "browser",
+-          "blocks": [
+-            {
+-              "type": "p",
+-              "text": "It closes a flaw in how pages handle XML that attackers were already using. How profiles look to sites does not change."
+-            }
+-          ]
+-        },
+-        {
+-          "id": "os-version",
+-          "title": "Operating system version",
+-          "lead": "Profiles could report Windows and macOS versions that were never released.",
+-          "tag": "fix",
+-          "scope": "browser",
+-          "blocks": [
+-            {
+-              "type": "p",
+-              "text": "New profiles now get a version that exists, and a Mac profile gets one its chip can run. Profiles made earlier are corrected the next time the launcher starts. Linux profiles report no version, the way Chrome on Linux does."
+-            }
+-          ]
+-        },
+-        {
+-          "id": "touch-screen",
+-          "title": "Touch screen",
+-          "lead": "A profile without a touch screen showed this computer's touch screen to sites.",
+-          "tag": "fix",
+-          "scope": "browser",
+-          "blocks": [
+-            {
+-              "type": "p",
+-              "text": "On a computer with a touch screen or a pen, such a profile reported touch input although its settings said there was none. It now looks like a computer with only a mouse. Profiles that claim a touch screen keep it."
+-            }
+-          ]
+-        },
+-        {
+-          "id": "dock-icon",
+-          "title": "Dock icon",
+-          "lead": "On macOS, clicking the Dock icon did not bring back a window closed to the menu bar.",
+-          "tag": "fix",
+-          "scope": "launcher",
+-          "blocks": [
+-            {
+-              "type": "p",
+-              "text": "It now does, as in other Mac apps. Clicking the icon in the menu bar opens its menu, as menu bar icons do on a Mac; Show Launcher is the first item."
+-            }
+-          ]
+-        },
+-        {
+-          "id": "extension-updates-api",
+-          "title": "Extension updates in the API",
+-          "lead": "The local API can now check for extension updates and install them.",
+-          "tag": "new",
+-          "scope": "launcher",
+-          "blocks": [
+-            {
+-              "type": "p",
+-              "text": "For the whole library or one extension, with the same checks as the Extensions page, and with where each one stands: up to date, update available, waiting for a profile to close, or waiting for your approval. Updating them all never accepts new permissions; such extensions are left for you to approve. The API documentation in Settings describes the calls."
+-            }
+-          ]
+-        },
+-        {
+-          "id": "shardx-address",
+-          "title": "Website address",
+-          "lead": "Our website moved to shardx.com.",
+-          "tag": "fix",
+-          "scope": "launcher",
+-          "blocks": [
+-            {
+-              "type": "p",
+-              "text": "Links in the launcher and on the browser's start page now open shardx.com. New proxies made on the ProxyShard page use the shardx.com addresses; proxies you already have keep working."
+-            }
+-          ]
+-        }
+-      ]
+-    },
+     {
+       "version": "2.1.4",
+       "date": "2026-11-06",
+diff --git a/team-server/Cargo.lock b/team-server/Cargo.lock
+index 6e36543..a5499a5 100644
+--- a/team-server/Cargo.lock
++++ b/team-server/Cargo.lock
+@@ -1038,7 +1038,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "shardbrowser-team-server"
+-version = "2.1.5"
++version = "2.1.4"
+ dependencies = [
+  "aes-gcm",
+  "anyhow",
+diff --git a/team-server/Cargo.toml b/team-server/Cargo.toml
+index adf25ef..b8bfa8e 100644
+--- a/team-server/Cargo.toml
++++ b/team-server/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "shardbrowser-team-server"
+-version = "2.1.5"
++version = "2.1.4"
+ description = "Self-hosted team server for ShardBrowser: team profiles, member tokens and live permissions."
+ authors = ["ProxyShard"]
+ edition = "2021"
+diff --git a/ui-kit/src/App.tsx b/ui-kit/src/App.tsx
+index 1e236ac..cdaa910 100644
+--- a/ui-kit/src/App.tsx
++++ b/ui-kit/src/App.tsx
+@@ -290,7 +290,7 @@ export default function App() {
+             ]}
+           />
+           <p className="text-body text-text-sub-600">
+-            https://shardx.com?ref=
++            https://proxyshard.com?ref=
+             <span className="text-ui text-text-strong-950">{referral}</span>
+           </p>
+         </div>
 diff --git a/ui-kit/src/components/DataList/index.tsx b/ui-kit/src/components/DataList/index.tsx
 index dbe836e..cdc664a 100644
 --- a/ui-kit/src/components/DataList/index.tsx
