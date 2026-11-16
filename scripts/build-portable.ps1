@@ -40,12 +40,18 @@ function CheckFile([string]$Base, [string]$Relative, [string]$Hash) {
     $p = EvidencePath $Base $Relative
     if ((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Hash) { throw 'Evidence file hash mismatch.' }
 }
-$required = @('pipeline-offline','npm-install','ui-kit','ui-check','ui-production','rust-chain-list','rust-chain','rust-full','playwright-install','ui-browser')
+$required = @('pipeline-offline','npm-install','ui-kit','ui-check','ui-production','rust-chain-list','rust-chain','rust-full','playwright-install')
 $proofBase = Split-Path -Parent ([IO.Path]::GetFullPath($VerificationPath))
 foreach ($name in $required) {
     $check = @($verified.checks | Where-Object { $_.id -eq $name })
     if ($check.Count -ne 1 -or $check[0].status -ne 'passed') { throw "Missing verification gate: $name" }
     CheckFile $proofBase $check[0].log $check[0].sha256
+}
+$browserChecks = @($verified.checks | Where-Object { $_.id -like 'ui-browser-*' })
+if ($browserChecks.Count -eq 0) { throw 'Missing isolated browser verification gates.' }
+foreach ($check in $browserChecks) {
+    if ($check.status -ne 'passed') { throw "Browser verification gate failed: $($check.id)" }
+    CheckFile $proofBase $check.log $check.sha256
 }
 $head = (& git -C $candidate rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $head -ne $meta.candidate_commit) { throw 'Candidate commit changed after verification.' }
