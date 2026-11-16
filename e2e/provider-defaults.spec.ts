@@ -49,7 +49,7 @@ test("provider credentials persist separately and generate a SOCKS5 preview", as
 test("TNB defaults restore after reload and authentication switches remain independent", async ({ page }, info) => {
   await openApp(page, { section: "proxies", theme: "dark" });
   let dialog = await openSource(page, "TNBProxy");
-  await expect(dialog.getByRole("textbox", { name: "Extraction server", exact: true })).toHaveValue("http://hkdata.adv.tnbproxy.com:9090");
+  await expect(dialog.getByRole("textbox", { name: "Extraction server", exact: true })).toHaveValue("http://usdata.adv.tnbproxy.com:9090");
   await dialog.getByText("Provider defaults", { exact: true }).click();
   const panel = dialog.locator("[data-provider-defaults]");
   await panel.getByRole("textbox", { name: "Extraction server", exact: true }).fill("https://custom.tnbproxy.com:9443");

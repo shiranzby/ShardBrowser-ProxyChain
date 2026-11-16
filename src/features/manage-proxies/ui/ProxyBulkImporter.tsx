@@ -28,7 +28,24 @@ export function ProxyBulkImporter({ open, onClose }: { open: boolean; onClose: (
   const [tnb, setTnb] = useState(newTnbDraft);
   const [country, setCountry] = useState("");
   const [state, setState] = useState("");
-  useEffect(() => { if (!open) return; let live = true; void providerDefaultsGet().then((v) => { if (live) setTnb((d) => ({ ...d, server: v.tnb_server, plan_name: v.tnb_plan, kind: v.tnb_kind })); }).catch(() => {}); return () => { live = false; }; }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    void providerDefaultsGet().then((v) => {
+      if (!live) return;
+      setTnb((d) => ({
+        ...d,
+        server: v.tnb_server,
+        plan_name: v.tnb_plan,
+        kind: v.tnb_kind,
+        // Saved credentials enable their matching authentication switch by default.
+        // The user can still clear either switch before requesting /gen.
+        use_api_credentials: Boolean(v.tnb_api_username.trim() || v.tnb_api_password_saved),
+        use_proxy_credentials: Boolean(v.tnb_proxy_username.trim() || v.tnb_proxy_password_saved),
+      }));
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [open]);
   const generate = async () => {
     if (extraction.current) return;
     extraction.current = true; setExtracting(true); setExtractError(null);

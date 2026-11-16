@@ -101,7 +101,16 @@ fn parse_response(body: &[u8], request: &ExtractRequest, server: &str) -> Result
     // allowlist/auth failure before treating the JSON as a proxy line.
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(body.trim_start_matches('\u{feff}').trim()) {
         if let Some(code) = value.get("code").and_then(serde_json::Value::as_i64) {
-            if code == 401 || code == 403 { return Err("tnb_whitelist_required"); }
+            if code == 401 { return Err("tnb_auth_required"); }
+            if code == 403 {
+                let detail = [value.get("msg"), value.get("message"), value.get("error")]
+                    .into_iter().filter_map(|v| v.and_then(serde_json::Value::as_str))
+                    .collect::<Vec<_>>().join(" ").to_ascii_lowercase();
+                if detail.contains("whitelist") || detail.contains("allowlist") || detail.contains("not in") || detail.contains("ip") {
+                    return Err("tnb_whitelist_required");
+                }
+                return Err("tnb_auth_required");
+            }
             if code != 0 { return Err("tnb_invalid_response"); }
         }
     }
@@ -519,7 +528,9 @@ mod tests {
             (format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", MAX_BODY + 1), "tnb_response_too_large"),
             (format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{chunk}\r\n0\r\n\r\n", chunk.len()), "tnb_response_too_large"),
             (ok("whitelist denied: secret credential"), "tnb_invalid_response"),
+            (ok(r#"{"code":401,"msg":"bad credentials"}"#), "tnb_auth_required"),
             (ok(r#"{"code":403,"msg":"IP not in whitelist"}"#), "tnb_whitelist_required"),
+            (ok(r#"{"code":403,"msg":"bad credentials"}"#), "tnb_auth_required"),
         ] {
             let (server, task) = fixture(reply).await;
             assert_eq!(extract(request(server)).await.err(), Some(error));

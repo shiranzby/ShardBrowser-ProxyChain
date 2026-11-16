@@ -31,7 +31,7 @@ impl Default for Stored {
         Self {
             relay: "us.1024proxy.io:3000".into(),
             username_template: "{username}{location}".into(),
-            tnb_server: "http://hkdata.adv.tnbproxy.com:9090".into(),
+            tnb_server: "http://usdata.adv.tnbproxy.com:9090".into(),
             tnb_plan: "advanced_traffic".into(),
             tnb_kind: "http".into(),
             account: None,
@@ -336,9 +336,9 @@ pub fn generate(v: GenerateRequest) -> Result<ProxyEntry> {
 mod tests {
     use super::*;
     #[test]
-    fn provider_defaults_are_non_secret_and_tnb_uses_hk() {
+    fn provider_defaults_are_non_secret_and_tnb_use_us() {
         let v = view(Stored::default()).unwrap();
-        assert_eq!(v.tnb_server, "http://hkdata.adv.tnbproxy.com:9090");
+        assert_eq!(v.tnb_server, "http://usdata.adv.tnbproxy.com:9090");
         let json = serde_json::to_value(v).unwrap();
         assert!(json.get("account").is_none());
         assert_eq!(json["password_saved"], false);
@@ -361,7 +361,7 @@ mod tests {
             username: "synthetic-user".into(),
             username_template: "{username}-country-{country}".into(),
             password,
-            tnb_server: "http://hkdata.adv.tnbproxy.com:9090".into(),
+            tnb_server: "http://usdata.adv.tnbproxy.com:9090".into(),
             tnb_plan: "advanced_traffic".into(),
             tnb_kind: "socks5".into(),
             tnb_api_username: "extract-user".into(),
