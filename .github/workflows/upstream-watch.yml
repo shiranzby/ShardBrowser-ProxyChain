@@ -96,7 +96,7 @@ jobs:
             let sha;
             try { sha = (await github.rest.repos.getContent({...context.repo,path,ref:branch})).data.sha; }
             catch (e) { if (e.status !== 404) throw e; }
-            const record = {schema:1,result:'success',delivered_kind:'actions_artifact',completed_at_utc:new Date().toISOString(),upstream_tag:process.env.UPSTREAM_TAG,upstream_commit:process.env.UPSTREAM_COMMIT,patch_revision:process.env.PATCH_REVISION,patch_sha256:process.env.PATCH_SHA256,candidate_commit:process.env.CANDIDATE_COMMIT,portable_sha256:process.env.PORTABLE_SHA256,artifact_id:process.env.ARTIFACT_ID,artifact_digest:process.env.ARTIFACT_DIGEST,run_url:`https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`};
+            const record = {schema:1,result:'success',delivered_kind:'actions_artifact',verification:'not_run',acceptance:'not_run',publish_ready:false,completed_at_utc:new Date().toISOString(),upstream_tag:process.env.UPSTREAM_TAG,upstream_commit:process.env.UPSTREAM_COMMIT,patch_revision:process.env.PATCH_REVISION,patch_sha256:process.env.PATCH_SHA256,candidate_commit:process.env.CANDIDATE_COMMIT,portable_sha256:process.env.PORTABLE_SHA256,artifact_id:process.env.ARTIFACT_ID,artifact_digest:process.env.ARTIFACT_DIGEST,run_url:`https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`};
             await github.rest.repos.createOrUpdateFileContents({...context.repo,path,branch,sha,message:`Record successful ${record.upstream_tag}-${record.patch_revision} build`,content:Buffer.from(JSON.stringify(record,null,2)+'\n').toString('base64')});
 
   report-failure:

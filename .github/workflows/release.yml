@@ -1,7 +1,6 @@
 # Legacy upstream release workflow intentionally disabled in the Fork.
-# Patched candidates must pass upstream-rebase.yml and build-portable.yml;
-# those workflows publish nothing until a verified Windows 11 engine receipt
-# covers the exact source tree and Portable SHA256.
+# upstream-watch.yml builds and uploads candidates only.
+# Runtime verification and stable acceptance are performed locally after download.
 name: Legacy release (disabled)
 
 on:
@@ -14,4 +13,4 @@ jobs:
   notice:
     runs-on: ubuntu-latest
     steps:
-      - run: echo 'The legacy release workflow is disabled; use the gated proxy-chain pipeline.'
+      - run: echo 'The legacy release workflow is disabled; use upstream-watch for a candidate build, then verify it locally.'
