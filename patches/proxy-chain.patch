@@ -29152,3 +29152,75 @@ index dbe836e..cdc664a 100644
                    >
                      {selectable && (
                        <div role="gridcell" data-cell="checkbox" className={cn('relative flex items-center self-stretch', pin?.lead)}>
+diff --git a/e2e/personalization.spec.ts b/e2e/personalization.spec.ts
+index 13dcc50..b30e588 100644
+--- a/e2e/personalization.spec.ts
++++ b/e2e/personalization.spec.ts
+@@ -65,6 +65,32 @@ test("header switch preserves other settings, reports its route and survives rel
+   await expect(root.getByRole("button", { name: "Proxy chain on", exact: true })).toBeVisible();
+ });
+ 
++test("quick first-hop source choices keep the popover open", async ({ page }) => {
++  await openApp(page);
++  const root = page.locator("[data-proxy-quick]");
++  await root.getByRole("button").hover();
++  const pop = root.getByRole("dialog");
++  const mode = pop.getByRole("combobox", { name: "Configuration method", exact: true });
++
++  for (const option of [
++    "Select a saved proxy",
++    "Manual HTTP",
++    "HTTPS proxy",
++    "Manual SOCKS5",
++  ]) {
++    await mode.click();
++    await page.getByRole("listbox").getByRole("option", { name: option, exact: true }).click();
++    await expect(pop).toBeVisible();
++    await expect(mode).toContainText(option);
++    if (option === "Select a saved proxy") {
++      await expect(pop.getByRole("combobox", { name: "First-layer proxy", exact: true })).toBeVisible();
++    } else {
++      await expect(pop.getByLabel("Host or IP", { exact: true })).toBeVisible();
++      await expect(pop.getByLabel("Port", { exact: true })).toBeVisible();
++    }
++  }
++});
++
+ test("header failed save keeps the saved switch and permits retry", async ({ page }) => {
+   await page.addInitScript(() => Object.assign(window, { __shardxMockFail: { proxy_chain_set_enabled: 1 } }));
+   await openApp(page);
+diff --git a/src/widgets/ProfileTable/ProxyQuickControl.tsx b/src/widgets/ProfileTable/ProxyQuickControl.tsx
+index d206496..ce98152 100644
+--- a/src/widgets/ProfileTable/ProxyQuickControl.tsx
++++ b/src/widgets/ProfileTable/ProxyQuickControl.tsx
+@@ -56,7 +56,14 @@ export function ProxyQuickControl() {
+   useEffect(() => {
+     if (!open) return;
+     void refresh(true);
+-    const dismiss = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
++    const dismiss = (event: PointerEvent) => {
++      const target = event.target as Element | null;
++      // Select renders its listbox in a portal. Treat that child overlay as
++      // part of this control, otherwise its option click dismisses the
++      // parent popover before Select can commit the new source.
++      if (target?.closest('[role="listbox"], [data-overlay-branch]')) return;
++      if (!root.current?.contains(target)) setOpen(false);
++    };
+     const escape = (event: KeyboardEvent) => {
+       if (event.key !== "Escape" || event.isComposing) return;
+       event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus();
+@@ -100,7 +107,13 @@ export function ProxyQuickControl() {
+     ?? proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error, route_ready: result.route_ready }) : null;
+   return <div ref={root} className="relative flex items-center" data-proxy-quick
+     onMouseEnter={keepOpen}
+-    onMouseLeave={() => { timer.current = setTimeout(() => { if (!root.current?.contains(document.activeElement)) setOpen(false); }, 250); }}
++    onMouseLeave={(event) => {
++      // The Select list is portalled outside the root. Keep this surface open
++      // while the pointer moves from its field into that list.
++      const next = event.relatedTarget as Element | null;
++      if (next?.closest('[role="listbox"], [data-overlay-branch]')) return;
++      timer.current = setTimeout(() => { if (!root.current?.contains(document.activeElement)) setOpen(false); }, 250);
++    }}
+     onKeyDown={(e) => { if (e.key === "Escape" && open) { e.preventDefault(); e.stopPropagation(); setOpen(false); trigger.current?.focus(); } }}>
+     <Button ref={trigger} size="xsmall" mode="stroke" variant="neutral" leftIcon={<span className="relative flex">
+       <RouteIcon className="size-3.5" /><StatusDot tone={config?.enabled ? "success" : "outline"} className="absolute -right-1 -bottom-1" />
