@@ -5544,7 +5544,7 @@ dependencies = [
 
 [[package]]
 name = "shardbrowser-launcher"
-version = "2.1.4"
+version = "2.1.5"
 dependencies = [
  "ab_glyph",
  "aes",
@@ -5614,7 +5614,7 @@ dependencies = [
 
 [[package]]
 name = "shardbrowser-team-server"
-version = "2.1.4"
+version = "2.1.5"
 dependencies = [
  "aes-gcm",
  "anyhow",
