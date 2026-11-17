@@ -204,8 +204,19 @@ pub struct TestRoot {
 pub fn test_root(tag: &str) -> TestRoot {
     static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
-    let path = std::env::temp_dir().join(format!("shardx-{tag}-{}", uuid::Uuid::new_v4().simple()));
-    std::fs::create_dir_all(&path).expect("make the test's data root");
+    let name = format!("shardx-{tag}-{}", uuid::Uuid::new_v4().simple());
+    let preferred = std::env::temp_dir().join(&name);
+    let path = match std::fs::create_dir_all(&preferred) {
+        Ok(()) => preferred,
+        Err(_) => {
+            let fallback = std::env::current_dir()
+                .expect("test current directory")
+                .join(".test-roots")
+                .join(name);
+            std::fs::create_dir_all(&fallback).expect("make the test's data root");
+            fallback
+        }
+    };
     set_data_root(Some(path.clone()));
     TEST_CONFIG.with(|c| *c.borrow_mut() = Some(path.join("config")));
     TestRoot { path, _turn: turn }
