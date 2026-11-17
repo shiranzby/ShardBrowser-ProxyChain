@@ -3771,7 +3771,7 @@
   "provider.templateRequired": "The username pattern has no placeholder for the selected region. Edit and save it first.",
   "provider.stateCode": "State / province (provider name, optional)",
   "provider.statePlaceholder": "Provider region value",
-  "provider.regionHelp": "Generates a SOCKS5 endpoint using documented account syntax without an extraction request. Country codes are suggestions; availability and state names depend on the provider.",
+  "provider.regionHelp": "Generates a SOCKS5 endpoint using documented account syntax without an extraction request. Country codes are suggestions. 1024Proxy has no verified state/city inventory endpoint here, so enter the provider’s original region value instead of using a fabricated city list.",
   "provider.other": "Other provider",
   "provider.capabilities": "Current protocol capabilities",
   "provider.httpsCapability": "HTTPS proxy: TLS to the proxy server, with HTTP CONNECT carrying target connections.",

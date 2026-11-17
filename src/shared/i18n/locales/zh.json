@@ -3771,7 +3771,7 @@
   "provider.templateRequired": "用户名模板未配置所选地区占位符，请编辑并保存模板。",
   "provider.stateCode": "州/省（供应商英文名称，可选）",
   "provider.statePlaceholder": "例如 Louisiana",
-  "provider.regionHelp": "按官方账密格式生成 SOCKS5 代理，不调用提取 API。国家/地区列表仅提供标准代码，实际库存和州名以供应商为准。",
+  "provider.regionHelp": "按官方账密格式生成 SOCKS5 代理，不调用提取 API。国家/地区仅提供标准代码；1024Proxy 当前没有可验证的州/城市库存接口，因此州/省需要按供应商原始名称填写，不能在这里伪造城市列表。",
   "provider.other": "其他供应商",
   "provider.capabilities": "当前协议能力",
   "provider.httpsCapability": "HTTPS 代理：到代理服务器采用 TLS，HTTP CONNECT 承载目标连接。",
