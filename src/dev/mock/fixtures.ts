@@ -86,7 +86,7 @@ export type MockTags = { tags: { id: string; name: string; color: string }[]; by
 export type MockFolders = { registry: string[]; meta: Record<string, { color: string | null; icon: string }>; parents?: Record<string, string> };
 
 export type MockState = {
-  providerDefaults?: import("../../entities/proxy/model/api").ProviderDefaults & { password?: string; tnb_api_password?: string; tnb_proxy_password?: string };
+  providerDefaults?: import("../../entities/proxy/model/api").ProviderDefaults & { password?: string; tnb_api_password?: string; tnb_proxy_password?: string; custom_api_password?: string; custom_proxy_password?: string };
   version: number;
   profiles: Record<string, StoredProfile>;
   /** Insertion order, which is what profile_list returns. */

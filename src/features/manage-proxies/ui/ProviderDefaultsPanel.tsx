@@ -7,10 +7,10 @@ import { useT } from "../../../shared/i18n";
 import { toast } from "../../../shared/model/toast";
 
 /** Explicit save: provider defaults never change existing proxy bindings. */
-export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?: "all" | "1024proxy" | "tnbproxy"; onSaved?: (value: ProviderDefaults) => void }) {
+export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?: "all" | "1024proxy" | "tnbproxy" | "custom"; onSaved?: (value: ProviderDefaults) => void }) {
   const t = useT();
   const [value, setValue] = useState<ProviderDefaults | null>(null);
-  const [secrets, setSecrets] = useState<Pick<ProviderUpdate, "password" | "tnb_api_password" | "tnb_proxy_password">>({});
+  const [secrets, setSecrets] = useState<Pick<ProviderUpdate, "password" | "tnb_api_password" | "tnb_proxy_password" | "custom_api_password" | "custom_proxy_password">>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -24,11 +24,11 @@ export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?
     finally { setBusy(false); }
   };
   const website = (url: string, whitelist = false) => <Button variant="neutral" mode="ghost" size="3xsmall" onClick={() => { void openUrl(url).catch(() => toast.err(t("provider.openWebsiteFailed"))); }}>{whitelist ? t("provider.openWhitelist") : t("provider.openWebsite")}</Button>;
-  const password = (key: "password" | "tnb_api_password" | "tnb_proxy_password", has: boolean, label: string) => <div className="flex flex-col gap-1.5">
+  const password = (key: "password" | "tnb_api_password" | "tnb_proxy_password" | "custom_api_password" | "custom_proxy_password", has: boolean, label: string) => <div className="flex flex-col gap-1.5">
     <Input secret type="password" inputSize="xsmall" label={label} value={secrets[key] ?? ""} autoComplete="new-password" placeholder={has ? t("provider.keepPassword") : ""} onChange={(e) => { setSecrets((v) => ({ ...v, [key]: e.target.value })); setSaved(false); }} />
     {has && <Button variant="neutral" mode="ghost" size="3xsmall" onClick={() => { setSecrets((v) => ({ ...v, [key]: "" })); setSaved(false); }}>{secrets[key] === "" ? t("provider.willClear") : t("provider.clearPassword")}</Button>}
   </div>;
-  const [selected, setSelected] = useState<"1024proxy" | "tnbproxy">(provider === "1024proxy" ? "1024proxy" : "tnbproxy");
+  const [selected, setSelected] = useState<"1024proxy" | "tnbproxy" | "custom">(provider === "1024proxy" ? "1024proxy" : provider === "custom" ? "custom" : "tnbproxy");
   const active = provider === "all" ? selected : provider;
   return <fieldset disabled={busy} className="m-0 min-w-0 border-0 p-0" data-provider-defaults>
     <div className="flex flex-col gap-4">
@@ -37,10 +37,18 @@ export function ProviderDefaultsPanel({ provider = "all", onSaved }: { provider?
         {provider === "all" && <div className="flex items-center gap-1 border-b border-stroke-soft-200 pb-2" role="tablist" aria-label={t("provider.managementTitle")}>
           <Button type="button" variant={active === "tnbproxy" ? "primary" : "neutral"} mode={active === "tnbproxy" ? "filled" : "ghost"} size="xsmall" role="tab" aria-selected={active === "tnbproxy"} data-provider-tab="tnbproxy" onClick={() => setSelected("tnbproxy")}>{t("tnb.provider")}</Button>
           <Button type="button" variant={active === "1024proxy" ? "primary" : "neutral"} mode={active === "1024proxy" ? "filled" : "ghost"} size="xsmall" role="tab" aria-selected={active === "1024proxy"} data-provider-tab="1024proxy" onClick={() => setSelected("1024proxy")}>{t("provider.name1024")}</Button>
-          <Button type="button" variant="neutral" mode="ghost" size="xsmall" data-provider-tab="custom" disabled>{t("provider.custom")}</Button>
-          {active === "tnbproxy" ? website("https://dash.tnbproxy.com", true) : website("https://1024proxy.io")}
+          <Button type="button" variant={active === "custom" ? "primary" : "neutral"} mode={active === "custom" ? "filled" : "ghost"} size="xsmall" role="tab" aria-selected={active === "custom"} data-provider-tab="custom" onClick={() => setSelected("custom")}>{t("provider.custom")}</Button>
+          {active === "tnbproxy" ? website("https://dash.tnbproxy.com", true) : active === "1024proxy" ? website("https://1024proxy.io") : value.custom_website ? website(value.custom_website) : null}
         </div>}
-        {active === "1024proxy" ? <div className="flex flex-col gap-3" role="tabpanel" data-provider-panel="1024proxy">
+        {active === "custom" ? <div className="flex flex-col gap-3" role="tabpanel" data-provider-panel="custom">
+          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("provider.custom")}</h3>{value.custom_whitelist ? website(value.custom_whitelist, true) : null}</div>
+          <div className="grid grid-cols-2 gap-3"><Input inputSize="xsmall" label={t("provider.customName")} value={value.custom_name} onChange={(e) => patch({ custom_name: e.target.value })} /><Input inputSize="xsmall" label={t("provider.customServer")} value={value.custom_server} onChange={(e) => patch({ custom_server: e.target.value })} /></div>
+          <div className="grid grid-cols-2 gap-3"><Input inputSize="xsmall" label={t("provider.customPlan")} value={value.custom_plan} onChange={(e) => patch({ custom_plan: e.target.value })} /><SelectField label={t("provider.customProtocol")} value={value.custom_kind} onChange={(custom_kind) => patch({ custom_kind })} options={[{ value: "http" as const, label: "HTTP" }, { value: "https" as const, label: "HTTPS" }, { value: "socks5" as const, label: "SOCKS5" }]} /></div>
+          <div className="grid grid-cols-2 gap-3"><Input inputSize="xsmall" label={t("provider.customWebsite")} value={value.custom_website} onChange={(e) => patch({ custom_website: e.target.value })} /><Input inputSize="xsmall" label={t("provider.customWhitelist")} value={value.custom_whitelist} onChange={(e) => patch({ custom_whitelist: e.target.value })} /></div>
+          <p className="m-0 text-help text-text-sub-600">{t("provider.customHelp")}</p>
+          <div className="grid grid-cols-2 gap-3"><Input inputSize="xsmall" label={t("provider.apiUsername")} value={value.custom_api_username} onChange={(e) => patch({ custom_api_username: e.target.value })} />{password("custom_api_password", value.custom_api_password_saved, t("provider.apiPassword"))}</div>
+          <div className="grid grid-cols-2 gap-3"><Input inputSize="xsmall" label={t("provider.proxyUsername")} value={value.custom_proxy_username} onChange={(e) => patch({ custom_proxy_username: e.target.value })} />{password("custom_proxy_password", value.custom_proxy_password_saved, t("provider.proxyPassword"))}</div>
+        </div> : active === "1024proxy" ? <div className="flex flex-col gap-3" role="tabpanel" data-provider-panel="1024proxy">
           <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("provider.name1024")}</h3>{provider !== "all" && website("https://1024proxy.io")}</div>
           <div className="grid grid-cols-2 gap-3">
             <Input inputSize="xsmall" label={t("provider.relay")} value={value.relay} onChange={(e) => patch({ relay: e.target.value })} />

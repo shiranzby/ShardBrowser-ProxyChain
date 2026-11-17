@@ -21,6 +21,7 @@ import { NOT_IN_TEAM, profileFromFingerprint, settle, spaceStateOf, teamInUse, t
 import { SYNC_REFUSALS } from "../../entities/sync/model/types";
 import { TEAM_REFUSALS } from "../../shared/api/teamRefusals";
 import type { ProxyEntry, ProxyTestSnapshot } from "../../entities/proxy/model/types";
+import type { ProviderUpdate } from "../../entities/proxy/model/api";
 import type { FingerprintEntry } from "../../entities/fingerprint/model/types";
 import type { Project, RunState, ModuleInfo } from "../../entities/automation/model/types";
 
@@ -1025,16 +1026,16 @@ export const handlers: Record<string, Handler> = {
   proxy_history: ({ id }, { state }) => state.snapshots[id] ?? [],
   proxy_bulk_parse: ({ text, kind }) => parseProxyLines(String(text ?? ""), kind),
   proxy_provider_defaults_get: (_a, { state }) => {
-    const d = state.providerDefaults ?? { relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://usdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false };
-    const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, ...view } = d;
+    const d = state.providerDefaults ?? { relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://usdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false, custom_name: "Custom provider", custom_server: "", custom_plan: "", custom_kind: "http", custom_website: "", custom_whitelist: "", custom_api_username: "", custom_api_password_saved: false, custom_proxy_username: "", custom_proxy_password_saved: false };
+    const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, custom_api_password: _customApi, custom_proxy_password: _customProxy, ...view } = d;
     return view;
   },
   proxy_provider_defaults_save: ({ value }, { state, save }) => {
     const old = state.providerDefaults;
-    const d = { ...value, password: value.password ?? old?.password ?? "", tnb_api_password: value.tnb_api_password ?? old?.tnb_api_password ?? "", tnb_proxy_password: value.tnb_proxy_password ?? old?.tnb_proxy_password ?? "" };
-    d.password_saved = !!d.password; d.tnb_api_password_saved = !!d.tnb_api_password; d.tnb_proxy_password_saved = !!d.tnb_proxy_password;
+    const d: any = { ...(value as ProviderUpdate), password: value.password ?? old?.password ?? "", tnb_api_password: value.tnb_api_password ?? old?.tnb_api_password ?? "", tnb_proxy_password: value.tnb_proxy_password ?? old?.tnb_proxy_password ?? "" };
+    d.password_saved = !!d.password; d.tnb_api_password_saved = !!d.tnb_api_password; d.tnb_proxy_password_saved = !!d.tnb_proxy_password; d.custom_api_password_saved = !!d.custom_api_password; d.custom_proxy_password_saved = !!d.custom_proxy_password;
     state.providerDefaults = d; save();
-    const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, ...view } = d;
+    const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, custom_api_password: _customApi, custom_proxy_password: _customProxy, ...view } = d;
     return view;
   },
   proxy_provider_generate: ({ request }, { state }) => {

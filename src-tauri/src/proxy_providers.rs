@@ -25,6 +25,14 @@ struct Stored {
     account: Option<String>,
     tnb_api: Option<String>,
     tnb_proxy: Option<String>,
+    custom_name: String,
+    custom_server: String,
+    custom_plan: String,
+    custom_kind: String,
+    custom_website: String,
+    custom_whitelist: String,
+    custom_api: Option<String>,
+    custom_proxy: Option<String>,
 }
 impl Default for Stored {
     fn default() -> Self {
@@ -37,6 +45,14 @@ impl Default for Stored {
             account: None,
             tnb_api: None,
             tnb_proxy: None,
+            custom_name: "Custom provider".into(),
+            custom_server: String::new(),
+            custom_plan: String::new(),
+            custom_kind: "http".into(),
+            custom_website: String::new(),
+            custom_whitelist: String::new(),
+            custom_api: None,
+            custom_proxy: None,
         }
     }
 }
@@ -53,6 +69,16 @@ pub struct ProviderView {
     pub tnb_api_password_saved: bool,
     pub tnb_proxy_username: String,
     pub tnb_proxy_password_saved: bool,
+    pub custom_name: String,
+    pub custom_server: String,
+    pub custom_plan: String,
+    pub custom_kind: String,
+    pub custom_website: String,
+    pub custom_whitelist: String,
+    pub custom_api_username: String,
+    pub custom_api_password_saved: bool,
+    pub custom_proxy_username: String,
+    pub custom_proxy_password_saved: bool,
 }
 #[derive(Deserialize)]
 pub struct ProviderUpdate {
@@ -69,6 +95,24 @@ pub struct ProviderUpdate {
     #[serde(default)]
     pub tnb_proxy_username: String,
     pub tnb_proxy_password: Option<String>,
+    #[serde(default)]
+    pub custom_name: String,
+    #[serde(default)]
+    pub custom_server: String,
+    #[serde(default)]
+    pub custom_plan: String,
+    #[serde(default)]
+    pub custom_kind: String,
+    #[serde(default)]
+    pub custom_website: String,
+    #[serde(default)]
+    pub custom_whitelist: String,
+    #[serde(default)]
+    pub custom_api_username: String,
+    pub custom_api_password: Option<String>,
+    #[serde(default)]
+    pub custom_proxy_username: String,
+    pub custom_proxy_password: Option<String>,
 }
 fn path() -> Result<std::path::PathBuf> {
     Ok(store::config_root()?.join("proxy-provider-defaults.json"))
@@ -94,6 +138,8 @@ fn view(v: Stored) -> Result<ProviderView> {
     let a = decode(v.account.as_deref())?;
     let api = decode(v.tnb_api.as_deref())?;
     let proxy = decode(v.tnb_proxy.as_deref())?;
+    let custom_api = decode(v.custom_api.as_deref())?;
+    let custom_proxy = decode(v.custom_proxy.as_deref())?;
     Ok(ProviderView {
         relay: v.relay,
         username: a.username,
@@ -106,6 +152,16 @@ fn view(v: Stored) -> Result<ProviderView> {
         tnb_api_password_saved: !api.password.is_empty(),
         tnb_proxy_username: proxy.username,
         tnb_proxy_password_saved: !proxy.password.is_empty(),
+        custom_name: v.custom_name,
+        custom_server: v.custom_server,
+        custom_plan: v.custom_plan,
+        custom_kind: v.custom_kind,
+        custom_website: v.custom_website,
+        custom_whitelist: v.custom_whitelist,
+        custom_api_username: custom_api.username,
+        custom_api_password_saved: !custom_api.password.is_empty(),
+        custom_proxy_username: custom_proxy.username,
+        custom_proxy_password_saved: !custom_proxy.password.is_empty(),
     })
 }
 pub fn get() -> Result<ProviderView> {
@@ -189,6 +245,41 @@ pub fn save(v: ProviderUpdate) -> Result<ProviderView> {
     {
         return Err(anyhow!("provider_defaults_invalid"));
     }
+    for text in [
+        &v.custom_name,
+        &v.custom_server,
+        &v.custom_plan,
+        &v.custom_website,
+        &v.custom_whitelist,
+    ] {
+        if !valid_text(text, 2048) {
+            return Err(anyhow!("provider_defaults_invalid"));
+        }
+    }
+    if !v.custom_kind.is_empty() && !matches!(v.custom_kind.as_str(), "http" | "https" | "socks5") {
+        return Err(anyhow!("provider_defaults_invalid"));
+    }
+    if !v.custom_server.is_empty() {
+        let custom = url::Url::parse(v.custom_server.trim())
+            .map_err(|_| anyhow!("provider_defaults_invalid"))?;
+        if !matches!(custom.scheme(), "http" | "https" | "socks5")
+            || custom.host_str().is_none()
+            || !custom.username().is_empty()
+            || custom.password().is_some()
+            || custom.query().is_some()
+            || custom.fragment().is_some()
+        {
+            return Err(anyhow!("provider_defaults_invalid"));
+        }
+    }
+    for url_text in [&v.custom_website, &v.custom_whitelist] {
+        if !url_text.is_empty() {
+            let u = url::Url::parse(url_text).map_err(|_| anyhow!("provider_defaults_invalid"))?;
+            if !matches!(u.scheme(), "http" | "https") || u.host_str().is_none() {
+                return Err(anyhow!("provider_defaults_invalid"));
+            }
+        }
+    }
     let old = load()?;
     let saved = Stored {
         relay: v.relay.trim().into(),
@@ -206,6 +297,26 @@ pub fn save(v: ProviderUpdate) -> Result<ProviderView> {
             v.tnb_proxy_username,
             v.tnb_proxy_password,
             old.tnb_proxy.as_deref(),
+        )?,
+        custom_name: v.custom_name.trim().into(),
+        custom_server: v.custom_server.trim().into(),
+        custom_plan: v.custom_plan.trim().into(),
+        custom_kind: if v.custom_kind.is_empty() {
+            "http".into()
+        } else {
+            v.custom_kind
+        },
+        custom_website: v.custom_website.trim().into(),
+        custom_whitelist: v.custom_whitelist.trim().into(),
+        custom_api: seal(
+            v.custom_api_username,
+            v.custom_api_password,
+            old.custom_api.as_deref(),
+        )?,
+        custom_proxy: seal(
+            v.custom_proxy_username,
+            v.custom_proxy_password,
+            old.custom_proxy.as_deref(),
         )?,
     };
     // Only ciphertext enters the temporary file; preserve the old file on errors.
@@ -225,10 +336,26 @@ fn replace_file(tmp: &std::path::Path, target: &std::path::Path) -> Result<()> {
 #[cfg(windows)]
 fn replace_file(tmp: &std::path::Path, target: &std::path::Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
-    let from: Vec<u16> = tmp.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-    let to: Vec<u16> = target.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-    let ok = unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) };
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+    let from: Vec<u16> = tmp
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let to: Vec<u16> = target
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let ok = unsafe {
+        MoveFileExW(
+            from.as_ptr(),
+            to.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
     if ok == 0 {
         let error = std::io::Error::last_os_error();
         let _ = fs::remove_file(tmp);

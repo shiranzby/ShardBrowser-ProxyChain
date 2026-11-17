@@ -86,3 +86,28 @@ test("settings provider defaults are shared with the add dialog after reload", a
   const dialog = await openSource(page, "TNBProxy");
   await expect(dialog.getByRole("textbox", { name: "Extraction server", exact: true })).toHaveValue("https://settings.tnbproxy.com:9443");
 });
+
+
+test("custom provider defaults persist with protocol and separate credentials", async ({ page }) => {
+  await openApp(page, { section: "settings" });
+  await page.getByRole("tab", { name: "Proxy", exact: true }).click();
+  const panel = page.locator("[data-provider-defaults]");
+  await panel.getByRole("tab", { name: "Custom", exact: true }).click();
+  await panel.getByRole("textbox", { name: "Extraction server URL", exact: true }).fill("https://proxy.example.test:8443");
+  await panel.getByRole("textbox", { name: "Plan name", exact: true }).fill("stable-plan");
+  await panel.getByRole("combobox", { name: "Proxy protocol", exact: true }).click();
+  await page.getByRole("option", { name: "HTTPS", exact: true }).click();
+  await panel.getByRole("textbox", { name: "Extraction API username (optional)", exact: true }).fill("custom-api");
+  await panel.getByLabel("Extraction API password", { exact: true }).fill("custom-api-password");
+  await panel.getByRole("textbox", { name: "Generated proxy username (optional)", exact: true }).fill("custom-proxy");
+  await panel.getByLabel("Generated proxy password", { exact: true }).fill("custom-proxy-password");
+  await panel.getByRole("button", { name: "Save provider defaults", exact: true }).click();
+  await expect(panel.getByRole("status")).toHaveText("Saved");
+  await reloadApp(page);
+  await page.getByRole("tab", { name: "Proxy", exact: true }).click();
+  await panel.getByRole("tab", { name: "Custom", exact: true }).click();
+  await expect(panel.getByRole("textbox", { name: "Extraction server URL", exact: true })).toHaveValue("https://proxy.example.test:8443");
+  await expect(panel.getByRole("combobox", { name: "Proxy protocol", exact: true })).toContainText("HTTPS");
+  await expect(panel.getByText("Saved", { exact: true })).toHaveCount(0);
+});
+

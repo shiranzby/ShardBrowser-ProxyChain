@@ -44,8 +44,8 @@ export type TnbLocationsRequest = {
 export type TnbLocationsResult = { items: TnbLocation[]; supported: boolean; source: string };
 export const tnbProxyLocations = (request: TnbLocationsRequest) => invoke<TnbLocationsResult>("tnbproxy_locations", { request });
 
-export type ProviderDefaults = { relay: string; username: string; username_template: string; password_saved: boolean; tnb_server: string; tnb_plan: string; tnb_kind: "http" | "socks5"; tnb_api_username: string; tnb_api_password_saved: boolean; tnb_proxy_username: string; tnb_proxy_password_saved: boolean };
-export type ProviderUpdate = Omit<ProviderDefaults, "password_saved" | "tnb_api_password_saved" | "tnb_proxy_password_saved"> & { password?: string; tnb_api_password?: string; tnb_proxy_password?: string };
+export type ProviderDefaults = { relay: string; username: string; username_template: string; password_saved: boolean; tnb_server: string; tnb_plan: string; tnb_kind: "http" | "socks5"; tnb_api_username: string; tnb_api_password_saved: boolean; tnb_proxy_username: string; tnb_proxy_password_saved: boolean; custom_name: string; custom_server: string; custom_plan: string; custom_kind: "http" | "https" | "socks5"; custom_website: string; custom_whitelist: string; custom_api_username: string; custom_api_password_saved: boolean; custom_proxy_username: string; custom_proxy_password_saved: boolean };
+export type ProviderUpdate = Omit<ProviderDefaults, "password_saved" | "tnb_api_password_saved" | "tnb_proxy_password_saved" | "custom_api_password_saved" | "custom_proxy_password_saved"> & { password?: string; tnb_api_password?: string; tnb_proxy_password?: string; custom_api_password?: string; custom_proxy_password?: string };
 export const providerDefaultsGet = () => invoke<ProviderDefaults>("proxy_provider_defaults_get");
 export const providerDefaultsSave = (value: ProviderUpdate) => invoke<ProviderDefaults>("proxy_provider_defaults_save", { value });
 export const providerGenerate = (country: string, state: string) => invoke<ProxyEntry>("proxy_provider_generate", { request: { country, state } });
