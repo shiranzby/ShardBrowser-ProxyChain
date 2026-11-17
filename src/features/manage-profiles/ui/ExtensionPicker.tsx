@@ -53,11 +53,12 @@ export function ExtensionPicker({
   );
   if (items.length === 0) {
     return (
-      <p className={cn("m-0 text-secondary text-text-soft-400", listOnly && "p-3")}>
-        {t("extensionPicker.emptyLibrary")}{" "}
-        <Button mode="link" size="3xsmall" onClick={() => onAdd ? onAdd() : go("extensions")}>
-          {t("extensionPicker.addOne")}
-        </Button>
+      <p className={cn("m-0 text-secondary text-text-soft-400", listOnly && "p-0")}>
+        {t("extensionPicker.emptyLibrary")}{!onAdd && (<> {" "}
+          <Button mode="link" size="3xsmall" onClick={() => go("extensions")}>
+            {t("extensionPicker.addOne")}
+          </Button>
+        </>)}
       </p>
     );
   }

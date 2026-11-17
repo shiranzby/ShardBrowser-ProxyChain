@@ -12,6 +12,7 @@ export function ExtensionsTab({ draft }: { draft: ProfileFormDraft }) {
   const [addingLink, setAddingLink] = useState(false);
   const [url, setUrl] = useState("");
   const busy = useExtensions((s) => s.busy);
+  const libraryCount = useExtensions((s) => s.items.length);
   const importUrl = useExtensions((s) => s.importUrl);
   const link = normalizeExtensionLink(url);
   const allowed = link !== "" && extensionLinkAllowed(link);
@@ -25,7 +26,8 @@ export function ExtensionsTab({ draft }: { draft: ProfileFormDraft }) {
   };
   return (
     <div data-tour="form-extensions" className="flex flex-col gap-3">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3">
+        <p className="m-0 text-secondary text-text-soft-400">{libraryCount === 0 ? t("extensionPicker.emptyLibrary") : ""}</p>
         <AddExtensionMenu onAddFromLink={() => setAddingLink(true)} />
       </div>
       {addingLink && (
@@ -52,7 +54,7 @@ export function ExtensionsTab({ draft }: { draft: ProfileFormDraft }) {
           </div>
         </div>
       )}
-      <ExtensionPicker listOnly value={draft.form.extensions} onChange={(extensions) => patchForm({ extensions })} onAdd={() => setAddingLink(true)} />
+      {libraryCount > 0 && <ExtensionPicker listOnly value={draft.form.extensions} onChange={(extensions) => patchForm({ extensions })} onAdd={() => setAddingLink(true)} />}
     </div>
   );
 }
