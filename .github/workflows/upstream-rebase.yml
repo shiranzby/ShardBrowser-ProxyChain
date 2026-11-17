@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   verify:
+    needs: portable
     timeout-minutes: 180
     if: github.repository == 'shiranzby/ShardBrowser-ProxyChain'
     runs-on: windows-2022
@@ -72,7 +73,6 @@ jobs:
           if-no-files-found: warn
 
   portable:
-    needs: verify
     permissions:
       contents: read
     uses: ./.github/workflows/build-portable.yml

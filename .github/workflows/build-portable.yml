@@ -64,11 +64,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP 'proxy-chain-build') | Out-Null
           ./maintenance/scripts/apply-patch.ps1 -UpstreamTag $env:UPSTREAM_TAG -UpstreamCommit $env:UPSTREAM_COMMIT -CandidatePath (Join-Path $env:RUNNER_TEMP 'proxy-chain-candidate') -OutputPath (Join-Path $env:RUNNER_TEMP 'proxy-chain-build/candidate-info.json')
-      - name: Download successful gate evidence from this run
-        uses: actions/download-artifact@v4
-        with:
-          name: proxy-chain-verification
-          path: ${{ runner.temp }}/proxy-chain-build/verification
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ runner.temp }}/proxy-chain-candidate/src-tauri
@@ -80,7 +75,7 @@ jobs:
           try { npm ci --no-audit --no-fund; if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' } } finally { Pop-Location }
       - name: Build Portable candidate
         shell: pwsh
-        run: ./maintenance/scripts/build-portable.ps1 -CandidatePath (Join-Path $env:RUNNER_TEMP 'proxy-chain-candidate') -MetadataPath (Join-Path $env:RUNNER_TEMP 'proxy-chain-build/candidate-info.json') -VerificationPath (Join-Path $env:RUNNER_TEMP 'proxy-chain-build/verification/verification.json') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'proxy-chain-build/artifact')
+        run: ./maintenance/scripts/build-portable.ps1 -BuildOnly -CandidatePath (Join-Path $env:RUNNER_TEMP 'proxy-chain-candidate') -MetadataPath (Join-Path $env:RUNNER_TEMP 'proxy-chain-build/candidate-info.json') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'proxy-chain-build/artifact')
       - name: Publish metadata outputs
         id: meta
         shell: pwsh
@@ -97,8 +92,6 @@ jobs:
           name: ShardBrowser-${{ inputs.upstream_tag }}-${{ steps.meta.outputs.patch_revision }}-portable-win-x64-candidate
           path: |
             ${{ runner.temp }}/proxy-chain-build/artifact/*
-            ${{ runner.temp }}/proxy-chain-build/verification/verification.json
-            ${{ runner.temp }}/proxy-chain-build/verification/*.log
           if-no-files-found: error
       - name: Preserve build failure diagnostics
         if: failure()
@@ -107,6 +100,5 @@ jobs:
           name: proxy-chain-portable-failure
           path: |
             ${{ runner.temp }}/proxy-chain-build/artifact/*.log
-            ${{ runner.temp }}/proxy-chain-build/verification/*.log
             ${{ runner.temp }}/proxy-chain-build/candidate-info.json
           if-no-files-found: warn

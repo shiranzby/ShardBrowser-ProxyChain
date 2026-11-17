@@ -2,11 +2,12 @@
 param(
     [Parameter(Mandatory)][string]$CandidatePath,
     [Parameter(Mandatory)][string]$MetadataPath,
-    [Parameter(Mandatory)][string]$VerificationPath,
+    [string]$VerificationPath,
     [Parameter(Mandatory)][string]$OutputDirectory,
     # Optional post-build acceptance evidence. Missing evidence produces a candidate,
     # never an accepted Release. No external path is read from an environment variable.
     [string]$AcceptancePath,
+    [switch]$BuildOnly,
     [switch]$ValidateExisting
 )
 $ErrorActionPreference = 'Stop'
@@ -16,10 +17,15 @@ $candidate = [IO.Path]::GetFullPath($CandidatePath)
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 if ($output.TrimEnd([IO.Path]::DirectorySeparatorChar) -eq $candidate.TrimEnd([IO.Path]::DirectorySeparatorChar) -or $output.StartsWith($candidate.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Keep Portable artifacts outside the candidate source tree.' }
 New-Item -ItemType Directory -Force -Path $output | Out-Null
+if ($BuildOnly -and $AcceptancePath) { throw 'BuildOnly cannot be combined with an acceptance receipt.' }
 $meta = Get-Content -Raw -LiteralPath $MetadataPath | ConvertFrom-Json
-$verified = Get-Content -Raw -LiteralPath $VerificationPath | ConvertFrom-Json
+$verified = $null
+if (-not $BuildOnly) {
+    if ([string]::IsNullOrWhiteSpace($VerificationPath) -or -not (Test-Path -LiteralPath $VerificationPath -PathType Leaf)) { throw 'Verification receipt is required unless BuildOnly is set.' }
+    $verified = Get-Content -Raw -LiteralPath $VerificationPath | ConvertFrom-Json
+}
 if ($meta.schema -ne 1 -or $meta.result -ne 'applied' -or $meta.candidate_commit -notmatch '^[0-9a-f]{40}$' -or $meta.source_tree -notmatch '^[0-9a-f]{40}$' -or $meta.patch_sha256 -notmatch '^[0-9a-f]{64}$' -or $meta.upstream_tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$' -or $meta.patch_revision -notmatch '^pc[1-9][0-9]*$') { throw 'Invalid candidate provenance.' }
-if ($verified.schema -ne 1 -or $verified.kind -ne 'proxy-chain-verification' -or $verified.result -ne 'passed' -or $verified.candidate_commit -ne $meta.candidate_commit -or $verified.source_tree -ne $meta.source_tree -or $verified.patch_sha256 -ne $meta.patch_sha256) { throw 'Verification does not cover this candidate.' }
+if (-not $BuildOnly -and ($verified.schema -ne 1 -or $verified.kind -ne 'proxy-chain-verification' -or $verified.result -ne 'passed' -or $verified.candidate_commit -ne $meta.candidate_commit -or $verified.source_tree -ne $meta.source_tree -or $verified.patch_sha256 -ne $meta.patch_sha256)) { throw 'Verification does not cover this candidate.' }
 
 function EvidencePath([string]$Base, [string]$Relative) {
     if ([IO.Path]::IsPathRooted($Relative) -or $Relative -match '(^|[\\/])\.\.([\\/]|$)' -or $Relative -match ':') { throw 'Evidence must use a safe relative file path.' }
@@ -40,18 +46,20 @@ function CheckFile([string]$Base, [string]$Relative, [string]$Hash) {
     $p = EvidencePath $Base $Relative
     if ((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Hash) { throw 'Evidence file hash mismatch.' }
 }
-$required = @('pipeline-offline','npm-install','ui-kit','ui-check','ui-production','rust-chain-list','rust-chain','rust-full','playwright-install')
-$proofBase = Split-Path -Parent ([IO.Path]::GetFullPath($VerificationPath))
-foreach ($name in $required) {
-    $check = @($verified.checks | Where-Object { $_.id -eq $name })
-    if ($check.Count -ne 1 -or $check[0].status -ne 'passed') { throw "Missing verification gate: $name" }
-    CheckFile $proofBase $check[0].log $check[0].sha256
-}
-$browserChecks = @($verified.checks | Where-Object { $_.id -like 'ui-browser-*' })
-if ($browserChecks.Count -eq 0) { throw 'Missing isolated browser verification gates.' }
-foreach ($check in $browserChecks) {
-    if ($check.status -ne 'passed') { throw "Browser verification gate failed: $($check.id)" }
-    CheckFile $proofBase $check.log $check.sha256
+if (-not $BuildOnly) {
+    $required = @('pipeline-offline','npm-install','ui-kit','ui-check','ui-production','rust-chain-list','rust-chain','rust-full','playwright-install')
+    $proofBase = Split-Path -Parent ([IO.Path]::GetFullPath($VerificationPath))
+    foreach ($name in $required) {
+        $check = @($verified.checks | Where-Object { $_.id -eq $name })
+        if ($check.Count -ne 1 -or $check[0].status -ne 'passed') { throw "Missing verification gate: $name" }
+        CheckFile $proofBase $check[0].log $check[0].sha256
+    }
+    $browserChecks = @($verified.checks | Where-Object { $_.id -like 'ui-browser-*' })
+    if ($browserChecks.Count -eq 0) { throw 'Missing isolated browser verification gates.' }
+    foreach ($check in $browserChecks) {
+        if ($check.status -ne 'passed') { throw "Browser verification gate failed: $($check.id)" }
+        CheckFile $proofBase $check.log $check.sha256
+    }
 }
 $head = (& git -C $candidate rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $head -ne $meta.candidate_commit) { throw 'Candidate commit changed after verification.' }
@@ -139,7 +147,7 @@ $info = [ordered]@{
     upstream_repository=$meta.upstream_repository; upstream_tag=$meta.upstream_tag; upstream_commit=$meta.upstream_commit
     patch_revision=$meta.patch_revision; patch_commit=$meta.patch_commit; patch_sha256=$meta.patch_sha256
     candidate_commit=$head; source_tree=$tree; maintenance_commit=$meta.maintenance_commit
-    portable_filename=$filename; portable_sha256=$sha; verification_sha256=(Get-FileHash -LiteralPath $VerificationPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    portable_filename=$filename; portable_sha256=$sha; verification_sha256=$(if($BuildOnly){$null}else{(Get-FileHash -LiteralPath $VerificationPath -Algorithm SHA256).Hash.ToLowerInvariant()})
     acceptance=$acceptanceState; publish_ready=$publishReady; artifact_kind=$(if($publishReady){'accepted_portable'}else{'candidate_portable'})
     build_command='npx tauri build --no-bundle --target x86_64-pc-windows-msvc'; node_version=((& node --version) -join ''); rust_version=((& rustc --version) -join '')
     run_url=$(if($env:GITHUB_RUN_ID){"https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"}else{$null})
