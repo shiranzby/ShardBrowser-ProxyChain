@@ -4012,38 +4012,6 @@ index 65ab307..cb00dc7 100644
      Bookmark:
        type: object
        properties:
-diff --git a/package-lock.json b/package-lock.json
-index 44dcc26..f6a82c1 100644
---- a/package-lock.json
-+++ b/package-lock.json
-@@ -1,12 +1,12 @@
- {
-   "name": "shardx-launcher",
--  "version": "2.1.5",
-+  "version": "2.1.4",
-   "lockfileVersion": 3,
-   "requires": true,
-   "packages": {
-     "": {
-       "name": "shardx-launcher",
--      "version": "2.1.5",
-+      "version": "2.1.4",
-       "dependencies": {
-         "@fontsource-variable/jetbrains-mono": "^5.3.0",
-         "@hugeicons/core-free-icons": "^4.3.0",
-diff --git a/package.json b/package.json
-index 7b709a4..21e5e4a 100644
---- a/package.json
-+++ b/package.json
-@@ -1,7 +1,7 @@
- {
-   "name": "shardx-launcher",
-   "private": true,
--  "version": "2.1.5",
-+  "version": "2.1.4",
-   "type": "module",
-   "scripts": {
-     "dev": "vite",
 diff --git a/runtime.json b/runtime.json
 index cb57096..1abb6c8 100644
 --- a/runtime.json
@@ -5944,7 +5912,7 @@ index b346b48..5471871 100644
  pub const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
  /// Version manifest (GitHub raw) — one tiny GET yields every archive's current
 diff --git a/src-tauri/Cargo.lock b/src-tauri/Cargo.lock
-index ee2bbb6..9b4d8cf 100644
+index ee2bbb6..87de976 100644
 --- a/src-tauri/Cargo.lock
 +++ b/src-tauri/Cargo.lock
 @@ -3569,9 +3569,9 @@ dependencies = [
@@ -5979,15 +5947,6 @@ index ee2bbb6..9b4d8cf 100644
  [[package]]
  name = "redox_syscall"
  version = "0.5.18"
-@@ -5531,7 +5544,7 @@ dependencies = [
- 
- [[package]]
- name = "shardbrowser-launcher"
--version = "2.1.5"
-+version = "2.1.4"
- dependencies = [
-  "ab_glyph",
-  "aes",
 @@ -5555,6 +5568,7 @@ dependencies = [
   "iana-time-zone",
   "jsonwebtoken",
@@ -6004,15 +5963,6 @@ index ee2bbb6..9b4d8cf 100644
   "reqwest 0.12.28",
   "ring",
   "rusqlite",
-@@ -5599,7 +5614,7 @@ dependencies = [
- 
- [[package]]
- name = "shardbrowser-team-server"
--version = "2.1.5"
-+version = "2.1.4"
- dependencies = [
-  "aes-gcm",
-  "anyhow",
 @@ -8858,6 +8873,15 @@ dependencies = [
   "rustix",
  ]
@@ -6030,17 +5980,9 @@ index ee2bbb6..9b4d8cf 100644
  name = "yoke"
  version = "0.8.2"
 diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
-index 8a262df..81cdf1e 100644
+index 8a262df..65c5dd6 100644
 --- a/src-tauri/Cargo.toml
 +++ b/src-tauri/Cargo.toml
-@@ -1,6 +1,6 @@
- [package]
- name = "shardbrowser-launcher"
--version = "2.1.5"
-+version = "2.1.4"
- description = "ShardBrowser Launcher: profiles, proxies, fingerprints and automation for the ShardBrowser engine."
- authors = ["ProxyShard"]
- edition = "2021"
 @@ -21,6 +21,7 @@ default = ["automation"]
  automation = ["dep:wasmtime", "dep:wreq", "dep:wreq-util", "dep:postgres", "dep:mysql", "dep:mongodb"]
  
@@ -20847,19 +20789,6 @@ index 0000000..ba16077
 +    }
 +
 +}
-diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
-index 5101e18..63f5fb9 100644
---- a/src-tauri/tauri.conf.json
-+++ b/src-tauri/tauri.conf.json
-@@ -1,7 +1,7 @@
- {
-   "$schema": "https://schema.tauri.app/config/2",
-   "productName": "ShardBrowser Launcher",
--  "version": "2.1.5",
-+  "version": "2.1.4",
-   "identifier": "com.shardx.launcher",
-   "build": {
-     "beforeDevCommand": "npm run dev",
 diff --git a/src/app/App.tsx b/src/app/App.tsx
 index 9ffa73a..3e2ad74 100644
 --- a/src/app/App.tsx
@@ -23181,7 +23110,7 @@ index f3d27fa..4875597 100644
          { label: t("extensions.addUnpacked"), icon: <FolderIcon className="size-3.5" />, disabled: busy, onSelect: () => void importFolder(), ...closed },
        ]}
 diff --git a/src/features/manage-profiles/ui/ExtensionPicker.tsx b/src/features/manage-profiles/ui/ExtensionPicker.tsx
-index 4f80471..bba2404 100644
+index 4f80471..7cc36b6 100644
 --- a/src/features/manage-profiles/ui/ExtensionPicker.tsx
 +++ b/src/features/manage-profiles/ui/ExtensionPicker.tsx
 @@ -27,11 +27,13 @@ function Icon({ e, className }: { e: ExtensionEntry; className?: string }) {
@@ -23199,15 +23128,24 @@ index 4f80471..bba2404 100644
  }) {
    const t = useT();
    const items = useExtensions((s) => s.items);
-@@ -53,7 +55,7 @@ export function ExtensionPicker({
+@@ -51,11 +53,12 @@ export function ExtensionPicker({
+   );
+   if (items.length === 0) {
      return (
-       <p className={cn("m-0 text-secondary text-text-soft-400", listOnly && "p-3")}>
-         {t("extensionPicker.emptyLibrary")}{" "}
+-      <p className={cn("m-0 text-secondary text-text-soft-400", listOnly && "p-3")}>
+-        {t("extensionPicker.emptyLibrary")}{" "}
 -        <Button mode="link" size="3xsmall" onClick={() => go("extensions")}>
-+        <Button mode="link" size="3xsmall" onClick={() => onAdd ? onAdd() : go("extensions")}>
-           {t("extensionPicker.addOne")}
-         </Button>
+-          {t("extensionPicker.addOne")}
+-        </Button>
++      <p className={cn("m-0 text-secondary text-text-soft-400", listOnly && "p-0")}>
++        {t("extensionPicker.emptyLibrary")}{!onAdd && (<> {" "}
++          <Button mode="link" size="3xsmall" onClick={() => go("extensions")}>
++            {t("extensionPicker.addOne")}
++          </Button>
++        </>)}
        </p>
+     );
+   }
 diff --git a/src/features/manage-profiles/ui/FolderDialog.tsx b/src/features/manage-profiles/ui/FolderDialog.tsx
 index b79a1e8..02be3f7 100644
 --- a/src/features/manage-profiles/ui/FolderDialog.tsx
@@ -23401,10 +23339,10 @@ index 4ac3ecc..eb5ba91 100644
          aria-description={why ?? undefined}
 diff --git a/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
 new file mode 100644
-index 0000000..4e349bc
+index 0000000..2dd2c31
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,77 @@
 +import { useEffect, useState } from "react";
 +import { openUrl } from "@tauri-apps/plugin-opener";
 +import { Button, Input } from "@proxyshard/shardx-ui-kit";
@@ -23435,45 +23373,52 @@ index 0000000..4e349bc
 +    <Input secret type="password" inputSize="xsmall" label={label} value={secrets[key] ?? ""} autoComplete="new-password" placeholder={has ? t("provider.keepPassword") : ""} onChange={(e) => { setSecrets((v) => ({ ...v, [key]: e.target.value })); setSaved(false); }} />
 +    {has && <Button variant="neutral" mode="ghost" size="3xsmall" onClick={() => { setSecrets((v) => ({ ...v, [key]: "" })); setSaved(false); }}>{secrets[key] === "" ? t("provider.willClear") : t("provider.clearPassword")}</Button>}
 +  </div>;
++  const [selected, setSelected] = useState<"1024proxy" | "tnbproxy">(provider === "1024proxy" ? "1024proxy" : "tnbproxy");
++  const active = provider === "all" ? selected : provider;
 +  return <fieldset disabled={busy} className="m-0 min-w-0 border-0 p-0" data-provider-defaults>
 +    <div className="flex flex-col gap-4">
 +      <p className="m-0 text-help text-text-sub-600">{t("provider.defaultsHelp")}</p>
 +      {value && <>
-+        {provider !== "tnbproxy" && <div className="flex flex-col gap-3">
-+          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("provider.name1024")}</h3>{website("https://1024proxy.io")}</div>
-+          <h4 className="m-0 text-secondary font-medium text-text-strong-950">{t("provider.accountSection")}</h4>
-+          <Input inputSize="xsmall" label={t("provider.relay")} value={value.relay} onChange={(e) => patch({ relay: e.target.value })} />
-+          <div className="grid grid-cols-2 gap-3">
-+            <Input inputSize="xsmall" label={t("provider.account")} value={value.username} onChange={(e) => patch({ username: e.target.value })} />
-+            {password("password", value.password_saved, t("proxyEditor.passwordLabel"))}
-+          </div>
-+          <Input inputSize="xsmall" label={t("provider.template")} value={value.username_template} onChange={(e) => patch({ username_template: e.target.value })} />
-+          <p className="m-0 text-help text-text-sub-600">{t("provider.templateHelp")}</p>
++        {provider === "all" && <div className="flex items-center gap-1 border-b border-stroke-soft-200 pb-2" role="tablist" aria-label={t("provider.managementTitle")}>
++          <Button type="button" variant={active === "tnbproxy" ? "primary" : "neutral"} mode={active === "tnbproxy" ? "filled" : "ghost"} size="xsmall" role="tab" aria-selected={active === "tnbproxy"} data-provider-tab="tnbproxy" onClick={() => setSelected("tnbproxy")}>{t("tnb.provider")}</Button>
++          <Button type="button" variant={active === "1024proxy" ? "primary" : "neutral"} mode={active === "1024proxy" ? "filled" : "ghost"} size="xsmall" role="tab" aria-selected={active === "1024proxy"} data-provider-tab="1024proxy" onClick={() => setSelected("1024proxy")}>{t("provider.name1024")}</Button>
++          <Button type="button" variant="neutral" mode="ghost" size="xsmall" data-provider-tab="custom" disabled>{t("provider.custom")}</Button>
++          {active === "tnbproxy" ? website("https://dash.tnbproxy.com", true) : website("https://1024proxy.io")}
 +        </div>}
-+        {provider !== "1024proxy" && <div className="flex flex-col gap-3">
-+          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("tnb.provider")}</h3>{website("https://dash.tnbproxy.com", true)}</div>
-+          <h4 className="m-0 text-secondary font-medium text-text-strong-950">{t("provider.apiSection")}</h4>
-+          <Input inputSize="xsmall" label={t("tnb.server")} value={value.tnb_server} onChange={(e) => patch({ tnb_server: e.target.value })} />
++        {active === "1024proxy" ? <div className="flex flex-col gap-3" role="tabpanel" data-provider-panel="1024proxy">
++          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("provider.name1024")}</h3>{provider !== "all" && website("https://1024proxy.io")}</div>
 +          <div className="grid grid-cols-2 gap-3">
++            <Input inputSize="xsmall" label={t("provider.relay")} value={value.relay} onChange={(e) => patch({ relay: e.target.value })} />
++            <Input inputSize="xsmall" label={t("provider.account")} value={value.username} onChange={(e) => patch({ username: e.target.value })} />
++          </div>
++          <div className="grid grid-cols-2 gap-3">
++            {password("password", value.password_saved, t("proxyEditor.passwordLabel"))}
++            <Input inputSize="xsmall" label={t("provider.template")} value={value.username_template} onChange={(e) => patch({ username_template: e.target.value })} />
++          </div>
++          <p className="m-0 text-help text-text-sub-600">{t("provider.templateHelp")}</p>
++        </div> : <div className="flex flex-col gap-3" role="tabpanel" data-provider-panel="tnbproxy">
++          <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-section-label text-text-strong-950">{t("tnb.provider")}</h3>{provider !== "all" && website("https://dash.tnbproxy.com", true)}</div>
++          <div className="grid grid-cols-2 gap-3">
++            <Input inputSize="xsmall" label={t("tnb.server")} value={value.tnb_server} onChange={(e) => patch({ tnb_server: e.target.value })} />
 +            <Input inputSize="xsmall" label={t("tnb.plan")} value={value.tnb_plan} onChange={(e) => patch({ tnb_plan: e.target.value })} />
++          </div>
++          <div className="grid grid-cols-2 gap-3">
 +            <SelectField label={t("tnb.protocol")} value={value.tnb_kind} onChange={(tnb_kind) => patch({ tnb_kind })} options={[{ value: "http" as const, label: "HTTP" }, { value: "socks5" as const, label: "SOCKS5" }]} />
++            <Input inputSize="xsmall" label={t("provider.apiUsername")} value={value.tnb_api_username} onChange={(e) => patch({ tnb_api_username: e.target.value })} />
 +          </div>
 +          <p className="m-0 text-help text-text-sub-600">{t("provider.authSeparation")}</p>
 +          <div className="grid grid-cols-2 gap-3">
-+            <Input inputSize="xsmall" label={t("provider.apiUsername")} value={value.tnb_api_username} onChange={(e) => patch({ tnb_api_username: e.target.value })} />
 +            {password("tnb_api_password", value.tnb_api_password_saved, t("provider.apiPassword"))}
-+          </div>
-+          <h4 className="m-0 text-secondary font-medium text-text-strong-950">{t("provider.accountSection")}</h4>
-+          <div className="grid grid-cols-2 gap-3">
 +            <Input inputSize="xsmall" label={t("provider.proxyUsername")} value={value.tnb_proxy_username} onChange={(e) => patch({ tnb_proxy_username: e.target.value })} />
-+            {password("tnb_proxy_password", value.tnb_proxy_password_saved, t("provider.proxyPassword"))}
 +          </div>
++          <div className="max-w-[50%]">{password("tnb_proxy_password", value.tnb_proxy_password_saved, t("provider.proxyPassword"))}</div>
 +        </div>}
 +        <div className="flex items-center gap-3"><Button variant="neutral" mode="stroke" size="xsmall" isLoading={busy} onClick={() => void save()}>{t("provider.saveDefaults")}</Button>{saved && <span role="status" className="text-help text-text-sub-600">{t("provider.saved")}</span>}</div>
 +      </>}
 +      {error && <p role="alert" className="m-0 text-help text-error-text">{t("provider.saveFailed")}</p>}
 +    </div>
 +  </fieldset>;
++
 +}
 diff --git a/src/features/manage-proxies/ui/ProxyBulkImporter.tsx b/src/features/manage-proxies/ui/ProxyBulkImporter.tsx
 index b6faf8e..2ecae4d 100644
@@ -24079,10 +24024,10 @@ index 1b1d09d..e3240a0 100644
          {/* 2 px between 32 px rows, as Peek's sheet. */}
          <div className="flex flex-col gap-[2px]">
 diff --git a/src/features/profile-form/ui/ExtensionsTab.tsx b/src/features/profile-form/ui/ExtensionsTab.tsx
-index 6b4917a..cf01e3b 100644
+index 6b4917a..0643d9e 100644
 --- a/src/features/profile-form/ui/ExtensionsTab.tsx
 +++ b/src/features/profile-form/ui/ExtensionsTab.tsx
-@@ -1,11 +1,58 @@
+@@ -1,11 +1,60 @@
 +import { useState } from "react";
 +import { Button, Input } from "@proxyshard/shardx-ui-kit";
 +import { extensionLinkAllowed, isStoreLink, normalizeExtensionLink, useExtensions } from "../../../entities/extension";
@@ -24098,6 +24043,7 @@ index 6b4917a..cf01e3b 100644
 +  const [addingLink, setAddingLink] = useState(false);
 +  const [url, setUrl] = useState("");
 +  const busy = useExtensions((s) => s.busy);
++  const libraryCount = useExtensions((s) => s.items.length);
 +  const importUrl = useExtensions((s) => s.importUrl);
 +  const link = normalizeExtensionLink(url);
 +  const allowed = link !== "" && extensionLinkAllowed(link);
@@ -24113,7 +24059,8 @@ index 6b4917a..cf01e3b 100644
 -    <div data-tour="form-extensions">
 -      <ExtensionPicker listOnly value={draft.form.extensions} onChange={(extensions) => patchForm({ extensions })} />
 +    <div data-tour="form-extensions" className="flex flex-col gap-3">
-+      <div className="flex justify-end">
++      <div className="flex items-center justify-between gap-3">
++        <p className="m-0 text-secondary text-text-soft-400">{libraryCount === 0 ? t("extensionPicker.emptyLibrary") : ""}</p>
 +        <AddExtensionMenu onAddFromLink={() => setAddingLink(true)} />
 +      </div>
 +      {addingLink && (
@@ -24140,7 +24087,7 @@ index 6b4917a..cf01e3b 100644
 +          </div>
 +        </div>
 +      )}
-+      <ExtensionPicker listOnly value={draft.form.extensions} onChange={(extensions) => patchForm({ extensions })} onAdd={() => setAddingLink(true)} />
++      {libraryCount > 0 && <ExtensionPicker listOnly value={draft.form.extensions} onChange={(extensions) => patchForm({ extensions })} onAdd={() => setAddingLink(true)} />}
      </div>
    );
  }
@@ -25704,7 +25651,7 @@ index 0000000..c2bf0d9
 +  }, [kind, allIds, visibleIds, selected, groupOf, onReorder, dragHandle, resetSavedOrder, t, scope]);
 +}
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index ce72a51..2cca7a4 100644
+index ce72a51..4126acf 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
 @@ -1,4 +1,39 @@
@@ -25747,7 +25694,15 @@ index ce72a51..2cca7a4 100644
    "accent.custom": "Custom color",
    "actionMenu.byPosition": "{what}, by position",
    "actionMenu.clear": "Clear field",
-@@ -1929,7 +1964,7 @@
+@@ -550,6 +585,7 @@
+   "extensions.emptyAction": "Add an extension",
+   "extensions.emptyHelp": "Paste a Web Store link, or add a .crx, .zip or folder.",
+   "extensions.emptyTitle": "No extensions yet",
++  "extensions.libraryEmpty": "No extensions in the library yet.",
+   "extensions.engineHere": "This computer has browser engine {version}.",
+   "extensions.flagged": "The Web Store marks this extension as harmful",
+   "extensions.flaggedHelp": "It still runs in the profiles that use it. Remove it, or take it out of those profiles.",
+@@ -1929,7 +1965,7 @@
    "projectEditor.worldMain": "Main",
    "proxies.title": "Proxies",
    "proxiesMoreMenu.buy": "Buy proxies",
@@ -25756,7 +25711,7 @@ index ce72a51..2cca7a4 100644
    "proxyBulkImporter.active": "Active",
    "proxyBulkImporter.addFailed": "Couldn’t add the proxies",
    "proxyBulkImporter.back": "Back",
-@@ -2307,11 +2342,6 @@
+@@ -2307,11 +2343,6 @@
    "settings.aboutUpdatesLabel": "Updates",
    "settings.aboutVersionLabel": "Version",
    "settings.aboutWebsiteLabel": "Website",
@@ -25768,7 +25723,7 @@ index ce72a51..2cca7a4 100644
    "settings.apiAuthHeaderHint": "Send it as ",
    "settings.apiBaseUrlLabel": "Base URL",
    "settings.apiDetailsTitle": "Connection",
-@@ -2393,9 +2423,99 @@
+@@ -2393,9 +2424,99 @@
    "settings.tabAbout": "About",
    "settings.tabApi": "API & MCP",
    "settings.tabAppearance": "Appearance",
@@ -25869,7 +25824,7 @@ index ce72a51..2cca7a4 100644
    "settings.tabProfiles": "Profile defaults",
    "settings.tabStorage": "Storage",
    "settings.tabSync": "Sync",
-@@ -2486,7 +2606,7 @@
+@@ -2486,7 +2607,7 @@
    "sidebar.groupPinned": "Pinned",
    "sidebar.groupViews": "Views",
    "sidebar.launcherVersion": "ShardBrowser v{v}",
@@ -25878,7 +25833,7 @@ index ce72a51..2cca7a4 100644
    "sidebar.navBookmarks": "Bookmarks",
    "sidebar.navExtensions": "Extensions",
    "sidebar.navFingerprints": "Fingerprints",
-@@ -3366,14 +3486,6 @@
+@@ -3366,14 +3487,6 @@
    "profileSync.offDetail": "Your other computers keep their copy; it no longer updates.",
    "profileSync.conflictMade": "A profile changed on two computers: your changes from here are in “{name}”.",
    "profileSync.conflictDetail": "Both versions were kept. Don’t run both: they share one fingerprint and cookies.",
@@ -25893,7 +25848,7 @@ index ce72a51..2cca7a4 100644
    "sync.intro": "Sync keeps your profiles and the rest the same on every computer you use. They meet on a sync server: one you run yourself, or your team’s.",
    "sync.teamHelp": "Sync through the server of a team you have joined.",
    "sync.teamTitle": "Use a team server",
-@@ -3481,5 +3593,224 @@
+@@ -3481,5 +3594,225 @@
    "sync.guideWhere": "Run it on a computer that stays on and that all your computers can reach: a small VPS or a home server.",
    "sync.syncFirst": "Sync first",
    "sync.unsentMany": "{n} changes made here haven’t reached the server: they stay on this computer only.",
@@ -26094,6 +26049,7 @@ index ce72a51..2cca7a4 100644
 +  "provider.checkFailed": "Failed",
 +  "provider.checkUnverified": "Unverified",
 +  "provider.name1024": "1024Proxy",
++  "provider.custom": "Custom",
 +  "tnb.errorWhitelist": "The TNB extraction request came from an IP outside the allowlist. Add the current request IP to the provider allowlist and retry.",
 +  "provider.openWebsite": "Open provider website",
 +  "proxyChain.firstSource": "First-layer source",
@@ -26120,7 +26076,7 @@ index ce72a51..2cca7a4 100644
 +  "proxyChain.noFirstProxy": "No saved proxy is available in this space."
  }
 diff --git a/src/shared/i18n/locales/ru.json b/src/shared/i18n/locales/ru.json
-index 7276e13..55eb05a 100644
+index 7276e13..5c78bd9 100644
 --- a/src/shared/i18n/locales/ru.json
 +++ b/src/shared/i18n/locales/ru.json
 @@ -1,4 +1,39 @@
@@ -26163,7 +26119,15 @@ index 7276e13..55eb05a 100644
    "accent.custom": "Свой цвет",
    "actionMenu.byPosition": "{what} (по координатам)",
    "actionMenu.clear": "Очистить поле",
-@@ -1929,7 +1964,7 @@
+@@ -550,6 +585,7 @@
+   "extensions.emptyAction": "Добавить расширение",
+   "extensions.emptyHelp": "Вставьте ссылку из Web Store или добавьте .crx, .zip либо папку.",
+   "extensions.emptyTitle": "Расширений пока нет",
++  "extensions.libraryEmpty": "В библиотеке пока нет расширений.",
+   "extensions.engineHere": "На этом компьютере движок браузера {version}.",
+   "extensions.flagged": "Web Store помечает это расширение как вредоносное",
+   "extensions.flaggedHelp": "Оно по-прежнему работает в профилях, где включено. Удалите его или уберите из этих профилей.",
+@@ -1929,7 +1965,7 @@
    "projectEditor.worldMain": "Основная",
    "proxies.title": "Прокси",
    "proxiesMoreMenu.buy": "Купить прокси",
@@ -26172,7 +26136,7 @@ index 7276e13..55eb05a 100644
    "proxyBulkImporter.active": "Работает",
    "proxyBulkImporter.addFailed": "Не удалось добавить прокси",
    "proxyBulkImporter.back": "Назад",
-@@ -2307,11 +2342,6 @@
+@@ -2307,11 +2343,6 @@
    "settings.aboutUpdatesLabel": "Обновления",
    "settings.aboutVersionLabel": "Версия",
    "settings.aboutWebsiteLabel": "Сайт",
@@ -26184,7 +26148,7 @@ index 7276e13..55eb05a 100644
    "settings.apiAuthHeaderHint": "Передавайте токен в заголовке ",
    "settings.apiBaseUrlLabel": "Базовый URL",
    "settings.apiDetailsTitle": "Подключение",
-@@ -2393,9 +2423,99 @@
+@@ -2393,9 +2424,99 @@
    "settings.tabAbout": "О программе",
    "settings.tabApi": "API и MCP",
    "settings.tabAppearance": "Внешний вид",
@@ -26285,7 +26249,7 @@ index 7276e13..55eb05a 100644
    "settings.tabProfiles": "Новые профили",
    "settings.tabStorage": "Хранилище",
    "settings.tabSync": "Синхронизация",
-@@ -2486,7 +2606,7 @@
+@@ -2486,7 +2607,7 @@
    "sidebar.groupPinned": "Закреплённые",
    "sidebar.groupViews": "Сохранённые фильтры",
    "sidebar.launcherVersion": "ShardBrowser v{v}",
@@ -26294,7 +26258,7 @@ index 7276e13..55eb05a 100644
    "sidebar.navBookmarks": "Закладки",
    "sidebar.navExtensions": "Расширения",
    "sidebar.navFingerprints": "Отпечатки",
-@@ -3366,14 +3486,6 @@
+@@ -3366,14 +3487,6 @@
    "profileSync.offDetail": "Другие ваши компьютеры сохранят свою копию, но она больше не обновляется.",
    "profileSync.conflictMade": "Профиль изменился на двух компьютерах: ваши изменения отсюда — в «{name}».",
    "profileSync.conflictDetail": "Обе версии сохранены. Не запускайте обе: у них один отпечаток и одни cookie.",
@@ -26309,7 +26273,7 @@ index 7276e13..55eb05a 100644
    "sync.intro": "Синхронизация делает профили и остальное одинаковыми на всех ваших компьютерах. Данные передаются через сервер синхронизации: ваш собственный или сервер вашей команды.",
    "sync.teamHelp": "Синхронизация через сервер команды, в которую вы вступили.",
    "sync.teamTitle": "Использовать сервер команды",
-@@ -3481,5 +3593,224 @@
+@@ -3481,5 +3594,225 @@
    "sync.guideWhere": "Запускайте его на компьютере, который всегда включён и доступен всем вашим компьютерам: на небольшом VPS или домашнем сервере.",
    "sync.syncFirst": "Сначала синхронизировать",
    "sync.unsentMany": "{n} {n|изменение, сделанное здесь, не дошло|изменения, сделанные здесь, не дошли|изменений, сделанных здесь, не дошли} до сервера: они останутся только на этом компьютере.",
@@ -26510,6 +26474,7 @@ index 7276e13..55eb05a 100644
 +  "provider.checkFailed": "Failed",
 +  "provider.checkUnverified": "Unverified",
 +  "provider.name1024": "1024Proxy",
++  "provider.custom": "Пользовательский",
 +  "tnb.errorWhitelist": "IP запроса TNB отсутствует в белом списке. Добавьте текущий IP запроса в список провайдера и повторите попытку.",
 +  "provider.openWebsite": "Открыть сайт провайдера",
 +  "proxyChain.firstSource": "Источник первого уровня",
@@ -26536,7 +26501,7 @@ index 7276e13..55eb05a 100644
 +  "proxyChain.noFirstProxy": "В этом пространстве нет доступных сохранённых прокси。"
  }
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index e646200..bc27251 100644
+index e646200..cf80ed2 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
 @@ -1,4 +1,39 @@
@@ -26579,7 +26544,15 @@ index e646200..bc27251 100644
    "accent.custom": "自定义颜色",
    "actionMenu.byPosition": "{what}（按位置）",
    "actionMenu.clear": "清空字段",
-@@ -1929,7 +1964,7 @@
+@@ -550,6 +585,7 @@
+   "extensions.emptyAction": "添加扩展",
+   "extensions.emptyHelp": "粘贴 Web Store 链接，或添加 .crx、.zip 或文件夹。",
+   "extensions.emptyTitle": "还没有扩展",
++  "extensions.libraryEmpty": "扩展库中还没有扩展。",
+   "extensions.engineHere": "这台电脑上的浏览器引擎为 {version}。",
+   "extensions.flagged": "Web Store 将此扩展标记为有害",
+   "extensions.flaggedHelp": "它仍在使用它的配置中运行。请将其移除，或从这些配置中去掉。",
+@@ -1929,7 +1965,7 @@
    "projectEditor.worldMain": "主环境",
    "proxies.title": "代理",
    "proxiesMoreMenu.buy": "购买代理",
@@ -26588,7 +26561,7 @@ index e646200..bc27251 100644
    "proxyBulkImporter.active": "可用",
    "proxyBulkImporter.addFailed": "无法添加这些代理",
    "proxyBulkImporter.back": "返回",
-@@ -2307,11 +2342,6 @@
+@@ -2307,11 +2343,6 @@
    "settings.aboutUpdatesLabel": "更新",
    "settings.aboutVersionLabel": "版本",
    "settings.aboutWebsiteLabel": "网站",
@@ -26600,7 +26573,7 @@ index e646200..bc27251 100644
    "settings.apiAuthHeaderHint": "发送时使用 ",
    "settings.apiBaseUrlLabel": "基础 URL",
    "settings.apiDetailsTitle": "连接",
-@@ -2393,9 +2423,99 @@
+@@ -2393,9 +2424,99 @@
    "settings.tabAbout": "关于",
    "settings.tabApi": "API 与 MCP",
    "settings.tabAppearance": "外观",
@@ -26701,7 +26674,7 @@ index e646200..bc27251 100644
    "settings.tabProfiles": "配置默认值",
    "settings.tabStorage": "存储",
    "settings.tabSync": "同步",
-@@ -2486,7 +2606,7 @@
+@@ -2486,7 +2607,7 @@
    "sidebar.groupPinned": "置顶",
    "sidebar.groupViews": "视图",
    "sidebar.launcherVersion": "ShardBrowser v{v}",
@@ -26710,7 +26683,7 @@ index e646200..bc27251 100644
    "sidebar.navBookmarks": "书签",
    "sidebar.navExtensions": "扩展",
    "sidebar.navFingerprints": "指纹",
-@@ -3366,14 +3486,6 @@
+@@ -3366,14 +3487,6 @@
    "profileSync.offDetail": "你的其他电脑会保留它们的副本，但不再更新。",
    "profileSync.conflictMade": "一个配置在两台电脑上都被修改：你在这里的更改在“{name}”中。",
    "profileSync.conflictDetail": "两个版本都已保留。不要同时运行两者：它们共用同一个指纹和 Cookie。",
@@ -26725,7 +26698,7 @@ index e646200..bc27251 100644
    "sync.intro": "同步让你的配置和其他数据在你使用的每台电脑上保持一致。它们通过同步服务器汇合：你自己运行的，或你团队的。",
    "sync.teamHelp": "通过你已加入的团队的服务器同步。",
    "sync.teamTitle": "使用团队服务器",
-@@ -3481,5 +3593,224 @@
+@@ -3481,5 +3594,225 @@
    "sync.guideWhere": "在一台始终开机、你所有电脑都能访问的电脑上运行它：小型 VPS 或家用服务器。",
    "sync.syncFirst": "先同步",
    "sync.unsentMany": "这里做的 {n} 项更改还没送达服务器：它们只会留在这台电脑上。",
@@ -26926,6 +26899,7 @@ index e646200..bc27251 100644
 +  "provider.checkFailed": "失败",
 +  "provider.checkUnverified": "未验证",
 +  "provider.name1024": "1024Proxy",
++  "provider.custom": "自定义",
 +  "tnb.errorWhitelist": "TNB 提取请求的出口 IP 不在白名单中，请将当前请求出口 IP 加入供应商白名单后重试。",
 +  "provider.openWebsite": "打开供应商网站",
 +  "proxyChain.firstSource": "第一层代理来源",
@@ -29140,31 +29114,6 @@ index 6f77f44..891b284 100644
      {
        "version": "2.1.4",
        "date": "2026-11-06",
-diff --git a/team-server/Cargo.lock b/team-server/Cargo.lock
-index 6e36543..a5499a5 100644
---- a/team-server/Cargo.lock
-+++ b/team-server/Cargo.lock
-@@ -1038,7 +1038,7 @@ dependencies = [
- 
- [[package]]
- name = "shardbrowser-team-server"
--version = "2.1.5"
-+version = "2.1.4"
- dependencies = [
-  "aes-gcm",
-  "anyhow",
-diff --git a/team-server/Cargo.toml b/team-server/Cargo.toml
-index adf25ef..b8bfa8e 100644
---- a/team-server/Cargo.toml
-+++ b/team-server/Cargo.toml
-@@ -1,6 +1,6 @@
- [package]
- name = "shardbrowser-team-server"
--version = "2.1.5"
-+version = "2.1.4"
- description = "Self-hosted team server for ShardBrowser: team profiles, member tokens and live permissions."
- authors = ["ProxyShard"]
- edition = "2021"
 diff --git a/ui-kit/src/App.tsx b/ui-kit/src/App.tsx
 index 1e236ac..cdaa910 100644
 --- a/ui-kit/src/App.tsx
