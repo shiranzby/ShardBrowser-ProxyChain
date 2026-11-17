@@ -20179,10 +20179,10 @@ index 0000000..80814fe
 +void run();
 diff --git a/src-tauri/src/tnbproxy.rs b/src-tauri/src/tnbproxy.rs
 new file mode 100644
-index 0000000..def5a61
+index 0000000..ba16077
 --- /dev/null
 +++ b/src-tauri/src/tnbproxy.rs
-@@ -0,0 +1,656 @@
+@@ -0,0 +1,664 @@
 +//! TNB's IP-allowlisted extraction API. Only explicit user actions call /gen;
 +//! returned entries remain previews until the existing bulk-save command runs.
 +use crate::proxy_chain::{connector::Target, tunnel::Tunnel};
@@ -20291,7 +20291,7 @@ index 0000000..def5a61
 +                let detail = [value.get("msg"), value.get("message"), value.get("error")]
 +                    .into_iter().filter_map(|v| v.and_then(serde_json::Value::as_str))
 +                    .collect::<Vec<_>>().join(" ").to_ascii_lowercase();
-+                if detail.contains("whitelist") || detail.contains("allowlist") || detail.contains("not in") || detail.contains("ip") {
++                if is_whitelist_error(&detail) {
 +                    return Err("tnb_whitelist_required");
 +                }
 +                return Err("tnb_auth_required");
@@ -20350,13 +20350,16 @@ index 0000000..def5a61
 +    if error.is_timeout() { "tnb_timeout" } else { "tnb_request_failed" }
 +}
 +
++fn is_whitelist_error(detail: &str) -> bool {
++    detail.contains("whitelist") || detail.contains("allowlist") || detail.contains("白名单")
++        || (detail.split(|c: char| !c.is_ascii_alphanumeric()).any(|word| word == "ip")
++            && (detail.contains("not in") || detail.contains("not allowed")))
++}
++
 +fn remote_error_from_body(status: u16, body: &[u8]) -> Option<&'static str> {
 +    if !matches!(status, 401 | 403) { return None; }
 +    let detail = std::str::from_utf8(body).ok()?.to_ascii_lowercase();
-+    if detail.contains("whitelist") || detail.contains("allowlist")
-+        || (detail.contains("not in") && detail.contains("ip"))
-+        || (detail.contains("ip") && detail.contains("allow"))
-+    { Some("tnb_whitelist_required") } else { Some("tnb_auth_required") }
++    if is_whitelist_error(&detail) { Some("tnb_whitelist_required") } else { Some("tnb_auth_required") }
 +}
 +
 +async fn download(client: reqwest::Client, url: Url, host: Option<String>, json_body: Option<serde_json::Value>, auth: Option<crate::proxy_providers::Credential>) -> Result<Vec<u8>> {
@@ -20370,7 +20373,7 @@ index 0000000..def5a61
 +    if matches!(status, 401 | 403) {
 +        let mut body = Vec::new();
 +        while let Some(chunk) = response.chunk().await.map_err(request_error)? {
-+            if body.len().saturating_add(chunk.len()) > MAX_BODY { break; }
++            if body.len().saturating_add(chunk.len()) > MAX_BODY { return Err("tnb_response_too_large"); }
 +            body.extend_from_slice(&chunk);
 +        }
 +        return Err(remote_error_from_body(status, &body).unwrap_or("tnb_auth_required"));
@@ -20731,12 +20734,17 @@ index 0000000..def5a61
 +            ("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n".into(), "tnb_auth_required"),
 +            (ok_status(403, r#"{"error":"IP not in whitelist"}"#), "tnb_whitelist_required"),
 +            (ok_status(403, r#"{"error":"bad credentials"}"#), "tnb_auth_required"),
++            (ok_status(403, r#"{"error":"来源 IP 不在白名单"}"#), "tnb_whitelist_required"),
++            (ok_status(403, r#"{"error":"subscription not allowed"}"#), "tnb_auth_required"),
++            (ok_status(403, &chunk), "tnb_response_too_large"),
 +            (format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", MAX_BODY + 1), "tnb_response_too_large"),
 +            (format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{chunk}\r\n0\r\n\r\n", chunk.len()), "tnb_response_too_large"),
 +            (ok("whitelist denied: secret credential"), "tnb_invalid_response"),
 +            (ok(r#"{"code":401,"msg":"bad credentials"}"#), "tnb_auth_required"),
 +            (ok(r#"{"code":403,"msg":"IP not in whitelist"}"#), "tnb_whitelist_required"),
 +            (ok(r#"{"code":403,"msg":"bad credentials"}"#), "tnb_auth_required"),
++            (ok(r#"{"code":403,"msg":"subscription expired"}"#), "tnb_auth_required"),
++            (ok(r#"{"code":403,"msg":"来源 IP 不在白名单"}"#), "tnb_whitelist_required"),
 +        ] {
 +            let (server, task) = fixture(reply).await;
 +            assert_eq!(extract(request(server)).await.err(), Some(error));
@@ -25696,7 +25704,7 @@ index 0000000..c2bf0d9
 +  }, [kind, allIds, visibleIds, selected, groupOf, onReorder, dragHandle, resetSavedOrder, t, scope]);
 +}
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index ce72a51..981624c 100644
+index ce72a51..2cca7a4 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
 @@ -1,4 +1,39 @@
@@ -26068,7 +26076,7 @@ index ce72a51..981624c 100644
 +  "provider.templateRequired": "The username pattern has no placeholder for the selected region. Edit and save it first.",
 +  "provider.stateCode": "State / province (provider name, optional)",
 +  "provider.statePlaceholder": "Provider region value",
-+  "provider.regionHelp": "Generates a SOCKS5 endpoint using documented account syntax without an extraction request. Country codes are suggestions; availability and state names depend on the provider.",
++  "provider.regionHelp": "Generates a SOCKS5 endpoint using documented account syntax without an extraction request. Country codes are suggestions. 1024Proxy has no verified state/city inventory endpoint here, so enter the provider’s original region value instead of using a fabricated city list.",
 +  "provider.other": "Other provider",
 +  "provider.capabilities": "Current protocol capabilities",
 +  "provider.httpsCapability": "HTTPS proxy: TLS to the proxy server, with HTTP CONNECT carrying target connections.",
@@ -26528,7 +26536,7 @@ index 7276e13..55eb05a 100644
 +  "proxyChain.noFirstProxy": "В этом пространстве нет доступных сохранённых прокси。"
  }
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index e646200..24f451b 100644
+index e646200..bc27251 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
 @@ -1,4 +1,39 @@
@@ -26900,7 +26908,7 @@ index e646200..24f451b 100644
 +  "provider.templateRequired": "用户名模板未配置所选地区占位符，请编辑并保存模板。",
 +  "provider.stateCode": "州/省（供应商英文名称，可选）",
 +  "provider.statePlaceholder": "例如 Louisiana",
-+  "provider.regionHelp": "按官方账密格式生成 SOCKS5 代理，不调用提取 API。国家/地区列表仅提供标准代码，实际库存和州名以供应商为准。",
++  "provider.regionHelp": "按官方账密格式生成 SOCKS5 代理，不调用提取 API。国家/地区仅提供标准代码；1024Proxy 当前没有可验证的州/城市库存接口，因此州/省需要按供应商原始名称填写，不能在这里伪造城市列表。",
 +  "provider.other": "其他供应商",
 +  "provider.capabilities": "当前协议能力",
 +  "provider.httpsCapability": "HTTPS 代理：到代理服务器采用 TLS，HTTP CONNECT 承载目标连接。",
