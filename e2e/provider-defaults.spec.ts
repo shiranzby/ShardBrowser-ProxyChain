@@ -110,4 +110,3 @@ test("custom provider defaults persist with protocol and separate credentials", 
   await expect(panel.getByRole("combobox", { name: "Proxy protocol", exact: true })).toContainText("HTTPS");
   await expect(panel.getByText("Saved", { exact: true })).toHaveCount(0);
 });
-
