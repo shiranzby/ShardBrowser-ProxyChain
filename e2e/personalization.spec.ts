@@ -65,6 +65,32 @@ test("header switch preserves other settings, reports its route and survives rel
   await expect(root.getByRole("button", { name: "Proxy chain on", exact: true })).toBeVisible();
 });
 
+test("quick first-hop source choices keep the popover open", async ({ page }) => {
+  await openApp(page);
+  const root = page.locator("[data-proxy-quick]");
+  await root.getByRole("button").hover();
+  const pop = root.getByRole("dialog");
+  const mode = pop.getByRole("combobox", { name: "Configuration method", exact: true });
+
+  for (const option of [
+    "Select a saved proxy",
+    "Manual HTTP",
+    "HTTPS proxy",
+    "Manual SOCKS5",
+  ]) {
+    await mode.click();
+    await page.getByRole("listbox").getByRole("option", { name: option, exact: true }).click();
+    await expect(pop).toBeVisible();
+    await expect(mode).toContainText(option);
+    if (option === "Select a saved proxy") {
+      await expect(pop.getByRole("combobox", { name: "First-layer proxy", exact: true })).toBeVisible();
+    } else {
+      await expect(pop.getByLabel("Host or IP", { exact: true })).toBeVisible();
+      await expect(pop.getByLabel("Port", { exact: true })).toBeVisible();
+    }
+  }
+});
+
 test("header failed save keeps the saved switch and permits retry", async ({ page }) => {
   await page.addInitScript(() => Object.assign(window, { __shardxMockFail: { proxy_chain_set_enabled: 1 } }));
   await openApp(page);

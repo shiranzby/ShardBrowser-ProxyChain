@@ -56,7 +56,14 @@ export function ProxyQuickControl() {
   useEffect(() => {
     if (!open) return;
     void refresh(true);
-    const dismiss = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      // Select renders its listbox in a portal. Treat that child overlay as
+      // part of this control, otherwise its option click dismisses the
+      // parent popover before Select can commit the new source.
+      if (target?.closest('[role="listbox"], [data-overlay-branch]')) return;
+      if (!root.current?.contains(target)) setOpen(false);
+    };
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing) return;
       event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus();
@@ -100,7 +107,13 @@ export function ProxyQuickControl() {
     ?? proxyChainErrorText(t, { code: result.exit_error_code, message: result.exit_error, route_ready: result.route_ready }) : null;
   return <div ref={root} className="relative flex items-center" data-proxy-quick
     onMouseEnter={keepOpen}
-    onMouseLeave={() => { timer.current = setTimeout(() => { if (!root.current?.contains(document.activeElement)) setOpen(false); }, 250); }}
+    onMouseLeave={(event) => {
+      // The Select list is portalled outside the root. Keep this surface open
+      // while the pointer moves from its field into that list.
+      const next = event.relatedTarget as Element | null;
+      if (next?.closest('[role="listbox"], [data-overlay-branch]')) return;
+      timer.current = setTimeout(() => { if (!root.current?.contains(document.activeElement)) setOpen(false); }, 250);
+    }}
     onKeyDown={(e) => { if (e.key === "Escape" && open) { e.preventDefault(); e.stopPropagation(); setOpen(false); trigger.current?.focus(); } }}>
     <Button ref={trigger} size="xsmall" mode="stroke" variant="neutral" leftIcon={<span className="relative flex">
       <RouteIcon className="size-3.5" /><StatusDot tone={config?.enabled ? "success" : "outline"} className="absolute -right-1 -bottom-1" />
