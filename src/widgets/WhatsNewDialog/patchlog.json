@@ -3,6 +3,51 @@
   "repoUrl": "https://github.com/ProxyShard/ShardBrowser",
   "releases": [
     {
+      "version": "2.1.5",
+      "date": "2026-11-18",
+      "entries": [
+        {
+          "id": "pc17-proxy-chain",
+          "title": "Proxy chain controls",
+          "lead": "First-hop and second-hop routing now share one saved configuration model.",
+          "tag": "new",
+          "scope": "launcher",
+          "blocks": [
+            {
+              "type": "p",
+              "text": "The launcher keeps system, saved and manual HTTP, HTTPS and SOCKS5 choices in the same route plan and reuses the prepared tunnel when a Profile starts."
+            }
+          ]
+        },
+        {
+          "id": "pc17-provider-settings",
+          "title": "Provider defaults",
+          "lead": "TNBProxy, 1024Proxy and custom providers can keep separate credentials.",
+          "tag": "new",
+          "scope": "launcher",
+          "blocks": [
+            {
+              "type": "p",
+              "text": "Provider defaults are saved for the current Windows user. API extraction credentials and proxy credentials remain separate, and country codes can be searched directly."
+            }
+          ]
+        },
+        {
+          "id": "pc17-shortcuts",
+          "title": "Profile shortcuts",
+          "lead": "Create a desktop shortcut for a Profile and start it quietly.",
+          "tag": "new",
+          "scope": "launcher",
+          "blocks": [
+            {
+              "type": "p",
+              "text": "Shortcuts store only the stable Profile ID and use the normal guarded launch path."
+            }
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.1.4",
       "date": "2026-11-06",
       "entries": [
