@@ -106,7 +106,7 @@ fn parse_response(body: &[u8], request: &ExtractRequest, server: &str) -> Result
                 let detail = [value.get("msg"), value.get("message"), value.get("error")]
                     .into_iter().filter_map(|v| v.and_then(serde_json::Value::as_str))
                     .collect::<Vec<_>>().join(" ").to_ascii_lowercase();
-                if detail.contains("whitelist") || detail.contains("allowlist") || detail.contains("not in") || detail.contains("ip") {
+                if is_whitelist_error(&detail) {
                     return Err("tnb_whitelist_required");
                 }
                 return Err("tnb_auth_required");
@@ -165,13 +165,16 @@ fn request_error(error: reqwest::Error) -> &'static str {
     if error.is_timeout() { "tnb_timeout" } else { "tnb_request_failed" }
 }
 
+fn is_whitelist_error(detail: &str) -> bool {
+    detail.contains("whitelist") || detail.contains("allowlist") || detail.contains("白名单")
+        || (detail.split(|c: char| !c.is_ascii_alphanumeric()).any(|word| word == "ip")
+            && (detail.contains("not in") || detail.contains("not allowed")))
+}
+
 fn remote_error_from_body(status: u16, body: &[u8]) -> Option<&'static str> {
     if !matches!(status, 401 | 403) { return None; }
     let detail = std::str::from_utf8(body).ok()?.to_ascii_lowercase();
-    if detail.contains("whitelist") || detail.contains("allowlist")
-        || (detail.contains("not in") && detail.contains("ip"))
-        || (detail.contains("ip") && detail.contains("allow"))
-    { Some("tnb_whitelist_required") } else { Some("tnb_auth_required") }
+    if is_whitelist_error(&detail) { Some("tnb_whitelist_required") } else { Some("tnb_auth_required") }
 }
 
 async fn download(client: reqwest::Client, url: Url, host: Option<String>, json_body: Option<serde_json::Value>, auth: Option<crate::proxy_providers::Credential>) -> Result<Vec<u8>> {
@@ -185,7 +188,7 @@ async fn download(client: reqwest::Client, url: Url, host: Option<String>, json_
     if matches!(status, 401 | 403) {
         let mut body = Vec::new();
         while let Some(chunk) = response.chunk().await.map_err(request_error)? {
-            if body.len().saturating_add(chunk.len()) > MAX_BODY { break; }
+            if body.len().saturating_add(chunk.len()) > MAX_BODY { return Err("tnb_response_too_large"); }
             body.extend_from_slice(&chunk);
         }
         return Err(remote_error_from_body(status, &body).unwrap_or("tnb_auth_required"));
@@ -546,12 +549,17 @@ mod tests {
             ("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n".into(), "tnb_auth_required"),
             (ok_status(403, r#"{"error":"IP not in whitelist"}"#), "tnb_whitelist_required"),
             (ok_status(403, r#"{"error":"bad credentials"}"#), "tnb_auth_required"),
+            (ok_status(403, r#"{"error":"来源 IP 不在白名单"}"#), "tnb_whitelist_required"),
+            (ok_status(403, r#"{"error":"subscription not allowed"}"#), "tnb_auth_required"),
+            (ok_status(403, &chunk), "tnb_response_too_large"),
             (format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", MAX_BODY + 1), "tnb_response_too_large"),
             (format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{chunk}\r\n0\r\n\r\n", chunk.len()), "tnb_response_too_large"),
             (ok("whitelist denied: secret credential"), "tnb_invalid_response"),
             (ok(r#"{"code":401,"msg":"bad credentials"}"#), "tnb_auth_required"),
             (ok(r#"{"code":403,"msg":"IP not in whitelist"}"#), "tnb_whitelist_required"),
             (ok(r#"{"code":403,"msg":"bad credentials"}"#), "tnb_auth_required"),
+            (ok(r#"{"code":403,"msg":"subscription expired"}"#), "tnb_auth_required"),
+            (ok(r#"{"code":403,"msg":"来源 IP 不在白名单"}"#), "tnb_whitelist_required"),
         ] {
             let (server, task) = fixture(reply).await;
             assert_eq!(extract(request(server)).await.err(), Some(error));
