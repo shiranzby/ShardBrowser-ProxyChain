@@ -495,6 +495,16 @@ mod tests {
             tnb_api_password: Some("extract-secret".into()),
             tnb_proxy_username: "exit-user".into(),
             tnb_proxy_password: Some("exit-secret".into()),
+            custom_name: "Custom provider".into(),
+            custom_server: String::new(),
+            custom_plan: String::new(),
+            custom_kind: "http".into(),
+            custom_website: String::new(),
+            custom_whitelist: String::new(),
+            custom_api_username: String::new(),
+            custom_api_password: None,
+            custom_proxy_username: String::new(),
+            custom_proxy_password: None,
         };
         save(update(Some("provider-secret".into()))).unwrap();
         let body = fs::read_to_string(path().unwrap()).unwrap();
