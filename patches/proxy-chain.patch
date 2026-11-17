@@ -1775,10 +1775,10 @@ index 0000000000000000000000000000000000000000..2ea827af5b4cbc7f8098dd877131927f
 +});
 diff --git a/e2e/provider-defaults.spec.ts b/e2e/provider-defaults.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..b6dd08d77df3d94eed361126d56c9db0104e738a
+index 0000000000000000000000000000000000000000..fe44147b522061664272a4b449c6f73a3729f8e6
 --- /dev/null
 +++ b/e2e/provider-defaults.spec.ts
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,112 @@
 +import { expect, test, type Page } from "@playwright/test";
 +import { openApp, reloadApp } from "./support/app";
 +
@@ -1891,7 +1891,6 @@ index 0000000000000000000000000000000000000000..b6dd08d77df3d94eed361126d56c9db0
 +  await expect(panel.getByRole("combobox", { name: "Proxy protocol", exact: true })).toContainText("HTTPS");
 +  await expect(panel.getByText("Saved", { exact: true })).toHaveCount(0);
 +});
-+
 diff --git a/e2e/proxy-chain-errors.spec.ts b/e2e/proxy-chain-errors.spec.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..b7b5749bad67de2c4b5872b0d3206179ad6d36cb
