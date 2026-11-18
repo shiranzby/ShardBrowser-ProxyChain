@@ -24,7 +24,7 @@ for (const theme of ["dark", "light"] as const) {
 
 test("the version item in the sidebar opens What's new", async ({ page }) => {
   await openApp(page);
-  await page.getByRole("button", { name: /ShardBrowser v2\.0\.3/ }).click();
+  await page.getByRole("button", { name: /ShyShard v2\.1\.5/ }).click();
   await expect(page.getByRole("dialog", { name: /What’s new/ })).toBeVisible();
 });
 

@@ -1,3 +1,7 @@
+# ShyShard
+
+[中文 README](README.md)
+
 ## Windows proxy-chain fork
 
 This fork adds **Settings → Proxy → Use system proxy to connect to proxies** on Windows. A profile's saved SOCKS5, HTTP or HTTPS proxy remains the final exit; HTTP CONNECT or SOCKS5 provides the first hop. HTTPS verifies the original proxy host inside the first-hop tunnel. The original engine, profiles and browser data remain upstream components.

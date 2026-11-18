@@ -1,3 +1,4 @@
+import { PRODUCT_BRAND } from "../../shared/brand";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Badge, CopyButton, CountRoll, IconButton, Kbd, NavItem, Popover, Tooltip, cn, useContextMenu, useRovingFocus, type MenuItem } from "@proxyshard/shardx-ui-kit";
@@ -1102,7 +1103,7 @@ export function Sidebar() {
         {!compact && (
           <span data-brand className="flex items-center gap-2 text-ui font-bold text-text-strong-950">
             <span className="brand-mark"><ShardLogo /></span>
-            <span>ShardBrowser</span>
+            <span>{PRODUCT_BRAND}</span>
           </span>
         )}
         {/* Not a Tab stop: the sidebar is one (A11Y-14), and this has its

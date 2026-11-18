@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Switch } from "@proxyshard/shardx-ui-kit";
 import { profileRouteTest } from "../../../entities/profile/model/api";
-import { proxyLabel } from "../../../entities/proxy";
+import { proxyLabel, useProxy} from "../../../entities/proxy";
+import { ProxySummary, proxyLocation } from "../../../shared/ui/ProxySummary";
 import { useProfile } from "../../../entities/profile";
 import type { ProxyChainTestResult } from "../../../entities/settings";
 import { bindRefusal, useInTeam, useRightsChange, useSpace } from "../../../entities/space";
@@ -25,6 +26,7 @@ export function ProxyTab({ draft }: { draft: ProfileFormDraft }) {
   const { id, session, unlocked } = useProfileForm();
   const spaceEpoch = useSpace((s) => s.state?.epoch);
   const proxies = useProfile((s) => s.proxies);
+  const snapshots = useProxy((s) => s.snapshots);
   const team = useInTeam();
   useRightsChange();
   const sequence = useRef(0);
@@ -60,7 +62,8 @@ export function ProxyTab({ draft }: { draft: ProfileFormDraft }) {
   const proxyPicker = <PropertySheet><ProxyRow value={routeExitProxyId(draft.form)}
     onChange={(proxy_id) => { patchDraft({ newProxyLine: "" }); patchForm(withRouteProxyId(draft.form, proxy_id)); }}
     newLine={draft.newProxyLine} onNewLine={(newProxyLine) => patchDraft({ newProxyLine })} /></PropertySheet>;
-  const firstOptions = [{ value: "", label: t("profileRoute.chooseProxy") }, ...proxies.map((p) => ({ value: p.id, label: proxyLabel(p),
+  const firstOptions = [{ value: "", label: t("profileRoute.chooseProxy") }, ...proxies.map((p) => ({ value: p.id, label: [proxyLocation(p, snapshots[p.id])?.label, proxyLabel(p)].filter(Boolean).join(" "),
+    content: <ProxySummary proxy={p} snapshot={snapshots[p.id]} />, keywords: [p.host, p.country, p.kind, proxyLocation(p, snapshots[p.id])?.label ?? ""].filter(Boolean),
     hint: team && bindRefusal(p.id) ? bindRefusal(p.id)! : `${p.kind.toUpperCase()} ${p.host}:${p.port}`, disabled: !!(team && bindRefusal(p.id)), }))];
   const sourceOptions = [
     { value: "system" as const, label: t("profileRoute.systemLabel") },

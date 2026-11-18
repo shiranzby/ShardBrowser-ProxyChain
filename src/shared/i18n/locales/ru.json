@@ -1,4 +1,5 @@
 {
+  "proxyRow.unknownLocation": "Регион неизвестен",
   "useProxy.exportTitle": "Экспорт прокси",
   "useProxy.exportDescription": "Выберите, включать ли учётные данные.",
   "useProxy.exportAddresses": "Копировать только адреса",
@@ -1659,6 +1660,8 @@
   "patchlog.changeCountMany": "{n} {n|изменение|изменения|изменений}",
   "patchlog.changeCountOne": "{n} изменение",
   "patchlog.latestBadge": "Последняя",
+  "patchlog.languageZh": "中文",
+  "patchlog.languageEn": "English",
   "patchlog.lockExplainer": "Уже готово, но отключено в выпущенных версиях, поэтому в приложении это нигде не упоминается.",
   "patchlog.lockedBadge": "Заблокировано",
   "patchlog.scopeBrowser": "Браузер",
@@ -2606,7 +2609,7 @@
   "sidebar.groupFolders": "Папки",
   "sidebar.groupPinned": "Закреплённые",
   "sidebar.groupViews": "Сохранённые фильтры",
-  "sidebar.launcherVersion": "ShardBrowser v{v}",
+  "sidebar.launcherVersion": "ShyShard v{v}",
   "sidebar.navAccountShop": "Поставщики прокси",
   "sidebar.navBookmarks": "Закладки",
   "sidebar.navExtensions": "Расширения",

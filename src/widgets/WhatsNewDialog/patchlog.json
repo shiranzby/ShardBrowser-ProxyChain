@@ -63,164 +63,202 @@
         {
           "id": "android-version",
           "title": "Android version number",
+          "titleZh": "Android 版本号",
           "lead": "Android profiles reported a Chrome version number that Chrome for Android never had.",
+          "leadZh": "Android 配置曾报告一个 Android 版 Chrome 从未使用过的版本号。",
           "tag": "fix",
           "scope": "browser",
           "blocks": [
             {
               "type": "p",
-              "text": "Sites can compare it with the versions real phones run, and some, including ones protected by Akamai, flagged Android profiles for it. They now report the number of the Chrome for Android release."
+              "text": "Sites can compare it with the versions real phones run, and some, including ones protected by Akamai, flagged Android profiles for it. They now report the number of the Chrome for Android release.",
+              "textZh": "网站可将其与真实手机使用的版本对比，包括受 Akamai 保护的部分网站在内，曾有网站因此标记 Android 配置。现在会报告对应的 Android 版 Chrome 发布版本号。"
             }
           ]
         },
         {
           "id": "android-features",
           "title": "Android profiles",
+          "titleZh": "Android 配置",
           "lead": "Android profiles showed a few features the way a computer has them, not the way a phone does.",
+          "leadZh": "Android 配置中的部分功能表现与电脑相同，和手机有差异。",
           "tag": "fix",
           "scope": "browser",
           "blocks": [
             {
               "type": "p",
-              "text": "They now match a phone in system accent colors, in-app purchases, saved offline content and barcode scanning."
+              "text": "They now match a phone in system accent colors, in-app purchases, saved offline content and barcode scanning.",
+              "textZh": "系统强调色、应用内购买、已保存的离线内容和条码扫描现在与手机一致。"
             }
           ]
         },
         {
           "id": "video-codecs",
           "title": "Video codecs",
+          "titleZh": "视频编解码器",
           "lead": "Sites saw this computer's video hardware, not the graphics card the profile claims.",
+          "leadZh": "网站过去看到的是本机视频硬件，而非配置声明的显卡。",
           "tag": "fix",
           "scope": "browser",
           "blocks": [
             {
               "type": "p",
-              "text": "Video support now matches the profile's graphics card and system, so a profile with an older card no longer reports formats that card cannot play. Profiles for macOS and phones, and cards the browser does not know, keep this computer's answers."
+              "text": "Video support now matches the profile's graphics card and system, so a profile with an older card no longer reports formats that card cannot play. Profiles for macOS and phones, and cards the browser does not know, keep this computer's answers.",
+              "textZh": "视频支持现在与配置的显卡和系统相符，旧显卡配置不会再报告它无法播放的格式。macOS、手机及浏览器无法识别的显卡配置仍使用本机报告。"
             },
             {
               "type": "note",
-              "text": "A profile can only lose formats this computer has, never gain new ones, so video keeps playing."
+              "text": "A profile can only lose formats this computer has, never gain new ones, so video keeps playing.",
+              "textZh": "配置只会减少本机已支持的格式，无法新增格式，因此现有视频仍可播放。"
             }
           ]
         },
         {
           "id": "webrtc-same-page",
           "title": "WebRTC on one page",
+          "titleZh": "同一页面中的 WebRTC",
           "lead": "Behind a proxy, two WebRTC connections on the same page never connected to each other.",
+          "leadZh": "使用代理时，同一页面上的两个 WebRTC 连接过去无法互连。",
           "tag": "fix",
           "scope": "browser",
           "blocks": [
             {
               "type": "p",
-              "text": "In Chrome they do, and some sites check this. Now they connect as in Chrome, and nothing between them leaves the browser. Where Chrome would show this computer's local address, the profile shows a made-up one that stays the same for the profile."
+              "text": "In Chrome they do, and some sites check this. Now they connect as in Chrome, and nothing between them leaves the browser. Where Chrome would show this computer's local address, the profile shows a made-up one that stays the same for the profile.",
+              "textZh": "现在与 Chrome 一样可以互连，双方之间的数据留在浏览器内。Chrome 显示本机局域网地址的位置，会显示该配置固定使用的模拟地址。"
             }
           ]
         },
         {
           "id": "webrtc-setup-time",
           "title": "WebRTC setup time",
+          "titleZh": "WebRTC 准备时间",
           "lead": "Behind a SOCKS5 proxy, WebRTC took 40 seconds to prepare a connection.",
+          "leadZh": "使用 SOCKS5 代理时，WebRTC 过去需要 40 秒准备连接。",
           "tag": "fix",
           "scope": "browser",
           "blocks": [
             {
               "type": "p",
-              "text": "Chrome takes under a second, and sites can measure this. It now takes as long as in Chrome."
+              "text": "Chrome takes under a second, and sites can measure this. It now takes as long as in Chrome.",
+              "textZh": "Chrome 用时不到一秒，网站可以测量这个时间。现在准备时间与 Chrome 接近。"
             }
           ]
         },
         {
           "id": "webrtc-error-address",
           "title": "WebRTC error address",
+          "titleZh": "WebRTC 错误中的地址",
           "lead": "Behind a proxy, a WebRTC error could show sites part of this computer's local address.",
+          "leadZh": "使用代理时，WebRTC 错误过去可能向网站显示本机局域网地址的一部分。",
           "tag": "fix",
           "scope": "browser",
           "blocks": [
             {
               "type": "p",
-              "text": "That part was the same for every profile on the computer. The error no longer shows any of it."
+              "text": "That part was the same for every profile on the computer. The error no longer shows any of it.",
+              "textZh": "这部分地址在同一台电脑的所有配置中都相同。现在错误消息不会再显示这部分地址。"
             }
           ]
         },
         {
           "id": "canvas-page-pixels",
           "title": "Images a site draws",
+          "titleZh": "网站绘制的图像",
           "lead": "Images a site put on a canvas came back slightly changed, and the site could compare the two.",
+          "leadZh": "网站写入画布的图像在读回时会略有变化，网站可以比较两者。",
           "tag": "fix",
           "scope": "browser",
           "blocks": [
             {
               "type": "p",
-              "text": "They now come back exactly as the site wrote them, as in Chrome. What the browser draws itself, such as text and shapes, still gets the profile's canvas noise."
+              "text": "They now come back exactly as the site wrote them, as in Chrome. What the browser draws itself, such as text and shapes, still gets the profile's canvas noise.",
+              "textZh": "现在读回的图像与原图一致，行为与 Chrome 相同。浏览器自己绘制的文字和图形仍会应用该配置的画布噪声。"
             }
           ]
         },
         {
           "id": "canvas-webgl-reads",
           "title": "Canvas, WebGL and WebGPU reads",
+          "titleZh": "Canvas、WebGL 和 WebGPU 读取",
           "lead": "Reading one canvas image in different ways could give different results.",
+          "leadZh": "用不同方式读取同一画布图像，结果可能不同。",
           "tag": "fix",
           "scope": "browser",
           "blocks": [
             {
               "type": "p",
-              "text": "Some ways also returned it without the profile's noise. Every way of reading a canvas, WebGL or WebGPU image now gives the same result with the noise, as Chrome gives the same image every way."
+              "text": "Some ways also returned it without the profile's noise. Every way of reading a canvas, WebGL or WebGPU image now gives the same result with the noise, as Chrome gives the same image every way.",
+              "textZh": "部分读取方式还会遗漏配置的噪声。现在 Canvas、WebGL 或 WebGPU 图像的不同读取方式会返回一致的结果，并保留噪声。"
             }
           ]
         },
         {
           "id": "maximized-window",
           "title": "Maximized window",
+          "titleZh": "窗口最大化",
           "lead": "A profile's window can now open maximized, the way most people browse.",
+          "leadZh": "配置窗口现在支持启动时最大化。",
           "tag": "new",
           "scope": "launcher",
           "blocks": [
             {
               "type": "p",
-              "text": "Turn on “Report the window as maximized” in the profile's Window settings. The window opens the size of the profile's screen, and sites see it maximized. Resize it, and sites see its real size. Phone profiles do not have this setting."
+              "text": "Turn on “Report the window as maximized” in the profile's Window settings. The window opens the size of the profile's screen, and sites see it maximized. Resize it, and sites see its real size. Phone profiles do not have this setting.",
+              "textZh": "在配置的窗口设置中启用“将窗口报告为最大化”。窗口会按配置的屏幕大小打开，网站会看到最大化状态。调整窗口后，网站会看到实际尺寸。手机配置没有此选项。"
             }
           ]
         },
         {
           "id": "team-created-date",
           "title": "Creation date in a team",
+          "titleZh": "团队配置的创建日期",
           "lead": "Profiles in a team showed no creation date, so the list could not be sorted by newest or oldest.",
+          "leadZh": "团队配置过去不显示创建日期，无法按创建时间排序。",
           "tag": "fix",
           "scope": "launcher",
           "blocks": [
             {
               "type": "p",
-              "text": "The team server now keeps the date, and every member sees it, including members who may only see a profile."
+              "text": "The team server now keeps the date, and every member sees it, including members who may only see a profile.",
+              "textZh": "团队服务器现在会保存日期，所有成员都能看到，包括只有查看权限的成员。"
             },
             {
               "type": "note",
-              "text": "Update the team server to 2.1.4 too. Profiles made before the update get their date the first time someone edits them from launcher 2.1.4."
+              "text": "Update the team server to 2.1.4 too. Profiles made before the update get their date the first time someone edits them from launcher 2.1.4.",
+              "textZh": "请同时将团队服务器更新至 2.1.4。升级前创建的配置首次由 2.1.4 启动器编辑时会补记日期。"
             }
           ]
         },
         {
           "id": "proxyshard-new-proxies",
           "title": "Proxies from ProxyShard",
+          "titleZh": "来自 ProxyShard 的代理",
           "lead": "Proxies added on the ProxyShard page showed up in Proxies only after the launcher restarted.",
+          "leadZh": "在 ProxyShard 页面添加的代理过去要等启动器重启才出现在代理列表。",
           "tag": "fix",
           "scope": "launcher",
           "blocks": [
             {
               "type": "p",
-              "text": "They now show up at once, whether added from an order or generated."
+              "text": "They now show up at once, whether added from an order or generated.",
+              "textZh": "从订单添加或即时生成的代理，现在都会立即显示。"
             }
           ]
         },
         {
           "id": "windows-banner-buttons",
           "title": "Banners on Windows",
+          "titleZh": "Windows 横幅位置",
           "lead": "On Windows, the engine update and team banners ran under the window's minimize, maximize and close buttons.",
+          "leadZh": "Windows 上的引擎更新和团队横幅过去可能延伸到最小化、最大化和关闭按钮下方。",
           "tag": "fix",
           "scope": "launcher",
           "blocks": [
             {
               "type": "p",
-              "text": "The Try again button could end up under them and could not be clicked. The banners now end before the buttons."
+              "text": "The Try again button could end up under them and could not be clicked. The banners now end before the buttons.",
+              "textZh": "“重试”按钮过去可能被遮住而无法点击。现在横幅会在窗口按钮之前结束。"
             }
           ]
         }

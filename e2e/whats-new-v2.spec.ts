@@ -13,7 +13,7 @@ const open = async (page: Page, lang: "en" | "zh" = "en") => {
 test("every entry opens collapsed, as a row with its lead", async ({ page }) => {
   const dialog = await open(page);
   const entries = dialog.locator("[data-entry]");
-  expect(await entries.count()).toBeGreaterThan(5);
+  expect(await entries.count()).toBeGreaterThan(2);
   await expect(dialog.locator("[data-entry-body]")).toHaveCount(0);
   for (const b of await dialog.locator("[data-entry] button[aria-expanded]").all()) await expect(b).toHaveAttribute("aria-expanded", "false");
 });
@@ -37,7 +37,7 @@ test("first focus is the panel, not the release picker (plan ruling 23)", async 
 test("entries are grouped by what changed, with counts", async ({ page }) => {
   const dialog = await open(page);
   await expect(dialog.locator("[data-scope-group='launcher'] h3")).toHaveText(/^Launcher\s*\d+$/);
-  await expect(dialog.locator("[data-scope-group='browser'] h3")).toHaveText(/^Browser\s*\d+$/);
+  await expect(dialog.locator("[data-scope-group='browser'] h3")).toHaveCount(0);
 });
 
 test("no synthesized italics; badges are neutral (TYPE-11, COLOR-10)", async ({ page }) => {
@@ -48,9 +48,18 @@ test("no synthesized italics; badges are neutral (TYPE-11, COLOR-10)", async ({ 
   expect(colors.every((c) => c === "gray" || c === "warning")).toBe(true);
 });
 
-test("in Chinese the notes say they are in English (WRITE-27)", async ({ page }) => {
+test("Chinese notes can switch to English and back (WRITE-27)", async ({ page }) => {
   const dialog = await open(page, "zh");
-  await expect(dialog.getByText("更新说明仅提供英文版。")).toBeVisible();
+  const entry = dialog.locator('[data-entry="pc17-proxy-chain"]');
+  await entry.getByRole("button", { name: /代理链控制/ }).click();
+  await expect(entry.getByText(/启动器把系统代理/)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "English", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "English", exact: true }).click();
+  await expect(dialog.getByText("Proxy chain controls", { exact: true })).toBeVisible();
+  await expect(entry.getByText(/The launcher keeps system/)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "中文", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "中文", exact: true }).click();
+  await expect(dialog.getByText("代理链控制", { exact: true })).toBeVisible();
 });
 
 // Live layer 6.3: a body's height moves from what shows now, so a second

@@ -1,4 +1,5 @@
 {
+  "proxyRow.unknownLocation": "Unknown location",
   "useProxy.exportTitle": "Export proxies",
   "useProxy.exportDescription": "Choose whether to include login credentials.",
   "useProxy.exportAddresses": "Copy addresses only",
@@ -1659,6 +1660,8 @@
   "patchlog.changeCountMany": "{n} changes",
   "patchlog.changeCountOne": "{n} change",
   "patchlog.latestBadge": "Latest",
+  "patchlog.languageZh": "中文",
+  "patchlog.languageEn": "English",
   "patchlog.lockExplainer": "Built but switched off in released versions, so nothing in the shipped app names it.",
   "patchlog.lockedBadge": "Locked",
   "patchlog.scopeBrowser": "Browser",
@@ -2606,7 +2609,7 @@
   "sidebar.groupFolders": "Folders",
   "sidebar.groupPinned": "Pinned",
   "sidebar.groupViews": "Views",
-  "sidebar.launcherVersion": "ShardBrowser v{v}",
+  "sidebar.launcherVersion": "ShyShard v{v}",
   "sidebar.navAccountShop": "Proxy providers",
   "sidebar.navBookmarks": "Bookmarks",
   "sidebar.navExtensions": "Extensions",

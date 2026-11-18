@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef, type ReactNode } from "react";
 import { Badge, Checkbox, cn, IconButton, swallowFollowUpClick, Tooltip, useLongPress, type ContextMenuApi } from "@proxyshard/shardx-ui-kit";
 import { AlertCircleIcon, MoreIcon } from "../../shared/icons";
-import { CountryFlag } from "../../shared/ui/CountryFlag";
+import { ProxyLocation, proxyLocation } from "../../shared/ui/ProxySummary";
 import { RowHoverActions, rowButtonDangerHoverClass, rowButtonHoverClass } from "../../shared/ui/RowHoverActions";
 import { ProtocolPill } from "../../shared/ui/ProtocolPill";
 import { ProxyTestPill } from "../../shared/ui/StatusPill";
@@ -91,7 +91,6 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
     : status === "failed"
       ? snap!.geo_error ? t("proxyList.statusFailedWhy", { when: fmtTs(snap!.last_seen), why: snap!.geo_error }) : t("proxyList.statusFailed", { when: fmtTs(snap!.last_seen) })
     : undefined;
-  const cc = snap?.country_code || p.country;
 
   // One cell per data column, in the header's order (owner feature
   // 2026-09-26). Each case is the cell as it was; only its place moved.
@@ -136,7 +135,7 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
         return (
           <div key="country" role="gridcell" data-cell="country" className="flex min-w-0 items-center gap-1.5 text-secondary text-text-sub-600">
             {/* A city cut by the column's width shows whole on hover (autofit review I1). */}
-            {cc ? <><CountryFlag cc={cc} /><span className="shrink-0 rounded-chip-sm bg-bg-weak-50 px-1 py-0.5 text-micro font-medium text-text-sub-600">{cc.slice(0, 2).toUpperCase()}</span><Tooltip content={[snap?.region, snap?.city].filter(Boolean).join(" / ") || cc} whenTruncated warm={false}><span className="truncate">{[snap?.region, snap?.city].filter(Boolean).join(" / ") || cc}</span></Tooltip></> : <span className="text-text-soft-400">—</span>}
+            <ProxyLocation location={proxyLocation(p, snap)} unknown={t("proxyRow.unknownLocation")} />
           </div>
         );
       case "profiles":

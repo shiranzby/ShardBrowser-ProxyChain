@@ -9,9 +9,7 @@ import { useOnboarding } from "../../../features/onboarding";
 import { takeTheTour } from "../../../features/tour";
 import { useT } from "../../../shared/i18n";
 import { DetailRow, DetailsCard } from "../../../shared/ui/DetailsCard";
-
-const ABOUT_SITE = "https://github.com/shiranzby/ShardBrowser-X";
-const REPO_LABEL = "shiranzby/ShardBrowser-X";
+import { PRODUCT_LAUNCHER_NAME, PRODUCT_REPOSITORY_LABEL, PRODUCT_REPOSITORY_URL } from "../../../shared/brand";
 
 export function AboutSection() {
   const t = useT();
@@ -50,7 +48,7 @@ export function AboutSection() {
   // copy for a bug report, and the update status; the actions under it.
   return (
     <div className="flex flex-col gap-[10px]">
-      <DetailsCard id="about" title="ShardBrowser Launcher">
+      <DetailsCard id="about" title={PRODUCT_LAUNCHER_NAME}>
         <DetailRow id="version" label={t("settings.aboutVersionLabel")} copy={info ? { value: info.current } : undefined}>
           {info?.current ?? "…"}
         </DetailRow>
@@ -60,11 +58,11 @@ export function AboutSection() {
         <DetailRow id="website" label={t("settings.aboutWebsiteLabel")}>
           {/* A real href for the link's role; the click opens the system browser. */}
           <a
-            href={ABOUT_SITE}
+            href={PRODUCT_REPOSITORY_URL}
             className="text-primary-text underline underline-offset-2"
-            onClick={(e) => { e.preventDefault(); openUrl(ABOUT_SITE).catch(() => {}); }}
+            onClick={(e) => { e.preventDefault(); openUrl(PRODUCT_REPOSITORY_URL).catch(() => {}); }}
           >
-            {REPO_LABEL}
+            {PRODUCT_REPOSITORY_LABEL}
           </a>
         </DetailRow>
       </DetailsCard>
@@ -86,7 +84,7 @@ export function AboutSection() {
             {t("settings.aboutTipsAgain")}
           </Button>
         )}
-        <Button variant="neutral" mode="ghost" size="xsmall" onClick={() => void openUrl(ABOUT_SITE).catch(() => {})}>
+        <Button variant="neutral" mode="ghost" size="xsmall" onClick={() => void openUrl(PRODUCT_REPOSITORY_URL).catch(() => {})}>
           GitHub
         </Button>
       </div>

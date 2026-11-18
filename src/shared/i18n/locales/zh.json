@@ -1,4 +1,5 @@
 {
+  "proxyRow.unknownLocation": "未知地区",
   "useProxy.exportTitle": "导出代理",
   "useProxy.exportDescription": "默认复制不含账号密码的代理地址；仅在确需迁移时包含凭据。",
   "useProxy.exportAddresses": "复制地址（不含凭据）",
@@ -1659,6 +1660,8 @@
   "patchlog.changeCountMany": "{n} 项改动",
   "patchlog.changeCountOne": "{n} 项改动",
   "patchlog.latestBadge": "最新",
+  "patchlog.languageZh": "中文",
+  "patchlog.languageEn": "English",
   "patchlog.lockExplainer": "已经实现，但在发布版本中关闭，因此发布的应用里不会出现它的名称。",
   "patchlog.lockedBadge": "已锁定",
   "patchlog.scopeBrowser": "浏览器",
@@ -2606,7 +2609,7 @@
   "sidebar.groupFolders": "文件夹",
   "sidebar.groupPinned": "置顶",
   "sidebar.groupViews": "视图",
-  "sidebar.launcherVersion": "ShardBrowser v{v}",
+  "sidebar.launcherVersion": "ShyShard v{v}",
   "sidebar.navAccountShop": "代理供应商",
   "sidebar.navBookmarks": "书签",
   "sidebar.navExtensions": "扩展",

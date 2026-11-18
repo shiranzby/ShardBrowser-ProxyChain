@@ -1,6 +1,6 @@
-# ShardBrowser-X
+# ShyShard
 
-ShardBrowser-X 是基于官方 ShardBrowser `v2.1.5` 的 Windows 指纹浏览器启动器分支。它保留上游 Profile、指纹、扩展、Local API、MCP 和浏览器引擎能力，并加入面向实际 Windows 使用的代理链、供应商配置和启动管理能力。
+ShyShard 是基于官方 ShardBrowser `v2.1.5` 的 Windows 指纹浏览器启动器分支。它保留上游 Profile、指纹、扩展、Local API、MCP 和浏览器引擎能力，并加入面向实际 Windows 使用的代理链、供应商配置和启动管理能力。
 
 [English README](README.en.md) · [首个正式发布 v1.0-based2.1.5](https://github.com/shiranzby/ShardBrowser-X/releases/tag/v1.0-based2.1.5) · [更新说明](docs/RELEASE_NOTES_v1.0-based2.1.5.md)
 

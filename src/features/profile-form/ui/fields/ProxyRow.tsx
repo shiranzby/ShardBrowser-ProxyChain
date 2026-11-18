@@ -2,14 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Combobox, Input, Popover } from "@proxyshard/shardx-ui-kit";
 import { AddIcon, AlertIcon } from "../../../../shared/icons";
 import { CountryFlag } from "../../../../shared/ui/CountryFlag";
-import { ProxyFlag } from "../../../../shared/ui/ProxyFlag";
+import { ProxySummary, proxyLocation } from "../../../../shared/ui/ProxySummary";
 import { ProtocolPill } from "../../../../shared/ui/ProtocolPill";
 import { ProxyAddress } from "../../../../shared/ui/ProxyAddress";
 import { PropertyButton, PropertyRow } from "../../../../shared/ui/peek";
 import { useT } from "../../../../shared/i18n";
 import { proxyMissing, useProfile } from "../../../../entities/profile";
 import { bindRefusal, teamRefusal, useInTeam, useRightsChange } from "../../../../entities/space";
-import { duplicateLabels, proxyAddressHint, proxyBulkParse, proxyLabel, type ProxyEntry } from "../../../../entities/proxy";
+import { duplicateLabels, proxyAddressHint, proxyBulkParse, proxyLabel, useProxy, type ProxyEntry } from "../../../../entities/proxy";
 
 /** The choice that stands for the form's proxy still to be added. */
 const NEW = "new:";
@@ -46,6 +46,7 @@ export function ProxyRow({ value, onChange, newLine = "", onNewLine }: {
 }) {
   const t = useT();
   const proxies = useProfile((s) => s.proxies);
+  const snapshots = useProxy((s) => s.snapshots);
   const profiles = useProfile((s) => s.profiles);
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -75,7 +76,7 @@ export function ProxyRow({ value, onChange, newLine = "", onNewLine }: {
         const isShared = shared.has(label);
         const used = n === 1 ? t("peek.proxyUsedByOne") : n > 1 ? t("peek.proxyUsedBy", { n }) : null;
         const refused = team && p.id !== value ? bindRefusal(p.id) : null;
-        if (refused) return { value: p.id, label, hint: refused, disabled: true, icon: <ProxyFlag cc={p.country} height={14} />, keywords: [p.host, p.country, p.kind].filter(Boolean) };
+        const location = proxyLocation(p, snapshots[p.id]);
         return {
           value: p.id,
           label,
@@ -83,13 +84,14 @@ export function ProxyRow({ value, onChange, newLine = "", onNewLine }: {
           // a free one shows its address. A name another proxy has too shows
           // the address and country first, to tell them apart (owner item 11),
           // and still says so when it is taken.
-          hint: isShared ? [proxyAddressHint(p, true), used].filter(Boolean).join(", ") : used ?? `${p.host}:${p.port}`,
-          icon: <ProxyFlag cc={p.country} height={14} />,
-          keywords: [p.host, p.country, p.kind].filter(Boolean),
+          hint: refused ?? (isShared ? [proxyAddressHint(p, true), used].filter(Boolean).join(", ") : used ?? `${p.host}:${p.port}`),
+          disabled: !!refused,
+          content: <ProxySummary proxy={p} snapshot={snapshots[p.id]} />,
+          keywords: [p.host, p.country, p.kind, location?.code ?? "", location?.label ?? ""].filter(Boolean),
         };
       }),
     ];
-  }, [open, proxies, profiles, value, newLine, pending, t, team]);
+  }, [open, proxies, snapshots, profiles, value, newLine, pending, t, team]);
   const close = () => { setOpen(false); anchor.current?.focus(); };
   return (
     <PropertyRow id="proxy" label={t("peek.proxy")}>
@@ -111,11 +113,7 @@ export function ProxyRow({ value, onChange, newLine = "", onNewLine }: {
             ) : hidden ? (
               <span data-proxy-hidden className="truncate">{t("profileRow.proxyHidden")}</span>
             ) : proxy ? (
-              <>
-                {proxy.country && <CountryFlag cc={proxy.country} height={14} />}
-                <span className="min-w-0 truncate">{proxy.name || `${proxy.host}:${proxy.port}`}</span>
-                <ProtocolPill kind={proxy.kind} />
-              </>
+              <ProxySummary proxy={proxy} snapshot={snapshots[proxy.id]} />
             ) : (
               <span className="truncate">{t("peek.noProxy")}</span>
             )}

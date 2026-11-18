@@ -439,7 +439,7 @@ export const handlers: Record<string, Handler> = {
     ctx.emit("runtime:done");
     return handlers.runtime_status({}, ctx);
   },
-  launcher_update_check: () => ({ current: "2.0.3", latest: "2.0.3", update_available: false, release_url: "https://github.com/ProxyShard/ShardBrowser/releases/latest" }),
+  launcher_update_check: () => ({ current: "2.0.3", latest: "2.0.3", update_available: false, release_url: "https://github.com/shiranzby/ShardBrowser-X/releases/latest" }),
   host_platform: () => hostPlatform(),
   // `window.__shardxMockHostScreen = [w, h, dpr]` (or null: no monitor) stands in for the real one.
   host_screen: () => {
@@ -1341,7 +1341,7 @@ export const handlers: Record<string, Handler> = {
 
   // ---- Tauri plugins ------------------------------------------------------------
   "plugin:app|version": () => "2.0.3",
-  "plugin:app|name": () => "ShardBrowser Launcher",
+  "plugin:app|name": () => "ShyShard Launcher",
   "plugin:app|tauri_version": () => "2.5.0",
   "plugin:dialog|open": ({ options }) => {
     const o = options ?? {};

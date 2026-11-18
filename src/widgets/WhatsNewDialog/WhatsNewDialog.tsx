@@ -99,7 +99,7 @@ function Blocks({ blocks, lang }: { blocks: Block[]; lang: string }) {
         if (b.type === "list") {
           return (
             <ul key={i} className={cn("m-0 flex list-none flex-col gap-1.5 p-0", spaced)}>
-                  {b.items.map((it, j) => (
+              {b.items.map((it, j) => (
                 <li key={j} className="flex gap-2 text-body text-text-sub-600">
                   <span className="mt-[8px] size-[3px] shrink-0 rounded-full bg-text-soft-400" />
                   <span>
@@ -119,7 +119,7 @@ function Blocks({ blocks, lang }: { blocks: Block[]; lang: string }) {
               spaced,
             )}
           >
-            <Rich text={b.text} />
+            <Rich text={lang === "zh" ? b.textZh ?? b.text : b.text} />
           </p>
         );
       })}
@@ -196,9 +196,8 @@ function useReveal(open: boolean) {
 /// One entry as a row (CRAFT-28): its title, badges and one-line lead; the
 /// details open on Enter, Space or a click (the APG disclosure: a heading
 /// that holds the button, the body a region named by it).
-function EntryRow({ entry }: { entry: Entry }): ReactNode {
+function EntryRow({ entry, lang }: { entry: Entry; lang: "en" | "zh" }): ReactNode {
   const t = useT();
-  const lang = useLang((s) => s.lang);
   const [open, setOpen] = useState(false);
   const reveal = useReveal(open);
   const titleId = useId();
@@ -257,6 +256,7 @@ function EntryRow({ entry }: { entry: Entry }): ReactNode {
 /// update (WhatsNewGate), or from the sidebar's version item.
 export function WhatsNewDialog() {
   const t = useT();
+  const uiLang = useLang((s) => s.lang);
   const panelRef = useRef<HTMLDivElement>(null);
   const open = useWhatsNew((s) => s.open);
   const setOpen = useWhatsNew((s) => s.setOpen);
@@ -264,6 +264,11 @@ export function WhatsNewDialog() {
   const tourNever = useOnboarding((s) => s.tour === "never");
   const [release, setRelease] = useState<Release>(LATEST);
   const [update, setUpdate] = useState<RtUpdate | null>(null);
+  const [notesLang, setNotesLang] = useState<"en" | "zh">(uiLang === "zh" ? "zh" : "en");
+
+  useEffect(() => {
+    setNotesLang(uiLang === "zh" ? "zh" : "en");
+  }, [uiLang]);
 
   useEffect(() => {
     if (!open) return;
@@ -325,6 +330,15 @@ export function WhatsNewDialog() {
               {t("patchlog.latestBadge")}
             </Badge>
           )}
+          <Button
+            variant="neutral"
+            mode="stroke"
+            size="2xsmall"
+            aria-label={notesLang === "zh" ? t("patchlog.languageEn") : t("patchlog.languageZh")}
+            onClick={() => setNotesLang((v) => (v === "zh" ? "en" : "zh"))}
+          >
+            {notesLang === "zh" ? t("patchlog.languageEn") : t("patchlog.languageZh")}
+          </Button>
           <span className="ml-auto text-secondary text-text-soft-400">
             {release.entries.length === 1
               ? t("patchlog.changeCountOne", { n: release.entries.length })
@@ -345,7 +359,7 @@ export function WhatsNewDialog() {
               <Card padding="none" className="overflow-hidden">
                 <ul className="m-0 flex list-none flex-col divide-y divide-stroke-soft-200 p-0">
                   {list.map((e) => (
-                    <EntryRow key={e.id} entry={e} />
+                    <EntryRow key={e.id} entry={e} lang={notesLang} />
                   ))}
                 </ul>
               </Card>

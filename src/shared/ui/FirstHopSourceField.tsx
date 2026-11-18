@@ -2,6 +2,7 @@ import { useProxy } from "../../entities/proxy";
 import { useEffect } from "react";
 import type { ProxyChainSettings } from "../../entities/settings";
 import { useT } from "../i18n";
+import { ProxySummary, proxyLocation, proxySummaryLabel } from "./ProxySummary";
 import { SelectField } from "./SelectField";
 
 /** Shared global first-hop choice. A library reference never copies credentials into settings. */
@@ -10,6 +11,7 @@ export function FirstHopSourceField({ config, onChange, disabled = false }: {
 }) {
   const t = useT();
   const proxies = useProxy((s) => s.proxies);
+  const snapshots = useProxy((s) => s.snapshots);
   const proxyStatus = useProxy((s) => s.status);
   useEffect(() => { void useProxy.getState().init(); }, []);
   return <div className="flex min-w-0 flex-col gap-2" data-global-first-hop>
@@ -27,7 +29,11 @@ export function FirstHopSourceField({ config, onChange, disabled = false }: {
     {config.mode === "selected" && proxyStatus === "loading" && <p className="m-0 text-help text-text-sub-600">{t("proxyChain.loadingFirst")}</p>}
     {config.mode === "selected" && proxyStatus !== "loading" && <SelectField aria-label={t("proxyChain.selectedFirst")}
       disabled={disabled} value={config.selected_proxy_id ?? ""}
-      options={[{ value: "", label: t("proxyChain.selectFirst") }, ...proxies.map((p) => ({ value: p.id, label: `${p.name || p.host} (${p.kind.toUpperCase()} ${p.host}:${p.port})` }))]}
+      options={[{ value: "", label: t("proxyChain.selectFirst") }, ...proxies.map((p) => ({
+        value: p.id,
+        label: [proxyLocation(p, snapshots[p.id])?.label, proxySummaryLabel(p)].filter(Boolean).join(" "),
+        content: <ProxySummary proxy={p} snapshot={snapshots[p.id]} />,
+      }))]}
       onChange={(selected_proxy_id: string) => onChange({ selected_proxy_id })} />}
     {config.mode === "selected" && proxyStatus === "ready" && proxies.length === 0 && <p className="m-0 text-help text-warning-text">{t("proxyChain.noFirstProxy")}</p>}
     <p className="m-0 text-help text-text-sub-600">{t("proxyChain.defaultFirstHelp")}</p>
