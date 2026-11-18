@@ -2,7 +2,7 @@ import { useProxy } from "../../entities/proxy";
 import { useEffect } from "react";
 import type { ProxyChainSettings } from "../../entities/settings";
 import { useT } from "../i18n";
-import { ProxySummary, proxyLocation, proxySummaryLabel } from "./ProxySummary";
+import { ProxySummary, proxyOptionLabel } from "./ProxySummary";
 import { SelectField } from "./SelectField";
 
 /** Shared global first-hop choice. A library reference never copies credentials into settings. */
@@ -31,7 +31,7 @@ export function FirstHopSourceField({ config, onChange, disabled = false }: {
       disabled={disabled} value={config.selected_proxy_id ?? ""}
       options={[{ value: "", label: t("proxyChain.selectFirst") }, ...proxies.map((p) => ({
         value: p.id,
-        label: [proxyLocation(p, snapshots[p.id])?.label, proxySummaryLabel(p)].filter(Boolean).join(" "),
+        label: proxyOptionLabel(p, snapshots[p.id]),
         content: <ProxySummary proxy={p} snapshot={snapshots[p.id]} />,
       }))]}
       onChange={(selected_proxy_id: string) => onChange({ selected_proxy_id })} />}

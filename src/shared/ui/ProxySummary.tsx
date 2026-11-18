@@ -25,6 +25,15 @@ export function proxySummaryLabel(proxy: ProxyEntry) {
   return `${proxy.name || address} (${proxy.kind.toUpperCase()} ${address})`;
 }
 
+/** Text used by searchable proxy selectors. It carries the same location
+ * identity shown by ProxySummary, so a selector remains understandable when
+ * its option renderer is collapsed to plain text. */
+export function proxyOptionLabel(proxy: ProxyEntry, snapshot?: ProxyTestSnapshot) {
+  const location = proxyLocation(proxy, snapshot);
+  const summary = proxySummaryLabel(proxy);
+  return location ? `${location.code} ${location.label} · ${summary}` : summary;
+}
+
 export function ProxySummary({ proxy, snapshot }: { proxy: ProxyEntry; snapshot?: ProxyTestSnapshot }) {
   const t = useT();
   const location = proxyLocation(proxy, snapshot);
