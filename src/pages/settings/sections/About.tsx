@@ -10,8 +10,8 @@ import { takeTheTour } from "../../../features/tour";
 import { useT } from "../../../shared/i18n";
 import { DetailRow, DetailsCard } from "../../../shared/ui/DetailsCard";
 
-const ABOUT_SITE = "https://github.com/shiranzby/ShardBrowser-ProxyChain";
-const REPO_LABEL = "shiranzby/ShardBrowser-ProxyChain";
+const ABOUT_SITE = "https://github.com/shiranzby/ShardBrowser-X";
+const REPO_LABEL = "shiranzby/ShardBrowser-X";
 
 export function AboutSection() {
   const t = useT();

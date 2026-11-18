@@ -1,6 +1,6 @@
 {
   "starsRequired": 1000,
-  "repoUrl": "https://github.com/ProxyShard/ShardBrowser",
+  "repoUrl": "https://github.com/shiranzby/ShardBrowser-X",
   "releases": [
     {
       "version": "2.1.5",
@@ -9,39 +9,48 @@
         {
           "id": "pc17-proxy-chain",
           "title": "Proxy chain controls",
+          "titleZh": "代理链控制",
           "lead": "First-hop and second-hop routing now share one saved configuration model.",
+          "leadZh": "第一层和第二层路由现在共用统一的保存配置。",
           "tag": "new",
           "scope": "launcher",
           "blocks": [
             {
               "type": "p",
-              "text": "The launcher keeps system, saved and manual HTTP, HTTPS and SOCKS5 choices in the same route plan and reuses the prepared tunnel when a Profile starts."
+              "text": "The launcher keeps system, saved and manual HTTP, HTTPS and SOCKS5 choices in the same route plan and reuses the prepared tunnel when a Profile starts.",
+              "textZh": "启动器把系统代理、已保存代理以及手动 HTTP、HTTPS 和 SOCKS5 选择统一纳入路由计划，并在启动配置时复用已准备好的隧道。"
             }
           ]
         },
         {
           "id": "pc17-provider-settings",
           "title": "Provider defaults",
+          "titleZh": "供应商默认配置",
           "lead": "TNBProxy, 1024Proxy and custom providers can keep separate credentials.",
+          "leadZh": "TNBProxy、1024Proxy 和自定义供应商可以分别保存凭据。",
           "tag": "new",
           "scope": "launcher",
           "blocks": [
             {
               "type": "p",
-              "text": "Provider defaults are saved for the current Windows user. API extraction credentials and proxy credentials remain separate, and country codes can be searched directly."
+              "text": "Provider defaults are saved for the current Windows user. API extraction credentials and proxy credentials remain separate, and country codes can be searched directly.",
+              "textZh": "供应商默认值保存在当前 Windows 用户下。API 提取凭据与代理出口凭据彼此分开，国家代码可以直接搜索。"
             }
           ]
         },
         {
           "id": "pc17-shortcuts",
           "title": "Profile shortcuts",
+          "titleZh": "配置快捷方式",
           "lead": "Create a desktop shortcut for a Profile and start it quietly.",
+          "leadZh": "为配置创建桌面快捷方式，并以静默方式启动。",
           "tag": "new",
           "scope": "launcher",
           "blocks": [
             {
               "type": "p",
-              "text": "Shortcuts store only the stable Profile ID and use the normal guarded launch path."
+              "text": "Shortcuts store only the stable Profile ID and use the normal guarded launch path.",
+              "textZh": "快捷方式只保存稳定的配置 ID，并通过正常的启动保护路径运行。"
             }
           ]
         }

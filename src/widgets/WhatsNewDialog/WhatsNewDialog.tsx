@@ -16,15 +16,17 @@ import data from "./patchlog.json";
 /** The log is data, in patchlog.json; this module only draws it. */
 
 type Block =
-  | { type: "p" | "note"; text: string }
-  | { type: "code"; text: string }
-  | { type: "list"; items: string[] };
+  | { type: "p" | "note"; text: string; textZh?: string }
+  | { type: "code"; text: string; textZh?: string }
+  | { type: "list"; items: string[]; itemsZh?: string[] };
 
 type Entry = {
   id: string;
   title: string;
+  titleZh?: string;
   /** One line under the title: what it is, before any detail. */
   lead: string;
+  leadZh?: string;
   tag?: string;
   /** Which half of the product changed: the engine, or the launcher. */
   scope?: "browser" | "launcher";
@@ -76,7 +78,7 @@ function Rich({ text }: { text: string }) {
   );
 }
 
-function Blocks({ blocks }: { blocks: Block[] }) {
+function Blocks({ blocks, lang }: { blocks: Block[]; lang: string }) {
   return (
     <>
       {blocks.map((b, i) => {
@@ -90,18 +92,18 @@ function Blocks({ blocks }: { blocks: Block[] }) {
                 i === 0 ? "" : "mt-2.5",
               )}
             >
-              {b.text}
+              {lang === "zh" && b.textZh ? b.textZh : b.text}
             </pre>
           );
         }
         if (b.type === "list") {
           return (
             <ul key={i} className={cn("m-0 flex list-none flex-col gap-1.5 p-0", spaced)}>
-              {b.items.map((it, j) => (
+                  {b.items.map((it, j) => (
                 <li key={j} className="flex gap-2 text-body text-text-sub-600">
                   <span className="mt-[8px] size-[3px] shrink-0 rounded-full bg-text-soft-400" />
                   <span>
-                    <Rich text={it} />
+                    <Rich text={lang === "zh" && b.itemsZh?.[j] ? b.itemsZh[j] : it} />
                   </span>
                 </li>
               ))}
@@ -196,6 +198,7 @@ function useReveal(open: boolean) {
 /// that holds the button, the body a region named by it).
 function EntryRow({ entry }: { entry: Entry }): ReactNode {
   const t = useT();
+  const lang = useLang((s) => s.lang);
   const [open, setOpen] = useState(false);
   const reveal = useReveal(open);
   const titleId = useId();
@@ -221,7 +224,7 @@ function EntryRow({ entry }: { entry: Entry }): ReactNode {
           />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="flex flex-wrap items-center gap-2">
-              <span id={titleId} className="text-ui text-text-strong-950">{entry.title}</span>
+              <span id={titleId} className="text-ui text-text-strong-950">{lang === "zh" && entry.titleZh ? entry.titleZh : entry.title}</span>
               {/* A changelog category is not a state: gray, like "Latest". */}
               {entry.tag && (
                 <span data-badge data-color="gray" className="inline-flex">
@@ -234,14 +237,14 @@ function EntryRow({ entry }: { entry: Entry }): ReactNode {
                 </span>
               )}
             </span>
-            <span className="truncate text-secondary text-text-sub-600">{entry.lead}</span>
+            <span className="truncate text-secondary text-text-sub-600">{lang === "zh" && entry.leadZh ? entry.leadZh : entry.lead}</span>
           </span>
         </button>
       </h4>
       {reveal.shown && (
         <div ref={reveal.ref} id={bodyId} role="region" aria-labelledby={titleId} data-entry-body className="overflow-hidden">
           <div className="measure flex flex-col pb-4 pe-4 ps-10 text-body text-text-sub-600">
-            <Blocks blocks={entry.blocks} />
+            <Blocks blocks={entry.blocks} lang={lang} />
             {entry.locked && <LockNotice />}
           </div>
         </div>
@@ -254,7 +257,6 @@ function EntryRow({ entry }: { entry: Entry }): ReactNode {
 /// update (WhatsNewGate), or from the sidebar's version item.
 export function WhatsNewDialog() {
   const t = useT();
-  const lang = useLang((s) => s.lang);
   const panelRef = useRef<HTMLDivElement>(null);
   const open = useWhatsNew((s) => s.open);
   const setOpen = useWhatsNew((s) => s.setOpen);
@@ -329,8 +331,6 @@ export function WhatsNewDialog() {
               : t("patchlog.changeCountMany", { n: release.entries.length })}
           </span>
         </div>
-
-        {lang !== "en" && <p className="m-0 text-help text-text-sub-600">{t("whatsNew.englishOnly")}</p>}
 
         {/* Grouped by what changed; each entry a row whose details open on demand. */}
         {(["launcher", "browser"] as const).map((scope) => {
