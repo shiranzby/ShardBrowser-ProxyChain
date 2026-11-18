@@ -14,6 +14,7 @@ import { useScrollMemory } from "../../shared/model/scrollMemory";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
 import { ProxyQuickControl } from "../ProfileTable/ProxyQuickControl";
 import { ThemeQuickControl } from "../ProfileTable/ThemeQuickControl";
+import { PRODUCT_BRAND } from "../../shared/brand";
 
 type Filter = { value: string; onChange: (v: string) => void; placeholder?: string };
 
@@ -74,7 +75,7 @@ export function PageHeader({ title, lead, count, help, after, filter, actions, w
   const open = unfolded || !!filter?.value;
 
   // The window title, and the Windows task switcher, name the page (A11Y-11).
-  useEffect(() => { document.title = `${title} – ShardBrowser`; }, [title]);
+  useEffect(() => { document.title = `${title} – ${PRODUCT_BRAND}`; }, [title]);
 
   const focusFilter = () => {
     // Unfolded now, so the field is displayed and takes the keyboard before

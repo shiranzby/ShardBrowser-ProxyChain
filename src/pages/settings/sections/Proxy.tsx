@@ -79,7 +79,17 @@ export function ProxySection({ s, setS }: SettingsProps) {
 
   return (
     <div className="flex flex-col gap-[32px]">
-      <SettingsGroup title={t("provider.defaultsTitle")}><ProviderDefaultsPanel /></SettingsGroup>
+      <SettingsGroup title={t("provider.defaultsTitle")}>
+        <details className="group/provider-defaults">
+          <summary className="cursor-pointer list-none py-1 text-ui text-text-strong-950 [&::-webkit-details-marker]:hidden">
+            <span className="inline-flex items-center gap-2">
+              <span className="text-text-soft-400 transition-transform group-open/provider-defaults:rotate-90">›</span>
+              {t("provider.defaultsTitle")}
+            </span>
+          </summary>
+          <div className="pt-3"><ProviderDefaultsPanel /></div>
+        </details>
+      </SettingsGroup>
       <SettingsGroup title={t("proxyChain.connectionTitle")}>
         <SettingRow
           id="proxy-chain-enabled"
