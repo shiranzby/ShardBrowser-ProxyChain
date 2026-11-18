@@ -28,10 +28,10 @@ export function proxySummaryLabel(proxy: ProxyEntry) {
 /** Text used by searchable proxy selectors. It carries the same location
  * identity shown by ProxySummary, so a selector remains understandable when
  * its option renderer is collapsed to plain text. */
-export function proxyOptionLabel(proxy: ProxyEntry, snapshot?: ProxyTestSnapshot) {
+export function proxyOptionLabel(proxy: ProxyEntry, snapshot?: ProxyTestSnapshot, unknownLocation = "Unknown location") {
   const location = proxyLocation(proxy, snapshot);
   const summary = proxySummaryLabel(proxy);
-  return location ? `${location.code} ${location.label} · ${summary}` : summary;
+  return location ? `${location.code} ${location.label} · ${summary}` : `${unknownLocation} · ${summary}`;
 }
 
 export function ProxySummary({ proxy, snapshot }: { proxy: ProxyEntry; snapshot?: ProxyTestSnapshot }) {

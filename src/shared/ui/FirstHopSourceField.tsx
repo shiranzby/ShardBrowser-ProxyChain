@@ -31,7 +31,7 @@ export function FirstHopSourceField({ config, onChange, disabled = false }: {
       disabled={disabled} value={config.selected_proxy_id ?? ""}
       options={[{ value: "", label: t("proxyChain.selectFirst") }, ...proxies.map((p) => ({
         value: p.id,
-        label: proxyOptionLabel(p, snapshots[p.id]),
+        label: proxyOptionLabel(p, snapshots[p.id], t("proxyRow.unknownLocation")),
         content: <ProxySummary proxy={p} snapshot={snapshots[p.id]} />,
       }))]}
       onChange={(selected_proxy_id: string) => onChange({ selected_proxy_id })} />}

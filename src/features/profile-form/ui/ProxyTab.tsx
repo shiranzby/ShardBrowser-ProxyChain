@@ -62,7 +62,7 @@ export function ProxyTab({ draft }: { draft: ProfileFormDraft }) {
   const proxyPicker = <PropertySheet><ProxyRow value={routeExitProxyId(draft.form)}
     onChange={(proxy_id) => { patchDraft({ newProxyLine: "" }); patchForm(withRouteProxyId(draft.form, proxy_id)); }}
     newLine={draft.newProxyLine} onNewLine={(newProxyLine) => patchDraft({ newProxyLine })} /></PropertySheet>;
-  const firstOptions = [{ value: "", label: t("profileRoute.chooseProxy") }, ...proxies.map((p) => ({ value: p.id, label: proxyOptionLabel(p, snapshots[p.id]),
+  const firstOptions = [{ value: "", label: t("profileRoute.chooseProxy") }, ...proxies.map((p) => ({ value: p.id, label: proxyOptionLabel(p, snapshots[p.id], t("proxyRow.unknownLocation")),
     content: <ProxySummary proxy={p} snapshot={snapshots[p.id]} />, keywords: [p.host, p.country, p.kind, proxyLocation(p, snapshots[p.id])?.label ?? ""].filter(Boolean),
     hint: team && bindRefusal(p.id) ? bindRefusal(p.id)! : `${p.kind.toUpperCase()} ${p.host}:${p.port}`, disabled: !!(team && bindRefusal(p.id)), }))];
   const sourceOptions = [
