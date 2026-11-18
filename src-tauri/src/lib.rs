@@ -3125,7 +3125,7 @@ pub fn run() {
                     #[cfg(target_os = "macos")]
                     let builder = builder.icon_as_template(true);
                     builder
-                        .tooltip("ShardBrowser Launcher")
+                        .tooltip("ShyShard Launcher")
                         .menu(&menu)
                         .show_menu_on_left_click(false)
                         .on_menu_event(|app, e| match e.id.as_ref() {

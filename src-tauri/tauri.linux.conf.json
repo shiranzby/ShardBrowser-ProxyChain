@@ -3,7 +3,7 @@
   "app": {
     "windows": [
       {
-        "title": "ShardBrowser Launcher",
+        "title": "ShyShard Launcher",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
