@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   discover:
-    if: github.repository == 'shiranzby/ShardBrowser-ProxyChain'
+    if: github.repository == 'shiranzby/ShardBrowser-X'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -83,7 +83,7 @@ jobs:
           ARTIFACT_DIGEST: ${{ needs.pipeline.outputs.artifact_digest }}
         with:
           script: |
-            if (context.repo.owner !== 'shiranzby' || context.repo.repo !== 'ShardBrowser-ProxyChain') throw new Error('Wrong repository');
+            if (context.repo.owner !== 'shiranzby' || context.repo.repo !== 'ShardBrowser-X') throw new Error('Wrong repository');
             for (const key of ['UPSTREAM_COMMIT','CANDIDATE_COMMIT']) if (!/^[0-9a-f]{40}$/.test(process.env[key])) throw new Error(`Invalid ${key}`);
             for (const key of ['PATCH_SHA256','PORTABLE_SHA256']) if (!/^[0-9a-f]{64}$/.test(process.env[key])) throw new Error(`Invalid ${key}`);
             if (!/^\d+$/.test(process.env.ARTIFACT_ID)) throw new Error('No successful artifact upload');
@@ -113,3 +113,5 @@ jobs:
             const body = `Upstream discovery or completion-state recording failed. No success was inferred from this failure.\n\nRun: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const {data: issues} = await github.rest.issues.listForRepo({...context.repo,state:'open',per_page:100});
             if (!issues.some(x => !x.pull_request && x.title === title)) await github.rest.issues.create({...context.repo,title,body});
+
+

@@ -31,7 +31,7 @@ const MANIFEST_URL: &str =
 /// Kept short on purpose: giving up early only costs this launch its update
 /// check, while waiting costs the operator a launcher that looks stuck.
 const MANIFEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
-const LAUNCHER_RELEASE_REPO: &str = "shiranzby/ShardBrowser-ProxyChain";
+const LAUNCHER_RELEASE_REPO: &str = "shiranzby/ShardBrowser-X";
 pub const PATCH_REVISION: &str = match option_env!("SHARDBROWSER_PATCH_REVISION") {
     Some(value) => value,
     None => "pc3",
@@ -1732,3 +1732,4 @@ mod proxy_chain_update_tests {
         assert!(!super::is_newer("v2.2.0-beta", "2.1.2-pc1"));
     }
 }
+

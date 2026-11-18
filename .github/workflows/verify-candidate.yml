@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   verify:
-    if: github.repository == 'shiranzby/ShardBrowser-ProxyChain'
+    if: github.repository == 'shiranzby/ShardBrowser-X'
     timeout-minutes: 180
     runs-on: windows-2022
     steps:
@@ -74,3 +74,4 @@ jobs:
           name: proxy-chain-verification-${{ github.run_id }}
           path: ${{ runner.temp }}/proxy-chain-proofs/
           if-no-files-found: warn
+

@@ -37,7 +37,7 @@ test("telemetry stays removed with a previous opt-in and about links to the fork
   expect(await page.evaluate(() => (window as any).__shardxMock.analyticsHits)).toBe(0);
   expect(await page.evaluate(() => localStorage.getItem("shardx-analytics-client-id"))).toBeNull();
   await page.getByRole("tab", { name: "About", exact: true }).click();
-  await expect(page.getByRole("link", { name: "shiranzby/ShardBrowser-ProxyChain", exact: true })).toHaveAttribute("href", "https://github.com/shiranzby/ShardBrowser-ProxyChain");
+  await expect(page.getByRole("link", { name: "shiranzby/ShardBrowser-X", exact: true })).toHaveAttribute("href", "https://github.com/shiranzby/ShardBrowser-X");
 });
 
 test("header switch preserves other settings, reports its route and survives reload", async ({ page }) => {
@@ -169,3 +169,4 @@ test("quick route failures use the Chinese layer error", async ({ page }) => {
   await expect(root.getByRole("alert")).not.toContainText("Raw local");
   await expect(root.getByRole("alert")).toContainText("出口");
 });
+

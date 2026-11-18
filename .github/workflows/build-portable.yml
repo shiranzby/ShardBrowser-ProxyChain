@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build:
-    if: github.repository == 'shiranzby/ShardBrowser-ProxyChain'
+    if: github.repository == 'shiranzby/ShardBrowser-X'
     runs-on: windows-2022
     permissions:
       contents: read
@@ -102,3 +102,4 @@ jobs:
             ${{ runner.temp }}/proxy-chain-build/artifact/*.log
             ${{ runner.temp }}/proxy-chain-build/candidate-info.json
           if-no-files-found: warn
+
