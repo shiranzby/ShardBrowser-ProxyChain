@@ -8,10 +8,10 @@ index 0000000..76675db
 +patches/*.patch -text -whitespace
 diff --git a/README.en.md b/README.en.md
 new file mode 100644
-index 0000000..32032b0
+index 0000000..8abb647
 --- /dev/null
 +++ b/README.en.md
-@@ -0,0 +1,953 @@
+@@ -0,0 +1,952 @@
 +## Windows proxy-chain fork
 +
 +This fork adds **Settings → Proxy → Use system proxy to connect to proxies** on Windows. A profile's saved SOCKS5, HTTP or HTTPS proxy remains the final exit; HTTP CONNECT or SOCKS5 provides the first hop. HTTPS verifies the original proxy host inside the first-hop tunnel. The original engine, profiles and browser data remain upstream components.
@@ -964,7 +964,6 @@ index 0000000..32032b0
 +Permitted uses include personal projects, web scraping,
 +multi-accounting and integration with the launcher's automation API.
 +Contact us before building a commercial product on top of the engine.
-+
 diff --git a/README.md b/README.md
 index 56a9dad..01f4c06 100644
 --- a/README.md
@@ -2119,10 +2118,10 @@ index 0000000..69a55d6
 +定向验证：Rust 创建/显式覆盖、设置旧 JSON 缺省、克隆/导入不覆盖与启动 argv；Playwright 新建默认、修改保存重载、旧配置编辑保留。原生 Engine 页面导航由候选产物验收另行确认。
 diff --git a/docs/PROXY-CHAIN-MAINTENANCE.md b/docs/PROXY-CHAIN-MAINTENANCE.md
 new file mode 100644
-index 0000000..ccce9c4
+index 0000000..7b311da
 --- /dev/null
 +++ b/docs/PROXY-CHAIN-MAINTENANCE.md
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,54 @@
 +# Proxy-chain 补丁维护流程
 +
 +维护仓库：`shiranzby/ShardBrowser-X`。官方仓库只作为上游来源，不向官方仓库推送。
@@ -2177,7 +2176,6 @@ index 0000000..ccce9c4
 +离线脚本使用新建的合成 Git 仓库和模拟 Release 数据，验证稳定版选择、无更新、注释 tag、移动 tag、服务故障、补丁重放身份、冲突停止和缺失证明拒绝。它不访问真实代理，不生成假正式验收收据，也不构建 EXE。
 +
 +`<40-hex-commit>` 必须来自同一次官方 Release 查询。不要把 API token、代理用户名/密码、认证头、真实 Profile 数据或 Cookie 放入日志、artifact、manifest 或仓库。
-+
 diff --git a/docs/PROXY-CHAIN-POLICY.md b/docs/PROXY-CHAIN-POLICY.md
 new file mode 100644
 index 0000000..4b6eec2
@@ -3009,10 +3007,10 @@ index 0000000..c05e4b8
 +});
 diff --git a/e2e/personalization.spec.ts b/e2e/personalization.spec.ts
 new file mode 100644
-index 0000000..ec63ec3
+index 0000000..922aa17
 --- /dev/null
 +++ b/e2e/personalization.spec.ts
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,171 @@
 +import { expect, test } from "@playwright/test";
 +import { openApp, reloadApp } from "./support/app";
 +
@@ -3184,7 +3182,6 @@ index 0000000..ec63ec3
 +  await expect(root.getByRole("alert")).not.toContainText("Raw local");
 +  await expect(root.getByRole("alert")).toContainText("出口");
 +});
-+
 diff --git a/e2e/profile-defaults.spec.ts b/e2e/profile-defaults.spec.ts
 new file mode 100644
 index 0000000..fb5117e
@@ -19576,7 +19573,7 @@ index 4d2811b..9b376ea 100644
      }
  
 diff --git a/src-tauri/src/runtime.rs b/src-tauri/src/runtime.rs
-index 4964320..587412b 100644
+index 4964320..68b1149 100644
 --- a/src-tauri/src/runtime.rs
 +++ b/src-tauri/src/runtime.rs
 @@ -31,9 +31,13 @@ const MANIFEST_URL: &str =
@@ -19675,7 +19672,7 @@ index 4964320..587412b 100644
  
      let url = format!("https://api.github.com/repos/{LAUNCHER_RELEASE_REPO}/releases/latest");
      let client = match reqwest::Client::builder()
-@@ -1739,3 +1720,16 @@ pub async fn launcher_update_check(app: tauri::AppHandle) -> Result<LauncherVers
+@@ -1739,3 +1720,15 @@ pub async fn launcher_update_check(app: tauri::AppHandle) -> Result<LauncherVers
      };
      Ok(LauncherVersionInfo { current, latest, update_available, release_url })
  }
@@ -19691,7 +19688,6 @@ index 4964320..587412b 100644
 +        assert!(!super::is_newer("v2.2.0-beta", "2.1.2-pc1"));
 +    }
 +}
-+
 diff --git a/src-tauri/src/settings.rs b/src-tauri/src/settings.rs
 index 90b201e..7030465 100644
 --- a/src-tauri/src/settings.rs
