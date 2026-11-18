@@ -14,6 +14,7 @@ import { useInterfaceSize } from "../../shared/model/interfaceSize";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
 import { useMotion } from "../../shared/model/motion";
 import { useSimpleNavigation } from "../../shared/model/simpleNavigation";
+import { useProxyShardVisibility } from "../../shared/model/proxyShardVisibility";
 import { PREF_KEYS, prefOf, type LocalPrefs, type PrefKey } from "./localPrefs";
 
 export type { LocalPrefs } from "./localPrefs";
@@ -440,6 +441,7 @@ export function useSettingsDraft() {
   const singleKeys = useKeyPrefs((st) => st.singleKeys);
   const simpleNavigation = useSimpleNavigation((st) => st.enabled);
   const collapsedPages = useSimpleNavigation((st) => st.items);
+  const hideProxyShard = useProxyShardVisibility((st) => st.hidden);
   const askDirect = useDirectStart((st) => st.ask);
   const p: LocalPrefs = {
     lang,
@@ -449,6 +451,7 @@ export function useSettingsDraft() {
     singleKeys: prefs.singleKeys ?? singleKeys,
     simpleNavigation: prefs.simpleNavigation ?? simpleNavigation,
     collapsedPages: prefs.collapsedPages ?? collapsedPages,
+    hideProxyShard: prefs.hideProxyShard ?? hideProxyShard,
     askDirect: prefs.askDirect ?? askDirect,
   };
   const dirty = ready && isDirty({ edits, tagOps, viewOps, prefs }, tags, views);

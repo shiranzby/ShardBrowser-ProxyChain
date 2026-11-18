@@ -14,6 +14,8 @@
   "commands.shortcutStartFailed": "Не удалось открыть профиль через ярлык",
   "settings.simpleNavigation": "Упрощённая навигация",
   "settings.simpleNavigationHelp": "Выберите страницы для раздела «Ещё». Все профили и настройки всегда доступны.",
+  "settings.hideProxyShard": "Скрывать страницу совместимости ProxyShard",
+  "settings.hideProxyShardHelp": "По умолчанию скрывает старую страницу ProxyShard и рекламный вход. Отключите, чтобы вернуть её, не удаляя прокси или данные аккаунта.",
   "sidebar.morePages": "Ещё",
   "sidebar.fewerPages": "Свернуть страницы",
   "proxyChain.policyLabel": "Режим цепочки прокси",

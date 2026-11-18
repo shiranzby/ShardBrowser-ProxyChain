@@ -14,6 +14,8 @@
   "commands.shortcutStartFailed": "Could not open profile shortcut",
   "settings.simpleNavigation": "Simple navigation",
   "settings.simpleNavigationHelp": "Choose which pages to collect under more. All profiles and Settings stay visible.",
+  "settings.hideProxyShard": "Hide the ProxyShard compatibility page",
+  "settings.hideProxyShardHelp": "Hide the legacy ProxyShard page and marketing entry by default. Turn this off to restore it without deleting proxy or account data.",
   "sidebar.morePages": "More",
   "sidebar.fewerPages": "Fewer pages",
   "proxyChain.policyLabel": "Proxy chain choice",

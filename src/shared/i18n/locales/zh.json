@@ -14,6 +14,8 @@
   "commands.shortcutStartFailed": "无法通过快捷方式启动环境",
   "settings.simpleNavigation": "简洁导航",
   "settings.simpleNavigationHelp": "自行选择收纳哪些页面。“全部配置”和“设置”始终保留。",
+  "settings.hideProxyShard": "隐藏 ProxyShard 兼容入口",
+  "settings.hideProxyShardHelp": "默认隐藏旧的 ProxyShard 页面和营销入口。关闭后可从侧边栏恢复，已有代理和账号数据不会删除。",
   "sidebar.morePages": "更多",
   "sidebar.fewerPages": "收起更多页面",
   "proxyChain.policyLabel": "代理链使用方式",

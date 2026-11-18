@@ -5,6 +5,7 @@ import { useDirectStart } from "../../shared/model/directStart";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
 import { savedMotion, useMotion } from "../../shared/model/motion";
 import { useSimpleNavigation, type CollapsiblePage } from "../../shared/model/simpleNavigation";
+import { useProxyShardVisibility } from "../../shared/model/proxyShardVisibility";
 import { currentTheme, previewThemeFromSettings, setThemeFromCommand } from "../../shared/model/theme";
 
 /// The preferences this window keeps in its own storage rather than in
@@ -19,6 +20,7 @@ export type LocalPrefs = {
   reduceMotion: boolean;
   simpleNavigation: boolean;
   collapsedPages: CollapsiblePage[];
+  hideProxyShard: boolean;
   singleKeys: boolean;
   askDirect: boolean;
 };
@@ -71,6 +73,10 @@ const PREFS: { [K in PrefKey]: Pref<LocalPrefs[K]> } = {
   collapsedPages: {
     stored: () => useSimpleNavigation.getState().items,
     commit: (v) => useSimpleNavigation.getState().setItems(v),
+  },
+  hideProxyShard: {
+    stored: () => useProxyShardVisibility.getState().hidden,
+    commit: (v) => useProxyShardVisibility.getState().setHidden(v),
   },
   askDirect: {
     stored: () => useDirectStart.getState().ask,
