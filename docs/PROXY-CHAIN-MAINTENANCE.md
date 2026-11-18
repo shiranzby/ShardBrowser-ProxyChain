@@ -52,4 +52,3 @@ ShardBrowser-v2.1.2-pc1-portable-win-x64.exe
 离线脚本使用新建的合成 Git 仓库和模拟 Release 数据，验证稳定版选择、无更新、注释 tag、移动 tag、服务故障、补丁重放身份、冲突停止和缺失证明拒绝。它不访问真实代理，不生成假正式验收收据，也不构建 EXE。
 
 `<40-hex-commit>` 必须来自同一次官方 Release 查询。不要把 API token、代理用户名/密码、认证头、真实 Profile 数据或 Cookie 放入日志、artifact、manifest 或仓库。
-

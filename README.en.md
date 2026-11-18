@@ -950,4 +950,3 @@ permitted**:
 Permitted uses include personal projects, web scraping,
 multi-accounting and integration with the launcher's automation API.
 Contact us before building a commercial product on top of the engine.
-

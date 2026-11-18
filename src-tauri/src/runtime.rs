@@ -1732,4 +1732,3 @@ mod proxy_chain_update_tests {
         assert!(!super::is_newer("v2.2.0-beta", "2.1.2-pc1"));
     }
 }
-
