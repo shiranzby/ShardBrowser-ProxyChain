@@ -139,7 +139,7 @@ export const withUtm = (url: string) => url + (url.includes("?") ? "&" : "?") + 
 // ProxyShard dashboard (account, billing, API key).
 export const DASHBOARD_URL = withUtm("https://dashboard.proxyshard.com/");
 
-export const GH_REPO_URL = "https://github.com/ProxyShard/ShardBrowser";
+export const GH_REPO_URL = "https://github.com/shiranzby/ShardBrowser-X";
 
 // The product site; utm_content names the place in the launcher the click came from.
 export const SITE_HOST = "shardbrowser.com";
