@@ -248,14 +248,21 @@ export function SnapshotCard() {
         </p>
       )}
       {inspection && (
-        <p role="status" className="m-0 text-help text-text-sub-600">
-          {t("snapshot.inspection", {
-            verified: inspection.verified,
-            files: inspection.files,
-            missing: inspection.missing,
-            changed: inspection.changed,
-          })}
-        </p>
+        <div role="status" className="flex flex-col gap-1">
+          <p className="m-0 text-help text-text-sub-600">
+            {t("snapshot.inspection", {
+              verified: inspection.verified,
+              files: inspection.files,
+              missing: inspection.missing,
+              changed: inspection.changed,
+            })}
+          </p>
+          {inspection.warnings.map((warning) => (
+            <p key={warning} className="m-0 text-help text-text-soft-400">
+              {warning}
+            </p>
+          ))}
+        </div>
       )}
       <p className="m-0 text-help text-text-soft-400">{t("snapshot.help")}</p>
     </div>

@@ -141,3 +141,51 @@ async fn drain() -> Result<(), Failure> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reset() {
+        STATE.store(IDLE, SeqCst);
+    }
+
+    #[test]
+    fn begin_enters_closing_once() {
+        let _serial = crate::migrate::serial();
+        reset();
+
+        assert!(begin());
+        assert!(active());
+        assert!(!ready());
+        assert!(!begin());
+
+        reset();
+    }
+
+    #[test]
+    fn cancel_marks_close_and_prevents_ready_transition() {
+        let _serial = crate::migrate::serial();
+        reset();
+
+        assert!(begin());
+        cancel();
+        assert!(active());
+        assert!(!ready());
+
+        reset();
+    }
+
+    #[test]
+    fn save_failure_marks_close_and_prevents_ready_transition() {
+        let _serial = crate::migrate::serial();
+        reset();
+
+        assert!(begin());
+        save_failed();
+        assert!(active());
+        assert!(!ready());
+
+        reset();
+    }
+}
