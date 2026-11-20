@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Button, Input, Textarea, usePresence, useLatched, type MenuItem } from "@proxyshard/shardx-ui-kit";
+import { Button, DialogModal, Input, Textarea, usePresence, useLatched, type MenuItem } from "@proxyshard/shardx-ui-kit";
 import { useGpuCompat, useGpuCompatReady, verdictsLoaded } from "../../shared/model/gpuCompat";
 import { useNav } from "../../shared/model/navigation";
 import { useT } from "../../shared/i18n";
@@ -7,7 +7,8 @@ import { useDialogLife } from "../../shared/lib/useDialogLife";
 import { pageTitle, refocusIfLost } from "../../shared/lib/focus";
 import { rowActionIcons } from "../../shared/ui/rowActionIcons";
 import { PeekBody, PeekHeader, PeekPanel, PeekSection } from "../../shared/ui/peek";
-import { fingerprintOs, useFingerprint, type FingerprintEntry } from "../../entities/fingerprint";
+import { fingerprintObserveRuntime, fingerprintOs, useFingerprint, type FingerprintEntry } from "../../entities/fingerprint";
+import { processList, profileList, type ProfileMeta } from "../../entities/profile";
 import { IncompatibleExplainer, IncompatibleWarningModal } from "../../features/gpu-compat";
 import { openProfileForm } from "../../features/profile-form";
 import { toast } from "../../shared/model/toast";
@@ -88,11 +89,13 @@ function FieldChecks({ entry }: { entry: FingerprintEntry }) {
   };
   const sourceLabels = {
     imported: t("fingerprintPeek.fieldImportedSource"),
+    runtime_observed: t("fingerprintPeek.fieldRuntimeObservedSource"),
     unavailable: t("fingerprintPeek.fieldUnavailableSource"),
   };
   return (
     <>
       <p className="m-0 mb-2 text-secondary text-text-soft-400">{t("fingerprintPeek.fieldSource")}</p>
+      <RuntimeObservation entry={entry} />
       <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-secondary">
         {fields.map(([field, label]) => {
           const status = entry.field_checks?.[field];
@@ -108,6 +111,96 @@ function FieldChecks({ entry }: { entry: FingerprintEntry }) {
           );
         })}
       </dl>
+    </>
+  );
+}
+
+type RuntimeSession = { profile_id: string; pid: number; uptime_ms: number; cdp?: { port: number } };
+
+function RuntimeObservation({ entry }: { entry: FingerprintEntry }) {
+  const t = useT();
+  const reload = useFingerprint((s) => s.reload);
+  const [open, setOpen] = useState(false);
+  const [profiles, setProfiles] = useState<ProfileMeta[]>([]);
+  const [sessions, setSessions] = useState<RuntimeSession[]>([]);
+  const [selected, setSelected] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const [rows, running] = await Promise.all([profileList(), processList()]);
+      const withCdp = (running as RuntimeSession[]).filter((session) => session.cdp);
+      setProfiles(rows);
+      setSessions(withCdp);
+      setSelected((current) => current && withCdp.some((session) => session.profile_id === current)
+        ? current
+        : withCdp[0]?.profile_id ?? "");
+      setOpen(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const observe = async () => {
+    if (!selected) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await fingerprintObserveRuntime(selected, entry.id);
+      await reload();
+      setOpen(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const profileName = new Map(profiles.map((profile) => [profile.id, profile.name]));
+  return (
+    <>
+      <div className="mb-3 flex flex-col gap-2 rounded-control bg-bg-weak-50 p-2">
+        <p className="m-0 text-secondary text-text-sub-600">{t("fingerprintPeek.runtimeObservationHelp")}</p>
+        <Button variant="neutral" mode="stroke" size="xsmall" isLoading={busy && !open} onClick={() => void load()}>
+          {t("fingerprintPeek.observeRuntime")}
+        </Button>
+        {error && <p className="m-0 text-secondary text-danger-text" role="alert">{error}</p>}
+      </div>
+      <DialogModal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={t("fingerprintPeek.runtimeObservationTitle")}
+        confirmLabel={t("fingerprintPeek.observeRuntime")}
+        onConfirm={() => void observe()}
+        isLoading={busy}
+        isDisabled={busy || !selected}
+        cancelLabel={t("kit.cancel")}
+        onCancel={() => setOpen(false)}
+      >
+        <div className="flex flex-col gap-3 py-4">
+          <p className="m-0 text-secondary text-text-sub-600">{t("fingerprintPeek.runtimeObservationChoose")}</p>
+          <label className="flex flex-col gap-1 text-secondary">
+            <span>{t("fingerprintPeek.runtimeObservationProfile")}</span>
+            <select
+              className="rounded-control border border-border-sub-300 bg-bg-white px-2 py-2 text-ui"
+              value={selected}
+              onChange={(event) => setSelected(event.target.value)}
+            >
+              {sessions.map((session) => (
+                <option key={session.profile_id} value={session.profile_id}>
+                  {profileName.get(session.profile_id) ?? session.profile_id} (PID {session.pid})
+                </option>
+              ))}
+            </select>
+          </label>
+          {error && <p className="m-0 text-secondary text-danger-text" role="alert">{error}</p>}
+        </div>
+      </DialogModal>
     </>
   );
 }

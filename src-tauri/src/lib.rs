@@ -1856,6 +1856,121 @@ fn fingerprint_tags_save(id: String, tags: Vec<String>) -> Result<fingerprints::
     fingerprints::save_tags(&id, tags).map(Into::into).map_err(|e| e.to_string())
 }
 
+/// Observe the fingerprint-relevant values exposed by a running Profile.
+/// The profile must already be running with the automation/CDP pass. The
+/// imported FingerprintConfig is never rewritten; observations are stored as
+/// launcher metadata and shown separately in the library.
+#[tauri::command]
+async fn fingerprint_observe_runtime(
+    profile_id: String,
+    fingerprint_id: String,
+) -> Result<fingerprints::LibraryView, String> {
+    #[cfg(feature = "automation")]
+    {
+        space::cdp_pass(&profile_id)?;
+        let script = r##"
+(() => {
+  const hash = (value) => {
+    let h = 2166136261;
+    for (let i = 0; i < value.length; i += 1) {
+      h ^= value.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16).padStart(8, "0");
+  };
+  const nav = navigator;
+  const screenValue = window.screen;
+  const navigatorGroup = {
+    language: nav.language,
+    languages: Array.from(nav.languages || []),
+    platform: nav.platform,
+    user_agent: nav.userAgent,
+    hardware_concurrency: nav.hardwareConcurrency,
+    device_memory: nav.deviceMemory
+  };
+  const screenGroup = {
+    width: screenValue.width,
+    height: screenValue.height,
+    avail_width: screenValue.availWidth,
+    avail_height: screenValue.availHeight,
+    color_depth: screenValue.colorDepth,
+    pixel_depth: screenValue.pixelDepth,
+    device_pixel_ratio: window.devicePixelRatio
+  };
+  const timezoneGroup = {
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null
+  };
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  let canvasGroup = { supported: false };
+  if (ctx) {
+    ctx.textBaseline = "top";
+    ctx.font = "14px Arial";
+    ctx.fillStyle = "#f60";
+    ctx.fillRect(1, 1, 62, 20);
+    ctx.fillStyle = "#069";
+    ctx.fillText("ShyShard", 2, 2);
+    canvasGroup = { supported: true, hash: hash(canvas.toDataURL()) };
+  }
+  const canvasGroupValue = canvasGroup;
+  let webglGroup = { supported: false };
+  const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+  if (gl) {
+    const debug = gl.getExtension("WEBGL_debug_renderer_info");
+    webglGroup = {
+      supported: true,
+      vendor: debug ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL) : null,
+      renderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : null,
+      extensions: gl.getSupportedExtensions() || []
+    };
+  }
+  const candidates = ["Arial", "Calibri", "Cambria", "Courier New", "Georgia", "Segoe UI", "Times New Roman"];
+  const fontGroup = { available: candidates.filter((font) => document.fonts && document.fonts.check(`12px "${font}"`)) };
+  const webrtcGroup = {
+    supported: typeof RTCPeerConnection === "function",
+    candidate_probe: "not_requested"
+  };
+  return {
+    navigator: navigatorGroup,
+    screen: screenGroup,
+    timezone: timezoneGroup,
+    canvas: canvasGroupValue,
+    webgl: webglGroup,
+    fonts: fontGroup,
+    webrtc: webrtcGroup
+  };
+})()
+        "##;
+        let response = cdp::page_call(
+            &profile_id,
+            "Runtime.evaluate",
+            serde_json::json!({
+                "expression": script,
+                "returnByValue": true,
+                "awaitPromise": true
+            }),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        let value = response
+            .get("result")
+            .and_then(|result| result.get("result"))
+            .and_then(|result| result.get("value"))
+            .cloned()
+            .ok_or_else(|| "runtime observation returned no value".to_string())?;
+        let observations = serde_json::from_value(value)
+            .map_err(|e| format!("invalid runtime observation: {e}"))?;
+        return fingerprints::save_runtime_observed(&fingerprint_id, observations)
+            .map(Into::into)
+            .map_err(|e| e.to_string());
+    }
+    #[cfg(not(feature = "automation"))]
+    {
+        let _ = (profile_id, fingerprint_id);
+        Err("automation is not compiled into this build".into())
+    }
+}
+
 /// Path to fingerprint library dir (UI "Open library folder").
 #[tauri::command]
 fn fingerprint_dir() -> Result<String, String> {
@@ -3581,6 +3696,7 @@ pub fn run() {
             fingerprint_rollback,
             fingerprint_delete,
             fingerprint_tags_save,
+            fingerprint_observe_runtime,
             fingerprint_dir,
             read_text_file,
             process_list,

@@ -732,7 +732,12 @@ export const handlers: Record<string, Handler> = {
     ctx.save();
     return metaOf(p);
   },
-  process_list: (_a, { state }) => Object.entries(state.running).filter(([id]) => state.profiles[id]).map(([profile_id, r]) => ({ profile_id, pid: r.pid, uptime_ms: Date.now() - r.started })),
+  process_list: (_a, { state }) => Object.entries(state.running).filter(([id]) => state.profiles[id]).map(([profile_id, r]) => ({
+    profile_id,
+    pid: r.pid,
+    uptime_ms: Date.now() - r.started,
+    ...(r.cdp ? { cdp: { port: 9222, http_url: "http://127.0.0.1:9222", web_socket_debugger_url: "ws://127.0.0.1:9222/devtools/browser/mock" } } : {}),
+  })),
   // A synced profile's session goes up as its browser closes.
   process_kill: ({ profileId }, ctx) => {
     const id = String(profileId);
@@ -1280,6 +1285,38 @@ export const handlers: Record<string, Handler> = {
     delete ctx.state.fingerprintBackups?.[id];
     ctx.save();
     return ctx.state.fingerprints.find((item) => item.id === id);
+  },
+  fingerprint_observe_runtime: ({ profileId, fingerprintId }, ctx) => {
+    const id = String(profileId);
+    const session = ctx.state.running[id];
+    if (!session?.cdp) throw "automation session required";
+    if ((window as { __shardxMockRuntimeObserveError?: string }).__shardxMockRuntimeObserveError) {
+      throw (window as { __shardxMockRuntimeObserveError?: string }).__shardxMockRuntimeObserveError;
+    }
+    const entry = ctx.state.fingerprints.find((f) => f.id === String(fingerprintId));
+    if (!entry) throw "unknown fingerprint id";
+    const observed = {
+      navigator: { language: "en-US", languages: ["en-US", "en"], platform: "Win32", user_agent: "Mock Chrome/152.0.0.0", hardware_concurrency: 8, device_memory: 16 },
+      screen: { width: 1920, height: 1080, avail_width: 1920, avail_height: 1040, color_depth: 24, device_pixel_ratio: 1 },
+      timezone: "Asia/Singapore",
+      webgl: { vendor: "Mock Vendor", renderer: "Mock Renderer", extensions: ["WEBGL_debug_renderer_info"] },
+      canvas: { hash: "mock-canvas-fnv1a" },
+      fonts: { available: ["Arial", "Segoe UI"] },
+      webrtc: { supported: true, candidate_probe: "not_requested" },
+    };
+    entry.runtime_observed = observed;
+    entry.field_sources = {
+      ...(entry.field_sources ?? {}),
+      webgl: "runtime_observed",
+      webrtc: "runtime_observed",
+      canvas: "runtime_observed",
+      fonts: "runtime_observed",
+      navigator: "runtime_observed",
+      timezone: "runtime_observed",
+      screen: "runtime_observed",
+    };
+    ctx.save();
+    return entry;
   },
   fingerprint_import: ({ jsonText, idHint }, ctx) => {
     let payload: any;

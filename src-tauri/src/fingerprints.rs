@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -40,6 +41,10 @@ pub struct LibraryEntry {
     /// are intentionally excluded from fingerprint exports.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Values observed from a running Profile. These are launcher metadata,
+    /// kept separate from the imported FingerprintConfig payload.
+    #[serde(default)]
+    pub runtime_observed: BTreeMap<String, Value>,
     /// Full FingerprintConfig JSON.  Stored inline so the frontend can
     /// preview it and the profile editor can read derived fields
     /// (screen, platform, webgl) without a second round-trip.
@@ -65,10 +70,11 @@ enum FieldCheck {
     Invalid,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum FieldSource {
     Imported,
+    RuntimeObserved,
     Unavailable,
 }
 
@@ -113,7 +119,9 @@ impl From<LibraryEntry> for LibraryView {
         let field_sources = fields
             .into_iter()
             .map(|field| {
-                let source = if entry.payload.get(field).is_some() {
+                let source = if entry.runtime_observed.contains_key(field) {
+                    FieldSource::RuntimeObserved
+                } else if entry.payload.get(field).is_some() {
                     FieldSource::Imported
                 } else {
                     FieldSource::Unavailable
@@ -238,6 +246,7 @@ fn wrap_payload(id: &str, p: &Value) -> LibraryEntry {
         builtin: false,
         payload_sha256: payload_sha256(p),
         tags: Vec::new(),
+        runtime_observed: BTreeMap::new(),
         payload: p.clone(),
     }
 }
@@ -635,6 +644,52 @@ pub fn save_tags(id: &str, tags: Vec<String>) -> Result<LibraryEntry> {
     Ok(entry)
 }
 
+/// Save observations from a running Profile without rewriting the imported
+/// FingerprintConfig payload. Only the seven known observation groups are
+/// accepted, and an observation must be a JSON object.
+pub fn save_runtime_observed(
+    id: &str,
+    observations: BTreeMap<String, Value>,
+) -> Result<LibraryEntry> {
+    const FIELDS: [&str; 7] = [
+        "webgl",
+        "webrtc",
+        "canvas",
+        "fonts",
+        "navigator",
+        "timezone",
+        "screen",
+    ];
+    let path = path_for(id)?;
+    let body = fs::read_to_string(&path)
+        .with_context(|| format!("read fingerprint {}", path.display()))?;
+    let mut entry: LibraryEntry = serde_json::from_str(&body)
+        .with_context(|| format!("{} is not a library entry", path.display()))?;
+    if entry.builtin {
+        anyhow::bail!("builtin fingerprint cannot store runtime observations");
+    }
+    for (field, value) in observations {
+        if !FIELDS.contains(&field.as_str()) {
+            anyhow::bail!("unknown fingerprint observation field: {field}");
+        }
+        if !value.is_object() {
+            anyhow::bail!("fingerprint observation must be an object: {field}");
+        }
+        entry.runtime_observed.insert(field, value);
+    }
+    let tmp = path.with_extension("json.tmp");
+    let serialized = serde_json::to_string_pretty(&entry)?;
+    if let Err(error) = fs::write(&tmp, serialized) {
+        let _ = fs::remove_file(&tmp);
+        return Err(error.into());
+    }
+    if let Err(error) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(error.into());
+    }
+    Ok(entry)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -825,5 +880,35 @@ mod tests {
         let error = delete(&saved.id).unwrap_err().to_string();
         assert!(error.contains("profile-1"));
         assert!(path_for(&saved.id).unwrap().exists());
+    }
+
+    #[test]
+    fn runtime_observations_are_metadata_and_change_the_source_label() {
+        let _root = store::test_root("fingerprint-runtime-observed");
+        let payload = serde_json::json!({
+            "navigator": { "language": "zh-CN" },
+            "screen": { "width": 1920, "height": 1080 }
+        });
+        let entry = import(&serde_json::to_string(&payload).unwrap(), Some("runtime-one".into())).unwrap();
+        assert_eq!(LibraryView::from(entry.clone()).field_sources["navigator"], FieldSource::Imported);
+        let saved = save_runtime_observed(
+            "runtime-one",
+            [(
+                "navigator".into(),
+                serde_json::json!({ "language": "zh-CN", "languages": ["zh-CN", "en-US"] }),
+            )]
+            .into_iter()
+            .collect(),
+        )
+        .unwrap();
+        assert_eq!(
+            LibraryView::from(saved).field_sources["navigator"],
+            FieldSource::RuntimeObserved
+        );
+        let stored: LibraryEntry =
+            serde_json::from_str(&fs::read_to_string(path_for("runtime-one").unwrap()).unwrap())
+                .unwrap();
+        assert_eq!(stored.payload["navigator"]["language"], "zh-CN");
+        assert_eq!(stored.runtime_observed["navigator"]["languages"][0], "zh-CN");
     }
 }

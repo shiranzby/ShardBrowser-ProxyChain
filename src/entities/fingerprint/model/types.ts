@@ -14,7 +14,9 @@ export type FingerprintEntry = {
   /** Launcher schema checks, separate from the supplied payload and host probe. */
   field_checks?: Record<string, "missing" | "structure_valid" | "invalid">;
   /** Imported JSON is not runtime hardware evidence. */
-  field_sources?: Record<string, "imported" | "unavailable">;
+  field_sources?: Record<string, "imported" | "runtime_observed" | "unavailable">;
+  /** Runtime observations are metadata and are excluded from exported payload JSON. */
+  runtime_observed?: Record<string, any>;
   payload: any;
 };
 

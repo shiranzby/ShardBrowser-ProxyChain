@@ -8,6 +8,8 @@ export const fingerprintImport = (jsonText: string, idHint: string | null) => in
 export const fingerprintExport = (id: string) => invoke<string>("fingerprint_export", { id });
 export const fingerprintUpdate = (id: string, jsonText: string) => invoke<FingerprintEntry>("fingerprint_update", { id, jsonText });
 export const fingerprintRollback = (id: string) => invoke<FingerprintEntry>("fingerprint_rollback", { id });
+export const fingerprintObserveRuntime = (profileId: string, fingerprintId: string) =>
+  invoke<FingerprintEntry>("fingerprint_observe_runtime", { profileId, fingerprintId });
 export const fingerprintDir = () => invoke<string>("fingerprint_dir");
 
 /// Slow on the first call: it starts the engine off-screen and asks it what the
