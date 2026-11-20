@@ -9,6 +9,14 @@ on:
         description: Rebuild the same upstream and patch (for expired artifacts or a retry)
         type: boolean
         default: false
+      upstream_tag:
+        description: Optional upstream tag to build explicitly, such as v2.1.5
+        type: string
+        required: false
+      upstream_commit:
+        description: Optional commit for the explicit upstream tag
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -39,9 +47,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
+          TARGET_TAG: ${{ inputs.upstream_tag || '' }}
+          TARGET_COMMIT: ${{ inputs.upstream_commit || '' }}
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'discovery.json'
-          ./scripts/check-upstream.ps1 -OutputPath $out -ForceBuild:($env:FORCE_REBUILD -eq 'true')
+          $args = @{ OutputPath = $out; ForceBuild = ($env:FORCE_REBUILD -eq 'true') }
+          if ($env:TARGET_TAG) { $args.TargetTag = $env:TARGET_TAG }
+          if ($env:TARGET_COMMIT) { $args.TargetCommit = $env:TARGET_COMMIT }
+          ./scripts/check-upstream.ps1 @args
           $r = Get-Content -Raw $out | ConvertFrom-Json
           foreach ($key in @('upstream_tag','upstream_commit','patch_revision','patch_sha256')) { "$key=$($r.$key)" >> $env:GITHUB_OUTPUT }
           "should_build=$($r.should_build.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT

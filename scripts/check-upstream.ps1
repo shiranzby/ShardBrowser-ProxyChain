@@ -4,6 +4,8 @@ param(
     [string]$CompletedStatePath = (Join-Path $PSScriptRoot '../patches/last-success.json'),
     [Parameter(Mandatory)][string]$OutputPath,
     [switch]$ForceBuild,
+    [string]$TargetTag,
+    [string]$TargetCommit,
     # Offline fixtures are explicit; scheduled workflows never set this option.
     [string]$FixtureDirectory
 )
@@ -43,8 +45,13 @@ if ($FixtureDirectory) {
     }
 }
 $stable = @($releases | Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -match '^v[0-9]+\.[0-9]+\.[0-9]+$' } | Sort-Object { [version]$_.tag_name.Substring(1) } -Descending)
-if ($stable.Count -eq 0) { throw 'No formal stable release found; no update decision was made.' }
-$tag = [string]$stable[0].tag_name
+if (-not $TargetTag) {
+    if ($stable.Count -eq 0) { throw 'No formal stable release found; no update decision was made.' }
+    $tag = [string]$stable[0].tag_name
+} else {
+    if ($TargetTag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid target upstream tag.' }
+    $tag = $TargetTag
+}
 if ($FixtureDirectory) {
     $ref = Get-Content -Raw -LiteralPath (Join-Path $FixtureDirectory 'tag-ref.json') | ConvertFrom-Json
 } else { $ref = Api "repos/$($manifest.upstream_repository)/git/ref/tags/$tag" }
@@ -58,6 +65,7 @@ while ($object.type -eq 'tag') {
     } else { (Api "repos/$($manifest.upstream_repository)/git/tags/$($object.sha)").object }
 }
 if ($object.type -ne 'commit' -or $object.sha -notmatch '^[0-9a-f]{40}$') { throw 'Stable tag did not resolve to a commit.' }
+if ($TargetCommit -and $TargetCommit -ne $object.sha) { throw 'The requested upstream tag does not match the requested commit.' }
 
 $shouldBuild = $true
 $reason = 'new upstream or patch revision'
