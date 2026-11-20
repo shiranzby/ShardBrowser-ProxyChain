@@ -2652,10 +2652,10 @@ index a43cb1c4fd301bfa60b838a3d619bc567aa74022..c973b44f3eb3b73360ee7997f7b6f398
    await filter(page, "Status", /^Idle/);
 diff --git a/e2e/fingerprint-runtime-observation.spec.ts b/e2e/fingerprint-runtime-observation.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..ba8f5b0d987e79d7163090ba44098f9fd617189c
+index 0000000000000000000000000000000000000000..3bd666314043e8527827259a61280648929190d7
 --- /dev/null
 +++ b/e2e/fingerprint-runtime-observation.spec.ts
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,95 @@
 +import { expect, test, type Page } from "@playwright/test";
 +import { openApp } from "./support/app";
 +
@@ -2667,10 +2667,35 @@ index 0000000000000000000000000000000000000000..ba8f5b0d987e79d7163090ba44098f9f
 +  [command, args] as const);
 +
 +async function openPeek(page: Page) {
-+  const card = page.locator("[data-fingerprint-id]", { hasText: "macOS 14, Apple M1" }).first();
++  await page.evaluate(() => {
++    const mock = (window as unknown as {
++      __shardxMock: {
++        state: { fingerprints: Array<Record<string, unknown>> };
++        save: () => void;
++      };
++    }).__shardxMock;
++    if (mock.state.fingerprints.some((entry) => entry.id === "runtime-observation-imported")) return;
++    const source = mock.state.fingerprints.find((entry) => entry.label === "macOS 14, Apple M1");
++    if (!source) throw new Error("runtime observation fixture fingerprint is missing");
++    mock.state.fingerprints.push({
++      ...source,
++      id: "runtime-observation-imported",
++      label: "Imported runtime observation",
++      builtin: false,
++    });
++    mock.save();
++  });
++  await page.reload();
++  const card = page.locator("[data-fingerprint-id]", { hasText: "Imported runtime observation" }).first();
 +  await card.click();
 +  await expect(page.locator("aside[data-peek='fingerprint']")).toBeVisible();
 +  return card.getAttribute("data-fingerprint-id");
++}
++
++async function openBuiltinPeek(page: Page) {
++  const card = page.locator("[data-fingerprint-id]", { hasText: "macOS 14, Apple M1" }).first();
++  await card.click();
++  await expect(page.locator("aside[data-peek='fingerprint']")).toBeVisible();
 +}
 +
 +test("runtime observation keeps the dialog usable when no automation session is running", async ({ page }) => {
@@ -2682,6 +2707,15 @@ index 0000000000000000000000000000000000000000..ba8f5b0d987e79d7163090ba44098f9f
 +  await expect(dialog).toBeVisible();
 +  await expect(dialog.getByText("Choose a running profile attached through automation.", { exact: false })).toBeVisible();
 +  await expect(dialog.getByRole("button", { name: "Observe current runtime", exact: true })).toBeDisabled();
++});
++
++test("built-in fingerprints explain why runtime observation is unavailable", async ({ page }) => {
++  await openApp(page, { section: "fingerprints" });
++  await openBuiltinPeek(page);
++
++  const fieldChecks = page.locator("[data-peek-section='field-checks']");
++  await expect(fieldChecks.getByRole("button", { name: "Observe current runtime", exact: true })).toHaveCount(0);
++  await expect(fieldChecks).toContainText("Built-in fingerprints cannot store runtime observations.");
 +});
 +
 +test("runtime observation records source metadata after an automation session succeeds", async ({ page }) => {
@@ -15005,7 +15039,7 @@ index ea97c9251cec742fcfb5929da9c5e72e25996a58..1166e5d6738287361bed44e3f83c7288
          };
  
 diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
-index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8f20de71c 100644
+index bd6153066faa459b330326a837f1fddc8fb43f4f..ff53a3ba1869d89326915ea98953d8ff579debe5 100644
 --- a/src-tauri/src/lib.rs
 +++ b/src-tauri/src/lib.rs
 @@ -1,29 +1,38 @@
@@ -15724,7 +15758,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      if !process::Tracker::shared().running().is_empty() {
          return Err("close every running profile first".into());
      }
-@@ -1225,7 +1454,55 @@ async fn data_root_migrate(app: tauri::AppHandle, path: String) -> Result<u64, S
+@@ -1225,7 +1454,56 @@ async fn data_root_migrate(app: tauri::AppHandle, path: String) -> Result<u64, S
  }
  
  #[tauri::command]
@@ -15742,16 +15776,17 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
 +        return Err("a migration, reset, or safe close is already in progress".into());
 +    }
 +    let result = tauri::async_runtime::spawn_blocking(move || {
++        migrate::refuse_while_busy()?;
 +        if !process::Tracker::shared().running().is_empty() {
 +            return Err(anyhow::anyhow!("close every running profile first"));
 +        }
 +        snapshot::create(std::path::Path::new(&path))
 +    })
-+        .await
-+        .map_err(|e| e.to_string())?
-+        .map_err(|e| format!("{e:#}"));
++    .await;
 +    migrate::release();
 +    result
++        .map_err(|e| e.to_string())?
++        .map_err(|e| format!("{e:#}"))
 +}
 +
 +#[tauri::command]
@@ -15781,7 +15816,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      let t = ticket(epoch)?;
      space::profile::bind_proxy(space::Door("profile_bind_proxy"), &t, &profile_id, proxy_id)
          .await
-@@ -1233,14 +1510,22 @@ async fn profile_bind_proxy(profile_id: String, proxy_id: Option<String>, epoch:
+@@ -1233,33 +1511,49 @@ async fn profile_bind_proxy(profile_id: String, proxy_id: Option<String>, epoch:
  }
  
  #[tauri::command]
@@ -15800,13 +15835,55 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  /// Import profiles verbatim under fresh ids; returns the count.
  #[tauri::command]
  async fn profile_import(payloads: Vec<Value>, epoch: Option<u64>) -> Result<usize, String> {
-+    if migrate::in_progress() {
-+        return Err("a migration, reset, or snapshot operation is already in progress".into());
+-    let t = ticket(epoch)?;
+-    let mut n = 0;
+-    for mut payload in payloads {
+-        if let Some(obj) = payload.as_object_mut() {
+-            match obj.get_mut("_meta").and_then(|m| m.as_object_mut()) {
+-                Some(meta) => {
+-                    meta.insert("id".into(), Value::String(String::new()));
+-                }
+-                None => {
+-                    obj.insert("_meta".into(), serde_json::json!({ "id": "" }));
++    if !migrate::hold() {
++        return Err(
++            "a migration, reset, snapshot, or safe close operation is already in progress".into(),
++        );
 +    }
-     let t = ticket(epoch)?;
-     let mut n = 0;
-     for mut payload in payloads {
-@@ -1310,7 +1595,11 @@ async fn folder_rename(old: String, new: String, epoch: Option<u64>) -> Result<u
++    let result = async {
++        migrate::refuse_while_busy().map_err(|e| format!("{e:#}"))?;
++        let t = ticket(epoch)?;
++        let mut n = 0;
++        for mut payload in payloads {
++            if let Some(obj) = payload.as_object_mut() {
++                match obj.get_mut("_meta").and_then(|m| m.as_object_mut()) {
++                    Some(meta) => {
++                        meta.insert("id".into(), Value::String(String::new()));
++                    }
++                    None => {
++                        obj.insert("_meta".into(), serde_json::json!({ "id": "" }));
++                    }
+                 }
+             }
++            save_profile_core(None, payload, false, space::Door("profile_import"), &t)
++                .await
++                .map_err(|e| e.to_string())?;
++            n += 1;
+         }
+-        save_profile_core(None, payload, false, space::Door("profile_import"), &t)
+-            .await
+-            .map_err(|e| e.to_string())?;
+-        n += 1;
++        Ok(n)
+     }
+-    Ok(n)
++    .await;
++    migrate::release();
++    result
+ }
+ 
+ // ---- Clipboard (via tauri-plugin-clipboard-manager; webview navigator.clipboard throws) ----
+@@ -1310,7 +1604,11 @@ async fn folder_rename(old: String, new: String, epoch: Option<u64>) -> Result<u
  
  /// Delete folder; `delete_profiles` true → remove, false → unfile.
  #[tauri::command]
@@ -15819,7 +15896,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      let t = ticket(epoch)?;
      space::profile::delete_folder(space::Door("folder_delete"), &t, &folder, delete_profiles)
          .await
-@@ -1363,7 +1652,9 @@ pub fn merge_library_fingerprint(
+@@ -1363,7 +1661,9 @@ pub fn merge_library_fingerprint(
      );
      if let Some(o) = entry.payload.as_object() {
          for (k, v) in o {
@@ -15830,7 +15907,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
              merged.insert(k.clone(), v.clone());
          }
      }
-@@ -1375,8 +1666,6 @@ pub fn merge_library_fingerprint(
+@@ -1375,8 +1675,6 @@ pub fn merge_library_fingerprint(
          nav.remove("accept_language");
          nav.remove("languages");
      }
@@ -15839,7 +15916,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      merged.insert("geolocation".into(), serde_json::json!({ "mode": "auto" }));
      Ok(merged)
  }
-@@ -1387,7 +1676,10 @@ pub fn build_fingerprint_config(
+@@ -1387,7 +1685,10 @@ pub fn build_fingerprint_config(
      template_id: &str,
  ) -> Result<serde_json::Map<String, Value>, String> {
      // A run has no window of its own: the launcher's main one is asked.
@@ -15851,7 +15928,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      fingerprint_config_on(window, template_id, host)
  }
  
-@@ -1410,6 +1702,10 @@ pub fn library_profile(
+@@ -1410,6 +1711,10 @@ pub fn library_profile(
      host: Option<launch::HostScreen>,
  ) -> Result<serde_json::Map<String, Value>, String> {
      let mut merged = merge_library_fingerprint(template_id)?;
@@ -15862,7 +15939,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      launch::claim_host_screen(&mut merged, host);
      Ok(merged)
  }
-@@ -1463,10 +1759,6 @@ fn enrich_picks_for_preset(preset_id: String) -> Result<PresetEnrichPicks, Strin
+@@ -1463,10 +1768,6 @@ fn enrich_picks_for_preset(preset_id: String) -> Result<PresetEnrichPicks, Strin
          "navigator".into(),
          serde_json::json!({ "platform": platform }),
      );
@@ -15873,7 +15950,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      // Mirror enrich_new_config order: platform_version first, then hardware.
      randomize_platform_version(&mut payload);
      randomize_hardware(&mut payload);
-@@ -1496,8 +1788,10 @@ fn enrich_picks_for_preset(preset_id: String) -> Result<PresetEnrichPicks, Strin
+@@ -1496,8 +1797,10 @@ fn enrich_picks_for_preset(preset_id: String) -> Result<PresetEnrichPicks, Strin
  // ---- Fingerprint library ----
  
  #[tauri::command]
@@ -15886,7 +15963,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  }
  
  /// What this machine's GPU can actually do. Cached; `force` re-asks the engine.
-@@ -1510,8 +1804,7 @@ async fn gpu_caps(force: bool) -> Result<gpu_caps::HostGlCaps, String> {
+@@ -1510,8 +1813,7 @@ async fn gpu_caps(force: bool) -> Result<gpu_caps::HostGlCaps, String> {
  /// Whether the machine can wear each library fingerprint, keyed by id. Kept out of
  /// fingerprint_list() so that stays fast; an empty map means "not known", not "all fine".
  #[tauri::command]
@@ -15896,7 +15973,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      let caps = match gpu_caps::probe(false).await {
          Ok(c) => c,
          Err(_) => return Ok(Default::default()),
-@@ -1524,13 +1817,33 @@ async fn gpu_caps_compat(
+@@ -1524,13 +1826,33 @@ async fn gpu_caps_compat(
  }
  
  #[tauri::command]
@@ -15919,22 +15996,22 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
 +#[tauri::command]
 +fn fingerprint_export(id: String) -> Result<String, String> {
 +    fingerprints::export(&id).map_err(|e| e.to_string())
-+}
-+
-+#[tauri::command]
-+fn fingerprint_update(id: String, json_text: String) -> Result<fingerprints::LibraryView, String> {
-+    fingerprints::update(&id, &json_text).map(Into::into).map_err(|e| e.to_string())
  }
  
  #[tauri::command]
 -fn fingerprint_import(json_text: String, id_hint: Option<String>) -> Result<fingerprints::LibraryEntry, String> {
 -    fingerprints::import(&json_text, id_hint).map_err(|e| e.to_string())
++fn fingerprint_update(id: String, json_text: String) -> Result<fingerprints::LibraryView, String> {
++    fingerprints::update(&id, &json_text).map(Into::into).map_err(|e| e.to_string())
++}
++
++#[tauri::command]
 +fn fingerprint_rollback(id: String) -> Result<fingerprints::LibraryView, String> {
 +    fingerprints::rollback(&id).map(Into::into).map_err(|e| e.to_string())
  }
  
  #[tauri::command]
-@@ -1538,6 +1851,126 @@ fn fingerprint_delete(id: String) -> Result<(), String> {
+@@ -1538,6 +1860,127 @@ fn fingerprint_delete(id: String) -> Result<(), String> {
      fingerprints::delete(&id).map_err(|e| e.to_string())
  }
  
@@ -16000,8 +16077,9 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
 +    canvasGroup = { supported: true, hash: hash(canvas.toDataURL()) };
 +  }
 +  const canvasGroupValue = canvasGroup;
++  const webglCanvas = document.createElement("canvas");
 +  let webglGroup = { supported: false };
-+  const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
++  const gl = webglCanvas.getContext("webgl") || webglCanvas.getContext("experimental-webgl");
 +  if (gl) {
 +    const debug = gl.getExtension("WEBGL_debug_renderer_info");
 +    webglGroup = {
@@ -16061,7 +16139,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  /// Path to fingerprint library dir (UI "Open library folder").
  #[tauri::command]
  fn fingerprint_dir() -> Result<String, String> {
-@@ -1567,6 +2000,46 @@ async fn process_kill(profile_id: String) -> Result<bool, String> {
+@@ -1567,6 +2010,46 @@ async fn process_kill(profile_id: String) -> Result<bool, String> {
          .map_err(|e| e.to_string())
  }
  
@@ -16108,7 +16186,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  // ---- Proxies ----
  
  #[tauri::command]
-@@ -1579,15 +2052,52 @@ async fn proxy_list() -> Result<Vec<space::proxy::ProxyEntry>, String> {
+@@ -1579,15 +2062,52 @@ async fn proxy_list() -> Result<Vec<space::proxy::ProxyEntry>, String> {
  }
  
  #[tauri::command]
@@ -16120,8 +16198,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
 +
 +#[tauri::command]
 +fn proxy_folder_add(name: String, parent: String, epoch: Option<u64>) -> Result<space::proxy_folders::ProxyFolderState, String> {
-     let t = ticket(epoch)?;
--    space::proxy::upsert(space::Door("proxy_save"), &t, entry).await.map_err(|e| e.to_string())
++    let t = ticket(epoch)?;
 +    space::proxy_folders::add(&t, &name, &parent).map_err(|e| e.to_string())
 +}
 +
@@ -16133,7 +16210,8 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
 +
 +#[tauri::command]
 +fn proxy_folder_delete(name: String, epoch: Option<u64>) -> Result<space::proxy_folders::ProxyFolderState, String> {
-+    let t = ticket(epoch)?;
+     let t = ticket(epoch)?;
+-    space::proxy::upsert(space::Door("proxy_save"), &t, entry).await.map_err(|e| e.to_string())
 +    space::proxy_folders::delete(&t, &name).map_err(|e| e.to_string())
 +}
 +
@@ -16164,7 +16242,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  }
  
  #[tauri::command]
-@@ -1597,17 +2107,28 @@ async fn proxy_check(entry: space::proxy::ProxyEntry) -> Result<u128, String> {
+@@ -1597,17 +2117,28 @@ async fn proxy_check(entry: space::proxy::ProxyEntry) -> Result<u128, String> {
  
  #[tauri::command]
  async fn proxy_check_udp(entry: space::proxy::ProxyEntry) -> Result<u128, String> {
@@ -16198,7 +16276,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  }
  
  #[tauri::command]
-@@ -1621,7 +2142,11 @@ fn proxy_last_test(id: String) -> Option<space::proxy::TestSnapshot> {
+@@ -1621,7 +2152,11 @@ fn proxy_last_test(id: String) -> Option<space::proxy::TestSnapshot> {
  }
  
  #[tauri::command]
@@ -16211,7 +16289,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      let t = ticket(epoch)?;
      let default_kind = match kind.as_str() {
          "http" => space::proxy::ProxyKind::Http,
-@@ -1629,7 +2154,9 @@ async fn proxy_bulk_import(text: String, kind: String, epoch: Option<u64>) -> Re
+@@ -1629,7 +2164,9 @@ async fn proxy_bulk_import(text: String, kind: String, epoch: Option<u64>) -> Re
          _ => space::proxy::ProxyKind::Socks5,
      };
      let parsed = space::proxy::parse_bulk(&text, default_kind);
@@ -16222,7 +16300,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  }
  
  /// Parse bulk-import text without saving (preview list with per-row test).
-@@ -1643,11 +2170,32 @@ fn proxy_bulk_parse(text: String, kind: String) -> Vec<space::proxy::ProxyEntry>
+@@ -1643,11 +2180,32 @@ fn proxy_bulk_parse(text: String, kind: String) -> Vec<space::proxy::ProxyEntry>
      space::proxy::parse_bulk(&text, default_kind)
  }
  
@@ -16257,7 +16335,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  }
  
  // ---- Launcher ----
-@@ -1667,10 +2215,17 @@ async fn launch(profile_id: String, password: Option<String>) -> Result<u32, Str
+@@ -1667,10 +2225,17 @@ async fn launch(profile_id: String, password: Option<String>) -> Result<u32, Str
          return Err("profiles are being moved — try again when that finishes".into());
      }
      let b = bus().await?;
@@ -16279,7 +16357,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  }
  
  // ---- Window synchronisation ----
-@@ -1735,7 +2290,10 @@ async fn sync_launch(
+@@ -1735,7 +2300,10 @@ async fn sync_launch(
      // does not, so refuse a mixed group before anything is launched.
      let mut mobile: Vec<String> = Vec::new();
      let mut desktop: Vec<String> = Vec::new();
@@ -16291,7 +16369,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
          return Err(space::profile::NOT_FOR_PROTECTED.into());
      }
      for id in &profile_ids {
-@@ -1780,10 +2338,7 @@ async fn sync_launch(
+@@ -1780,10 +2348,7 @@ async fn sync_launch(
          let distinct: std::collections::BTreeSet<&str> =
              sizes.iter().map(|(_, s)| s.as_str()).collect();
          if distinct.len() > 1 {
@@ -16303,7 +16381,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
              return Err(format!(
                  "a mobile sync group must be all one screen size — {}",
                  listed.join(", ")
-@@ -1795,8 +2350,9 @@ async fn sync_launch(
+@@ -1795,8 +2360,9 @@ async fn sync_launch(
  
      let mut failed: Vec<String> = Vec::new();
      for id in &profile_ids {
@@ -16315,7 +16393,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
              failed.push(format!("{id}: {e}"));
          }
      }
-@@ -1805,8 +2361,11 @@ async fn sync_launch(
+@@ -1805,8 +2371,11 @@ async fn sync_launch(
      }
      // A partial launch is still a usable group; just say what did not make it.
      if !failed.is_empty() {
@@ -16329,7 +16407,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      }
      open_sync_panel(&app, &group);
      Ok(group)
-@@ -1857,11 +2416,7 @@ async fn sync_stop(group: String) -> Result<(), String> {
+@@ -1857,11 +2426,7 @@ async fn sync_stop(group: String) -> Result<(), String> {
  
  /// Holds one profile out of the group — a captcha, a different password.
  #[tauri::command]
@@ -16342,7 +16420,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      bus().await?.set_excluded(&group, &profile, excluded);
      Ok(())
  }
-@@ -2011,7 +2566,10 @@ fn cookies_export_to_file(profile_id: String, path: String) -> Result<usize, Str
+@@ -2011,7 +2576,10 @@ fn cookies_export_to_file(profile_id: String, path: String) -> Result<usize, Str
  }
  
  #[tauri::command]
@@ -16354,7 +16432,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      // Running browser would clobber the import on exit.
      if is_profile_running(&profile_id) {
          return Err("stop the profile before importing cookies".into());
-@@ -2024,7 +2582,258 @@ fn cookies_import(profile_id: String, cookies: Vec<space::cookies::Cookie>) -> R
+@@ -2024,7 +2592,291 @@ fn cookies_import(profile_id: String, cookies: Vec<space::cookies::Cookie>) -> R
  
  #[tauri::command]
  fn settings_get() -> Result<settings::Settings, String> {
@@ -16611,10 +16689,43 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
 +        let error = result.expect_err("profile import must honor the snapshot guard");
 +        assert!(error.contains("migration, reset, or snapshot"));
 +    }
++
++    #[tokio::test]
++    async fn profile_import_releases_guard_after_ticket_error() {
++        let _serial = crate::migrate::serial();
++        crate::migrate::release();
++        crate::migrate::set_reset_pending(false);
++        let epoch = crate::team::space_epoch().wrapping_add(1);
++        let result = super::profile_import(Vec::new(), Some(epoch)).await;
++        assert!(result.is_err());
++        assert!(!crate::migrate::in_progress());
++    }
++
++    #[tokio::test]
++    async fn profile_import_releases_guard_after_launch_started() {
++        let _serial = crate::migrate::serial();
++        crate::migrate::release();
++        crate::migrate::set_reset_pending(false);
++        let _launching = crate::launch::Launching::start();
++        let result = super::profile_import(Vec::new(), Some(crate::team::space_epoch())).await;
++        let error = result.expect_err("profile import must reject an in-flight launch");
++        assert!(error.contains("profile is starting"));
++        assert!(!crate::migrate::in_progress());
++    }
++
++    #[tokio::test]
++    async fn profile_import_releases_guard_after_success() {
++        let _serial = crate::migrate::serial();
++        crate::migrate::release();
++        crate::migrate::set_reset_pending(false);
++        let result = super::profile_import(Vec::new(), Some(crate::team::space_epoch())).await;
++        assert_eq!(result.unwrap(), 0);
++        assert!(!crate::migrate::in_progress());
++    }
  }
  
  /// The primary monitor in CSS pixels, so the editor can offer resolutions and
-@@ -2108,6 +2917,10 @@ fn settings_save(mut value: settings::Settings) -> Result<(), String> {
+@@ -2108,6 +2960,10 @@ fn settings_save(mut value: settings::Settings) -> Result<(), String> {
      // Owned by the migration, not the form — which round-trips the whole struct
      // and would reset it while the data sits on another disk.
      if let Ok(cur) = settings::load() {
@@ -16625,7 +16736,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
          value.data_root = cur.data_root;
          if value.api_secret.is_empty() {
              value.api_secret = cur.api_secret;
-@@ -2174,7 +2987,11 @@ async fn ps_me() -> Result<Value, String> {
+@@ -2174,7 +3030,11 @@ async fn ps_me() -> Result<Value, String> {
  }
  
  #[tauri::command]
@@ -16638,7 +16749,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      let mut q = vec![("status".to_string(), status)];
      if let Some(o) = offset {
          q.push(("offset".into(), o.to_string()));
-@@ -2224,6 +3041,11 @@ fn space_state() -> Result<team::SpaceState, String> {
+@@ -2224,6 +3084,11 @@ fn space_state() -> Result<team::SpaceState, String> {
      team::state().map_err(|e| e.to_string())
  }
  
@@ -16650,7 +16761,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  /// Switch the whole launcher to a space, refused while a profile starts or the
  /// data moves. A team's lists are read before the answer, for a while at most.
  #[tauri::command]
-@@ -2236,9 +3058,15 @@ async fn space_set(app: tauri::AppHandle, space: team::Space) -> Result<team::Sp
+@@ -2236,9 +3101,15 @@ async fn space_set(app: tauri::AppHandle, space: team::Space) -> Result<team::Sp
  
  /// Join a team and move into it; its live channel opens at once.
  #[tauri::command]
@@ -16668,7 +16779,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      let _ = app.emit("space-changed", &st.space);
      Ok(st)
  }
-@@ -2251,6 +3079,7 @@ async fn team_leave(app: tauri::AppHandle, team_id: String) -> Result<team::Spac
+@@ -2251,6 +3122,7 @@ async fn team_leave(app: tauri::AppHandle, team_id: String) -> Result<team::Spac
      // Its profiles open here go back first: once it is left, nothing reaches it.
      space::open::close_team_and_wait(&team_id, space::open::QUIT_WAIT).await;
      team::leave(&team_id).map_err(|e| e.to_string())?;
@@ -16676,7 +16787,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      space::perm::forget(&team_id);
      space::cache::forget(&team_id);
      space::secrets::forget(&team_id);
-@@ -2278,13 +3107,17 @@ async fn sync_connect(
+@@ -2278,13 +3150,17 @@ async fn sync_connect(
      token: Option<String>,
      team_id: Option<String>,
  ) -> Result<space::sync::SyncState, String> {
@@ -16696,7 +16807,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  }
  
  #[tauri::command]
-@@ -2305,7 +3138,9 @@ struct SyncInvite {
+@@ -2305,7 +3181,9 @@ struct SyncInvite {
  
  #[tauri::command]
  async fn sync_invite() -> Result<SyncInvite, String> {
@@ -16707,7 +16818,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  }
  
  #[tauri::command]
-@@ -2314,26 +3149,38 @@ async fn sync_set_device_name(name: String) -> Result<space::sync::SyncState, St
+@@ -2314,26 +3192,38 @@ async fn sync_set_device_name(name: String) -> Result<space::sync::SyncState, St
  }
  
  #[tauri::command]
@@ -16751,7 +16862,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  }
  
  #[tauri::command]
-@@ -2342,23 +3189,37 @@ async fn team_admin_member_set_active(
+@@ -2342,23 +3232,37 @@ async fn team_admin_member_set_active(
      member_id: String,
      active: bool,
  ) -> Result<space::admin::TeamMember, String> {
@@ -16795,7 +16906,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  }
  
  #[tauri::command]
-@@ -2367,14 +3228,22 @@ async fn team_admin_set_grants(
+@@ -2367,14 +3271,22 @@ async fn team_admin_set_grants(
      member_id: String,
      grants: Vec<team_model::Grant>,
  ) -> Result<Vec<team_model::Grant>, String> {
@@ -16821,7 +16932,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      let _ = app.emit("space-changed", &st.space);
      Ok(team)
  }
-@@ -2385,45 +3254,73 @@ async fn team_admin_folder_create(
+@@ -2385,45 +3297,73 @@ async fn team_admin_folder_create(
      name: String,
      color: Option<String>,
  ) -> Result<space::admin::TeamFolder, String> {
@@ -16906,7 +17017,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  }
  
  #[tauri::command]
-@@ -2506,7 +3403,11 @@ async fn ps_purchase(body: Value) -> Result<Value, String> {
+@@ -2506,7 +3446,11 @@ async fn ps_purchase(body: Value) -> Result<Value, String> {
  
  /// Buy extra GB of residential traffic for an order.
  #[tauri::command]
@@ -16919,7 +17030,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      let mut body = serde_json::json!({ "amount": amount });
      if let Some(p) = promo_code.filter(|s| !s.is_empty()) {
          body["promo_code"] = Value::String(p);
-@@ -2576,7 +3477,11 @@ async fn ps_regions(proxy_type: String, country_code: String) -> Result<Value, S
+@@ -2576,7 +3520,11 @@ async fn ps_regions(proxy_type: String, country_code: String) -> Result<Value, S
  }
  
  #[tauri::command]
@@ -16932,7 +17043,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      psapi::call(
          "GET",
          "/user/api/proxies/cities",
-@@ -2618,7 +3523,6 @@ async fn ps_set_tag(id: i64, tag: String) -> Result<Value, String> {
+@@ -2618,7 +3566,6 @@ async fn ps_set_tag(id: i64, tag: String) -> Result<Value, String> {
      .map_err(|e| e.to_string())
  }
  
@@ -16940,7 +17051,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  /// Bring the main window back from the tray / minimized state and focus it.
  fn show_main_window(app: &tauri::AppHandle) {
      use tauri::Manager;
-@@ -2634,11 +3538,21 @@ pub fn reap_if_asked() -> Option<i32> {
+@@ -2634,11 +3581,21 @@ pub fn reap_if_asked() -> Option<i32> {
      space::reap::from_args(std::env::args_os())
  }
  
@@ -16964,7 +17075,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
          }))
          .plugin(tauri_plugin_opener::init())
          .plugin(tauri_plugin_dialog::init())
-@@ -2680,6 +3594,10 @@ pub fn run() {
+@@ -2680,6 +3637,10 @@ pub fn run() {
              helper_fields,
              helper_fill,
              profile_focus_window,
@@ -16975,7 +17086,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
              helper_show,
              helper_close,
              helper_dismiss,
-@@ -2707,6 +3625,9 @@ pub fn run() {
+@@ -2707,6 +3668,9 @@ pub fn run() {
              automation_run,
              automation_run_stop,
              automation_run_status,
@@ -16985,7 +17096,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
              automation_fleet,
              automation_fleet_window,
              automation_display,
-@@ -2745,9 +3666,14 @@ pub fn run() {
+@@ -2745,9 +3709,14 @@ pub fn run() {
              folder_list,
              folder_add,
              folder_meta_set,
@@ -17000,7 +17111,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
              profile_bind_proxy,
              profile_clone,
              profile_import,
-@@ -2765,12 +3691,28 @@ pub fn run() {
+@@ -2765,12 +3734,28 @@ pub fn run() {
              gpu_caps_compat,
              fingerprint_get,
              fingerprint_import,
@@ -17029,7 +17140,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
              proxy_save,
              proxy_delete,
              proxy_check,
-@@ -2781,9 +3723,15 @@ pub fn run() {
+@@ -2781,9 +3766,15 @@ pub fn run() {
              proxy_last_test,
              proxy_bulk_import,
              proxy_bulk_parse,
@@ -17045,7 +17156,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
              settings_save,
              settings_load_error,
              host_screen,
-@@ -2800,6 +3748,7 @@ pub fn run() {
+@@ -2800,6 +3791,7 @@ pub fn run() {
              ps_products,
              ps_trial_offer,
              space_state,
@@ -17053,7 +17164,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
              space_set,
              team_join,
              team_leave,
-@@ -2861,10 +3810,22 @@ pub fn run() {
+@@ -2861,10 +3853,22 @@ pub fn run() {
              app_quit_asking,
              app_quit_confirmed,
              app_quit_cancelled,
@@ -17077,7 +17188,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  
              {
                  use tauri::menu::{Menu, MenuItem};
-@@ -2880,11 +3841,9 @@ pub fn run() {
+@@ -2880,11 +3884,9 @@ pub fn run() {
                      #[cfg(target_os = "macos")]
                      let builder = builder.icon_as_template(true);
                      builder
@@ -17091,7 +17202,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
                          .on_menu_event(|app, e| match e.id.as_ref() {
                              "tray_show" => show_main_window(app),
                              "tray_quit" => crate::quit(app),
-@@ -2988,27 +3947,16 @@ pub fn run() {
+@@ -2988,27 +3990,16 @@ pub fn run() {
              }
              Ok(())
          })
@@ -17122,7 +17233,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
                      api.prevent_exit();
                      exit_app(app, code.unwrap_or(0));
                  }
-@@ -3016,24 +3964,27 @@ pub fn run() {
+@@ -3016,24 +4007,27 @@ pub fn run() {
          });
  }
  
@@ -17162,7 +17273,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      });
  }
  
-@@ -3054,6 +4005,9 @@ fn quit(app: &tauri::AppHandle) {
+@@ -3054,6 +4048,9 @@ fn quit(app: &tauri::AppHandle) {
          notify_warning(reset::WAIT);
          return;
      }
@@ -17172,7 +17283,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
      let Some(main) = app.get_webview_window("main") else {
          exit_app(app, 0);
          return;
-@@ -3110,6 +4064,11 @@ fn app_quit_cancelled() {
+@@ -3110,6 +4107,11 @@ fn app_quit_cancelled() {
      QUIT_ROUND.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
  }
  
@@ -17184,7 +17295,7 @@ index bd6153066faa459b330326a837f1fddc8fb43f4f..c2275bb2e084f7d5af445ba5552fcba8
  /// macOS: the app menu's Quit (⌘Q) is the launcher's own, so it can refuse
  /// mid-reset (the stock item ends the process at once). Elsewhere the window
  /// keeps having no menu.
-@@ -3129,7 +4088,13 @@ fn app_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wr
+@@ -3129,7 +4131,13 @@ fn app_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wr
              first.remove(stock)?;
          }
          let label = format!("Quit {}", app.package_info().name);
@@ -21840,7 +21951,7 @@ index d24d7989652dde0d9d376efa314fb1b138af5308..473ebb8506e16366de65078e14862e99
      let _ = e2s("");
  }
 diff --git a/src-tauri/src/migrate.rs b/src-tauri/src/migrate.rs
-index d1fdaa9d04b125dc66be2b020cab31c7d18bfd05..54c8bf5ecaf4ef64accf993f72747c3731fda681 100644
+index d1fdaa9d04b125dc66be2b020cab31c7d18bfd05..696e99af8d0056b106589198cbbdd34b8073b7e0 100644
 --- a/src-tauri/src/migrate.rs
 +++ b/src-tauri/src/migrate.rs
 @@ -4,6 +4,9 @@
@@ -21901,7 +22012,7 @@ index d1fdaa9d04b125dc66be2b020cab31c7d18bfd05..54c8bf5ecaf4ef64accf993f72747c37
  
  fn emit(app: &tauri::AppHandle, p: Progress) {
      let _ = app.emit("data-migration", p);
-@@ -78,14 +102,20 @@ pub(crate) fn run_with(dst: &Path, emit: &dyn Fn(Progress)) -> Result<u64> {
+@@ -78,20 +102,26 @@ pub(crate) fn run_with(dst: &Path, emit: &dyn Fn(Progress)) -> Result<u64> {
      if reset_pending() {
          anyhow::bail!("a reset didn’t finish: restart ShardBrowser to undo or finish it first");
      }
@@ -21925,6 +22036,13 @@ index d1fdaa9d04b125dc66be2b020cab31c7d18bfd05..54c8bf5ecaf4ef64accf993f72747c37
      }
      out
  }
+ 
+ /// A profile starting, or a team profile open here (its copy is under the data folder).
+-fn refuse_while_busy() -> Result<()> {
++pub(crate) fn refuse_while_busy() -> Result<()> {
+     if crate::launch::in_flight() > 0 {
+         anyhow::bail!("a profile is starting: try again once it has started");
+     }
 @@ -114,7 +144,13 @@ fn do_run(dst: &Path, emit: &dyn Fn(Progress)) -> Result<u64> {
      std::fs::create_dir_all(&dst).with_context(|| format!("create {}", dst.display()))?;
      writable(&dst)?;
@@ -36911,10 +37029,10 @@ index 0000000000000000000000000000000000000000..595eff068f86debc74cff84ef10da716
 +}
 diff --git a/src-tauri/src/proxy_providers.rs b/src-tauri/src/proxy_providers.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..7b26c16ad957ecc167242d109629bcbed99a0c7e
+index 0000000000000000000000000000000000000000..a00b31bb96fcef446f1cdc63dd0dc399dffc06c7
 --- /dev/null
 +++ b/src-tauri/src/proxy_providers.rs
-@@ -0,0 +1,1219 @@
+@@ -0,0 +1,1258 @@
 +//! Provider configuration is local to this Windows account. Credential pairs
 +//! are protected with DPAPI; view responses never include saved passwords.
 +use crate::{
@@ -37021,6 +37139,19 @@ index 0000000000000000000000000000000000000000..7b26c16ad957ecc167242d109629bcbe
 +fn default_session_type() -> String { "sticky".into() }
 +fn default_session_minutes() -> u32 { 180 }
 +fn default_generation_count() -> u32 { 1 }
++fn custom_provider_name(value: &Stored) -> &str {
++    let name = value.name.trim();
++    if name.is_empty() {
++        value.custom_name.trim()
++    } else {
++        name
++    }
++}
++fn normalize_custom_provider(value: &mut Stored) {
++    let name = custom_provider_name(value).to_owned();
++    value.name = name.clone();
++    value.custom_name = name;
++}
 +impl Default for Stored {
 +    fn default() -> Self {
 +        Self {
@@ -37146,7 +37277,12 @@ index 0000000000000000000000000000000000000000..7b26c16ad957ecc167242d109629bcbe
 +    if !path.exists() {
 +        return Ok(ProviderFile::default());
 +    }
-+    serde_json::from_slice(&fs::read(path)?).map_err(|_| anyhow!("provider_defaults_unreadable"))
++    let mut file: ProviderFile =
++        serde_json::from_slice(&fs::read(path)?).map_err(|_| anyhow!("provider_defaults_unreadable"))?;
++    for provider in file.custom_providers.values_mut() {
++        normalize_custom_provider(provider);
++    }
++    Ok(file)
 +}
 +fn load() -> Result<Stored> {
 +    Ok(load_file()?.defaults)
@@ -37156,7 +37292,7 @@ index 0000000000000000000000000000000000000000..7b26c16ad957ecc167242d109629bcbe
 +    fn summaries(&self) -> Vec<CustomProviderSummary> {
 +        self.custom_providers.iter().map(|(&id, provider)| CustomProviderSummary {
 +            id,
-+            name: provider.custom_name.clone(),
++            name: custom_provider_name(provider).to_owned(),
 +        }).collect()
 +    }
 +}
@@ -37222,6 +37358,12 @@ index 0000000000000000000000000000000000000000..7b26c16ad957ecc167242d109629bcbe
 +        Some(id) => file.custom_providers.remove(&id).ok_or_else(|| anyhow!("provider_not_found"))?,
 +        None => file.defaults,
 +    };
++    if id.is_some() {
++        if create {
++            value.name = value.custom_name.clone();
++        }
++        normalize_custom_provider(&mut value);
++    }
 +    if tnb && id.is_none() {
 +        if let Some(defaults) = file.tnb_generation {
 +            defaults.apply(&mut value);
@@ -37372,13 +37514,22 @@ index 0000000000000000000000000000000000000000..7b26c16ad957ecc167242d109629bcbe
 +    if !extract_url.is_empty() {
 +        custom_extract_url(extract_url)?;
 +    }
++    let mut v = v;
++    let custom_provider_name = if id.is_some() {
++        if v.name.trim().is_empty() {
++            v.custom_name.trim().to_owned()
++        } else {
++            v.name.trim().to_owned()
++        }
++    } else {
++        String::new()
++    };
 +    if id.is_some()
-+        && (v.custom_name.trim().is_empty()
++        && (custom_provider_name.is_empty()
 +            || (v.custom_server.trim().is_empty() && extract_url.is_empty()))
 +    {
 +        return Err(anyhow!("provider_defaults_invalid"));
 +    }
-+    let mut v = v;
 +    if !tnb && id.is_none() {
 +        v.session_minutes = v.session_minutes.clamp(1, 120);
 +    }
@@ -37395,8 +37546,10 @@ index 0000000000000000000000000000000000000000..7b26c16ad957ecc167242d109629bcbe
 +        None => &file.defaults,
 +    };
 +    let mut saved = Stored {
-+        name: if v.name.trim().is_empty() {
-+            if id.is_some() { v.custom_name.trim().into() } else { old.name.clone() }
++        name: if id.is_some() {
++            custom_provider_name.clone()
++        } else if v.name.trim().is_empty() {
++            old.name.clone()
 +        } else {
 +            v.name.trim().into()
 +        },
@@ -37423,7 +37576,11 @@ index 0000000000000000000000000000000000000000..7b26c16ad957ecc167242d109629bcbe
 +            v.tnb_proxy_password,
 +            old.tnb_proxy.as_deref(),
 +        )?,
-+        custom_name: v.custom_name.trim().into(),
++        custom_name: if id.is_some() {
++            custom_provider_name
++        } else {
++            v.custom_name.trim().into()
++        },
 +        custom_server: v.custom_server.trim().into(),
 +        custom_extract_url: v.custom_extract_url.trim().into(),
 +        custom_plan: v.custom_plan.trim().into(),
@@ -75926,7 +76083,7 @@ index 63ef7db90f9b75dd7e48e16e452460a802fa998f..611c688a721714d1617971fdce281d71
      api: { enabled: true, port: 40325, base_url: "http://127.0.0.1:40325", token: "shx_mock_00000000000000000000000000" },
      psKey: "psk_test_mock_000000000000000000000000",
 diff --git a/src/dev/mock/handlers.ts b/src/dev/mock/handlers.ts
-index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad8b7c7301 100644
+index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..2d81caceab144d649347b6ec669959d446744cf7 100644
 --- a/src/dev/mock/handlers.ts
 +++ b/src/dev/mock/handlers.ts
 @@ -14,7 +14,7 @@ import { alreadyInLibrary, extProfileClosed, extUpdateHandlers, importSame } fro
@@ -75938,7 +76095,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
  import { LOCK_REFUSALS } from "../../shared/api/lockRefusals";
  import { AUTOMATION_REFUSALS } from "../../shared/api/automationRefusals";
  import { NOT_IN_TEAM, profileFromFingerprint, settle, spaceStateOf, teamInUse, teamUnreachable, told } from "./spaces";
-@@ -33,6 +33,11 @@ export type Ctx = {
+@@ -33,6 +33,16 @@ export type Ctx = {
  type Args = Record<string, any>;
  export type Handler = (args: Args, ctx: Ctx) => unknown;
  
@@ -75947,10 +76104,15 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
 +  return { name, folder, country, state, city, session_type, session_minutes, generation_count };
 +}
 +
++function customProviderName(value: Partial<NonNullable<MockState["providerDefaults"]>>): string {
++  const name = String(value.name ?? "").trim();
++  return name || String(value.custom_name ?? "").trim();
++}
++
  /** Launcher-side timestamps: "@<unix seconds>", the format profile.rs writes. */
  const nowStamp = () => `@${Math.floor(Date.now() / 1000)}`;
  
-@@ -91,6 +96,7 @@ function renameFolder(s: MockFolders, old: string, next: string) {
+@@ -91,6 +101,7 @@ function renameFolder(s: MockFolders, old: string, next: string) {
    if (!to) { s.registry = s.registry.filter((f) => f !== old); delete s.meta[old]; return; }
    s.registry = [...new Set(s.registry.map((f) => (f === old ? to : f)))];
    if (Object.prototype.hasOwnProperty.call(s.meta, old)) { s.meta[to] = s.meta[old]; delete s.meta[old]; }
@@ -75958,7 +76120,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
  }
  
  function stopProcess(state: MockState, id: string): boolean {
-@@ -131,7 +137,7 @@ function cloneProfile(src: StoredProfile, name: string): StoredProfile {
+@@ -131,7 +142,7 @@ function cloneProfile(src: StoredProfile, name: string): StoredProfile {
  
  function testSnapshot(entry: ProxyEntry, previous?: ProxyTestSnapshot): ProxyTestSnapshot {
    const dead = !entry.host || entry.name.toLowerCase().includes("expired");
@@ -75967,7 +76129,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    const base = 30 + Math.round(Math.random() * 120);
    return {
      // The backend stamps "@<unix seconds>", as it does everywhere.
-@@ -151,6 +157,7 @@ function testSnapshot(entry: ProxyEntry, previous?: ProxyTestSnapshot): ProxyTes
+@@ -151,6 +162,7 @@ function testSnapshot(entry: ProxyEntry, previous?: ProxyTestSnapshot): ProxyTes
      udp_error: dead ? null : isShard ? null : "SOCKS5 UDP ASSOCIATE refused",
      geo_error: dead ? "connect timed out after 8000 ms" : null,
      provider: "ip-api.com",
@@ -75975,7 +76137,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    };
  }
  
-@@ -436,7 +443,7 @@ export const handlers: Record<string, Handler> = {
+@@ -436,7 +448,7 @@ export const handlers: Record<string, Handler> = {
      ctx.emit("runtime:done");
      return handlers.runtime_status({}, ctx);
    },
@@ -75984,7 +76146,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    host_platform: () => hostPlatform(),
    // `window.__shardxMockHostScreen = [w, h, dpr]` (or null: no monitor) stands in for the real one.
    host_screen: () => {
-@@ -448,6 +455,7 @@ export const handlers: Record<string, Handler> = {
+@@ -448,6 +460,7 @@ export const handlers: Record<string, Handler> = {
    app_quit_asking: () => null,
    app_quit_confirmed: () => null,
    app_quit_cancelled: () => null,
@@ -75992,7 +76154,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    clipboard_write: ({ text }) => {
      // Recorded for tests: headless browsers refuse the real clipboard.
      (window as { __shardxMockClipboard?: string }).__shardxMockClipboard = String(text ?? "");
-@@ -462,20 +470,97 @@ export const handlers: Record<string, Handler> = {
+@@ -462,20 +475,97 @@ export const handlers: Record<string, Handler> = {
    },
  
    // ---- settings, api, data root ---------------------------------------------
@@ -76091,7 +76253,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    api_info: (_a, { state }) => state.api,
    api_regenerate_token: (_a, ctx) => {
      // As the backend: a new signing key on disk, and a token signed with it.
-@@ -485,7 +570,7 @@ export const handlers: Record<string, Handler> = {
+@@ -485,7 +575,7 @@ export const handlers: Record<string, Handler> = {
      return ctx.state.api;
    },
    mcp_download: ({ dir }) => `${dir}/shardx-mcp`,
@@ -76100,7 +76262,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    // Settings > Storage > Delete all data (reset.rs). The plan counts what
    // would move; its id changes with any count, as the backend's digest does.
    // The reset moves everything aside (here: empties the state and remembers
-@@ -527,6 +612,14 @@ export const handlers: Record<string, Handler> = {
+@@ -527,6 +617,14 @@ export const handlers: Record<string, Handler> = {
    },
  
    // ---- profiles ---------------------------------------------------------------
@@ -76115,7 +76277,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    profile_list: (_a, { state }) => state.order.map((id) => metaOf(state.profiles[id])),
    // A protected profile's answer is a stub: its name and the open part of `_meta` (#127).
    profile_get: ({ id }, { state }) => { const p = profile(state, id); return p._meta.lock ? stubOf(p) : p; },
-@@ -639,7 +732,12 @@ export const handlers: Record<string, Handler> = {
+@@ -639,7 +737,12 @@ export const handlers: Record<string, Handler> = {
      ctx.save();
      return metaOf(p);
    },
@@ -76129,7 +76291,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    // A synced profile's session goes up as its browser closes.
    process_kill: ({ profileId }, ctx) => {
      const id = String(profileId);
-@@ -777,7 +875,13 @@ export const handlers: Record<string, Handler> = {
+@@ -777,7 +880,13 @@ export const handlers: Record<string, Handler> = {
      }
      // As folders.rs: a folder never kept makes no file.
      const f = ctx.state.folders;
@@ -76144,7 +76306,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
      // As the backend: store-changed is for API writes only.
      ctx.save();
      return ids.length;
-@@ -852,6 +956,29 @@ export const handlers: Record<string, Handler> = {
+@@ -852,6 +961,29 @@ export const handlers: Record<string, Handler> = {
      ctx.save();
      return null;
    },
@@ -76174,7 +76336,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    folder_import: ({ state: given }, ctx) => {
      personalOnly(ctx.state);
      if (ctx.state.folders) return false;
-@@ -870,6 +997,83 @@ export const handlers: Record<string, Handler> = {
+@@ -870,6 +1002,83 @@ export const handlers: Record<string, Handler> = {
  
    // ---- proxies ------------------------------------------------------------------
    proxy_list: (_a, { state }) => state.proxies,
@@ -76258,16 +76420,19 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    proxy_save: ({ entry }, ctx) => {
      const e = { ...(entry as ProxyEntry) };
      if (!e.id) { e.id = `px-${newId().slice(0, 6)}`; ctx.state.proxies.push(e); }
-@@ -908,6 +1112,127 @@ export const handlers: Record<string, Handler> = {
+@@ -908,6 +1117,158 @@ export const handlers: Record<string, Handler> = {
    proxy_last_test: ({ id }, { state }) => { const h = state.snapshots[id]; return h?.length ? h[h.length - 1] : null; },
    proxy_history: ({ id }, { state }) => state.snapshots[id] ?? [],
    proxy_bulk_parse: ({ text, kind }) => parseProxyLines(String(text ?? ""), kind),
 +  proxy_provider_defaults_get: ({ customProviderId, create, tnb }, { state }) => {
 +    const saved = customProviderId ? state.customProviders?.[customProviderId] : state.providerDefaults;
 +    if (customProviderId && !create && !saved) throw "provider_not_found";
-+    const d: NonNullable<Ctx["state"]["providerDefaults"]> = (customProviderId && create ? undefined : saved) ?? { custom_providers: [], name: "1024Proxy", folder: "", country: "", state: "", city: "", session_type: "sticky", session_minutes: 180, generation_count: 1, relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://usdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false, custom_name: "Custom provider", custom_server: "", custom_extract_url: "", custom_plan: "", custom_kind: "http", custom_website: "", custom_whitelist: "", custom_api_username: "", custom_api_password_saved: false, custom_proxy_username: "", custom_proxy_password_saved: false };
++    const base: NonNullable<Ctx["state"]["providerDefaults"]> = (customProviderId && create ? undefined : saved) ?? { custom_providers: [], name: "1024Proxy", folder: "", country: "", state: "", city: "", session_type: "sticky", session_minutes: 180, generation_count: 1, relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://usdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false, custom_name: "Custom provider", custom_server: "", custom_extract_url: "", custom_plan: "", custom_kind: "http", custom_website: "", custom_whitelist: "", custom_api_username: "", custom_api_password_saved: false, custom_proxy_username: "", custom_proxy_password_saved: false };
++    const d = customProviderId
++      ? { ...base, name: create ? base.custom_name : customProviderName(base), custom_name: create ? base.custom_name : customProviderName(base) }
++      : base;
 +    const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, custom_api_password: _customApi, custom_proxy_password: _customProxy, ...view } = d;
-+    return { ...view, custom_extract_url: d.custom_extract_url ?? "", ...(tnb && !customProviderId ? state.tnbGeneration : {}), custom_providers: Object.entries(state.customProviders ?? {}).map(([id, provider]) => ({ id, name: provider.custom_name })) };
++    return { ...view, custom_extract_url: d.custom_extract_url ?? "", ...(tnb && !customProviderId ? state.tnbGeneration : {}), custom_providers: Object.entries(state.customProviders ?? {}).map(([id, provider]) => ({ id, name: customProviderName(provider) })) };
 +  },
 +  proxy_provider_defaults_save: ({ value, customProviderId, create, tnb }, ctx) => {
 +    const { state, save } = ctx;
@@ -76286,9 +76451,11 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
 +    }
 +    const old = customProviderId ? state.customProviders?.[customProviderId] : state.providerDefaults;
 +    if (customProviderId && !create && !old) throw "provider_not_found";
-+    if (customProviderId && ((create && old) || !value.custom_name.trim() || (!value.custom_server.trim() && !extractUrl))) throw "provider_defaults_invalid";
++    const canonicalName = customProviderId ? customProviderName(value) : "";
++    if (customProviderId && ((create && old) || !canonicalName || (!value.custom_server.trim() && !extractUrl))) throw "provider_defaults_invalid";
 +    const d = {
 +      ...value,
++      ...(customProviderId ? { name: canonicalName, custom_name: canonicalName } : {}),
 +      custom_extract_url: extractUrl,
 +      password: value.password ?? old?.password ?? "",
 +      tnb_api_password: value.tnb_api_password ?? old?.tnb_api_password ?? "",
@@ -76323,17 +76490,31 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
 +      const gateway = new URL(d.custom_server);
 +      const port = Number(gateway.port || (gateway.protocol === "https:" ? "443" : gateway.protocol === "http:" ? "80" : "0"));
 +      if (gateway.protocol !== `${d.custom_kind}:` || !["", "/"].includes(gateway.pathname) || !port) throw "provider_invalid_relay";
-+      return { id: newId(), name: d.custom_name || `${gateway.hostname}:${port}`, kind: d.custom_kind, host: gateway.hostname, port, username: d.custom_proxy_username, password: d.custom_proxy_password ?? "", country: request.country.toUpperCase(), notes: "", provider_id: "custom", provider_options: id ? { custom_provider_id: id } : undefined };
++      const country = String(d.country ?? "").trim().toUpperCase();
++      const folder = String(d.folder ?? "");
++      const providerOptions: Record<string, string> = {
++        folder,
++        country,
++        state: String(d.state ?? ""),
++        city: String(d.city ?? ""),
++        session_type: String(d.session_type ?? "sticky"),
++        session_minutes: String(d.session_minutes ?? 180),
++      };
++      if (id) providerOptions.custom_provider_id = id;
++      const providerName = id ? customProviderName(d) : String(d.custom_name ?? "").trim();
++      return { id: newId(), name: providerName || `${gateway.hostname}:${port}`, kind: d.custom_kind, host: gateway.hostname, port, username: d.custom_proxy_username, password: d.custom_proxy_password ?? "", country, folder, notes: "", provider_id: "custom", provider_options: providerOptions };
 +    }
 +    if (!d?.username || !d.password) throw "provider_credentials_required";
 +    const city = request.city ?? "";
-+    const location = request.country ? `-region-${request.country.toUpperCase()}${request.state ? `-st-${request.state}` : ""}${city ? `-city-${city}` : ""}` : "";
++    const country = String(request.country ?? "").trim().toUpperCase();
++    const location = country ? `-region-${country}${request.state ? `-st-${request.state}` : ""}${city ? `-city-${city}` : ""}` : "";
 +    const minutes = request.session_minutes ?? (d.session_type === "sticky" ? Math.min(120, Math.max(1, d.session_minutes)) : 0);
 +    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 120) throw "provider_defaults_invalid";
 +    const sessionType = request.session_minutes === undefined ? d.session_type : minutes ? "sticky" : "per_request";
 +    const session = minutes ? `-sid-${crypto.randomUUID().slice(0, 8)}-t-${minutes}` : "";
-+    const username = d.username_template.split("{username}").join(d.username).split("{country}").join(request.country.toLowerCase()).split("{state}").join(request.state).split("{city}").join(city).split("{location}").join(location) + session;
-+    return { id: `provider-${newId()}`, name: `1024Proxy ${request.country || "Global"}`, kind: "socks5", host: d.relay.split(":")[0], port: Number(d.relay.split(":")[1]), username, password: d.password, country: request.country, notes: "", provider_id: "1024proxy", provider_options: { country: request.country, state: request.state, session_type: sessionType, session_minutes: String(minutes) } };
++    const username = d.username_template.split("{username}").join(d.username).split("{country}").join(country.toLowerCase()).split("{state}").join(request.state).split("{city}").join(city).split("{location}").join(location) + session;
++    const folder = String(d.folder ?? "");
++    return { id: `provider-${newId()}`, name: `${String(d.name ?? "").trim() || "1024Proxy"} ${country || "Global"}`, kind: "socks5", host: d.relay.split(":")[0], port: Number(d.relay.split(":")[1]), username, password: d.password, country, folder, notes: "", provider_id: "1024proxy", provider_options: { country, state: request.state, city, folder, session_type: sessionType, session_minutes: String(minutes) } };
 +  },
 +  proxy_provider_generate_many: ({ request }, ctx) => {
 +    const rawCount = Number(request?.count);
@@ -76356,10 +76537,22 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
 +    if (Boolean(provider.custom_api_username) !== Boolean(provider.custom_api_password)) throw "tnb_api_credentials_required";
 +    return Array.from({ length: Math.min(count, 2) }, (_, index) => {
 +      const host = `proxy${index + 1}.example.test`;
++      const country = String(provider.country ?? "").trim().toUpperCase();
++      const folder = String(provider.folder ?? "");
++      const providerName = customProviderId ? customProviderName(provider) : String(provider.custom_name ?? "").trim();
++      const providerOptions: Record<string, string> = {
++        folder,
++        country,
++        state: String(provider.state ?? ""),
++        city: String(provider.city ?? ""),
++        session_type: String(provider.session_type ?? "sticky"),
++        session_minutes: String(provider.session_minutes ?? 180),
++      };
++      if (customProviderId) providerOptions.custom_provider_id = customProviderId;
 +      return {
-+        id: newId(), name: `${host}:8080`, kind: provider.custom_kind, host, port: 8080,
++        id: newId(), name: providerName ? `${providerName} · ${host}:8080` : `${host}:8080`, kind: provider.custom_kind, host, port: 8080,
 +        username: provider.custom_proxy_username, password: provider.custom_proxy_password ?? "",
-+        country: provider.country, folder: provider.folder, notes: "", provider_id: "custom",
++        country, folder, notes: "", provider_id: "custom", provider_options: providerOptions,
 +      };
 +    });
 +  },
@@ -76386,7 +76579,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    proxy_bulk_save: ({ entries }, ctx) => addProxies(entries as ProxyEntry[], ctx),
    proxy_bulk_import: ({ text, kind }, ctx) => addProxies(parseProxyLines(String(text ?? ""), kind), ctx),
  
-@@ -915,9 +1240,92 @@ export const handlers: Record<string, Handler> = {
+@@ -915,9 +1276,92 @@ export const handlers: Record<string, Handler> = {
    // The library ships with the engine: empty until the first-run download.
    fingerprint_list: (_a, { state }) => (engineInstalled() ? state.fingerprints : []),
    fingerprint_delete: ({ id }, ctx) => { ctx.state.fingerprints = ctx.state.fingerprints.filter((f) => f.id !== id); ctx.save(); return null; },
@@ -76479,7 +76672,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
      const ua = String(payload?.navigator?.user_agent ?? "");
      const platform = String(payload?.navigator?.platform ?? (/Windows/.test(ua) ? "Win32" : /Mac/.test(ua) ? "MacIntel" : "Linux x86_64"));
      const entry: FingerprintEntry = {
-@@ -928,6 +1336,8 @@ export const handlers: Record<string, Handler> = {
+@@ -928,6 +1372,8 @@ export const handlers: Record<string, Handler> = {
        gpu: String(payload?.webgl?.renderer ?? "unknown GPU"),
        tag_color: "#64748b",
        builtin: false,
@@ -76488,7 +76681,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
        payload,
      };
      ctx.state.fingerprints.push(entry);
-@@ -1090,7 +1500,7 @@ export const handlers: Record<string, Handler> = {
+@@ -1090,7 +1536,7 @@ export const handlers: Record<string, Handler> = {
    // going, which is what a developer should see.
    ps_trial_offer: async () => (window as { __shardxMockTrialOffer?: unknown }).__shardxMockTrialOffer ?? { show: false },
    ps_set_key: ({ key }, ctx) => { ctx.state.psKey = String(key ?? ""); ctx.save(); return null; },
@@ -76497,7 +76690,7 @@ index 41d96a99d6a55e4ba01826df1477f9ef420bf6de..73bed9f3894d8dd6eb8757567858a3ad
    ps_orders: ({ status = "all", offset = 0, limit = 20 }, { state }) => {
      const active = (o: { expires_at: string | null }) => !!o.expires_at && Date.parse(o.expires_at) > Date.now();
      const all = state.psOrders.filter((o) => status === "all" ? true : status === "active" ? active(o) : status === "cancelled" ? !active(o) : false);
-@@ -1185,7 +1595,7 @@ export const handlers: Record<string, Handler> = {
+@@ -1185,7 +1631,7 @@ export const handlers: Record<string, Handler> = {
  
    // ---- Tauri plugins ------------------------------------------------------------
    "plugin:app|version": () => "2.0.3",
@@ -79484,10 +79677,10 @@ index 4ac3ecc21e9fced9ce1d42981298ce45c5732053..eb5ba91a816b394155d7f45ae25ddc7f
          aria-description={why ?? undefined}
 diff --git a/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..96c53a07b6981704819a94bfdeacf1f0ad4479d3
+index 0000000000000000000000000000000000000000..dc0d5c266e392c166968ae1bb55b560aa8cdcd8b
 --- /dev/null
 +++ b/src/features/manage-proxies/ui/ProviderDefaultsPanel.tsx
-@@ -0,0 +1,193 @@
+@@ -0,0 +1,201 @@
 +import { useEffect, useState } from "react";
 +import { openUrl } from "@tauri-apps/plugin-opener";
 +import { Button, Input } from "@proxyshard/shardx-ui-kit";
@@ -79609,7 +79802,10 @@ index 0000000000000000000000000000000000000000..96c53a07b6981704819a94bfdeacf1f0
 +    {has && <Button variant="neutral" mode="ghost" size="3xsmall" onClick={() => { setSecrets((v) => ({ ...v, [key]: "" })); edited(); }}>{secrets[key] === "" ? t("provider.willClear") : t("provider.clearPassword")}</Button>}
 +  </div>;
 +  const custom = active === "custom";
-+  const displayName = custom ? value?.custom_name || t("provider.custom") : t(tnb ? "tnb.provider" : "provider.name1024");
++  const customRecord = custom && Boolean(customProviderId);
++  const displayName = custom
++    ? (customRecord ? value?.name || value?.custom_name : value?.custom_name) || t("provider.custom")
++    : t(tnb ? "tnb.provider" : "provider.name1024");
 +  const websiteUrl = custom ? value?.custom_website : tnb ? "https://dash.tnbproxy.com" : "https://1024proxy.io";
 +  const gatewayKey = custom ? "custom_server" : tnb ? "tnb_server" : "relay";
 +  const usernameKey = custom ? "custom_proxy_username" : tnb ? "tnb_proxy_username" : "username";
@@ -79625,11 +79821,20 @@ index 0000000000000000000000000000000000000000..96c53a07b6981704819a94bfdeacf1f0
 +        <div key={active} className="flex max-w-3xl flex-col gap-3" role="tabpanel" data-provider-panel={active}>
 +          <h3 className="m-0 text-section-label text-text-strong-950">{websiteUrl ? website(websiteUrl, displayName) : displayName}</h3>
 +          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-+            <Input inputSize="xsmall" label={t("provider.name")} value={value.name} placeholder={t("provider.namePlaceholder")} onChange={(e) => patch({ name: e.target.value })} />
-+            <ProxyFolderSelect value={value.folder} onChange={(folder) => patch({ folder })} disabled={busy} allowCreate={false} />
-+            <Input inputSize="xsmall" label={t("provider.country")} value={value.country} placeholder={t("provider.countryPlaceholder")} onChange={(e) => patch({ country: e.target.value.toUpperCase() })} />
-+            <Input inputSize="xsmall" label={t("provider.state")} value={value.state} onChange={(e) => patch({ state: e.target.value })} />
-+            <Input inputSize="xsmall" label={t("provider.city")} value={value.city} onChange={(e) => patch({ city: e.target.value })} />
++            <Input
++              inputSize="xsmall"
++              label={custom ? t("provider.customName") : t("provider.name")}
++              value={value.name}
++              placeholder={t("provider.namePlaceholder")}
++              onChange={(e) => patch(custom ? { name: e.target.value, custom_name: e.target.value } : { name: e.target.value })}
++            />
++            <ProxyFolderSelect value={value.folder} onChange={(folder) => patch({ folder })} disabled={busy} allowCreate />
++          </div>
++          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
++            <Input inputSize="xsmall" label={(custom ? t("provider.customServer") : tnb ? t("tnb.server") : t("provider.relay"))} value={value[gatewayKey]} onChange={(e) => patch({ [gatewayKey]: e.target.value })} />
++            {custom ? <SelectField label={t("provider.customProtocol")} value={value.custom_kind} onChange={(custom_kind) => patch({ custom_kind })} options={[{ value: "http" as const, label: "HTTP" }, { value: "https" as const, label: "HTTPS" }, { value: "socks5" as const, label: "SOCKS5" }]} />
++              : tnb ? <SelectField label={t("tnb.protocol")} value={value.tnb_kind} onChange={(tnb_kind) => patch({ tnb_kind })} options={[{ value: "http" as const, label: "HTTP" }, { value: "socks5" as const, label: "SOCKS5" }]} />
++                : <Input inputSize="xsmall" label={t("tnb.protocol")} value="SOCKS5" readOnly />}
 +          </div>
 +          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
 +            <SelectField label={t("provider.sessionType")} value={value.session_type} onChange={(session_type) => patch({ session_type })} options={[
@@ -79640,14 +79845,10 @@ index 0000000000000000000000000000000000000000..96c53a07b6981704819a94bfdeacf1f0
 +            <Input inputSize="xsmall" type="number" label={t("provider.sessionMinutes")} value={String(value.session_minutes)} onChange={(e) => patch({ session_minutes: Math.max(1, Number(e.target.value) || 1) })} />
 +            <Input inputSize="xsmall" type="number" label={t("provider.generationCount")} value={String(value.generation_count)} onChange={(e) => patch({ generation_count: Math.max(1, Number(e.target.value) || 1) })} />
 +          </div>
-+          {custom && <Input inputSize="xsmall" label={t("provider.customName")} value={value.custom_name} onChange={(e) => patch({ custom_name: e.target.value })} />}
 +          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-+            <Input inputSize="xsmall" label={(custom ? t("provider.customServer") : tnb ? t("tnb.server") : t("provider.relay"))} value={value[gatewayKey]} onChange={(e) => patch({ [gatewayKey]: e.target.value })} />
-+            {custom ? <SelectField label={t("provider.customProtocol")} value={value.custom_kind} onChange={(custom_kind) => patch({ custom_kind })} options={[{ value: "http" as const, label: "HTTP" }, { value: "https" as const, label: "HTTPS" }, { value: "socks5" as const, label: "SOCKS5" }]} />
-+              : tnb ? <SelectField label={t("tnb.protocol")} value={value.tnb_kind} onChange={(tnb_kind) => patch({ tnb_kind })} options={[{ value: "http" as const, label: "HTTP" }, { value: "socks5" as const, label: "SOCKS5" }]} />
-+                : <Input inputSize="xsmall" label={t("tnb.protocol")} value="SOCKS5" readOnly />}
-+          </div>
-+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
++            <Input inputSize="xsmall" label={t("provider.country")} value={value.country} placeholder={t("provider.countryPlaceholder")} onChange={(e) => patch({ country: e.target.value.toUpperCase() })} />
++            <Input inputSize="xsmall" label={t("provider.state")} value={value.state} onChange={(e) => patch({ state: e.target.value })} />
++            <Input inputSize="xsmall" label={t("provider.city")} value={value.city} onChange={(e) => patch({ city: e.target.value })} />
 +            <Input inputSize="xsmall" label={(tnb || custom ? t("provider.proxyUsername") : t("provider.account"))} value={value[usernameKey]} onChange={(e) => patch({ [usernameKey]: e.target.value })} />
 +            {password(passwordKey, value[passwordSavedKey], (tnb || custom ? t("provider.proxyPassword") : t("proxyEditor.passwordLabel")))}
 +          </div>
@@ -81359,10 +81560,10 @@ index 76b45b7dc0cfb81afbf81a516d7f5977b6b4e4bd..137fb572e45fd667867ffc076160e484
          labels={{ selectAll: t("dataList.selectAll"), select: (name) => t("dataList.select", { name }), more: t("pageHeader.more"), actions: t("profileTable.colActions") }}
 diff --git a/src/pages/automation/SequentialCard.tsx b/src/pages/automation/SequentialCard.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..fa2143a60da32e2cb28becadaff247867f2e0f41
+index 0000000000000000000000000000000000000000..b3815fe59b623e8faa0d107424bb4c5369b8229d
 --- /dev/null
 +++ b/src/pages/automation/SequentialCard.tsx
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,77 @@
 +import { useEffect, useState } from "react";
 +import { Button, Card, Input } from "@proxyshard/shardx-ui-kit";
 +import { sequentialStart, sequentialStatus, sequentialStop, type SequentialConfig, type SequentialState } from "../../entities/automation";
@@ -81390,6 +81591,7 @@ index 0000000000000000000000000000000000000000..fa2143a60da32e2cb28becadaff24786
 +  }, []);
 +
 +  const running = !!state?.running;
++  const active = running || state?.current_id != null;
 +  const update = <K extends keyof SequentialConfig>(key: K, value: SequentialConfig[K]) =>
 +    setConfig((current) => ({ ...current, [key]: value }));
 +
@@ -81418,17 +81620,17 @@ index 0000000000000000000000000000000000000000..fa2143a60da32e2cb28becadaff24786
 +          <h2 className="m-0 text-heading-3">{t("sequential.title")}</h2>
 +          <p className="m-0 mt-1 text-secondary text-text-soft-400">{t("sequential.help")}</p>
 +        </div>
-+        {running ? (
++        {active ? (
 +          <Button variant="neutral" mode="stroke" size="xsmall" onClick={() => void stop()}>{t("sequential.stop")}</Button>
 +        ) : (
 +          <Button variant="primary" mode="filled" size="xsmall" onClick={() => void start()}>{t("sequential.start")}</Button>
 +        )}
 +      </div>
 +      <div className="mt-3 grid grid-cols-4 gap-2">
-+        <Input inputSize="xsmall" type="number" min={1} label={t("sequential.startProfile")} value={String(config.start)} disabled={running} onChange={(e) => update("start", Number(e.target.value) || 1)} />
-+        <Input inputSize="xsmall" type="number" min={1} label={t("sequential.endProfile")} value={String(config.end)} disabled={running} onChange={(e) => update("end", Number(e.target.value) || 1)} />
-+        <Input inputSize="xsmall" type="number" min={1} max={86400} label={t("sequential.wait")} value={String(config.wait_seconds)} disabled={running} onChange={(e) => update("wait_seconds", Number(e.target.value) || 1)} />
-+        <Input inputSize="xsmall" label={t("sequential.url")} value={config.url} disabled={running} onChange={(e) => update("url", e.target.value)} />
++        <Input inputSize="xsmall" type="number" min={1} label={t("sequential.startProfile")} value={String(config.start)} disabled={active} onChange={(e) => update("start", Number(e.target.value) || 1)} />
++        <Input inputSize="xsmall" type="number" min={1} label={t("sequential.endProfile")} value={String(config.end)} disabled={active} onChange={(e) => update("end", Number(e.target.value) || 1)} />
++        <Input inputSize="xsmall" type="number" min={1} max={86400} label={t("sequential.wait")} value={String(config.wait_seconds)} disabled={active} onChange={(e) => update("wait_seconds", Number(e.target.value) || 1)} />
++        <Input inputSize="xsmall" label={t("sequential.url")} value={config.url} disabled={active} onChange={(e) => update("url", e.target.value)} />
 +      </div>
 +      {state && (
 +        <p className="m-0 mt-2 text-secondary text-text-soft-400" aria-live="polite">
@@ -82773,7 +82975,7 @@ index 0000000000000000000000000000000000000000..c2bf0d90c6a21439ec7528289389ab90
 +  }, [kind, allIds, visibleIds, selected, groupOf, onReorder, dragHandle, resetSavedOrder, t, scope]);
 +}
 diff --git a/src/shared/i18n/locales/en.json b/src/shared/i18n/locales/en.json
-index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb75518e59a6b5 100644
+index ce72a514f676461834b7f0fd67b31bd378eb3afc..a2a52cc9ddbd4a9f171a49797253f9aa9e5de0e6 100644
 --- a/src/shared/i18n/locales/en.json
 +++ b/src/shared/i18n/locales/en.json
 @@ -1,4 +1,42 @@
@@ -82987,7 +83189,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "extensions.waitingMany": "Waiting for {n} profiles to close",
    "extensions.waitingOn": "Used by {names}.",
    "extensions.waitingOne": "Waiting for {n} profile to close",
-@@ -692,6 +730,22 @@
+@@ -692,6 +730,23 @@
    "fingerprintPeek.compatible": "This computer can run it.",
    "fingerprintPeek.cores": "CPU cores",
    "fingerprintPeek.details": "Details",
@@ -83007,10 +83209,11 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
 +  "fingerprintPeek.runtimeObservationTitle": "Observe fingerprint runtime",
 +  "fingerprintPeek.runtimeObservationChoose": "Choose a running profile attached through automation. The observation is saved as library metadata and does not change the original fingerprint JSON.",
 +  "fingerprintPeek.runtimeObservationProfile": "Running profile",
++  "fingerprintPeek.builtinRuntimeObservation": "Built-in fingerprints cannot store runtime observations.",
    "fingerprintPeek.gpu": "GPU",
    "fingerprintPeek.label": "Peek: {name}",
    "fingerprintPeek.memory": "Memory",
-@@ -720,10 +774,19 @@
+@@ -720,10 +775,19 @@
    "firstRunGate.failedUnpackTitle": "Couldn’t unpack the browser engine",
    "firstRunGate.progress": "Browser engine, {progress}",
    "firstRunGate.retry": "Try again",
@@ -83031,7 +83234,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "folderCellMenu.label": "Folder for {name}",
    "folderCellMenu.newFolder": "New folder",
    "folderDialog.cancel": "Cancel",
-@@ -987,7 +1050,7 @@
+@@ -987,7 +1051,7 @@
    "launcherWarning.tooBigTitle": "Part of “{name}” wasn’t saved",
    "launcherWarning.udpDetail": "This computer blocked the check. The browser starts with UDP on; if a VPN blocked it, the browser may still be allowed.",
    "launcherWarning.udpTitle": "Started without checking the proxy’s UDP",
@@ -83040,7 +83243,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "launcherWarning.unsentTitle": "“{name}” is saved on this computer",
    "launcherWarning.withdrewDetail": "Its profiles open here were closed. You can only remove the team from the space menu now.",
    "launcherWarning.withdrewTitle": "“{team}” withdrew your access",
-@@ -1020,6 +1083,7 @@
+@@ -1020,6 +1084,7 @@
    "liveView.startHint": "Start the profile to see its window here.",
    "liveView.starting": "Starting",
    "liveView.stop": "Stop",
@@ -83048,7 +83251,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "liveView.stopLabel": "Stop the browser",
    "liveView.stopRecording": "Stop recording",
    "liveView.withoutAutomationMessage": "Automation can’t be turned on in a window that’s already open. To drive the profile from here, restart it: its window closes and opens again. Save anything unsaved on its pages first.",
-@@ -1132,7 +1196,7 @@
+@@ -1132,7 +1197,7 @@
    "overview.mattersLeakRealIp": "Sites can see your real IP and link your profiles to you.",
    "overview.more": "{n} more",
    "overview.needsYou": "Problems to fix",
@@ -83057,7 +83260,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "overview.openRun": "Open run",
    "overview.planName": "{tier} residential",
    "overview.profilesMany": "{n} profiles",
-@@ -1163,11 +1227,11 @@
+@@ -1163,11 +1228,11 @@
    "pageHelp.fingerprints.title": "About the fingerprint library",
    "pageHelp.profiles.body": "A profile is one browser identity: its own fingerprint, cookies, proxy and settings, kept apart from every other profile. Create one, then start it to open its browser. Sort profiles into folders and views, and use Peek to look at one without leaving the list.",
    "pageHelp.profiles.title": "About profiles",
@@ -83072,7 +83275,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "pageHelp.settings.title": "About Settings",
    "pageHelp.team.title": "About this team",
    "pageHelp.team.body": "Everyone here works in the team’s own space on its server. Add members, send each their invite, then set what each may do: the narrowest rule wins, and a refusal beats an allowance of the same width.",
-@@ -1623,6 +1687,8 @@
+@@ -1623,6 +1688,8 @@
    "patchlog.changeCountMany": "{n} changes",
    "patchlog.changeCountOne": "{n} change",
    "patchlog.latestBadge": "Latest",
@@ -83081,7 +83284,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "patchlog.lockExplainer": "Built but switched off in released versions, so nothing in the shipped app names it.",
    "patchlog.lockedBadge": "Locked",
    "patchlog.scopeBrowser": "Browser",
-@@ -1929,7 +1995,7 @@
+@@ -1929,7 +1996,7 @@
    "projectEditor.worldMain": "Main",
    "proxies.title": "Proxies",
    "proxiesMoreMenu.buy": "Buy proxies",
@@ -83090,7 +83293,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "proxyBulkImporter.active": "Active",
    "proxyBulkImporter.addFailed": "Couldn’t add the proxies",
    "proxyBulkImporter.back": "Back",
-@@ -2302,16 +2368,13 @@
+@@ -2302,16 +2369,13 @@
    "settings.aboutReplayTour": "Replay the tour",
    "settings.aboutTipsAgain": "Show page tips again",
    "settings.aboutTipsOn": "Page tips are on",
@@ -83110,7 +83313,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "settings.apiAuthHeaderHint": "Send it as ",
    "settings.apiBaseUrlLabel": "Base URL",
    "settings.apiDetailsTitle": "Connection",
-@@ -2336,7 +2399,7 @@
+@@ -2336,7 +2400,7 @@
    "settings.argsConfirmSave": "Save anyway",
    "settings.argsConfirmTitle": "Save these start arguments?",
    "settings.cameraHelp": "Leave this on: a real camera would show the same device behind every profile.",
@@ -83119,7 +83322,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "settings.profileNameHelp": "In the address bar and the window title. Off, the window looks like ordinary Chrome.",
    "settings.profileNameLabel": "Show the profile name in the browser",
    "settings.profilePasswordsHelp": "Asked at every start. A forgotten password can’t be recovered.",
-@@ -2377,7 +2440,7 @@
+@@ -2377,7 +2441,7 @@
    "settings.reduceMotion": "Reduce motion",
    "settings.regenerateMessage": "Scripts and MCP clients that use the current token stop working until you give them the new one.",
    "settings.regenerateTitle": "Regenerate the API token?",
@@ -83128,7 +83331,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "settings.saveFailed": "Couldn’t save settings",
    "settings.saveFailedKept": "Couldn’t save. Your changes are still here.",
    "settings.saveTimedOut": "No answer after 10 seconds.",
-@@ -2393,9 +2456,99 @@
+@@ -2393,9 +2457,99 @@
    "settings.tabAbout": "About",
    "settings.tabApi": "API & MCP",
    "settings.tabAppearance": "Appearance",
@@ -83229,7 +83432,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "settings.tabProfiles": "Profile defaults",
    "settings.tabStorage": "Storage",
    "settings.tabSync": "Sync",
-@@ -2485,8 +2638,8 @@
+@@ -2485,8 +2639,8 @@
    "sidebar.groupFolders": "Folders",
    "sidebar.groupPinned": "Pinned",
    "sidebar.groupViews": "Views",
@@ -83240,7 +83443,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "sidebar.navBookmarks": "Bookmarks",
    "sidebar.navExtensions": "Extensions",
    "sidebar.navFingerprints": "Fingerprints",
-@@ -2747,21 +2900,21 @@
+@@ -2747,21 +2901,21 @@
    "team.errUnknownToken": "The server does not know this token: ask the team’s admin for a new invite.",
    "team.errSwitchedOff": "This member is switched off on the server: ask the team’s admin to switch them on.",
    "team.errOffline": "The team server didn’t answer: check that it is running and the address is right.",
@@ -83266,7 +83469,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "stat.trendDown": "down {n}",
    "stat.trendFlat": "no change",
    "stat.trendUp": "up {n}",
-@@ -2898,7 +3051,7 @@
+@@ -2898,7 +3052,7 @@
    "tour.full.search.title": "Search everything",
    "tour.full.settings.body": "A change in Settings applies only after you press “Save”. A bar with “Save” and “Don’t save” appears at the bottom as soon as you change something.",
    "tour.full.settings.title": "Save your settings",
@@ -83275,7 +83478,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "tour.full.sidebar.title": "The sidebar",
    "tour.full.start.body": "“Start” opens the profile’s own browser window. Its logins and cookies stay inside that profile.",
    "tour.full.start.title": "Start a profile",
-@@ -2934,7 +3087,7 @@
+@@ -2934,7 +3088,7 @@
    "tour.tips.proxies.help.title": "About proxies",
    "tour.tips.proxyshard.buy.body": "See your ProxyShard balance, and buy traffic or proxies here, without leaving the app. Your account connects with an API key.",
    "tour.tips.proxyshard.buy.title": "Buy traffic and proxies",
@@ -83284,7 +83487,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "tour.tips.proxyshard.help.title": "About ProxyShard",
    "tour.tips.settings.help.body": "Each tab groups one kind of setting. The (i) says what you can change here.",
    "tour.tips.settings.help.title": "About Settings",
-@@ -3136,7 +3289,7 @@
+@@ -3136,7 +3290,7 @@
    "useExtensions.upToDateOne": "“{name}” is up to date",
    "useExtensions.updateFailed": "Couldn’t update “{name}”",
    "useExtensions.updateWaiting": "“{name}” updates when the profiles using it close",
@@ -83293,7 +83496,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "useExtensions.updated": "Updated “{name}” to {version}",
    "useExtensions.updatedAllMany": "Updated {n} extensions",
    "useExtensions.updatedAllOne": "Updated {n} extension",
-@@ -3329,7 +3482,7 @@
+@@ -3329,7 +3483,7 @@
    "views.noProxy": "No proxy",
    "views.recent": "Recently used",
    "views.running": "Running",
@@ -83302,7 +83505,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "welcome.profiles.body": "Each profile keeps its own cookies, logins, proxy and fingerprint, so websites see separate people.",
    "welcome.profiles.title": "Every profile is its own browser",
    "welcome.proxies.body": "A proxy hides your real IP address. A fingerprint makes each browser look like a different computer.",
-@@ -3340,7 +3493,6 @@
+@@ -3340,7 +3494,6 @@
    "welcome.start": "Start tour",
    "welcome.tour.body": "A quick walk through every page, one short step at a time. Stop whenever you like, and replay it later from Settings.",
    "welcome.tour.title": "Take a 2-minute tour?",
@@ -83310,7 +83513,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "whatsNew.release": "Release",
    "whatsNew.title": "What’s new",
    "windowControls.close": "Close",
-@@ -3366,14 +3518,6 @@
+@@ -3366,14 +3519,6 @@
    "profileSync.offDetail": "Your other computers keep their copy; it no longer updates.",
    "profileSync.conflictMade": "A profile changed on two computers: your changes from here are in “{name}”.",
    "profileSync.conflictDetail": "Both versions were kept. Don’t run both: they share one fingerprint and cookies.",
@@ -83325,7 +83528,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
    "sync.intro": "Sync keeps your profiles and the rest the same on every computer you use. They meet on a sync server: one you run yourself, or your team’s.",
    "sync.teamHelp": "Sync through the server of a team you have joined.",
    "sync.teamTitle": "Use a team server",
-@@ -3475,11 +3619,379 @@
+@@ -3475,11 +3620,379 @@
    "sync.errRemoved": "Your synced data was removed from this server, from another of your computers. Disconnect here; this computer keeps its copies.",
    "sync.errToken": "The server does not know this token: check it, or ask whoever runs the server for a new invite.",
    "sync.errTokenOwn": "The server no longer knows this token. If you reset the server or its data folder, connect again with its new admin token.",
@@ -83708,7 +83911,7 @@ index ce72a514f676461834b7f0fd67b31bd378eb3afc..c774c978be48d71b0a240ad251cb7551
 +  "proxyFolder.created": "Created proxy folder “{name}”"
  }
 diff --git a/src/shared/i18n/locales/ru.json b/src/shared/i18n/locales/ru.json
-index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e814db0540f 100644
+index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..651dd576ed5842b0e7ab7a493d2b26dee7993ac4 100644
 --- a/src/shared/i18n/locales/ru.json
 +++ b/src/shared/i18n/locales/ru.json
 @@ -1,4 +1,42 @@
@@ -83922,7 +84125,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "extensions.waitingMany": "Ждёт закрытия {n} {n|профиля|профилей|профилей}",
    "extensions.waitingOn": "Его используют: {names}.",
    "extensions.waitingOne": "Ждёт закрытия {n} {n|профиля|профилей|профилей}",
-@@ -692,6 +730,22 @@
+@@ -692,6 +730,23 @@
    "fingerprintPeek.compatible": "Этот компьютер может его запустить.",
    "fingerprintPeek.cores": "Ядра CPU",
    "fingerprintPeek.details": "Подробности",
@@ -83942,10 +84145,11 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
 +  "fingerprintPeek.runtimeObservationTitle": "Наблюдение среды отпечатка",
 +  "fingerprintPeek.runtimeObservationChoose": "Выберите запущенный профиль, подключённый через автоматизацию. Наблюдение сохраняется в метаданных библиотеки и не меняет исходный JSON отпечатка.",
 +  "fingerprintPeek.runtimeObservationProfile": "Запущенный профиль",
++  "fingerprintPeek.builtinRuntimeObservation": "Встроенные отпечатки не могут сохранять наблюдения среды выполнения.",
    "fingerprintPeek.gpu": "GPU",
    "fingerprintPeek.label": "Быстрый просмотр: {name}",
    "fingerprintPeek.memory": "Память",
-@@ -720,10 +774,19 @@
+@@ -720,10 +775,19 @@
    "firstRunGate.failedUnpackTitle": "Не удалось распаковать движок браузера",
    "firstRunGate.progress": "Движок браузера, {progress}",
    "firstRunGate.retry": "Повторить",
@@ -83966,7 +84170,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "folderCellMenu.label": "Папка профиля «{name}»",
    "folderCellMenu.newFolder": "Новая папка",
    "folderDialog.cancel": "Отмена",
-@@ -987,7 +1050,7 @@
+@@ -987,7 +1051,7 @@
    "launcherWarning.tooBigTitle": "Часть профиля «{name}» не сохранена",
    "launcherWarning.udpDetail": "Этот компьютер заблокировал проверку. Браузер запускается с включённым UDP: если проверку заблокировал VPN, браузеру UDP может быть всё же разрешён.",
    "launcherWarning.udpTitle": "Запущен без проверки UDP у прокси",
@@ -83975,7 +84179,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "launcherWarning.unsentTitle": "«{name}» сохранён на этом компьютере",
    "launcherWarning.withdrewDetail": "Её профили, открытые здесь, закрыты. Теперь команду можно только убрать из меню пространства.",
    "launcherWarning.withdrewTitle": "Команда «{team}» отозвала ваш доступ",
-@@ -1020,6 +1083,7 @@
+@@ -1020,6 +1084,7 @@
    "liveView.startHint": "Запустите профиль, чтобы увидеть здесь его окно.",
    "liveView.starting": "Запуск",
    "liveView.stop": "Остановить",
@@ -83983,7 +84187,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "liveView.stopLabel": "Остановить браузер",
    "liveView.stopRecording": "Остановить запись",
    "liveView.withoutAutomationMessage": "В уже открытом окне автоматизацию включить нельзя. Чтобы управлять профилем отсюда, перезапустите его: окно закроется и откроется снова. Если на страницах есть несохранённые данные, сначала сохраните их.",
-@@ -1132,7 +1196,7 @@
+@@ -1132,7 +1197,7 @@
    "overview.mattersLeakRealIp": "Сайты могут увидеть ваш реальный IP и связать ваши профили с вами.",
    "overview.more": "Ещё {n}",
    "overview.needsYou": "Что нужно исправить",
@@ -83992,7 +84196,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "overview.openRun": "Открыть запуск",
    "overview.planName": "Резидентский {tier}",
    "overview.profilesMany": "{n} {n|профиль|профиля|профилей}",
-@@ -1163,11 +1227,11 @@
+@@ -1163,11 +1228,11 @@
    "pageHelp.fingerprints.title": "О библиотеке отпечатков",
    "pageHelp.profiles.body": "Профиль — это отдельный браузер со своим отпечатком, файлами cookie, прокси и настройками, изолированный от остальных профилей. Создайте профиль и запустите его, чтобы открыть браузер. Распределяйте профили по папкам и сохраняйте фильтры, которыми пользуетесь часто. Чтобы посмотреть профиль, не покидая списка, откройте быстрый просмотр.",
    "pageHelp.profiles.title": "О профилях",
@@ -84007,7 +84211,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "pageHelp.settings.title": "О Настройках",
    "pageHelp.team.title": "Об этой команде",
    "pageHelp.team.body": "Все здесь работают в собственном пространстве команды на её сервере. Добавьте участников, отправьте каждому приглашение и задайте, что каждому можно: действует самое конкретное правило, а при равных запрет важнее разрешения.",
-@@ -1623,6 +1687,8 @@
+@@ -1623,6 +1688,8 @@
    "patchlog.changeCountMany": "{n} {n|изменение|изменения|изменений}",
    "patchlog.changeCountOne": "{n} изменение",
    "patchlog.latestBadge": "Последняя",
@@ -84016,7 +84220,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "patchlog.lockExplainer": "Уже готово, но отключено в выпущенных версиях, поэтому в приложении это нигде не упоминается.",
    "patchlog.lockedBadge": "Заблокировано",
    "patchlog.scopeBrowser": "Браузер",
-@@ -1929,7 +1995,7 @@
+@@ -1929,7 +1996,7 @@
    "projectEditor.worldMain": "Основная",
    "proxies.title": "Прокси",
    "proxiesMoreMenu.buy": "Купить прокси",
@@ -84025,7 +84229,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "proxyBulkImporter.active": "Работает",
    "proxyBulkImporter.addFailed": "Не удалось добавить прокси",
    "proxyBulkImporter.back": "Назад",
-@@ -2302,16 +2368,13 @@
+@@ -2302,16 +2369,13 @@
    "settings.aboutReplayTour": "Повторить обзор",
    "settings.aboutTipsAgain": "Снова показывать подсказки",
    "settings.aboutTipsOn": "Подсказки на страницах включены",
@@ -84045,7 +84249,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "settings.apiAuthHeaderHint": "Передавайте токен в заголовке ",
    "settings.apiBaseUrlLabel": "Базовый URL",
    "settings.apiDetailsTitle": "Подключение",
-@@ -2336,7 +2399,7 @@
+@@ -2336,7 +2400,7 @@
    "settings.argsConfirmSave": "Всё равно сохранить",
    "settings.argsConfirmTitle": "Сохранить эти аргументы запуска?",
    "settings.cameraHelp": "Не выключайте: настоящая камера покажет одно и то же устройство во всех профилях.",
@@ -84054,7 +84258,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "settings.profileNameHelp": "В адресной строке и в заголовке окна. Если выключить, окно выглядит как обычный Chrome.",
    "settings.profileNameLabel": "Показывать имя профиля в браузере",
    "settings.profilePasswordsHelp": "Спрашивается при каждом запуске. Забытый пароль восстановить нельзя.",
-@@ -2377,7 +2440,7 @@
+@@ -2377,7 +2441,7 @@
    "settings.reduceMotion": "Уменьшить движение",
    "settings.regenerateMessage": "Скрипты и MCP-клиенты с текущим токеном перестанут работать, пока вы не передадите им новый.",
    "settings.regenerateTitle": "Перевыпустить токен API?",
@@ -84063,7 +84267,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "settings.saveFailed": "Не удалось сохранить настройки",
    "settings.saveFailedKept": "Не удалось сохранить. Ваши изменения не потеряны.",
    "settings.saveTimedOut": "Нет ответа в течение 10 секунд.",
-@@ -2393,9 +2456,99 @@
+@@ -2393,9 +2457,99 @@
    "settings.tabAbout": "О программе",
    "settings.tabApi": "API и MCP",
    "settings.tabAppearance": "Внешний вид",
@@ -84164,7 +84368,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "settings.tabProfiles": "Новые профили",
    "settings.tabStorage": "Хранилище",
    "settings.tabSync": "Синхронизация",
-@@ -2485,8 +2638,8 @@
+@@ -2485,8 +2639,8 @@
    "sidebar.groupFolders": "Папки",
    "sidebar.groupPinned": "Закреплённые",
    "sidebar.groupViews": "Сохранённые фильтры",
@@ -84175,7 +84379,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "sidebar.navBookmarks": "Закладки",
    "sidebar.navExtensions": "Расширения",
    "sidebar.navFingerprints": "Отпечатки",
-@@ -2747,21 +2900,21 @@
+@@ -2747,21 +2901,21 @@
    "team.errUnknownToken": "Сервер не знает этот токен: попросите у администратора команды новое приглашение.",
    "team.errSwitchedOff": "Этот участник отключён на сервере: попросите администратора команды включить его.",
    "team.errOffline": "Сервер команды не ответил: проверьте, что он запущен и адрес верный.",
@@ -84201,7 +84405,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "stat.trendDown": "снижение на {n}",
    "stat.trendFlat": "без изменений",
    "stat.trendUp": "рост на {n}",
-@@ -2898,7 +3051,7 @@
+@@ -2898,7 +3052,7 @@
    "tour.full.search.title": "Поиск везде",
    "tour.full.settings.body": "Изменения в Настройках вступают в силу только после того, как вы нажмёте «Сохранить». Как только вы что-то измените, внизу появится панель с кнопками «Сохранить» и «Не сохранять».",
    "tour.full.settings.title": "Сохраняйте настройки",
@@ -84210,7 +84414,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "tour.full.sidebar.title": "Боковая панель",
    "tour.full.start.body": "Кнопка «Запустить» открывает собственное окно браузера профиля. Входы в аккаунты и файлы cookie остаются внутри этого профиля.",
    "tour.full.start.title": "Запустите профиль",
-@@ -2934,7 +3087,7 @@
+@@ -2934,7 +3088,7 @@
    "tour.tips.proxies.help.title": "О прокси",
    "tour.tips.proxyshard.buy.body": "Здесь можно следить за балансом ProxyShard и покупать трафик или прокси, не выходя из приложения. Аккаунт подключается по API-ключу.",
    "tour.tips.proxyshard.buy.title": "Покупка трафика и прокси",
@@ -84219,7 +84423,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "tour.tips.proxyshard.help.title": "О ProxyShard",
    "tour.tips.settings.help.body": "На каждой вкладке собраны настройки одного типа. Что здесь можно изменить, подскажет (i).",
    "tour.tips.settings.help.title": "О Настройках",
-@@ -3136,7 +3289,7 @@
+@@ -3136,7 +3290,7 @@
    "useExtensions.upToDateOne": "У «{name}» последняя версия",
    "useExtensions.updateFailed": "Не удалось обновить «{name}»",
    "useExtensions.updateWaiting": "«{name}» обновится, когда закроются профили с ним",
@@ -84228,7 +84432,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "useExtensions.updated": "Расширение «{name}» обновлено до {version}",
    "useExtensions.updatedAllMany": "Обновлено {n} {n|расширение|расширения|расширений}",
    "useExtensions.updatedAllOne": "Обновлено {n} {n|расширение|расширения|расширений}",
-@@ -3329,7 +3482,7 @@
+@@ -3329,7 +3483,7 @@
    "views.noProxy": "Без прокси",
    "views.recent": "Недавние",
    "views.running": "Запущенные",
@@ -84237,7 +84441,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "welcome.profiles.body": "У каждого профиля свои файлы cookie, входы в аккаунты, прокси и отпечаток, поэтому сайты видят в них разных людей.",
    "welcome.profiles.title": "Каждый профиль — отдельный браузер",
    "welcome.proxies.body": "Прокси скрывает ваш настоящий IP-адрес. А отпечаток делает каждый браузер похожим на отдельный компьютер.",
-@@ -3340,7 +3493,6 @@
+@@ -3340,7 +3494,6 @@
    "welcome.start": "Начать обзор",
    "welcome.tour.body": "Коротко покажем каждый раздел, по шагам. Остановиться можно в любой момент, а повторить обзор — позже в Настройках.",
    "welcome.tour.title": "Короткий обзор на 2 минуты?",
@@ -84245,7 +84449,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "whatsNew.release": "Версия",
    "whatsNew.title": "Что нового",
    "windowControls.close": "Закрыть",
-@@ -3366,14 +3518,6 @@
+@@ -3366,14 +3519,6 @@
    "profileSync.offDetail": "Другие ваши компьютеры сохранят свою копию, но она больше не обновляется.",
    "profileSync.conflictMade": "Профиль изменился на двух компьютерах: ваши изменения отсюда — в «{name}».",
    "profileSync.conflictDetail": "Обе версии сохранены. Не запускайте обе: у них один отпечаток и одни cookie.",
@@ -84260,7 +84464,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
    "sync.intro": "Синхронизация делает профили и остальное одинаковыми на всех ваших компьютерах. Данные передаются через сервер синхронизации: ваш собственный или сервер вашей команды.",
    "sync.teamHelp": "Синхронизация через сервер команды, в которую вы вступили.",
    "sync.teamTitle": "Использовать сервер команды",
-@@ -3475,11 +3619,379 @@
+@@ -3475,11 +3620,379 @@
    "sync.errRemoved": "Ваши синхронизированные данные удалены с этого сервера с другого вашего компьютера. Отключите синхронизацию здесь: копии на этом компьютере останутся.",
    "sync.errToken": "Сервер не знает этот токен: проверьте его или попросите новое приглашение у того, кто запускает сервер.",
    "sync.errTokenOwn": "Сервер больше не знает этот токен. Если вы сбросили сервер или его папку данных, подключитесь снова с новым токеном администратора.",
@@ -84643,7 +84847,7 @@ index 7276e13e43f0ec629b1d68655ac420aaf9b2a388..5d6d851857d821a7451a0fd9ddfc3e81
 +  "proxyFolder.created": "Папка прокси «{name}» создана"
  }
 diff --git a/src/shared/i18n/locales/zh.json b/src/shared/i18n/locales/zh.json
-index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1ef0274e1 100644
+index e646200a4c87102385a3a7ebbeef91571152f1b0..ae62eb3932192285f5e8edf4152891eb16858cd7 100644
 --- a/src/shared/i18n/locales/zh.json
 +++ b/src/shared/i18n/locales/zh.json
 @@ -1,4 +1,42 @@
@@ -84857,7 +85061,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "extensions.waitingMany": "等待 {n} 个配置关闭",
    "extensions.waitingOn": "正在使用它的配置：{names}。",
    "extensions.waitingOne": "等待 {n} 个配置关闭",
-@@ -692,6 +730,22 @@
+@@ -692,6 +730,23 @@
    "fingerprintPeek.compatible": "这台电脑可以运行它。",
    "fingerprintPeek.cores": "CPU 核心",
    "fingerprintPeek.details": "详情",
@@ -84877,10 +85081,11 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
 +  "fingerprintPeek.runtimeObservationTitle": "观察指纹运行时",
 +  "fingerprintPeek.runtimeObservationChoose": "选择一个已通过自动化连接的运行中配置。观察会写入指纹库元数据，不会修改原始指纹 JSON。",
 +  "fingerprintPeek.runtimeObservationProfile": "运行中的配置",
++  "fingerprintPeek.builtinRuntimeObservation": "内置指纹不能保存运行时观测结果。",
    "fingerprintPeek.gpu": "GPU",
    "fingerprintPeek.label": "预览：{name}",
    "fingerprintPeek.memory": "内存",
-@@ -720,10 +774,19 @@
+@@ -720,10 +775,19 @@
    "firstRunGate.failedUnpackTitle": "无法解压浏览器引擎",
    "firstRunGate.progress": "浏览器引擎，{progress}",
    "firstRunGate.retry": "重试",
@@ -84901,7 +85106,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "folderCellMenu.label": "{name} 的文件夹",
    "folderCellMenu.newFolder": "新建文件夹",
    "folderDialog.cancel": "取消",
-@@ -987,7 +1050,7 @@
+@@ -987,7 +1051,7 @@
    "launcherWarning.tooBigTitle": "“{name}”有一部分未保存",
    "launcherWarning.udpDetail": "这台电脑阻止了检查。浏览器启动时 UDP 保持开启；如果是 VPN 阻止的，浏览器可能仍被允许使用 UDP。",
    "launcherWarning.udpTitle": "已启动，但未能检查代理的 UDP",
@@ -84910,7 +85115,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "launcherWarning.unsentTitle": "“{name}”已保存在这台电脑上",
    "launcherWarning.withdrewDetail": "在这里打开的团队配置已关闭。现在只能从空间菜单中移除该团队。",
    "launcherWarning.withdrewTitle": "“{team}”已撤销你的访问权限",
-@@ -1020,6 +1083,7 @@
+@@ -1020,6 +1084,7 @@
    "liveView.startHint": "启动配置后，它的窗口会显示在这里。",
    "liveView.starting": "正在启动",
    "liveView.stop": "停止",
@@ -84918,7 +85123,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "liveView.stopLabel": "停止浏览器",
    "liveView.stopRecording": "停止录制",
    "liveView.withoutAutomationMessage": "已打开的窗口无法启用自动化。要在这里控制该配置，请重新启动它：窗口会关闭并重新打开。如果页面上有未保存的内容，请先保存。",
-@@ -1132,7 +1196,7 @@
+@@ -1132,7 +1197,7 @@
    "overview.mattersLeakRealIp": "网站能看到你的真实 IP，并把这些配置关联到你。",
    "overview.more": "另有 {n} 个",
    "overview.needsYou": "待解决的问题",
@@ -84927,7 +85132,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "overview.openRun": "打开运行",
    "overview.planName": "{tier}住宅代理",
    "overview.profilesMany": "{n} 个配置",
-@@ -1163,11 +1227,11 @@
+@@ -1163,11 +1228,11 @@
    "pageHelp.fingerprints.title": "关于指纹库",
    "pageHelp.profiles.body": "配置就是一个浏览器身份：有自己的指纹、Cookie、代理和设置，与其他配置互不相通。创建后启动，就会打开它的浏览器。可以用文件夹和视图整理配置，也可以用预览在不离开列表的情况下查看某个配置。",
    "pageHelp.profiles.title": "关于配置",
@@ -84942,7 +85147,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "pageHelp.settings.title": "关于设置",
    "pageHelp.team.title": "关于此团队",
    "pageHelp.team.body": "这里的每个人都在团队服务器上的团队空间中工作。添加成员并把邀请发给他们，然后设定每人能做什么：最具体的规则生效，同一层级时拒绝优先于允许。",
-@@ -1623,6 +1687,8 @@
+@@ -1623,6 +1688,8 @@
    "patchlog.changeCountMany": "{n} 项改动",
    "patchlog.changeCountOne": "{n} 项改动",
    "patchlog.latestBadge": "最新",
@@ -84951,7 +85156,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "patchlog.lockExplainer": "已经实现，但在发布版本中关闭，因此发布的应用里不会出现它的名称。",
    "patchlog.lockedBadge": "已锁定",
    "patchlog.scopeBrowser": "浏览器",
-@@ -1929,7 +1995,7 @@
+@@ -1929,7 +1996,7 @@
    "projectEditor.worldMain": "主环境",
    "proxies.title": "代理",
    "proxiesMoreMenu.buy": "购买代理",
@@ -84960,7 +85165,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "proxyBulkImporter.active": "可用",
    "proxyBulkImporter.addFailed": "无法添加这些代理",
    "proxyBulkImporter.back": "返回",
-@@ -2302,16 +2368,13 @@
+@@ -2302,16 +2369,13 @@
    "settings.aboutReplayTour": "重新查看导览",
    "settings.aboutTipsAgain": "再次显示页面提示",
    "settings.aboutTipsOn": "页面提示已开启",
@@ -84980,7 +85185,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "settings.apiAuthHeaderHint": "发送时使用 ",
    "settings.apiBaseUrlLabel": "基础 URL",
    "settings.apiDetailsTitle": "连接",
-@@ -2336,7 +2399,7 @@
+@@ -2336,7 +2400,7 @@
    "settings.argsConfirmSave": "仍然保存",
    "settings.argsConfirmTitle": "保存这些启动参数？",
    "settings.cameraHelp": "请保持开启：真实摄像头会让每个配置背后显示同一台设备。",
@@ -84989,7 +85194,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "settings.profileNameHelp": "显示在地址栏和窗口标题中。关闭后，窗口看起来与普通 Chrome 相同。",
    "settings.profileNameLabel": "在浏览器中显示配置名称",
    "settings.profilePasswordsHelp": "每次启动时都会询问。忘记的密码无法找回。",
-@@ -2377,7 +2440,7 @@
+@@ -2377,7 +2441,7 @@
    "settings.reduceMotion": "减少动效",
    "settings.regenerateMessage": "使用当前令牌的脚本和 MCP 客户端将停止工作，直到你为它们换上新令牌。",
    "settings.regenerateTitle": "重新生成 API 令牌？",
@@ -84998,7 +85203,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "settings.saveFailed": "无法保存设置",
    "settings.saveFailedKept": "无法保存。你的更改仍保留在这里。",
    "settings.saveTimedOut": "10 秒内没有响应。",
-@@ -2393,9 +2456,99 @@
+@@ -2393,9 +2457,99 @@
    "settings.tabAbout": "关于",
    "settings.tabApi": "API 与 MCP",
    "settings.tabAppearance": "外观",
@@ -85099,7 +85304,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "settings.tabProfiles": "配置默认值",
    "settings.tabStorage": "存储",
    "settings.tabSync": "同步",
-@@ -2485,8 +2638,8 @@
+@@ -2485,8 +2639,8 @@
    "sidebar.groupFolders": "文件夹",
    "sidebar.groupPinned": "置顶",
    "sidebar.groupViews": "视图",
@@ -85110,7 +85315,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "sidebar.navBookmarks": "书签",
    "sidebar.navExtensions": "扩展",
    "sidebar.navFingerprints": "指纹",
-@@ -2747,21 +2900,21 @@
+@@ -2747,21 +2901,21 @@
    "team.errUnknownToken": "服务器不认识这个令牌：请向团队管理员索取新邀请。",
    "team.errSwitchedOff": "该成员已在服务器上停用：请让团队管理员启用。",
    "team.errOffline": "团队服务器没有响应：请检查它是否在运行、地址是否正确。",
@@ -85136,7 +85341,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "stat.trendDown": "下降 {n}",
    "stat.trendFlat": "无变化",
    "stat.trendUp": "上升 {n}",
-@@ -2898,7 +3051,7 @@
+@@ -2898,7 +3052,7 @@
    "tour.full.search.title": "搜索一切",
    "tour.full.settings.body": "在设置中所做的更改，要按“保存”后才会生效。只要你改动了什么，底部就会出现带有“保存”和“不保存”的栏。",
    "tour.full.settings.title": "保存你的设置",
@@ -85145,7 +85350,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "tour.full.sidebar.title": "侧边栏",
    "tour.full.start.body": "“启动”会打开该配置自己的浏览器窗口。它的登录状态和 Cookie 都只保存在这个配置里。",
    "tour.full.start.title": "启动配置",
-@@ -2934,7 +3087,7 @@
+@@ -2934,7 +3088,7 @@
    "tour.tips.proxies.help.title": "关于代理",
    "tour.tips.proxyshard.buy.body": "不用离开应用，就能在这里查看 ProxyShard 余额，并购买流量或代理。账号通过 API 密钥连接。",
    "tour.tips.proxyshard.buy.title": "购买流量和代理",
@@ -85154,7 +85359,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "tour.tips.proxyshard.help.title": "关于 ProxyShard",
    "tour.tips.settings.help.body": "每个标签页收纳一类设置。(i) 会说明这里能改什么。",
    "tour.tips.settings.help.title": "关于设置",
-@@ -3136,7 +3289,7 @@
+@@ -3136,7 +3290,7 @@
    "useExtensions.upToDateOne": "“{name}”已是最新版本",
    "useExtensions.updateFailed": "无法更新“{name}”",
    "useExtensions.updateWaiting": "使用“{name}”的配置关闭后，它就会更新",
@@ -85163,7 +85368,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "useExtensions.updated": "已将“{name}”更新到 {version}",
    "useExtensions.updatedAllMany": "已更新 {n} 个扩展",
    "useExtensions.updatedAllOne": "已更新 {n} 个扩展",
-@@ -3329,7 +3482,7 @@
+@@ -3329,7 +3483,7 @@
    "views.noProxy": "无代理",
    "views.recent": "最近使用",
    "views.running": "运行中",
@@ -85172,7 +85377,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "welcome.profiles.body": "每个配置都有自己的 Cookie、登录状态、代理和指纹，因此网站看到的是互不相干的不同用户。",
    "welcome.profiles.title": "每个配置都是独立的浏览器",
    "welcome.proxies.body": "代理会隐藏你真实的 IP 地址。指纹让每个浏览器看起来像另一台电脑。",
-@@ -3340,7 +3493,6 @@
+@@ -3340,7 +3494,6 @@
    "welcome.start": "开始导览",
    "welcome.tour.body": "按页面逐步快速走一遍，每一步只有一小段说明。随时可以停下，之后也能在设置中重新查看。",
    "welcome.tour.title": "要看一个 2 分钟的导览吗？",
@@ -85180,7 +85385,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "whatsNew.release": "版本",
    "whatsNew.title": "更新内容",
    "windowControls.close": "关闭",
-@@ -3366,14 +3518,6 @@
+@@ -3366,14 +3519,6 @@
    "profileSync.offDetail": "你的其他电脑会保留它们的副本，但不再更新。",
    "profileSync.conflictMade": "一个配置在两台电脑上都被修改：你在这里的更改在“{name}”中。",
    "profileSync.conflictDetail": "两个版本都已保留。不要同时运行两者：它们共用同一个指纹和 Cookie。",
@@ -85195,7 +85400,7 @@ index e646200a4c87102385a3a7ebbeef91571152f1b0..885016e884b89784f54e78d52e9864c1
    "sync.intro": "同步让你的配置和其他数据在你使用的每台电脑上保持一致。它们通过同步服务器汇合：你自己运行的，或你团队的。",
    "sync.teamHelp": "通过你已加入的团队的服务器同步。",
    "sync.teamTitle": "使用团队服务器",
-@@ -3475,11 +3619,379 @@
+@@ -3475,11 +3620,379 @@
    "sync.errRemoved": "你的另一台电脑已从这台服务器删除了你同步的数据。请在这里断开同步；这台电脑上的副本会保留。",
    "sync.errToken": "服务器不认识这个令牌：请检查令牌，或向运行服务器的人索取新邀请。",
    "sync.errTokenOwn": "服务器已不认识这个令牌。如果你重置了服务器或它的数据文件夹，请用新的管理员令牌重新连接。",
@@ -86769,7 +86974,7 @@ index 3fa4ec9c25cfb2f6a43994e67a53d4d7a6ec66eb..d15fc4341198584a7d7a4d74dbddf851
            // A built-in one says why it can't go (as Peek's menu does).
            e.builtin
 diff --git a/src/widgets/FingerprintPeek/FingerprintPeek.tsx b/src/widgets/FingerprintPeek/FingerprintPeek.tsx
-index 788754978a5346353cac00bcb4ccb8024f3a3e82..2dd08bb7942b111b4022d5cb4d3e6d9a5a45637f 100644
+index 788754978a5346353cac00bcb4ccb8024f3a3e82..b0e980a9d4974959141bac79f09de770562ae980 100644
 --- a/src/widgets/FingerprintPeek/FingerprintPeek.tsx
 +++ b/src/widgets/FingerprintPeek/FingerprintPeek.tsx
 @@ -1,5 +1,5 @@
@@ -86808,7 +87013,7 @@ index 788754978a5346353cac00bcb4ccb8024f3a3e82..2dd08bb7942b111b4022d5cb4d3e6d9a
  
    // Kept through the exit: the panel leaves showing what it showed (FEEL-02).
    const open = peekId && entry ? entry : null;
-@@ -56,19 +60,186 @@ export function FingerprintPeek() {
+@@ -56,19 +60,192 @@ export function FingerprintPeek() {
        {/* Keyed: a wait or a warning for one fingerprint never carries to the next. */}
        <FingerprintPeekHeader key={shown.id} entry={shown} onClose={close} />
        <PeekBody>
@@ -86848,7 +87053,13 @@ index 788754978a5346353cac00bcb4ccb8024f3a3e82..2dd08bb7942b111b4022d5cb4d3e6d9a
 +  return (
 +    <>
 +      <p className="m-0 mb-2 text-secondary text-text-soft-400">{t("fingerprintPeek.fieldSource")}</p>
-+      <RuntimeObservation entry={entry} />
++      {entry.builtin ? (
++        <p className="m-0 mb-2 text-secondary text-text-soft-400">
++          {t("fingerprintPeek.builtinRuntimeObservation")}
++        </p>
++      ) : (
++        <RuntimeObservation entry={entry} />
++      )}
 +      <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-secondary">
 +        {fields.map(([field, label]) => {
 +          const status = entry.field_checks?.[field];
@@ -86996,7 +87207,7 @@ index 788754978a5346353cac00bcb4ccb8024f3a3e82..2dd08bb7942b111b4022d5cb4d3e6d9a
      entry.builtin
        ? { label: t("fingerprintPeek.removeItem"), icon: rowActionIcons.trash({ className: "size-3.5" }), disabled: true, hint: t("fingerprintPeek.builtin"), onSelect: () => {} }
        : {
-@@ -160,7 +331,7 @@ export function useNewProfileFrom(entry: FingerprintEntry) {
+@@ -160,7 +337,7 @@ export function useNewProfileFrom(entry: FingerprintEntry) {
    return { start, busy, warning };
  }
  
@@ -87005,7 +87216,7 @@ index 788754978a5346353cac00bcb4ccb8024f3a3e82..2dd08bb7942b111b4022d5cb4d3e6d9a
    const t = useT();
    const nav = entry.payload?.navigator ?? {};
    const screen = entry.payload?.screen ?? {};
-@@ -192,10 +363,72 @@ function Details({ entry }: { entry: FingerprintEntry }) {
+@@ -192,10 +369,72 @@ function Details({ entry }: { entry: FingerprintEntry }) {
            <p data-selectable className="m-0 [overflow-wrap:anywhere] rounded-control bg-bg-weak-50 p-2 text-mono leading-[18px] text-text-sub-600">{nav.user_agent}</p>
          </div>
        )}
@@ -87079,10 +87290,17 @@ index 788754978a5346353cac00bcb4ccb8024f3a3e82..2dd08bb7942b111b4022d5cb4d3e6d9a
    const t = useT();
    useGpuCompatReady();
 diff --git a/src/widgets/FleetMonitor/FleetMonitor.tsx b/src/widgets/FleetMonitor/FleetMonitor.tsx
-index ab690cbc5d78557be7d7dafbd6bcf00c2b2da63a..1bb97ad063d2d9395e7db3460b63a187a1a51c27 100644
+index ab690cbc5d78557be7d7dafbd6bcf00c2b2da63a..4425b89a6643fd8823e8f65c9d9dd5e0c4eb5c1a 100644
 --- a/src/widgets/FleetMonitor/FleetMonitor.tsx
 +++ b/src/widgets/FleetMonitor/FleetMonitor.tsx
-@@ -14,37 +14,66 @@ const TONE: Record<WorkerState["status"], string> = {
+@@ -1,5 +1,5 @@
+ import { useEffect, useState } from "react";
+-import { automationFleet, type RunState, type WorkerState } from "../../entities/automation";
++import { automationFleet, lastRunOf, type RunState, type WorkerState } from "../../entities/automation";
+ import { useT } from "../../shared/i18n";
+ 
+ const TONE: Record<WorkerState["status"], string> = {
+@@ -14,37 +14,67 @@ const TONE: Record<WorkerState["status"], string> = {
  /** A second window: every browser in every run, one row each. */
  export function FleetMonitor() {
    const t = useT();
@@ -87130,6 +87348,7 @@ index ab690cbc5d78557be7d7dafbd6bcf00c2b2da63a..1bb97ad063d2d9395e7db3460b63a187
 +    starting: t("status.starting"),
 +    running: t("status.running"),
 +    done: t("fleetMonitor.finished"),
++    finished: t("fleetMonitor.finished"),
 +    failed: t("fleetMonitor.failed"),
 +    stopped: t("fleetMonitor.stopped"),
 +  };
@@ -87154,16 +87373,16 @@ index ab690cbc5d78557be7d7dafbd6bcf00c2b2da63a..1bb97ad063d2d9395e7db3460b63a187
          <p className="m-0 mt-6 text-center text-balance text-body text-text-soft-400">
            {t("fleetMonitor.emptyState")}
          </p>
-@@ -55,7 +84,7 @@ export function FleetMonitor() {
+@@ -55,7 +85,7 @@ export function FleetMonitor() {
                <div className="flex items-center justify-between px-2.5 py-1.5">
                  <span className="truncate text-secondary font-medium text-text-strong-950">{r.project_name}</span>
                  <span className="text-secondary text-text-soft-400">
 -                  {r.running ? "running" : "finished"}
-+                  {r.running ? status.running : status.done}
++                  {r.running ? status.running : status[lastRunOf(r).outcome]}
                  </span>
                </div>
                {/* Workers are the run's thread slots, in order; profile_id is empty until a slot takes one. */}
-@@ -76,8 +105,8 @@ export function FleetMonitor() {
+@@ -76,8 +106,8 @@ export function FleetMonitor() {
                      {w.steps_total > 0 ? `${w.step}/${w.steps_total}` : "—"}
                    </div>
                    <div className={`text-right text-secondary ${TONE[w.status]}`}>
