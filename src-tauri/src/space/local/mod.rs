@@ -9,6 +9,7 @@ pub(in crate::space) mod folders;
 pub(in crate::space) mod profile;
 pub(in crate::space) mod protect;
 pub(in crate::space) mod proxy;
+pub(in crate::space) mod proxy_folders;
 pub(in crate::space) mod seal;
 pub(in crate::space) mod tags;
 pub(in crate::space) mod trash;

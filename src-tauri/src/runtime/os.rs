@@ -34,10 +34,17 @@ pub fn holders(dir: &Path, browser: &Path) -> Holders {
     let (dir, browser) = (norm(dir), norm(browser));
     let inside: Vec<Proc> = processes()
         .into_iter()
-        .map(|p| Proc { image: norm(&p.image), ..p })
+        .map(|p| Proc {
+            image: norm(&p.image),
+            ..p
+        })
         .filter(|p| under(&p.image, &dir))
         .collect();
-    Holders { processes: inside.len(), browsers: browsers(&inside, &browser), untracked: 0 }
+    Holders {
+        processes: inside.len(),
+        browsers: browsers(&inside, &browser),
+        untracked: 0,
+    }
 }
 
 /// The engine binary not started as a helper. Without a command line, one whose
@@ -108,30 +115,57 @@ fn processes() -> Vec<Proc> {
         let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
         // SAFETY: the buffer is the struct this flavor fills, and of its size.
         let got = unsafe {
-            libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&mut info as *mut libc::proc_bsdinfo).cast(), size)
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                (&mut info as *mut libc::proc_bsdinfo).cast(),
+                size,
+            )
         };
         let ppid = if got == size { info.pbi_ppid } else { 0 };
         // Helpers are their own binaries here, so the parent rule is enough.
-        out.push(Proc { pid: pid as u32, ppid, image, helper: None });
+        out.push(Proc {
+            pid: pid as u32,
+            ppid,
+            image,
+            helper: None,
+        });
     }
     out
 }
 
 #[cfg(target_os = "linux")]
 fn processes() -> Vec<Proc> {
-    let Ok(dir) = std::fs::read_dir("/proc") else { return Vec::new() };
+    let Ok(dir) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     for ent in dir.flatten() {
-        let Some(pid) = ent.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else { continue };
-        let Ok(image) = std::fs::read_link(ent.path().join("exe")) else { continue };
+        let Some(pid) = ent.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else {
+            continue;
+        };
+        let Ok(image) = std::fs::read_link(ent.path().join("exe")) else {
+            continue;
+        };
         // Fields after the name in parentheses: state, then the parent.
         let ppid = std::fs::read_to_string(ent.path().join("stat"))
             .ok()
-            .and_then(|s| s.rfind(')').and_then(|i| s[i + 1..].split_whitespace().nth(1).map(str::to_string)))
+            .and_then(|s| {
+                s.rfind(')')
+                    .and_then(|i| s[i + 1..].split_whitespace().nth(1).map(str::to_string))
+            })
             .and_then(|p| p.parse().ok())
             .unwrap_or(0);
-        let helper = std::fs::read(ent.path().join("cmdline")).ok().map(|c| is_helper(&c));
-        out.push(Proc { pid, ppid, image, helper });
+        let helper = std::fs::read(ent.path().join("cmdline"))
+            .ok()
+            .map(|c| is_helper(&c));
+        out.push(Proc {
+            pid,
+            ppid,
+            image,
+            helper,
+        });
     }
     out
 }
@@ -139,27 +173,49 @@ fn processes() -> Vec<Proc> {
 #[cfg(windows)]
 fn processes() -> Vec<Proc> {
     use std::os::windows::ffi::OsStringExt;
-    use windows_sys::Wdk::System::Threading::{NtQueryInformationProcess, ProcessCommandLineInformation};
-    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, UNICODE_STRING};
+    use windows_sys::Wdk::System::Threading::{
+        NtQueryInformationProcess, ProcessCommandLineInformation,
+    };
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, HANDLE, INVALID_HANDLE_VALUE, UNICODE_STRING,
+    };
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
     };
     use windows_sys::Win32::System::Threading::{
-        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
     };
 
     /// Whether its command line has `--type=` (Windows 8.1 and later).
     fn helper(h: HANDLE) -> Option<bool> {
         let mut need = 0u32;
         // SAFETY: a null buffer of length 0 only asks for the size.
-        unsafe { NtQueryInformationProcess(h, ProcessCommandLineInformation, std::ptr::null_mut(), 0, &mut need) };
+        unsafe {
+            NtQueryInformationProcess(
+                h,
+                ProcessCommandLineInformation,
+                std::ptr::null_mut(),
+                0,
+                &mut need,
+            )
+        };
         // u64s keep the UNICODE_STRING at its start aligned.
-        let words = (need as usize).div_ceil(8).max(std::mem::size_of::<UNICODE_STRING>().div_ceil(8));
+        let words = (need as usize)
+            .div_ceil(8)
+            .max(std::mem::size_of::<UNICODE_STRING>().div_ceil(8));
         let mut buf = vec![0u64; words];
         let len = (buf.len() * 8) as u32;
         // SAFETY: the buffer is `len` bytes long.
         let status = unsafe {
-            NtQueryInformationProcess(h, ProcessCommandLineInformation, buf.as_mut_ptr().cast(), len, &mut need)
+            NtQueryInformationProcess(
+                h,
+                ProcessCommandLineInformation,
+                buf.as_mut_ptr().cast(),
+                len,
+                &mut need,
+            )
         };
         if status < 0 {
             return None;
@@ -173,7 +229,10 @@ fn processes() -> Vec<Proc> {
             }
             std::slice::from_raw_parts(us.Buffer, us.Length as usize / 2)
         };
-        let bytes: Vec<u8> = text.iter().map(|&c| if c < 0x80 { c as u8 } else { b'?' }).collect();
+        let bytes: Vec<u8> = text
+            .iter()
+            .map(|&c| if c < 0x80 { c as u8 } else { b'?' })
+            .collect();
         Some(is_helper(&bytes))
     }
 
@@ -186,11 +245,18 @@ fn processes() -> Vec<Proc> {
         let mut buf = vec![0u16; 32768];
         let mut len = buf.len() as u32;
         // SAFETY: `len` is the buffer's length in characters.
-        let ok = unsafe { QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len) } != 0;
+        let ok = unsafe {
+            QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len)
+        } != 0;
         let helper = if ok { helper(h) } else { None };
         // SAFETY: our own handle.
         unsafe { CloseHandle(h) };
-        ok.then(|| (PathBuf::from(std::ffi::OsString::from_wide(&buf[..len as usize])), helper))
+        ok.then(|| {
+            (
+                PathBuf::from(std::ffi::OsString::from_wide(&buf[..len as usize])),
+                helper,
+            )
+        })
     }
 
     // SAFETY: a snapshot of our own, closed below.
@@ -207,7 +273,12 @@ fn processes() -> Vec<Proc> {
     while more {
         if e.th32ProcessID != 0 {
             if let Some((image, helper)) = image(e.th32ProcessID) {
-                out.push(Proc { pid: e.th32ProcessID, ppid: e.th32ParentProcessID, image, helper });
+                out.push(Proc {
+                    pid: e.th32ProcessID,
+                    ppid: e.th32ParentProcessID,
+                    image,
+                    helper,
+                });
             }
         }
         // SAFETY: as above.
@@ -241,10 +312,21 @@ pub fn free_bytes(dir: &Path) -> Option<u64> {
 pub fn free_bytes(dir: &Path) -> Option<u64> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-    let wide: Vec<u16> = dir.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let wide: Vec<u16> = dir
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
     let mut avail = 0u64;
     // SAFETY: a NUL-terminated path; the totals we do not need are null.
-    let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut avail, std::ptr::null_mut(), std::ptr::null_mut()) };
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut avail,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
     (ok != 0).then_some(avail)
 }
 
@@ -279,16 +361,32 @@ mod tests {
         std::fs::set_permissions(&browser, std::fs::Permissions::from_mode(0o755)).unwrap();
         let elsewhere = dir.join("elsewhere");
         std::fs::create_dir_all(&elsewhere).unwrap();
-        assert_eq!(holders(&elsewhere, &elsewhere.join("browser")), Holders::default());
+        assert_eq!(
+            holders(&elsewhere, &elsewhere.join("browser")),
+            Holders::default()
+        );
 
-        let mut a = std::process::Command::new(&browser).arg("30").spawn().unwrap();
-        let mut b = std::process::Command::new(&browser).arg("30").spawn().unwrap();
+        let mut a = std::process::Command::new(&browser)
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let mut b = std::process::Command::new(&browser)
+            .arg("30")
+            .spawn()
+            .unwrap();
         let found = holders(&engine, &browser);
         a.kill().unwrap();
         b.kill().unwrap();
         let _ = a.wait();
         let _ = b.wait();
-        assert_eq!(found, Holders { processes: 2, browsers: 2, untracked: 0 });
+        assert_eq!(
+            found,
+            Holders {
+                processes: 2,
+                browsers: 2,
+                untracked: 0
+            }
+        );
         assert!(!holders(&engine, &browser).any(), "gone once they end");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -298,13 +396,23 @@ mod tests {
     #[test]
     fn helpers_are_not_browsers_even_once_orphaned() {
         let bin = PathBuf::from("/e/chrome");
-        let p = |pid, ppid, helper| Proc { pid, ppid, image: bin.clone(), helper };
+        let p = |pid, ppid, helper| Proc {
+            pid,
+            ppid,
+            image: bin.clone(),
+            helper,
+        };
         let crashpad = PathBuf::from("/e/crashpad");
         let procs = [
-            p(10, 1, Some(false)),   // a browser
-            p(11, 10, Some(true)),   // its renderer
-            p(20, 999, Some(true)),  // a GPU process whose browser is gone
-            Proc { pid: 21, ppid: 999, image: crashpad, helper: None },
+            p(10, 1, Some(false)),  // a browser
+            p(11, 10, Some(true)),  // its renderer
+            p(20, 999, Some(true)), // a GPU process whose browser is gone
+            Proc {
+                pid: 21,
+                ppid: 999,
+                image: crashpad,
+                helper: None,
+            },
         ];
         assert_eq!(browsers(&procs, &bin), 1);
         let unread = [p(30, 1, None), p(31, 30, None)];

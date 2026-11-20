@@ -66,7 +66,10 @@ fn paths_for(id: &str) -> Result<(PathBuf, PathBuf)> {
         anyhow::bail!("invalid profile id");
     }
     let dir = store::trash_dir()?;
-    Ok((dir.join(format!("{id}.zip")), dir.join(format!("{id}.json"))))
+    Ok((
+        dir.join(format!("{id}.zip")),
+        dir.join(format!("{id}.json")),
+    ))
 }
 
 /// Archive the profile, then delete the original. The archive holds the
@@ -75,7 +78,8 @@ pub(in crate::space) fn move_to_trash(id: &str) -> Result<TrashEntry> {
     let stored = profile::load_raw(id)?;
     let (zip_path, meta_path) = paths_for(id)?;
 
-    let file = fs::File::create(&zip_path).with_context(|| format!("create {}", zip_path.display()))?;
+    let file =
+        fs::File::create(&zip_path).with_context(|| format!("create {}", zip_path.display()))?;
     let mut zip = zip::ZipWriter::new(file);
     let opts = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
@@ -130,7 +134,9 @@ fn add_file<W: Write + std::io::Seek>(
 ) -> Result<()> {
     // A profile that is still running holds locks on some of these; a file we
     // cannot read is one the operator loses, not a reason to lose the rest.
-    let Ok(bytes) = fs::read(src) else { return Ok(()) };
+    let Ok(bytes) = fs::read(src) else {
+        return Ok(());
+    };
     zip.start_file(name, opts)?;
     zip.write_all(&bytes)?;
     Ok(())
@@ -142,7 +148,9 @@ fn add_dir<W: Write + std::io::Seek>(
     prefix: &str,
     opts: zip::write::SimpleFileOptions,
 ) -> Result<()> {
-    let Ok(rd) = fs::read_dir(src) else { return Ok(()) };
+    let Ok(rd) = fs::read_dir(src) else {
+        return Ok(());
+    };
     for entry in rd.flatten() {
         if store::is_os_litter(&entry.file_name()) {
             continue;
@@ -164,10 +172,14 @@ pub(in crate::space) fn list() -> Result<Vec<TrashEntry>> {
     for entry in fs::read_dir(&dir)? {
         let entry = entry?;
         let path = entry.path();
-        if store::is_os_litter(&entry.file_name()) || path.extension().and_then(|s| s.to_str()) != Some("json") {
+        if store::is_os_litter(&entry.file_name())
+            || path.extension().and_then(|s| s.to_str()) != Some("json")
+        {
             continue;
         }
-        let Ok(body) = fs::read_to_string(&path) else { continue };
+        let Ok(body) = fs::read_to_string(&path) else {
+            continue;
+        };
         if let Ok(e) = serde_json::from_str::<TrashEntry>(&body) {
             out.push(e);
         }
@@ -187,7 +199,9 @@ pub(in crate::space) fn restore(id: &str) -> Result<profile::ProfileMeta> {
     let mut stored: Option<profile::StoredProfile> = None;
     for i in 0..zip.len() {
         let mut f = zip.by_index(i)?;
-        let Some(rel) = f.enclosed_name() else { continue };
+        let Some(rel) = f.enclosed_name() else {
+            continue;
+        };
         let rel_str = rel.to_string_lossy().replace('\\', "/");
         if f.is_dir() {
             continue;
@@ -202,7 +216,9 @@ pub(in crate::space) fn restore(id: &str) -> Result<profile::ProfileMeta> {
             fs::write(super::protect::data_path(id)?, buf)?;
             continue;
         }
-        let Some(sub) = rel_str.strip_prefix("user-data/") else { continue };
+        let Some(sub) = rel_str.strip_prefix("user-data/") else {
+            continue;
+        };
         let out = udd.join(sub);
         if let Some(parent) = out.parent() {
             fs::create_dir_all(parent)?;

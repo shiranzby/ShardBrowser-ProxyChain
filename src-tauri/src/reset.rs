@@ -171,7 +171,11 @@ fn same_disk(a: &Path, b: &Path) -> bool {
 #[derive(Debug, Clone, PartialEq)]
 enum Step {
     /// An app-owned entry, to `rel` inside backup number `spot`.
-    Move { from: PathBuf, spot: usize, rel: PathBuf },
+    Move {
+        from: PathBuf,
+        spot: usize,
+        rel: PathBuf,
+    },
     /// A moved data folder's own folder, emptied by the moves before it.
     DropEmpty(PathBuf),
 }
@@ -202,7 +206,10 @@ pub struct Plan {
 
 impl Plan {
     fn roots(&self) -> Vec<PathBuf> {
-        std::iter::once(self.config.clone()).chain(self.moved.clone()).chain(self.runtime.clone()).collect()
+        std::iter::once(self.config.clone())
+            .chain(self.moved.clone())
+            .chain(self.runtime.clone())
+            .collect()
     }
 
     /// Every path and count, so any change shows. Sizes stay out: a running
@@ -214,12 +221,19 @@ impl Plan {
         }
         for s in &self.steps {
             match s {
-                Step::Move { from, spot, rel } => h.update(format!("move\0{}\0{spot}\0{}\n", from.display(), rel.display())),
+                Step::Move { from, spot, rel } => h.update(format!(
+                    "move\0{}\0{spot}\0{}\n",
+                    from.display(),
+                    rel.display()
+                )),
                 Step::DropEmpty(p) => h.update(format!("drop\0{}\n", p.display())),
             }
         }
         h.update(serde_json::to_string(&self.counts).unwrap_or_default());
-        h.finalize()[..12].iter().map(|b| format!("{b:02x}")).collect()
+        h.finalize()[..12]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
     }
 
     fn backups(&self, name: &str) -> Vec<PathBuf> {
@@ -232,12 +246,16 @@ impl Plan {
             plan: self.digest(),
             config: self.config.clone(),
             roots: self.roots(),
+            moved_data: self.moved.clone(),
             backups: backups.to_vec(),
             steps: self
                 .steps
                 .iter()
                 .map(|s| match s {
-                    Step::Move { from, spot, rel } => JStep::Move { from: from.clone(), to: backups[*spot].join(rel) },
+                    Step::Move { from, spot, rel } => JStep::Move {
+                        from: from.clone(),
+                        to: backups[*spot].join(rel),
+                    },
                     Step::DropEmpty(d) => JStep::Drop { dir: d.clone() },
                 })
                 .collect(),
@@ -261,22 +279,37 @@ pub struct PlanView {
 
 pub fn plan(l: &Layout) -> Result<Plan> {
     if l.config.file_name() != Some(OsStr::new(CONFIG_NAME)) {
-        bail!("Nothing was moved: {} is not ShardBrowser’s settings folder.", l.config.display());
+        bail!(
+            "Nothing was moved: {} is not ShardBrowser’s settings folder.",
+            l.config.display()
+        );
     }
     let config = safe_root(&l.config, l)?;
     if config.file_name() != Some(OsStr::new(CONFIG_NAME)) || !is_file(&config, CONFIG_MARKER) {
-        bail!("Nothing was moved: {} doesn’t look like ShardBrowser’s settings folder.", config.display());
+        bail!(
+            "Nothing was moved: {} doesn’t look like ShardBrowser’s settings folder.",
+            config.display()
+        );
     }
-    let home_spot = config.parent().context("the settings folder has no folder above it")?.to_path_buf();
+    let home_spot = config
+        .parent()
+        .context("the settings folder has no folder above it")?
+        .to_path_buf();
     let data = safe_root(&l.data, l)?;
     let moved = if data == config {
         None
     } else {
         if config.starts_with(&data) {
-            bail!("Nothing was moved: the data folder {} holds other folders too.", data.display());
+            bail!(
+                "Nothing was moved: the data folder {} holds other folders too.",
+                data.display()
+            );
         }
         if exact_dir(&data, DATA_MARKER).is_none() {
-            bail!("Nothing was moved: {} doesn’t look like ShardBrowser’s data folder.", data.display());
+            bail!(
+                "Nothing was moved: {} doesn’t look like ShardBrowser’s data folder.",
+                data.display()
+            );
         }
         Some(data)
     };
@@ -285,7 +318,11 @@ pub fn plan(l: &Layout) -> Result<Plan> {
     // disk (it is no mount point, so its parent is on that disk too).
     let moved_spot = match &moved {
         Some(m) if !(l.same_disk)(m, &home_spot) => {
-            spots.push(m.parent().context("the data folder has no folder above it")?.to_path_buf());
+            spots.push(
+                m.parent()
+                    .context("the data folder has no folder above it")?
+                    .to_path_buf(),
+            );
             1
         }
         _ => 0,
@@ -307,10 +344,14 @@ pub fn plan(l: &Layout) -> Result<Plan> {
     let mut counts = Counts::default();
     if let Some(m) = &moved {
         for folder in DATA_ENTRIES {
-            let Some(dir) = exact_dir(m, folder) else { continue };
+            let Some(dir) = exact_dir(m, folder) else {
+                continue;
+            };
             let mut ours = Vec::new();
             let mut others = false;
-            for e in fs::read_dir(&dir).with_context(|| format!("Nothing was moved: {} can’t be read", dir.display()))? {
+            for e in fs::read_dir(&dir)
+                .with_context(|| format!("Nothing was moved: {} can’t be read", dir.display()))?
+            {
                 let e = e?;
                 let kind = e.file_type()?;
                 if app_named(folder, &e.file_name(), kind.is_dir()) {
@@ -326,7 +367,11 @@ pub fn plan(l: &Layout) -> Result<Plan> {
                     "extensions" => counts.extensions += 1,
                     _ => {}
                 }
-                steps.push(Step::Move { from: dir.join(&name), spot: moved_spot, rel: Path::new(MOVED_DATA).join(folder).join(&name) });
+                steps.push(Step::Move {
+                    from: dir.join(&name),
+                    spot: moved_spot,
+                    rel: Path::new(MOVED_DATA).join(folder).join(&name),
+                });
             }
             if !others {
                 steps.push(Step::DropEmpty(dir));
@@ -337,18 +382,29 @@ pub fn plan(l: &Layout) -> Result<Plan> {
         if let Some((from, kind)) = exact(&config, name) {
             if kind.is_dir() {
                 match *name {
-                    "profiles" => counts.profiles += count_in(&from, |n, k| !k.is_dir() && n.ends_with(".json")),
+                    "profiles" => {
+                        counts.profiles +=
+                            count_in(&from, |n, k| !k.is_dir() && n.ends_with(".json"))
+                    }
                     "extensions" => counts.extensions += count_in(&from, |_, k| k.is_dir()),
                     _ => {}
                 }
             }
-            steps.push(Step::Move { from, spot: 0, rel: PathBuf::from(name) });
+            steps.push(Step::Move {
+                from,
+                spot: 0,
+                rel: PathBuf::from(name),
+            });
         }
     }
     if let Some(rt) = &runtime {
         for name in RUNTIME_ENTRIES {
             if let Some((from, _)) = exact(rt, name) {
-                steps.push(Step::Move { from, spot: 0, rel: Path::new("runtime").join(name) });
+                steps.push(Step::Move {
+                    from,
+                    spot: 0,
+                    rel: Path::new("runtime").join(name),
+                });
             }
         }
     }
@@ -369,7 +425,11 @@ pub fn plan(l: &Layout) -> Result<Plan> {
         }
         ours.sort();
         for name in ours {
-            steps.push(Step::Move { from: dir.join(&name), spot: 0, rel: Path::new("fingerprints").join(&name) });
+            steps.push(Step::Move {
+                from: dir.join(&name),
+                spot: 0,
+                rel: Path::new("fingerprints").join(&name),
+            });
         }
     }
     for name in CONFIG_ENTRIES.iter().chain(CONFIG_MARKERS) {
@@ -380,20 +440,43 @@ pub fn plan(l: &Layout) -> Result<Plan> {
                 "automation.json" => counts.projects = count_list(&from, "projects"),
                 _ => {}
             }
-            steps.push(Step::Move { from, spot: 0, rel: PathBuf::from(name) });
+            steps.push(Step::Move {
+                from,
+                spot: 0,
+                rel: PathBuf::from(name),
+            });
         }
     }
-    Ok(Plan { config, moved, runtime, spots, steps, counts })
+    Ok(Plan {
+        config,
+        moved,
+        runtime,
+        spots,
+        steps,
+        counts,
+    })
 }
 
 impl Plan {
     /// For the person; walks every folder for its size, so only here.
     pub fn view(&self, stamp: &str) -> PlanView {
         let name = format!("{BACKUP_PREFIX}{stamp}");
-        let moves = || self.steps.iter().filter_map(|s| if let Step::Move { from, .. } = s { Some(from) } else { None });
+        let moves = || {
+            self.steps.iter().filter_map(|s| {
+                if let Step::Move { from, .. } = s {
+                    Some(from)
+                } else {
+                    None
+                }
+            })
+        };
         PlanView {
             id: format!("{stamp}.{}", self.digest()),
-            backups: self.backups(&name).iter().map(|b| b.display().to_string()).collect(),
+            backups: self
+                .backups(&name)
+                .iter()
+                .map(|b| b.display().to_string())
+                .collect(),
             counts: self.counts.clone(),
             total_bytes: moves().map(|p| size_of(p)).sum(),
             entries: moves().map(|p| p.display().to_string()).collect(),
@@ -406,7 +489,13 @@ impl Plan {
 fn stamp_of(id: &str) -> Option<(&str, &str)> {
     let (stamp, digest) = id.split_once('.')?;
     let shape = stamp.len() == 17
-        && stamp.char_indices().all(|(i, c)| if [4, 7, 10].contains(&i) { c == '-' } else { c.is_ascii_digit() });
+        && stamp.char_indices().all(|(i, c)| {
+            if [4, 7, 10].contains(&i) {
+                c == '-'
+            } else {
+                c.is_ascii_digit()
+            }
+        });
     (shape && !digest.is_empty()).then_some((stamp, digest))
 }
 
@@ -414,8 +503,12 @@ fn stamp_of(id: &str) -> Option<(&str, &str)> {
 /// earlier one (the tracker knows only this run's browsers).
 fn running_profile(plan: &Plan) -> Option<PathBuf> {
     for root in std::iter::once(&plan.config).chain(plan.moved.iter()) {
-        let Some(dir) = exact_dir(root, "user-data") else { continue };
-        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        let Some(dir) = exact_dir(root, "user-data") else {
+            continue;
+        };
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
         for e in entries.flatten() {
             if e.file_type().is_ok_and(|t| t.is_dir()) && lock_is_live(&e.path()) {
                 return Some(e.path());
@@ -432,8 +525,12 @@ fn running_profile(plan: &Plan) -> Option<PathBuf> {
 /// Chromium's own check of the process does.
 #[cfg(unix)]
 pub(crate) fn lock_is_live(udd: &Path) -> bool {
-    let Ok(target) = fs::read_link(udd.join("SingletonLock")) else { return false };
-    let Some((host, pid)) = target.to_str().and_then(|t| t.rsplit_once('-')) else { return false };
+    let Ok(target) = fs::read_link(udd.join("SingletonLock")) else {
+        return false;
+    };
+    let Some((host, pid)) = target.to_str().and_then(|t| t.rsplit_once('-')) else {
+        return false;
+    };
     if host.is_empty() {
         return false;
     }
@@ -448,7 +545,9 @@ pub(crate) fn lock_is_live(udd: &Path) -> bool {
     if this_host().is_some_and(|here| here != host) {
         return false;
     }
-    let Ok(pid) = pid.parse::<i32>() else { return false };
+    let Ok(pid) = pid.parse::<i32>() else {
+        return false;
+    };
     pid_alive(pid)
 }
 
@@ -506,6 +605,9 @@ pub struct Journal {
     config: PathBuf,
     /// Where the moves come from (canonical).
     roots: Vec<PathBuf>,
+    /// Settings may already be in the backup when the launcher restarts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    moved_data: Option<PathBuf>,
     backups: Vec<PathBuf>,
     steps: Vec<JStep>,
 }
@@ -537,7 +639,11 @@ fn write_durable(path: &Path, body: &[u8]) -> Result<()> {
 
 /// A new file, never over one, flushed.
 fn write_new_durable(path: &Path, body: &[u8]) -> Result<()> {
-    let mut f = fs::OpenOptions::new().write(true).create_new(true).open(path).with_context(|| format!("write {}", path.display()))?;
+    let mut f = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .with_context(|| format!("write {}", path.display()))?;
     f.write_all(body)?;
     f.sync_all()?;
     Ok(())
@@ -570,7 +676,10 @@ fn readme(j: &Journal, stamp: &str, this: &Path) -> String {
          After a restart ShardBrowser makes a new, empty settings.json, profiles and user-data: replace those with the ones here.\n"
     );
     for other in j.backups.iter().filter(|b| b.as_path() != this) {
-        s.push_str(&format!("\nThe rest of this reset is in {}.\n", other.display()));
+        s.push_str(&format!(
+            "\nThe rest of this reset is in {}.\n",
+            other.display()
+        ));
     }
     s.push_str("\nDelete this folder when you no longer need it.\n");
     s
@@ -583,7 +692,11 @@ fn recovery(j: &Journal, stamp: &str) -> String {
     );
     for step in &j.steps {
         if let JStep::Move { from, to } = step {
-            s.push_str(&format!("planned: {}  <-  {}\n", to.display(), from.display()));
+            s.push_str(&format!(
+                "planned: {}  <-  {}\n",
+                to.display(),
+                from.display()
+            ));
         }
     }
     s
@@ -593,7 +706,11 @@ fn recovery(j: &Journal, stamp: &str) -> String {
 /// else "-2", "-3"… An existing folder is never reused or written into.
 fn fresh_backups(spots: &[PathBuf], stamp: &str) -> Result<Vec<PathBuf>> {
     for n in 1..1000 {
-        let name = if n == 1 { format!("{BACKUP_PREFIX}{stamp}") } else { format!("{BACKUP_PREFIX}{stamp}-{n}") };
+        let name = if n == 1 {
+            format!("{BACKUP_PREFIX}{stamp}")
+        } else {
+            format!("{BACKUP_PREFIX}{stamp}-{n}")
+        };
         let mut made = Vec::new();
         let mut taken = false;
         for spot in spots {
@@ -608,7 +725,8 @@ fn fresh_backups(spots: &[PathBuf], stamp: &str) -> Result<Vec<PathBuf>> {
                     for m in &made {
                         let _ = fs::remove_dir(m);
                     }
-                    return Err(anyhow!(e).context(format!("Nothing was moved: {} can’t be made", p.display())));
+                    return Err(anyhow!(e)
+                        .context(format!("Nothing was moved: {} can’t be made", p.display())));
                 }
             }
         }
@@ -620,7 +738,10 @@ fn fresh_backups(spots: &[PathBuf], stamp: &str) -> Result<Vec<PathBuf>> {
             let _ = fs::remove_dir(m);
         }
     }
-    bail!("Nothing was moved: there are too many backups beside {}.", spots[0].display())
+    bail!(
+        "Nothing was moved: there are too many backups beside {}.",
+        spots[0].display()
+    )
 }
 
 /// Moves one entry by rename; never over anything. A link moves as a link.
@@ -631,7 +752,11 @@ fn move_entry(from: &Path, to: &Path) -> Result<()> {
     }
     match fs::rename(from, to) {
         Ok(()) => Ok(()),
-        Err(e) if crosses_devices(&e) => bail!("{} and {} are on different disks", from.display(), to.display()),
+        Err(e) if crosses_devices(&e) => bail!(
+            "{} and {} are on different disks",
+            from.display(),
+            to.display()
+        ),
         Err(e) => Err(e.into()),
     }
 }
@@ -650,7 +775,10 @@ fn crosses_devices(e: &std::io::Error) -> bool {
 /// Whether `p` is a real folder holding nothing but empty folders.
 fn only_empty_dirs(p: &Path) -> bool {
     fs::symlink_metadata(p).is_ok_and(|m| m.is_dir())
-        && fs::read_dir(p).is_ok_and(|it| it.flatten().all(|e| e.file_type().is_ok_and(|t| t.is_dir()) && only_empty_dirs(&e.path())))
+        && fs::read_dir(p).is_ok_and(|it| {
+            it.flatten()
+                .all(|e| e.file_type().is_ok_and(|t| t.is_dir()) && only_empty_dirs(&e.path()))
+        })
 }
 
 /// Removes a tree of empty folders, deepest first; anything else stays.
@@ -680,7 +808,8 @@ fn apply(j: &Journal, step: &JStep) -> Result<()> {
             if let Some(parent) = to.parent() {
                 fs::create_dir_all(parent).with_context(|| format!("make {}", parent.display()))?;
             }
-            move_entry(from, to).with_context(|| format!("{} couldn’t be moved", from.display()))?;
+            move_entry(from, to)
+                .with_context(|| format!("{} couldn’t be moved", from.display()))?;
             note(&j.backups, "moved", from, to);
         }
         // Only while still empty: a file that arrived since keeps its folder.
@@ -736,7 +865,11 @@ fn finish_steps(j: &Journal) -> Vec<String> {
                 if exists(to) {
                     clear_if_empty(from);
                     if exists(from) {
-                        stuck.push(format!("{}: it is in {} and something new is at its place", from.display(), to.display()));
+                        stuck.push(format!(
+                            "{}: it is in {} and something new is at its place",
+                            from.display(),
+                            to.display()
+                        ));
                     }
                     continue;
                 }
@@ -798,7 +931,8 @@ fn start(plan: &Plan, stamp: &str) -> Result<Journal> {
         sync_dir(b.parent().unwrap_or(b));
         Ok::<(), anyhow::Error>(())
     });
-    let journaled = written.and_then(|()| write_durable(&journal_path(&plan.config), &serde_json::to_vec_pretty(&j)?));
+    let journaled = written
+        .and_then(|()| write_durable(&journal_path(&plan.config), &serde_json::to_vec_pretty(&j)?));
     if let Err(e) = journaled {
         let _ = fs::remove_file(journal_path(&plan.config));
         clear_backups(&j);
@@ -812,7 +946,11 @@ fn start(plan: &Plan, stamp: &str) -> Result<Journal> {
 /// each step (tests make one fail there). On any failure every move the disk
 /// shows was made is undone; the backups and the journal go only when that
 /// put everything back.
-fn execute(plan: &Plan, stamp: &str, before: &mut dyn FnMut(&JStep) -> Result<()>) -> Result<Vec<PathBuf>> {
+fn execute(
+    plan: &Plan,
+    stamp: &str,
+    before: &mut dyn FnMut(&JStep) -> Result<()>,
+) -> Result<Vec<PathBuf>> {
     // A browser's last write (its run time) waits for this, then finds no
     // profile to write to: it never brings one back.
     let _profiles = crate::space::profile::file_lock();
@@ -828,7 +966,13 @@ fn execute(plan: &Plan, stamp: &str, before: &mut dyn FnMut(&JStep) -> Result<()
         close_journal(&plan.config);
         return Ok(j.backups);
     };
-    let all = || j.backups.iter().map(|b| b.display().to_string()).collect::<Vec<_>>().join(" and ");
+    let all = || {
+        j.backups
+            .iter()
+            .map(|b| b.display().to_string())
+            .collect::<Vec<_>>()
+            .join(" and ")
+    };
     // An item on a disk that went away can't be seen, and must not be taken
     // for one that never moved: nothing is put back, and the journal stays.
     if let Some(gone) = unreachable(&j).first() {
@@ -844,7 +988,11 @@ fn execute(plan: &Plan, stamp: &str, before: &mut dyn FnMut(&JStep) -> Result<()
         close_journal(&plan.config);
         bail!("Nothing was moved: {e:#}. Everything is back where it was.");
     }
-    let stuck = if stuck.is_empty() { offline(&j) } else { stuck.join("; ") };
+    let stuck = if stuck.is_empty() {
+        offline(&j)
+    } else {
+        stuck.join("; ")
+    };
     bail!(
         "Some data is still in {}: {e:#}. It could not all be put back ({stuck}). Move the items listed in RECOVERY.txt back where they came from.",
         all()
@@ -857,7 +1005,13 @@ fn execute(plan: &Plan, stamp: &str, before: &mut dyn FnMut(&JStep) -> Result<()
 /// an item there would look as if it never moved.
 fn unreachable(j: &Journal) -> Vec<PathBuf> {
     let real_dir = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| m.is_dir());
-    let mut gone: Vec<PathBuf> = j.roots.iter().chain(&j.backups).filter(|p| !real_dir(p)).cloned().collect();
+    let mut gone: Vec<PathBuf> = j
+        .roots
+        .iter()
+        .chain(&j.backups)
+        .filter(|p| !real_dir(p))
+        .cloned()
+        .collect();
     if gone.is_empty() {
         for b in &j.backups {
             let beside = j.roots.iter().find(|r| r.parent() == b.parent());
@@ -893,25 +1047,47 @@ fn read_journal(config: &Path) -> Result<Option<Journal>> {
     if !exists(&path) {
         return Ok(None);
     }
-    let unreadable = || format!("ShardBrowser can’t read its notes on the reset ({})", path.display());
-    let j: Journal = serde_json::from_slice(&fs::read(&path).with_context(unreadable)?).with_context(unreadable)?;
+    let unreadable = || {
+        format!(
+            "ShardBrowser can’t read its notes on the reset ({})",
+            path.display()
+        )
+    };
+    let j: Journal = serde_json::from_slice(&fs::read(&path).with_context(unreadable)?)
+        .with_context(unreadable)?;
     let trusted = j.config == config
         && j.roots.first() == Some(&j.config)
+        && j.moved_data.as_ref().is_none_or(|root| {
+            j.roots.get(1) == Some(root)
+                && root.is_absolute()
+                && !j.config.starts_with(root)
+                && !root.components().any(|c| c == Component::ParentDir)
+        })
         && !j.backups.is_empty()
         && j.backups.iter().all(|b| {
-            b.file_name().and_then(OsStr::to_str).is_some_and(|n| n.starts_with(BACKUP_PREFIX))
-                && b.parent().is_some_and(|p| j.roots.iter().any(|r| r.parent() == Some(p)))
+            b.file_name()
+                .and_then(OsStr::to_str)
+                .is_some_and(|n| n.starts_with(BACKUP_PREFIX))
+                && b.parent()
+                    .is_some_and(|p| j.roots.iter().any(|r| r.parent() == Some(p)))
         })
         && j.steps.iter().all(|s| match s {
             JStep::Move { from, to } => {
-                from.parent().is_some_and(|p| j.roots.iter().any(|r| p.starts_with(r)))
+                from.parent()
+                    .is_some_and(|p| j.roots.iter().any(|r| p.starts_with(r)))
                     && j.backups.iter().any(|b| to.starts_with(b) && to != b)
-                    && !from.components().chain(to.components()).any(|c| c == Component::ParentDir)
+                    && !from
+                        .components()
+                        .chain(to.components())
+                        .any(|c| c == Component::ParentDir)
             }
             JStep::Drop { dir } => j.roots.iter().any(|r| dir.starts_with(r) && dir != r),
         });
     if !trusted {
-        bail!("ShardBrowser can’t trust its notes on the reset ({}). Nothing was changed.", path.display());
+        bail!(
+            "ShardBrowser can’t trust its notes on the reset ({}). Nothing was changed.",
+            path.display()
+        );
     }
     Ok(Some(j))
 }
@@ -919,13 +1095,18 @@ fn read_journal(config: &Path) -> Result<Option<Journal>> {
 /// Puts back everything a reset that did not finish had moved, then drops
 /// its journal and the emptied backups.
 pub fn undo_pending(config: &Path) -> Result<()> {
-    let Some(j) = read_journal(config)? else { return Ok(()) };
+    let Some(j) = read_journal(config)? else {
+        return Ok(());
+    };
     refuse_offline(&j)?;
     let stuck = undo_steps(&j);
     // A disk that went away meanwhile: what was on it was skipped, not put back.
     refuse_offline(&j)?;
     if !stuck.is_empty() {
-        bail!("Some data could not be put back: {}. The rest is listed in RECOVERY.txt.", stuck.join("; "));
+        bail!(
+            "Some data could not be put back: {}. The rest is listed in RECOVERY.txt.",
+            stuck.join("; ")
+        );
     }
     clear_backups(&j);
     close_journal(config);
@@ -935,12 +1116,20 @@ pub fn undo_pending(config: &Path) -> Result<()> {
 /// Makes the moves a reset that did not finish had not made yet, then drops
 /// its journal. The backups stay, as after any reset.
 pub fn finish_pending(config: &Path) -> Result<Vec<PathBuf>> {
-    let Some(j) = read_journal(config)? else { return Ok(Vec::new()) };
+    let Some(j) = read_journal(config)? else {
+        return Ok(Vec::new());
+    };
     refuse_offline(&j)?;
     let stuck = finish_steps(&j);
     refuse_offline(&j)?;
     if !stuck.is_empty() {
-        bail!("Some data could not be moved: {}. It is listed in RECOVERY.txt.", stuck.join("; "));
+        bail!(
+            "Some data could not be moved: {}. It is listed in RECOVERY.txt.",
+            stuck.join("; ")
+        );
+    }
+    if let Some(root) = &j.moved_data {
+        crate::space::open::wipe_reset_root(root)?;
     }
     close_journal(config);
     Ok(j.backups)
@@ -967,17 +1156,37 @@ fn pending_view(config: &Path) -> Option<PendingView> {
     match read_journal(config) {
         Ok(None) => None,
         Ok(Some(j)) => {
-            let moves: Vec<_> = j.steps.iter().filter_map(|s| if let JStep::Move { to, .. } = s { Some(to) } else { None }).collect();
+            let moves: Vec<_> = j
+                .steps
+                .iter()
+                .filter_map(|s| {
+                    if let JStep::Move { to, .. } = s {
+                        Some(to)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
             Some(PendingView {
                 journal,
                 backups: j.backups.iter().map(|b| b.display().to_string()).collect(),
                 moved: moves.iter().filter(|t| exists(t)).count(),
                 total: moves.len(),
-                missing: unreachable(&j).iter().map(|p| p.display().to_string()).collect(),
+                missing: unreachable(&j)
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect(),
                 error: None,
             })
         }
-        Err(e) => Some(PendingView { journal, backups: Vec::new(), moved: 0, total: 0, missing: Vec::new(), error: Some(format!("{e:#}")) }),
+        Err(e) => Some(PendingView {
+            journal,
+            backups: Vec::new(),
+            moved: 0,
+            total: 0,
+            missing: Vec::new(),
+            error: Some(format!("{e:#}")),
+        }),
     }
 }
 
@@ -991,17 +1200,25 @@ fn set_aside(config: &Path, stamp: &str) -> Result<Option<PathBuf>> {
         return Ok(None);
     }
     for n in 1..1000 {
-        let name = if n == 1 { format!("reset-in-progress.set-aside-{stamp}.json") } else { format!("reset-in-progress.set-aside-{stamp}-{n}.json") };
+        let name = if n == 1 {
+            format!("reset-in-progress.set-aside-{stamp}.json")
+        } else {
+            format!("reset-in-progress.set-aside-{stamp}-{n}.json")
+        };
         let to = config.join(name);
         if exists(&to) {
             continue;
         }
-        fs::rename(&path, &to).with_context(|| format!("{} couldn’t be renamed", path.display()))?;
+        fs::rename(&path, &to)
+            .with_context(|| format!("{} couldn’t be renamed", path.display()))?;
         sync_dir(config);
         crate::migrate::set_reset_pending(false);
         return Ok(Some(to));
     }
-    bail!("{} couldn’t be renamed: too many set-aside notes beside it", path.display())
+    bail!(
+        "{} couldn’t be renamed: too many set-aside notes beside it",
+        path.display()
+    )
 }
 
 /// At start: whether a reset did not finish. While its journal is there the
@@ -1028,9 +1245,16 @@ pub fn latest_backup() -> Option<PathBuf> {
         .flatten()
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .filter_map(|e| {
-            let name = e.file_name().to_str()?.strip_prefix(BACKUP_PREFIX)?.to_string();
+            let name = e
+                .file_name()
+                .to_str()?
+                .strip_prefix(BACKUP_PREFIX)?
+                .to_string();
             let (stamp, n) = match name.get(17..) {
-                Some(rest) if !rest.is_empty() => (name[..17].to_string(), rest.trim_start_matches('-').parse::<u32>().ok()?),
+                Some(rest) if !rest.is_empty() => (
+                    name[..17].to_string(),
+                    rest.trim_start_matches('-').parse::<u32>().ok()?,
+                ),
                 _ => (name.clone(), 1),
             };
             Some(((stamp, n), e.path()))
@@ -1054,7 +1278,12 @@ fn stamp_now() -> String {
         if !unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
             return format!(
                 "{:04}-{:02}-{:02}-{:02}{:02}{:02}",
-                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec
+                tm.tm_year + 1900,
+                tm.tm_mon + 1,
+                tm.tm_mday,
+                tm.tm_hour,
+                tm.tm_min,
+                tm.tm_sec
             );
         }
     }
@@ -1073,7 +1302,12 @@ fn utc_stamp(secs: i64) -> String {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
-    format!("{y:04}-{m:02}-{d:02}-{:02}{:02}{:02}", rem / 3600, rem % 3600 / 60, rem % 60)
+    format!(
+        "{y:04}-{m:02}-{d:02}-{:02}{:02}{:02}",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
 }
 
 fn imported_file(p: &Path) -> bool {
@@ -1096,12 +1330,20 @@ fn imported(v: &Value) -> bool {
 /// (`Uuid::new_v4`, profile.rs) and extension ids (`Uuid::simple`, or a Web
 /// Store id), with the suffixes the app writes.
 fn app_named(folder: &str, name: &OsStr, is_dir: bool) -> bool {
-    let Some(name) = name.to_str() else { return false };
+    let Some(name) = name.to_str() else {
+        return false;
+    };
     let uuid_with = |suffix: &str| name.strip_suffix(suffix).is_some_and(is_uuid);
     match folder {
         "profiles" => !is_dir && (uuid_with(".json") || uuid_with(".json.tmp")),
         "user-data" => is_dir && (is_uuid(name) || uuid_with(".opening")),
-        "extensions" => is_dir && name.len() == 32 && name.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'p').contains(&b)),
+        "extensions" => {
+            is_dir
+                && name.len() == 32
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'p').contains(&b))
+        }
         "trash" => !is_dir && (uuid_with(".zip") || uuid_with(".json")),
         "protected" => !is_dir && (uuid_with(".data") || uuid_with(".sealing")),
         _ => false,
@@ -1116,7 +1358,10 @@ fn count_in(dir: &Path, keep: impl Fn(&str, fs::FileType) -> bool) -> usize {
     fs::read_dir(dir)
         .map(|it| {
             it.flatten()
-                .filter(|e| e.file_type().is_ok_and(|k| keep(&e.file_name().to_string_lossy(), k)))
+                .filter(|e| {
+                    e.file_type()
+                        .is_ok_and(|k| keep(&e.file_name().to_string_lossy(), k))
+                })
                 .count()
         })
         .unwrap_or(0)
@@ -1133,14 +1378,18 @@ fn count_list(p: &Path, key: &str) -> usize {
 
 /// Bytes in an entry, links not followed.
 fn size_of(p: &Path) -> u64 {
-    let Ok(meta) = fs::symlink_metadata(p) else { return 0 };
+    let Ok(meta) = fs::symlink_metadata(p) else {
+        return 0;
+    };
     if meta.file_type().is_symlink() {
         return 0;
     }
     if !meta.is_dir() {
         return meta.len();
     }
-    fs::read_dir(p).map(|it| it.flatten().map(|e| size_of(&e.path())).sum()).unwrap_or(0)
+    fs::read_dir(p)
+        .map(|it| it.flatten().map(|e| size_of(&e.path())).sum())
+        .unwrap_or(0)
 }
 
 /// The canonical root, or why it must not be one.
@@ -1150,9 +1399,15 @@ fn safe_root(path: &Path, l: &Layout) -> Result<PathBuf> {
     if !root.is_dir() {
         bail!("Nothing was moved: {} is not a folder.", root.display());
     }
-    let depth = root.components().filter(|c| matches!(c, Component::Normal(_))).count();
+    let depth = root
+        .components()
+        .filter(|c| matches!(c, Component::Normal(_)))
+        .count();
     if depth == 0 || is_mount_point(&root) {
-        bail!("Nothing was moved: {} is the top of a disk.", root.display());
+        bail!(
+            "Nothing was moved: {} is the top of a disk.",
+            root.display()
+        );
     }
     if depth == 1 && top_level_is_system(&root) {
         bail!("Nothing was moved: {} is a system folder.", root.display());
@@ -1163,10 +1418,20 @@ fn safe_root(path: &Path, l: &Layout) -> Result<PathBuf> {
         .and_then(|h| fs::canonicalize(h).ok())
         .context("Nothing was moved: ShardBrowser can’t find your home folder.")?;
     if home.starts_with(&root) {
-        bail!("Nothing was moved: {} is your home folder or holds it.", root.display());
+        bail!(
+            "Nothing was moved: {} is your home folder or holds it.",
+            root.display()
+        );
     }
-    if l.shared.iter().filter_map(|s| fs::canonicalize(s).ok()).any(|s| s.starts_with(&root)) {
-        bail!("Nothing was moved: other apps keep their files in {} too.", root.display());
+    if l.shared
+        .iter()
+        .filter_map(|s| fs::canonicalize(s).ok())
+        .any(|s| s.starts_with(&root))
+    {
+        bail!(
+            "Nothing was moved: other apps keep their files in {} too.",
+            root.display()
+        );
     }
     Ok(root)
 }
@@ -1176,7 +1441,9 @@ fn safe_root(path: &Path, l: &Layout) -> Result<PathBuf> {
 #[cfg(unix)]
 fn is_mount_point(root: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
-    let Some(parent) = root.parent() else { return true };
+    let Some(parent) = root.parent() else {
+        return true;
+    };
     match (fs::metadata(root), fs::metadata(parent)) {
         (Ok(a), Ok(b)) => a.dev() != b.dev(),
         _ => true,
@@ -1199,9 +1466,18 @@ fn top_level_is_system(_root: &Path) -> bool {
 #[cfg(windows)]
 fn top_level_is_system(root: &Path) -> bool {
     const SYSTEM: &[&str] = &[
-        "windows", "program files", "program files (x86)", "programdata", "users",
-        "documents and settings", "recovery", "perflogs", "$recycle.bin",
-        "system volume information", "boot", "msocache",
+        "windows",
+        "program files",
+        "program files (x86)",
+        "programdata",
+        "users",
+        "documents and settings",
+        "recovery",
+        "perflogs",
+        "$recycle.bin",
+        "system volume information",
+        "boot",
+        "msocache",
     ];
     root.file_name()
         .and_then(|n| n.to_str())
@@ -1212,7 +1488,10 @@ fn top_level_is_system(root: &Path) -> bool {
 /// (a link is not followed). On a disk that ignores case, `Profiles` is some
 /// other app's folder, never the launcher's `profiles`.
 fn exact(root: &Path, name: &str) -> Option<(PathBuf, fs::FileType)> {
-    let entry = fs::read_dir(root).ok()?.flatten().find(|e| e.file_name() == OsStr::new(name))?;
+    let entry = fs::read_dir(root)
+        .ok()?
+        .flatten()
+        .find(|e| e.file_name() == OsStr::new(name))?;
     Some((entry.path(), entry.file_type().ok()?))
 }
 
@@ -1222,7 +1501,9 @@ fn is_file(root: &Path, name: &str) -> bool {
 
 /// A real folder (not a link) named exactly `name` in `root`.
 fn exact_dir(root: &Path, name: &str) -> Option<PathBuf> {
-    exact(root, name).filter(|(_, t)| t.is_dir()).map(|(p, _)| p)
+    exact(root, name)
+        .filter(|(_, t)| t.is_dir())
+        .map(|(p, _)| p)
 }
 
 /// Ends every run and every browser the way Stop does, and waits for them to
@@ -1238,7 +1519,10 @@ async fn stop_everything() -> Result<()> {
     loop {
         #[cfg(feature = "automation")]
         let runs = {
-            let live: Vec<_> = crate::runner::all().into_iter().filter(|r| r.running).collect();
+            let live: Vec<_> = crate::runner::all()
+                .into_iter()
+                .filter(|r| r.running)
+                .collect();
             for r in &live {
                 crate::runner::stop(&r.project_id);
             }
@@ -1270,9 +1554,14 @@ async fn stop_everything() -> Result<()> {
 /// Set while a reset (or the undo or finish of one) works on the disk:
 /// Quit and closing the window are refused meanwhile (lib.rs).
 static ACTIVE: AtomicBool = AtomicBool::new(false);
+static AWAITING_RESTART: AtomicBool = AtomicBool::new(false);
 
 pub fn active() -> bool {
     ACTIVE.load(Ordering::SeqCst)
+}
+
+pub(crate) fn awaiting_restart() -> bool {
+    AWAITING_RESTART.load(Ordering::SeqCst)
 }
 
 /// The lock a data move takes, held for the whole reset: nothing starts,
@@ -1292,6 +1581,7 @@ impl Held {
     /// Success: the moves are done and the journal is gone, so Quit is fine
     /// again; the lock stays until the restart.
     fn keep(self) {
+        AWAITING_RESTART.store(true, Ordering::SeqCst);
         ACTIVE.store(false, Ordering::SeqCst);
         std::mem::forget(self);
     }
@@ -1315,7 +1605,9 @@ fn refuse_while_starting() -> Result<(), String> {
 }
 
 /// Disk work off the main thread and off the async workers.
-async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T, String> {
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(f)
         .await
         .map_err(|e| e.to_string())?
@@ -1352,7 +1644,9 @@ pub struct ResetDone {
 }
 
 fn done(backups: Vec<PathBuf>) -> ResetDone {
-    ResetDone { backups: backups.iter().map(|b| b.display().to_string()).collect() }
+    ResetDone {
+        backups: backups.iter().map(|b| b.display().to_string()).collect(),
+    }
 }
 
 /// Settings > Storage > Delete all data, for the plan the person confirmed.
@@ -1365,14 +1659,20 @@ fn done(backups: Vec<PathBuf>) -> ResetDone {
 /// where the journal stays and the next start offers to undo or finish.
 #[tauri::command]
 pub async fn app_reset(plan_id: String) -> Result<ResetDone, String> {
-    let Some((stamp, digest)) = stamp_of(&plan_id).map(|(s, d)| (s.to_string(), d.to_string())) else {
+    let Some((stamp, digest)) = stamp_of(&plan_id).map(|(s, d)| (s.to_string(), d.to_string()))
+    else {
         return Err(CHANGED.into());
     };
     if crate::migrate::reset_pending() {
-        return Err("Nothing was moved: a reset didn’t finish. Restart ShardBrowser to undo or finish it.".into());
+        return Err(
+            "Nothing was moved: a reset didn’t finish. Restart ShardBrowser to undo or finish it."
+                .into(),
+        );
     }
     let Some(held) = Held::take() else {
-        return Err("Nothing was moved: your data is being moved. Try again when that finishes.".into());
+        return Err(
+            "Nothing was moved: your data is being moved. Try again when that finishes.".into(),
+        );
     };
     refuse_while_starting()?;
     // A team profile's copy lives under the data folder, with its lease and upload.
@@ -1387,7 +1687,10 @@ pub async fn app_reset(plan_id: String) -> Result<ResetDone, String> {
         return Err(CHANGED.into());
     }
     if let Some(dir) = running_profile(&checked) {
-        eprintln!("[launcher] reset refused: a browser holds {}", dir.display());
+        eprintln!(
+            "[launcher] reset refused: a browser holds {}",
+            dir.display()
+        );
         return Err(STILL_RUNNING.into());
     }
     refuse_while_starting()?;
@@ -1405,7 +1708,14 @@ pub async fn app_reset(plan_id: String) -> Result<ResetDone, String> {
         }
         Err(e) => {
             if e.starts_with("Some data is still in") {
-                for kind in ["profiles", "proxies", "extensions", "bookmarks", "trash", "automation"] {
+                for kind in [
+                    "profiles",
+                    "proxies",
+                    "extensions",
+                    "bookmarks",
+                    "trash",
+                    "automation",
+                ] {
                     crate::notify_store_changed(kind);
                 }
             }
@@ -1497,7 +1807,20 @@ pub fn app_reset_backup() -> Option<String> {
 /// Async, so it runs off the main thread: the restart then goes through the
 /// exit events, and the single-instance lock is let go before the relaunch.
 #[tauri::command]
-pub async fn app_restart(app: tauri::AppHandle) {
+pub async fn app_restart(app: tauri::AppHandle) -> Result<(), String> {
+    if active() {
+        return Err(WAIT.into());
+    }
+    if !crate::safe_close::begin() {
+        return Err("ShyShard is already closing.".into());
+    }
+    if let Err(failure) = crate::safe_close::finish().await {
+        crate::notify_event(
+            "app://safe-close",
+            serde_json::json!({ "failure": failure }),
+        );
+        return Err(failure.message().into());
+    }
     app.restart()
 }
 
@@ -1560,37 +1883,68 @@ mod tests {
     /// A home folder with a used install in it: every kind of user data, the
     /// engine, the bundled library, the Widevine cache and one foreign file.
     fn install() -> Fx {
-        let base = std::env::temp_dir().join(format!("shardx-reset-{}", uuid::Uuid::new_v4().simple()));
+        let base =
+            std::env::temp_dir().join(format!("shardx-reset-{}", uuid::Uuid::new_v4().simple()));
         let home = base.join("home");
         let config = home.join("Library").join(CONFIG_NAME);
         let runtime = config.join("runtime");
         put(&config.join("settings.json"), r#"{"theme":"dark"}"#);
         put(&config.join("proxies.json"), r#"{"proxies":[{},{}]}"#);
         put(&config.join("bookmarks.json"), r#"{"bookmarks":[{}]}"#);
-        put(&config.join("automation.json"), r#"{"projects":[{},{},{}]}"#);
-        for name in ["proxies-history.json", "psapi.json", "host-gl-caps.json", "tags.json", "folders.json"] {
+        put(
+            &config.join("automation.json"),
+            r#"{"projects":[{},{},{}]}"#,
+        );
+        for name in [
+            "proxies-history.json",
+            "psapi.json",
+            "host-gl-caps.json",
+            "tags.json",
+            "folders.json",
+        ] {
             put(&config.join(name), "{}");
         }
         put(&config.join("automation-modules/m.wasm"), "wasm");
         put(&config.join("automation-modules/data/m/rows.txt"), "row");
         put(&config.join("automation-runs/1-p.log"), "log");
-        put(&config.join(format!("profiles/{P1}.json")), r#"{"_meta":{}}"#);
-        put(&config.join(format!("user-data/{P1}/Default/Cookies")), "cookies");
-        put(&config.join(format!("extensions/{EXT}/manifest.json")), "{}");
+        put(
+            &config.join(format!("profiles/{P1}.json")),
+            r#"{"_meta":{}}"#,
+        );
+        put(
+            &config.join(format!("user-data/{P1}/Default/Cookies")),
+            "cookies",
+        );
+        put(
+            &config.join(format!("extensions/{EXT}/manifest.json")),
+            "{}",
+        );
         put(&config.join(format!("trash/{P2}.zip")), "zip");
         let bare = json!({ "name": "bundled", "navigator": { "platform": "MacIntel" } });
         put(&config.join("fingerprints/bundled.json"), &bare.to_string());
-        let shipped = json!({ "id": "shipped", "label": "Shipped", "builtin": true, "payload": {} });
-        put(&config.join("fingerprints/shipped.json"), &shipped.to_string());
+        let shipped =
+            json!({ "id": "shipped", "label": "Shipped", "builtin": true, "payload": {} });
+        put(
+            &config.join("fingerprints/shipped.json"),
+            &shipped.to_string(),
+        );
         let mine = json!({ "id": "mine", "label": "Mine", "builtin": false, "payload": { "name": "mine" } });
         put(&config.join("fingerprints/mine.json"), &mine.to_string());
         put(&config.join("fingerprints/.staging/part.json"), "{}");
         put(&config.join("widevine-cdm/manifest.json"), "{}");
-        put(&runtime.join("ShardX-Mac-arm64/ShardX.app/Contents/MacOS/ShardX"), "engine");
+        put(
+            &runtime.join("ShardX-Mac-arm64/ShardX.app/Contents/MacOS/ShardX"),
+            "engine",
+        );
         put(&runtime.join("manifest.json"), "{}");
         put(&runtime.join("profile-icons/0a.png"), "png");
         put(&config.join("notes.txt"), "not the app's");
-        Fx { base, home, config, runtime }
+        Fx {
+            base,
+            home,
+            config,
+            runtime,
+        }
     }
 
     fn layout(fx: &Fx) -> Layout {
@@ -1625,7 +1979,10 @@ mod tests {
                 if t.is_dir() {
                     walk(root, &e.path(), out);
                 } else if t.is_file() {
-                    out.push((e.path().strip_prefix(root).unwrap().to_path_buf(), fs::read(e.path()).unwrap()));
+                    out.push((
+                        e.path().strip_prefix(root).unwrap().to_path_buf(),
+                        fs::read(e.path()).unwrap(),
+                    ));
                 }
             }
         }
@@ -1640,7 +1997,10 @@ mod tests {
         let m = fx.base.join("Volumes/T7/ShardData");
         put(&m.join(format!("profiles/{P9}.json")), "{}");
         put(&m.join(format!("profiles/{P9}.json.tmp")), "{}");
-        put(&m.join(format!("user-data/{P9}/Default/Cookies")), "cookies");
+        put(
+            &m.join(format!("user-data/{P9}/Default/Cookies")),
+            "cookies",
+        );
         put(&m.join(format!("extensions/{EXT}/manifest.json")), "{}");
         put(&m.join(format!("trash/{P2}.zip")), "zip");
         put(&m.join(format!("trash/{P2}.json")), "{}");
@@ -1650,13 +2010,23 @@ mod tests {
 
     /// Anything under a "Volumes/T7" folder counts as another disk.
     fn t7_is_another_disk(a: &Path, b: &Path) -> bool {
-        let on_t7 = |p: &Path| p.to_string_lossy().replace('\\', "/").contains("/Volumes/T7");
+        let on_t7 = |p: &Path| {
+            p.to_string_lossy()
+                .replace('\\', "/")
+                .contains("/Volumes/T7")
+        };
         on_t7(a) == on_t7(b)
     }
 
     fn backups_beside(parent: &Path) -> Vec<PathBuf> {
-        let mut v: Vec<_> = fs::read_dir(parent).unwrap().flatten()
-            .filter(|e| e.file_name().to_str().is_some_and(|n| n.starts_with(BACKUP_PREFIX)))
+        let mut v: Vec<_> = fs::read_dir(parent)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .is_some_and(|n| n.starts_with(BACKUP_PREFIX))
+            })
             .map(|e| e.path())
             .collect();
         v.sort();
@@ -1671,33 +2041,59 @@ mod tests {
         let backups = reset(&layout(&fx)).unwrap();
         let backup = &backups[0];
         assert_eq!(backups.len(), 1);
-        assert_eq!(*backup, canon(fx.config.parent().unwrap()).join(format!("{BACKUP_PREFIX}{STAMP}")));
+        assert_eq!(
+            *backup,
+            canon(fx.config.parent().unwrap()).join(format!("{BACKUP_PREFIX}{STAMP}"))
+        );
         let c = &fx.config;
         for gone in [
-            "settings.json", "proxies.json", "proxies-history.json", "bookmarks.json",
-            "tags.json", "folders.json",
-            "automation.json", "psapi.json", "host-gl-caps.json", "automation-modules",
-            "automation-runs", "profiles", "user-data", "extensions", "trash",
-            "fingerprints/mine.json", "fingerprints/.staging", "runtime/profile-icons",
+            "settings.json",
+            "proxies.json",
+            "proxies-history.json",
+            "bookmarks.json",
+            "tags.json",
+            "folders.json",
+            "automation.json",
+            "psapi.json",
+            "host-gl-caps.json",
+            "automation-modules",
+            "automation-runs",
+            "profiles",
+            "user-data",
+            "extensions",
+            "trash",
+            "fingerprints/mine.json",
+            "fingerprints/.staging",
+            "runtime/profile-icons",
         ] {
             assert!(!c.join(gone).exists(), "{gone} should have left");
             assert!(backup.join(gone).exists(), "{gone} should be in the backup");
         }
         for kept in [
-            "runtime/ShardX-Mac-arm64/ShardX.app/Contents/MacOS/ShardX", "runtime/manifest.json",
-            "fingerprints/bundled.json", "fingerprints/shipped.json", "widevine-cdm/manifest.json",
+            "runtime/ShardX-Mac-arm64/ShardX.app/Contents/MacOS/ShardX",
+            "runtime/manifest.json",
+            "fingerprints/bundled.json",
+            "fingerprints/shipped.json",
+            "widevine-cdm/manifest.json",
             "notes.txt",
         ] {
             assert!(c.join(kept).exists(), "{kept} should stay");
         }
         // Nothing deleted: every file is in one of the two, byte for byte.
         let mut after = tree(&fx.config);
-        after.extend(tree(backup).into_iter().filter(|(p, _)| p != Path::new(README) && p != Path::new(RECOVERY)));
+        after.extend(
+            tree(backup)
+                .into_iter()
+                .filter(|(p, _)| p != Path::new(README) && p != Path::new(RECOVERY)),
+        );
         after.sort();
         assert_eq!(before, after);
         // The notes stay with the backup; the journal is gone; the app is open.
         let recovery = fs::read_to_string(backup.join(RECOVERY)).unwrap();
-        assert!(recovery.contains("planned: ") && recovery.contains("moved: "), "{recovery}");
+        assert!(
+            recovery.contains("planned: ") && recovery.contains("moved: "),
+            "{recovery}"
+        );
         assert!(backup.join(README).exists());
         assert!(!c.join(JOURNAL).exists());
         assert!(!crate::migrate::reset_pending());
@@ -1708,7 +2104,17 @@ mod tests {
         let _s = serial();
         let fx = install();
         let p = plan(&layout(&fx)).unwrap();
-        assert_eq!(p.counts, Counts { profiles: 1, proxies: 2, fingerprints: 1, extensions: 1, bookmarks: 1, projects: 3 });
+        assert_eq!(
+            p.counts,
+            Counts {
+                profiles: 1,
+                proxies: 2,
+                fingerprints: 1,
+                extensions: 1,
+                bookmarks: 1,
+                projects: 3
+            }
+        );
         let v = p.view(STAMP);
         assert!(v.id.starts_with(&format!("{STAMP}.")));
         assert_eq!(v.backups.len(), 1);
@@ -1731,10 +2137,19 @@ mod tests {
         assert_ne!(now.digest(), shown);
         assert_eq!(now.counts.profiles, 2);
         // A browser growing its folder is not a change.
-        put(&fx.config.join(format!("user-data/{P1}/Default/History")), "more");
+        put(
+            &fx.config.join(format!("user-data/{P1}/Default/History")),
+            "more",
+        );
         assert_eq!(plan(&layout(&fx)).unwrap().digest(), now.digest());
 
-        for bad in ["../x.abc", "2026-10-08-15300.abc", "2026-10-08/153000.abc", "2026-10-08-153000.", "nonsense"] {
+        for bad in [
+            "../x.abc",
+            "2026-10-08-15300.abc",
+            "2026-10-08/153000.abc",
+            "2026-10-08-153000.",
+            "nonsense",
+        ] {
             assert!(stamp_of(bad).is_none(), "{bad}");
         }
         assert_eq!(stamp_of("2026-10-08-153000.ab12"), Some((STAMP, "ab12")));
@@ -1749,7 +2164,10 @@ mod tests {
         put(&taken.join("someone.txt"), "already here");
         let backup = reset(&layout(&fx)).unwrap().remove(0);
         assert_eq!(backup, parent.join(format!("{BACKUP_PREFIX}{STAMP}-2")));
-        assert_eq!(tree(&taken), vec![(PathBuf::from("someone.txt"), b"already here".to_vec())]);
+        assert_eq!(
+            tree(&taken),
+            vec![(PathBuf::from("someone.txt"), b"already here".to_vec())]
+        );
         assert!(backup.join("settings.json").exists());
     }
 
@@ -1760,23 +2178,46 @@ mod tests {
         let _s = serial();
         let fx = install();
         let m = moved(&fx);
-        let l = Layout { data: m.clone(), same_disk: t7_is_another_disk, ..layout(&fx) };
+        let l = Layout {
+            data: m.clone(),
+            same_disk: t7_is_another_disk,
+            ..layout(&fx)
+        };
         let p = plan(&l).unwrap();
-        assert_eq!(p.spots, vec![canon(fx.config.parent().unwrap()), canon(m.parent().unwrap())]);
+        assert_eq!(
+            p.spots,
+            vec![
+                canon(fx.config.parent().unwrap()),
+                canon(m.parent().unwrap())
+            ]
+        );
         let backups = reset(&l).unwrap();
         assert_eq!(backups.len(), 2);
         assert_eq!(backups[0].file_name(), backups[1].file_name());
-        assert_eq!(backups[1], canon(&fx.base.join("Volumes/T7")).join(format!("{BACKUP_PREFIX}{STAMP}")));
-        assert!(backups[1].join(format!("{MOVED_DATA}/profiles/{P9}.json")).exists());
-        assert!(backups[1].join(format!("{MOVED_DATA}/user-data/{P9}/Default/Cookies")).exists());
+        assert_eq!(
+            backups[1],
+            canon(&fx.base.join("Volumes/T7")).join(format!("{BACKUP_PREFIX}{STAMP}"))
+        );
+        assert!(backups[1]
+            .join(format!("{MOVED_DATA}/profiles/{P9}.json"))
+            .exists());
+        assert!(backups[1]
+            .join(format!("{MOVED_DATA}/user-data/{P9}/Default/Cookies"))
+            .exists());
         assert!(!backups[0].join(MOVED_DATA).exists());
         assert!(backups[0].join("settings.json").exists());
         // Each says where the other part is.
-        assert!(fs::read_to_string(backups[1].join(README)).unwrap().contains(&backups[0].display().to_string()));
+        assert!(fs::read_to_string(backups[1].join(README))
+            .unwrap()
+            .contains(&backups[0].display().to_string()));
         // On one disk, one backup.
         let fx = install();
         let m = moved(&fx);
-        let p = plan(&Layout { data: m, ..layout(&fx) }).unwrap();
+        let p = plan(&Layout {
+            data: m,
+            ..layout(&fx)
+        })
+        .unwrap();
         assert_eq!(p.spots.len(), 1);
     }
 
@@ -1784,10 +2225,18 @@ mod tests {
     #[test]
     fn a_move_across_disks_fails_and_nothing_is_copied() {
         #[cfg(unix)]
-        assert!(crosses_devices(&std::io::Error::from_raw_os_error(libc::EXDEV)));
-        assert!(!crosses_devices(&std::io::Error::from(ErrorKind::PermissionDenied)));
+        assert!(crosses_devices(&std::io::Error::from_raw_os_error(
+            libc::EXDEV
+        )));
+        assert!(!crosses_devices(&std::io::Error::from(
+            ErrorKind::PermissionDenied
+        )));
         let src = include_str!("reset.rs");
-        for gone in [format!("fs::{}(", "copy"), format!("fn copy_{}", "tree"), format!("copy_then_{}", "remove")] {
+        for gone in [
+            format!("fs::{}(", "copy"),
+            format!("fn copy_{}", "tree"),
+            format!("copy_then_{}", "remove"),
+        ] {
             assert!(!src.contains(&gone), "{gone} is still in reset.rs");
         }
     }
@@ -1800,13 +2249,18 @@ mod tests {
         let fx = install();
         let m = moved(&fx);
         let before = (tree(&fx.config), tree(&m));
-        let l = Layout { data: m.clone(), ..layout(&fx) };
+        let l = Layout {
+            data: m.clone(),
+            ..layout(&fx)
+        };
         let p = plan(&l).unwrap();
         let mut n = 0;
         let e = execute(&p, STAMP, &mut |step| {
             n += 1;
             match step {
-                JStep::Move { to, .. } if to.ends_with("automation-modules") => bail!("the disk went away"),
+                JStep::Move { to, .. } if to.ends_with("automation-modules") => {
+                    bail!("the disk went away")
+                }
                 _ => Ok(()),
             }
         })
@@ -1816,7 +2270,10 @@ mod tests {
         assert!(e.starts_with("Nothing was moved"), "{e}");
         assert_eq!((tree(&fx.config), tree(&m)), before);
         assert!(m.join("profiles").is_dir() && m.join("user-data").is_dir());
-        assert!(backups_beside(&canon(fx.config.parent().unwrap())).is_empty(), "the emptied backup goes");
+        assert!(
+            backups_beside(&canon(fx.config.parent().unwrap())).is_empty(),
+            "the emptied backup goes"
+        );
         assert!(!fx.config.join(JOURNAL).exists());
         assert!(!crate::migrate::reset_pending());
     }
@@ -1831,7 +2288,10 @@ mod tests {
         let m = moved(&fx);
         let before = (tree(&fx.config), tree(&m));
         fs::set_permissions(m.join("trash"), fs::Permissions::from_mode(0o555)).unwrap();
-        let l = Layout { data: m.clone(), ..layout(&fx) };
+        let l = Layout {
+            data: m.clone(),
+            ..layout(&fx)
+        };
         let e = reset(&l).unwrap_err().to_string();
         assert!(e.starts_with("Nothing was moved"), "{e}");
         fs::set_permissions(m.join("trash"), fs::Permissions::from_mode(0o755)).unwrap();
@@ -1860,12 +2320,24 @@ mod tests {
         .unwrap_err()
         .to_string();
         let backup = canon(fx.config.parent().unwrap()).join(format!("{BACKUP_PREFIX}{STAMP}"));
-        assert!(e.starts_with(&format!("Some data is still in {}", backup.display())), "{e}");
+        assert!(
+            e.starts_with(&format!("Some data is still in {}", backup.display())),
+            "{e}"
+        );
         assert!(backup.join(README).exists());
         let recovery = fs::read_to_string(backup.join(RECOVERY)).unwrap();
-        assert!(recovery.contains("put back: ") && recovery.contains("proxies.json"), "{recovery}");
-        assert!(backup.join("proxies.json").exists(), "the stuck item stays in the backup");
-        assert!(fx.config.join(format!("profiles/{P1}.json")).exists(), "the rest went back");
+        assert!(
+            recovery.contains("put back: ") && recovery.contains("proxies.json"),
+            "{recovery}"
+        );
+        assert!(
+            backup.join("proxies.json").exists(),
+            "the stuck item stays in the backup"
+        );
+        assert!(
+            fx.config.join(format!("profiles/{P1}.json")).exists(),
+            "the rest went back"
+        );
         assert!(fx.config.join(JOURNAL).exists());
         assert!(crate::migrate::reset_pending());
         assert!(pending_view(&canon(&fx.config)).is_some_and(|v| v.error.is_none() && v.moved == 1));
@@ -1876,7 +2348,12 @@ mod tests {
     fn half_done(fx: &Fx, l: &Layout) -> (PathBuf, Journal) {
         let p = plan(l).unwrap();
         let j = start(&p, STAMP).unwrap();
-        let moves: Vec<_> = j.steps.iter().filter(|s| matches!(s, JStep::Move { .. })).cloned().collect();
+        let moves: Vec<_> = j
+            .steps
+            .iter()
+            .filter(|s| matches!(s, JStep::Move { .. }))
+            .cloned()
+            .collect();
         for step in &moves[..moves.len() / 2] {
             apply(&j, step).unwrap();
         }
@@ -1892,11 +2369,18 @@ mod tests {
         let fx = install();
         let m = moved(&fx);
         let before = (tree(&fx.config), tree(&m));
-        let l = Layout { data: m.clone(), same_disk: t7_is_another_disk, ..layout(&fx) };
+        let l = Layout {
+            data: m.clone(),
+            same_disk: t7_is_another_disk,
+            ..layout(&fx)
+        };
         let (config, j) = half_done(&fx, &l);
         assert!(read_journal(&config).unwrap().is_some_and(|r| r == j));
         let v = pending_view(&config).unwrap();
-        assert!(v.moved > 0 && v.moved < v.total && v.backups.len() == 2, "{v:?}");
+        assert!(
+            v.moved > 0 && v.moved < v.total && v.backups.len() == 2,
+            "{v:?}"
+        );
         undo_pending(&config).unwrap();
         assert_eq!((tree(&fx.config), tree(&m)), before);
         assert!(!config.join(JOURNAL).exists());
@@ -1912,16 +2396,47 @@ mod tests {
         let _s = serial();
         let fx = install();
         let m = moved(&fx);
-        let l = Layout { data: m.clone(), same_disk: t7_is_another_disk, ..layout(&fx) };
+        for dir in ["team-open", "team-recovery"] {
+            fs::create_dir(m.join(dir)).unwrap();
+            fs::write(m.join(dir).join("session"), b"team data").unwrap();
+        }
+        let l = Layout {
+            data: m.clone(),
+            same_disk: t7_is_another_disk,
+            ..layout(&fx)
+        };
         let (config, j) = half_done(&fx, &l);
+        let settings = j
+            .steps
+            .iter()
+            .find(|step| {
+                matches!(
+                    step, JStep::Move { from, .. } if from == &config.join("settings.json")
+                )
+            })
+            .unwrap();
+        if config.join("settings.json").exists() {
+            apply(&j, settings).unwrap();
+        }
         let backups = finish_pending(&config).unwrap();
         assert_eq!(backups, j.backups);
         for gone in ["settings.json", "proxies.json", "profiles", "user-data"] {
             assert!(!fx.config.join(gone).exists(), "{gone} should have left");
-            assert!(backups[0].join(gone).exists(), "{gone} should be in the backup");
+            assert!(
+                backups[0].join(gone).exists(),
+                "{gone} should be in the backup"
+            );
         }
-        assert!(backups[1].join(format!("{MOVED_DATA}/profiles/{P9}.json")).exists());
+        assert!(backups[1]
+            .join(format!("{MOVED_DATA}/profiles/{P9}.json"))
+            .exists());
         assert!(m.join("holiday.jpg").exists());
+        for dir in ["team-open", "team-recovery"] {
+            assert!(!m.join(dir).exists());
+            assert!(backups
+                .iter()
+                .all(|b| !b.join(MOVED_DATA).join(dir).exists()));
+        }
         assert!(!config.join(JOURNAL).exists());
         assert!(backups[0].join(README).exists());
     }
@@ -1934,15 +2449,32 @@ mod tests {
         let fx = install();
         let m = moved(&fx);
         let before = (tree(&fx.config), tree(&m));
-        let l = Layout { data: m.clone(), same_disk: t7_is_another_disk, ..layout(&fx) };
+        let l = Layout {
+            data: m.clone(),
+            same_disk: t7_is_another_disk,
+            ..layout(&fx)
+        };
         let (config, j) = half_done(&fx, &l);
         let away = j.backups[1].with_file_name("unplugged");
         fs::rename(&j.backups[1], &away).unwrap();
         let held = (tree(&fx.config), tree(&j.backups[0]));
-        for e in [undo_pending(&config).unwrap_err(), finish_pending(&config).map(|_| ()).unwrap_err()] {
-            assert_eq!(e.to_string(), format!("Connect the disk with {}, then try again.", j.backups[1].display()));
+        for e in [
+            undo_pending(&config).unwrap_err(),
+            finish_pending(&config).map(|_| ()).unwrap_err(),
+        ] {
+            assert_eq!(
+                e.to_string(),
+                format!(
+                    "Connect the disk with {}, then try again.",
+                    j.backups[1].display()
+                )
+            );
         }
-        assert_eq!((tree(&fx.config), tree(&j.backups[0])), held, "nothing moved");
+        assert_eq!(
+            (tree(&fx.config), tree(&j.backups[0])),
+            held,
+            "nothing moved"
+        );
         assert!(config.join(JOURNAL).exists());
         let v = pending_view(&config).unwrap();
         assert_eq!(v.missing, vec![j.backups[1].display().to_string()]);
@@ -1963,7 +2495,11 @@ mod tests {
         let fx = install();
         let m = moved(&fx);
         let before = (tree(&fx.config), tree(&m));
-        let l = Layout { data: m.clone(), same_disk: t7_is_another_disk, ..layout(&fx) };
+        let l = Layout {
+            data: m.clone(),
+            same_disk: t7_is_another_disk,
+            ..layout(&fx)
+        };
         let p = plan(&l).unwrap();
         let t7 = canon(&fx.base.join("Volumes/T7")).join(format!("{BACKUP_PREFIX}{STAMP}"));
         let away = t7.with_file_name("unplugged");
@@ -1977,10 +2513,17 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(e.starts_with("Some data is still in"), "{e}");
-        assert!(e.contains(&format!("Connect the disk with {}", t7.display())), "{e}");
+        assert!(
+            e.contains(&format!("Connect the disk with {}", t7.display())),
+            "{e}"
+        );
         let config = canon(&fx.config);
-        let home_backup = canon(fx.config.parent().unwrap()).join(format!("{BACKUP_PREFIX}{STAMP}"));
-        assert!(home_backup.join("profiles").exists(), "nothing was put back");
+        let home_backup =
+            canon(fx.config.parent().unwrap()).join(format!("{BACKUP_PREFIX}{STAMP}"));
+        assert!(
+            home_backup.join("profiles").exists(),
+            "nothing was put back"
+        );
         assert!(home_backup.join(README).exists() && home_backup.join(RECOVERY).exists());
         assert!(config.join(JOURNAL).exists());
         assert!(crate::migrate::reset_pending());
@@ -2002,12 +2545,18 @@ mod tests {
         crate::migrate::set_reset_pending(true);
         let v = pending_view(&config).unwrap();
         let e = v.error.unwrap();
-        assert!(e.contains(&config.join(JOURNAL).display().to_string()), "{e}");
+        assert!(
+            e.contains(&config.join(JOURNAL).display().to_string()),
+            "{e}"
+        );
         assert_eq!(v.journal, config.join(JOURNAL).display().to_string());
         assert!(undo_pending(&config).is_err() && finish_pending(&config).is_err());
 
         let kept = set_aside(&config, STAMP).unwrap().unwrap();
-        assert_eq!(kept, config.join(format!("reset-in-progress.set-aside-{STAMP}.json")));
+        assert_eq!(
+            kept,
+            config.join(format!("reset-in-progress.set-aside-{STAMP}.json"))
+        );
         assert_eq!(fs::read(&kept).unwrap(), b"{ not json");
         assert!(!config.join(JOURNAL).exists());
         assert!(!crate::migrate::reset_pending());
@@ -2015,7 +2564,10 @@ mod tests {
         // A second set-aside never writes over the first.
         fs::write(config.join(JOURNAL), b"again").unwrap();
         let second = set_aside(&config, STAMP).unwrap().unwrap();
-        assert_eq!(second, config.join(format!("reset-in-progress.set-aside-{STAMP}-2.json")));
+        assert_eq!(
+            second,
+            config.join(format!("reset-in-progress.set-aside-{STAMP}-2.json"))
+        );
         assert_eq!(fs::read(&kept).unwrap(), b"{ not json");
     }
 
@@ -2025,7 +2577,10 @@ mod tests {
         let _s = serial();
         let fx = install();
         let (config, mut j) = half_done(&fx, &layout(&fx));
-        j.steps.push(JStep::Move { from: fx.home.join("Documents/thesis.pdf"), to: j.backups[0].join("thesis.pdf") });
+        j.steps.push(JStep::Move {
+            from: fx.home.join("Documents/thesis.pdf"),
+            to: j.backups[0].join("thesis.pdf"),
+        });
         fs::write(config.join(JOURNAL), serde_json::to_vec(&j).unwrap()).unwrap();
         assert!(undo_pending(&config).is_err());
         assert!(finish_pending(&config).is_err());
@@ -2043,8 +2598,14 @@ mod tests {
         // A moved data folder with no profiles in it is not the app's.
         let fx = install();
         let elsewhere = fx.base.join("elsewhere");
-        put(&elsewhere.join(format!("user-data/{P9}/x")), "someone else's");
-        let l = Layout { data: elsewhere.clone(), ..layout(&fx) };
+        put(
+            &elsewhere.join(format!("user-data/{P9}/x")),
+            "someone else's",
+        );
+        let l = Layout {
+            data: elsewhere.clone(),
+            ..layout(&fx)
+        };
         assert!(reset(&l).is_err());
         assert!(elsewhere.join(format!("user-data/{P9}/x")).exists());
         assert!(fx.config.join("settings.json").exists());
@@ -2054,7 +2615,11 @@ mod tests {
         let other = fx.home.join("Library/other-app");
         put(&other.join("settings.json"), "{}");
         put(&other.join("profiles/a.json"), "{}");
-        let l = Layout { config: other.clone(), data: other.clone(), ..layout(&fx) };
+        let l = Layout {
+            config: other.clone(),
+            data: other.clone(),
+            ..layout(&fx)
+        };
         assert!(reset(&l).is_err());
         assert!(other.join("profiles/a.json").exists());
     }
@@ -2064,13 +2629,21 @@ mod tests {
         let _s = serial();
         let fx = install();
         // The data folder may be moved anywhere; these never count.
-        for bad in [fx.home.clone(), fx.base.clone(), PathBuf::from("/"), fx.home.join("Documents")] {
+        for bad in [
+            fx.home.clone(),
+            fx.base.clone(),
+            PathBuf::from("/"),
+            fx.home.join("Documents"),
+        ] {
             // Marked as a data folder, so only the place itself is refused
             // (never written to at the top of the disk).
             if bad != Path::new("/") {
                 fs::create_dir_all(bad.join("profiles")).unwrap();
             }
-            let l = Layout { data: bad.clone(), ..layout(&fx) };
+            let l = Layout {
+                data: bad.clone(),
+                ..layout(&fx)
+            };
             assert!(reset(&l).is_err(), "{} should be refused", bad.display());
         }
         assert!(fx.config.join("settings.json").exists());
@@ -2079,11 +2652,18 @@ mod tests {
         // A folder holding a shared one.
         fs::create_dir_all(fx.base.join("other/Documents")).unwrap();
         fs::create_dir_all(fx.base.join("other/profiles")).unwrap();
-        let l = Layout { shared: vec![fx.base.join("other/Documents")], data: fx.base.join("other"), ..layout(&fx) };
+        let l = Layout {
+            shared: vec![fx.base.join("other/Documents")],
+            data: fx.base.join("other"),
+            ..layout(&fx)
+        };
         assert!(reset(&l).is_err());
 
         // A home folder that can't be found fails closed.
-        let l = Layout { home: Some(fx.base.join("no-such-home")), ..layout(&fx) };
+        let l = Layout {
+            home: Some(fx.base.join("no-such-home")),
+            ..layout(&fx)
+        };
         assert!(reset(&l).is_err());
         assert!(fx.config.join("settings.json").exists());
     }
@@ -2093,7 +2673,10 @@ mod tests {
     fn refuses_a_top_level_folder() {
         let _s = serial();
         let fx = install();
-        let l = Layout { data: PathBuf::from("/usr"), ..layout(&fx) };
+        let l = Layout {
+            data: PathBuf::from("/usr"),
+            ..layout(&fx)
+        };
         assert!(reset(&l).is_err());
     }
 
@@ -2111,7 +2694,10 @@ mod tests {
         assert!(is_mount_point(mount));
         let fx = install();
         assert!(!is_mount_point(&canon(&fx.config)));
-        let l = Layout { data: mount.to_path_buf(), ..layout(&fx) };
+        let l = Layout {
+            data: mount.to_path_buf(),
+            ..layout(&fx)
+        };
         let e = reset(&l).unwrap_err().to_string();
         assert!(e.contains("top of a disk"), "{e}");
     }
@@ -2125,19 +2711,38 @@ mod tests {
         let m = moved(&fx);
         put(&m.join("profiles/notes.txt"), "the user's");
         put(&m.join("extensions/mine.txt"), "the user's");
-        put(&m.join("extensions/my-extension/manifest.json"), "the user's");
+        put(
+            &m.join("extensions/my-extension/manifest.json"),
+            "the user's",
+        );
         put(&m.join("trash/keep.txt"), "the user's");
-        let l = Layout { data: m.clone(), ..layout(&fx) };
+        let l = Layout {
+            data: m.clone(),
+            ..layout(&fx)
+        };
         let backup = reset(&l).unwrap().remove(0);
         for gone in [
-            format!("profiles/{P9}.json"), format!("profiles/{P9}.json.tmp"), format!("user-data/{P9}"),
-            format!("extensions/{EXT}"), format!("trash/{P2}.zip"), format!("trash/{P2}.json"),
+            format!("profiles/{P9}.json"),
+            format!("profiles/{P9}.json.tmp"),
+            format!("user-data/{P9}"),
+            format!("extensions/{EXT}"),
+            format!("trash/{P2}.zip"),
+            format!("trash/{P2}.json"),
         ] {
             assert!(!m.join(&gone).exists(), "{gone} should have left");
-            assert!(backup.join(MOVED_DATA).join(&gone).exists(), "{gone} should be in the backup");
+            assert!(
+                backup.join(MOVED_DATA).join(&gone).exists(),
+                "{gone} should be in the backup"
+            );
         }
         assert!(!m.join("user-data").exists());
-        for kept in ["profiles/notes.txt", "extensions/mine.txt", "extensions/my-extension/manifest.json", "trash/keep.txt", "holiday.jpg"] {
+        for kept in [
+            "profiles/notes.txt",
+            "extensions/mine.txt",
+            "extensions/my-extension/manifest.json",
+            "trash/keep.txt",
+            "holiday.jpg",
+        ] {
             assert!(m.join(kept).exists(), "{kept} should stay");
         }
         assert!(!fx.config.join("settings.json").exists());
@@ -2152,9 +2757,15 @@ mod tests {
         let other = fx.base.join("Mozilla/Firefox");
         put(&other.join(format!("Profiles/{P9}.json")), "firefox's");
         put(&other.join(format!("Extensions/{EXT}/x")), "firefox's");
-        let l = Layout { data: other.clone(), ..layout(&fx) };
+        let l = Layout {
+            data: other.clone(),
+            ..layout(&fx)
+        };
         let e = reset(&l).unwrap_err().to_string();
-        assert!(e.contains("doesn’t look like ShardBrowser’s data folder"), "{e}");
+        assert!(
+            e.contains("doesn’t look like ShardBrowser’s data folder"),
+            "{e}"
+        );
         assert!(other.join(format!("Profiles/{P9}.json")).exists());
         assert!(other.join(format!("Extensions/{EXT}/x")).exists());
         assert!(fx.config.join("settings.json").exists());
@@ -2163,9 +2774,14 @@ mod tests {
         put(&work.join(format!("profiles/{P9}.json")), "{}");
         put(&work.join(format!("Trash/{P2}.zip")), "the user's");
         put(&work.join(format!("Extensions/{EXT}/x")), "the user's");
-        let l = Layout { data: work.clone(), ..layout(&fx) };
+        let l = Layout {
+            data: work.clone(),
+            ..layout(&fx)
+        };
         let backup = reset(&l).unwrap().remove(0);
-        assert!(backup.join(format!("{MOVED_DATA}/profiles/{P9}.json")).exists());
+        assert!(backup
+            .join(format!("{MOVED_DATA}/profiles/{P9}.json"))
+            .exists());
         assert!(work.join(format!("Trash/{P2}.zip")).exists());
         assert!(work.join(format!("Extensions/{EXT}/x")).exists());
         assert!(!backup.join(format!("{MOVED_DATA}/trash")).exists());
@@ -2184,11 +2800,19 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         // Our own live pid, so only the host can decide the answer.
-        symlink(format!("not-this-machine-{}", std::process::id()), dir.join("SingletonLock")).unwrap();
+        symlink(
+            format!("not-this-machine-{}", std::process::id()),
+            dir.join("SingletonLock"),
+        )
+        .unwrap();
         assert!(!lock_is_live(&dir));
         let host = this_host().unwrap();
         fs::remove_file(dir.join("SingletonLock")).unwrap();
-        symlink(format!("{host}-{}", std::process::id()), dir.join("SingletonLock")).unwrap();
+        symlink(
+            format!("{host}-{}", std::process::id()),
+            dir.join("SingletonLock"),
+        )
+        .unwrap();
         assert!(lock_is_live(&dir));
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2262,14 +2886,35 @@ mod tests {
         put(&outside.join("keep.txt"), "not the app's");
         fs::remove_dir_all(fx.config.join("extensions")).unwrap();
         symlink(&outside, fx.config.join("extensions")).unwrap();
-        symlink(&outside, fx.config.join(format!("user-data/{P1}/Default/linked"))).unwrap();
-        symlink(outside.join("keep.txt"), fx.config.join("fingerprints/linked.json")).unwrap();
+        symlink(
+            &outside,
+            fx.config.join(format!("user-data/{P1}/Default/linked")),
+        )
+        .unwrap();
+        symlink(
+            outside.join("keep.txt"),
+            fx.config.join("fingerprints/linked.json"),
+        )
+        .unwrap();
         let backup = reset(&layout(&fx)).unwrap().remove(0);
         assert!(outside.join("keep.txt").exists(), "the link's target stays");
         assert!(fs::symlink_metadata(fx.config.join("extensions")).is_err());
-        assert!(fs::symlink_metadata(backup.join("extensions")).unwrap().file_type().is_symlink());
-        assert!(fs::symlink_metadata(backup.join(format!("user-data/{P1}/Default/linked"))).unwrap().file_type().is_symlink());
-        assert!(fs::symlink_metadata(backup.join("fingerprints/linked.json")).unwrap().file_type().is_symlink());
+        assert!(fs::symlink_metadata(backup.join("extensions"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(
+            fs::symlink_metadata(backup.join(format!("user-data/{P1}/Default/linked")))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(
+            fs::symlink_metadata(backup.join("fingerprints/linked.json"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
     }
 
     #[cfg(unix)]
@@ -2284,7 +2929,11 @@ mod tests {
         fs::create_dir_all(fx.home.join("profiles")).unwrap();
         let link = dir.join(CONFIG_NAME);
         symlink(&fx.home, &link).unwrap();
-        let l = Layout { config: link.clone(), data: link, ..layout(&fx) };
+        let l = Layout {
+            config: link.clone(),
+            data: link,
+            ..layout(&fx)
+        };
         assert!(reset(&l).is_err());
         assert!(fx.home.join("profiles").exists());
     }

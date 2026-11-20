@@ -6,7 +6,8 @@ import { deferDelete, isPendingDelete } from "../../../shared/lib/deferDelete";
 import { FileTooBig, MB, pickTextFile } from "../../../shared/lib/pickFile";
 import { FingerprintEntry } from "../model/types";
 import { deviceTypeOf, gpuVendorOf, noFingerprintFilters, type FingerprintFilters } from "./facets";
-import { fingerprintList, fingerprintDelete, fingerprintImport, fingerprintDir } from "../model/api";
+import { fingerprintList, fingerprintDelete, fingerprintImport, fingerprintExport, fingerprintUpdate, fingerprintRollback, fingerprintDir, fingerprintTagsSave } from "../model/api";
+import { clip } from "../../../shared/lib/clipboard";
 import { storeBus } from "../../../shared/lib/storeBus";
 import { t } from "../../../shared/i18n";
 
@@ -34,7 +35,11 @@ export type FingerprintStore = {
     closePeek: () => void;
     /** Hides it behind an Undo toast (ruling 18); true once it is hidden. */
     remove: (id: string) => Promise<boolean>;
+    saveTags: (id: string, tags: string[]) => Promise<void>;
+    updatePayload: (id: string, jsonText: string) => Promise<void>;
+    rollbackPayload: (id: string) => Promise<void>;
     importJsonFile: () => Promise<void>;
+    copyJson: (entry: FingerprintEntry) => Promise<void>;
     openLibraryFolder: () => Promise<void>;
 };
 
@@ -50,8 +55,14 @@ function keptFilters(filters: FingerprintFilters, items: FingerprintEntry[]): Fi
     if (items.length === 0) return filters;
     const vendorGone = filters.vendor !== "all" && !items.some((e) => gpuVendorOf(e) === filters.vendor);
     const deviceGone = filters.device !== "all" && !items.some((e) => deviceTypeOf(e) === filters.device);
-    if (!vendorGone && !deviceGone) return filters;
-    return { ...filters, ...(vendorGone ? { vendor: "all" } : {}), ...(deviceGone ? { device: "all" } : {}) };
+    const tagGone = filters.tag !== "" && !items.some((e) => (e.tags ?? []).includes(filters.tag));
+    if (!vendorGone && !deviceGone && !tagGone) return filters;
+    return {
+        ...filters,
+        ...(vendorGone ? { vendor: "all" } : {}),
+        ...(deviceGone ? { device: "all" } : {}),
+        ...(tagGone ? { tag: "" } : {}),
+    };
 }
 
 export const useFingerprint = create<FingerprintStore>((set, get) => ({
@@ -104,6 +115,39 @@ export const useFingerprint = create<FingerprintStore>((set, get) => ({
         });
         return true;
     },
+    saveTags: async (id, tags) => {
+        try {
+            const updated = await fingerprintTagsSave(id, tags);
+            set({ items: get().items.map((entry) => entry.id === id ? updated : entry) });
+            storeBus.emit("fingerprints");
+            toast.ok(t("fingerprintLibrary.tagsSaved"));
+        } catch (e) {
+            toast.fail({ title: t("fingerprintLibrary.tagsSaveFailed"), detail: e });
+            throw e;
+        }
+    },
+    updatePayload: async (id, jsonText) => {
+        try {
+            const updated = await fingerprintUpdate(id, jsonText);
+            set({ items: get().items.map((entry) => entry.id === id ? updated : entry) });
+            storeBus.emit("fingerprints");
+            toast.ok(t("fingerprintLibrary.payloadSaved"));
+        } catch (e) {
+            toast.fail({ title: t("fingerprintLibrary.payloadSaveFailed"), detail: e });
+            throw e;
+        }
+    },
+    rollbackPayload: async (id) => {
+        try {
+            const restored = await fingerprintRollback(id);
+            set({ items: get().items.map((entry) => entry.id === id ? restored : entry) });
+            storeBus.emit("fingerprints");
+            toast.ok(t("fingerprintPeek.rollbackSaved"));
+        } catch (e) {
+            toast.fail({ title: t("fingerprintPeek.rollbackFailed"), detail: e });
+            throw e;
+        }
+    },
     importJsonFile: async () => {
         try {
             const picked = await pickTextFile({ accept: ".json,application/json", maxBytes: 5 * MB });
@@ -114,6 +158,14 @@ export const useFingerprint = create<FingerprintStore>((set, get) => ({
         } catch (e) {
             if (e instanceof FileTooBig) toast.fail({ title: e.message });
             else toast.fail({ title: t("useFingerprint.importFailed"), detail: e });
+        }
+    },
+    copyJson: async (entry) => {
+        try {
+            await clip.write(await fingerprintExport(entry.id));
+            toast.ok(t("fingerprintLibrary.exported", { name: entry.label }));
+        } catch (e) {
+            toast.fail({ title: t("fingerprintLibrary.exportFailed"), detail: e });
         }
     },
     openLibraryFolder: async () => {

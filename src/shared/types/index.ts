@@ -116,6 +116,7 @@ export type RtProgress = {
 export type RtUpdate = {
   current: string;
   latest: string | null;
+  comparable: boolean;
   update_available: boolean;
   release_url: string | null;
 };

@@ -80,14 +80,14 @@ export function ProxySection({ s, setS }: SettingsProps) {
   return (
     <div className="flex flex-col gap-[32px]">
       <SettingsGroup title={t("provider.defaultsTitle")}>
-        <details className="group/provider-defaults">
-          <summary className="cursor-pointer list-none py-1 text-ui text-text-strong-950 [&::-webkit-details-marker]:hidden">
+        <details data-provider-defaults-disclosure className="group/provider-defaults">
+          <summary className="cursor-pointer list-none py-2 text-ui text-text-strong-950 [&::-webkit-details-marker]:hidden">
             <span className="inline-flex items-center gap-2">
               <span className="text-text-soft-400 transition-transform group-open/provider-defaults:rotate-90">›</span>
               {t("provider.defaultsTitle")}
             </span>
           </summary>
-          <div className="pt-3"><ProviderDefaultsPanel /></div>
+          <div className="py-4"><ProviderDefaultsPanel /></div>
         </details>
       </SettingsGroup>
       <SettingsGroup title={t("proxyChain.connectionTitle")}>
@@ -234,7 +234,7 @@ function ChainResult({ result }: { result: ProxyChainTestResult }) {
     <div data-chain-result role="status" aria-live="polite" className="pb-3 text-help text-text-sub-600">
       <ChainRouteSummary route={result.route} firstHopError={result.first_hop_error_code} />
       <dl className="m-0 flex flex-col gap-2">
-        {result.proxy_kind && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.proxyType")}</dt><dd className="m-0">{result.proxy_kind === "http" ? "HTTP" : "SOCKS5"}</dd></div>}
+        {result.proxy_kind && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.proxyType")}</dt><dd className="m-0">{result.proxy_kind.toUpperCase()}</dd></div>}
         {result.proxy_address && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.firstProxyAddress")}</dt><dd className="mono m-0 break-all">{result.proxy_address}</dd></div>}
         {result.profile_proxy_address && <div className="flex flex-wrap gap-2"><dt>{t("proxyChain.profileProxyAddress")}</dt><dd className="mono m-0 break-all">{result.profile_proxy_address}</dd></div>}
         {result.resolved_for && <div className="break-all">{t("proxyChain.resolvedFor")}: {result.resolved_for}</div>}

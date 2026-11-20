@@ -151,7 +151,11 @@ fn pack_as(udd: &Path, out: &Path, budget: u64, os: &str) -> Result<Packed> {
     let left_out = trim(&mut items, room);
     let total: u64 = items.iter().map(|i| i.size).sum();
     if total > room {
-        bail!("the session is {} MB, more than the {} MB the server keeps", mb(total), mb(budget));
+        bail!(
+            "the session is {} MB, more than the {} MB the server keeps",
+            mb(total),
+            mb(budget)
+        );
     }
     let manifest = Manifest {
         format: FORMAT,
@@ -168,7 +172,8 @@ fn pack_as(udd: &Path, out: &Path, budget: u64, os: &str) -> Result<Packed> {
     let small = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .compression_level(Some(1));
-    let big = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let big =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     zip.start_file(MANIFEST, small)?;
     zip.write_all(&serde_json::to_vec(&manifest)?)?;
     zip.start_file(COOKIES, small)?;
@@ -177,14 +182,22 @@ fn pack_as(udd: &Path, out: &Path, budget: u64, os: &str) -> Result<Packed> {
     zip.write_all(&logins_json)?;
     for item in &items {
         // Gone since it was listed: the rest still goes.
-        let Ok(mut src) = fs::File::open(&item.path) else { continue };
-        zip.start_file(format!("{UDD}{}", item.rel), if item.size >= STORE_FROM { big } else { small })?;
+        let Ok(mut src) = fs::File::open(&item.path) else {
+            continue;
+        };
+        zip.start_file(
+            format!("{UDD}{}", item.rel),
+            if item.size >= STORE_FROM { big } else { small },
+        )?;
         io::copy(&mut src, &mut zip).with_context(|| format!("pack {}", item.rel))?;
     }
     let mut w = zip.finish()?;
     w.flush()?;
     w.into_inner().map_err(|e| e.into_error())?.sync_all()?;
-    Ok(Packed { size: fs::metadata(out)?.len(), left_out })
+    Ok(Packed {
+        size: fs::metadata(out)?.len(),
+        left_out,
+    })
 }
 
 /// Every kept file under `udd`; links are never followed.
@@ -193,7 +206,11 @@ fn gather(udd: &Path) -> Vec<Item> {
     for rel in KEEP {
         let path = udd.join(rel);
         match fs::symlink_metadata(&path) {
-            Ok(m) if m.is_file() => out.push(Item { rel: rel.to_string(), path, size: m.len() }),
+            Ok(m) if m.is_file() => out.push(Item {
+                rel: rel.to_string(),
+                path,
+                size: m.len(),
+            }),
             Ok(m) if m.is_dir() => walk(&path, rel, &mut out),
             _ => {}
         }
@@ -213,7 +230,11 @@ fn walk(dir: &Path, rel: &str, out: &mut Vec<Item>) {
             Ok(t) if t.is_dir() => walk(&e.path(), &child, out),
             Ok(t) if t.is_file() => {
                 let size = e.metadata().map(|m| m.len()).unwrap_or(0);
-                out.push(Item { rel: child, path: e.path(), size });
+                out.push(Item {
+                    rel: child,
+                    path: e.path(),
+                    size,
+                });
             }
             _ => {}
         }
@@ -276,9 +297,12 @@ pub fn unpack(zip: &Path, udd: &Path) -> Result<Unpacked> {
 fn unpack_on(zip_path: &Path, udd: &Path, os: &str) -> Result<Unpacked> {
     fs::create_dir_all(udd)?;
     let file = fs::File::open(zip_path).with_context(|| format!("open {}", zip_path.display()))?;
-    let mut zip = zip::ZipArchive::new(io::BufReader::new(file)).context("the session is not an archive")?;
+    let mut zip =
+        zip::ZipArchive::new(io::BufReader::new(file)).context("the session is not an archive")?;
     let manifest: Manifest = {
-        let entry = zip.by_name(MANIFEST).context("the session has no manifest")?;
+        let entry = zip
+            .by_name(MANIFEST)
+            .context("the session has no manifest")?;
         serde_json::from_reader(entry).context("the session's manifest is not readable")?
     };
     if manifest.format > FORMAT {
@@ -292,9 +316,13 @@ fn unpack_on(zip_path: &Path, udd: &Path, os: &str) -> Result<Unpacked> {
             continue;
         }
         // A name that climbs out of the folder is not one of ours.
-        let Some(name) = entry.enclosed_name() else { continue };
+        let Some(name) = entry.enclosed_name() else {
+            continue;
+        };
         let name = name.to_string_lossy().replace('\\', "/");
-        let Some(rel) = name.strip_prefix(UDD) else { continue };
+        let Some(rel) = name.strip_prefix(UDD) else {
+            continue;
+        };
         if rel.is_empty() || (!raw && RAW_COOKIES.contains(&rel)) {
             continue;
         }
@@ -314,14 +342,26 @@ fn unpack_on(zip_path: &Path, udd: &Path, os: &str) -> Result<Unpacked> {
         }
     }
     if raw {
-        return Ok(Unpacked { raw: true, cookies: 0, logins: 0 });
+        return Ok(Unpacked {
+            raw: true,
+            cookies: 0,
+            logins: 0,
+        });
     }
     cookies::forget_key(udd)?;
     let jar: Vec<cookies::Cookie> = read_json(&mut zip, COOKIES)?;
-    let jar_n = if jar.is_empty() { 0 } else { cookies::import(udd, &jar)? };
+    let jar_n = if jar.is_empty() {
+        0
+    } else {
+        cookies::import(udd, &jar)?
+    };
     let logins: Vec<cookies::SavedLogin> = read_json(&mut zip, LOGINS)?;
     let logins_n = cookies::reseal_logins(udd, &logins)?;
-    Ok(Unpacked { raw: false, cookies: jar_n, logins: logins_n })
+    Ok(Unpacked {
+        raw: false,
+        cookies: jar_n,
+        logins: logins_n,
+    })
 }
 
 fn read_json<T: serde::de::DeserializeOwned + Default, R: Read + io::Seek>(
@@ -329,14 +369,18 @@ fn read_json<T: serde::de::DeserializeOwned + Default, R: Read + io::Seek>(
     name: &str,
 ) -> Result<T> {
     match zip.by_name(name) {
-        Ok(entry) => serde_json::from_reader(entry).with_context(|| format!("the session's {name} is not readable")),
+        Ok(entry) => serde_json::from_reader(entry)
+            .with_context(|| format!("the session's {name} is not readable")),
         Err(zip::result::ZipError::FileNotFound) => Ok(T::default()),
         Err(e) => Err(e.into()),
     }
 }
 
 fn now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn mb(n: u64) -> u64 {
@@ -348,7 +392,10 @@ mod tests {
     use super::*;
 
     fn temp(tag: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("shardx-pack-{tag}-{}", uuid::Uuid::new_v4().simple()));
+        let p = std::env::temp_dir().join(format!(
+            "shardx-pack-{tag}-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
         fs::create_dir_all(&p).unwrap();
         p
     }
@@ -389,7 +436,9 @@ mod tests {
 
     fn names(zip_path: &Path) -> Vec<String> {
         let mut z = zip::ZipArchive::new(fs::File::open(zip_path).unwrap()).unwrap();
-        (0..z.len()).map(|i| z.by_index(i).unwrap().name().to_string()).collect()
+        (0..z.len())
+            .map(|i| z.by_index(i).unwrap().name().to_string())
+            .collect()
     }
 
     #[test]
@@ -421,26 +470,57 @@ mod tests {
             let src = dir.join("src");
             logins_db(&src, b"v10 sealed elsewhere, not readable here");
             z.start_file("udd/Default/Login Data", o).unwrap();
-            z.write_all(&fs::read(src.join("Default/Login Data")).unwrap()).unwrap();
+            z.write_all(&fs::read(src.join("Default/Login Data")).unwrap())
+                .unwrap();
             z.finish().unwrap();
         }
 
         let udd = dir.join("udd");
         let got = unpack(&foreign, &udd).unwrap();
-        assert_eq!(got, Unpacked { raw: false, cookies: 2, logins: 1 });
+        assert_eq!(
+            got,
+            Unpacked {
+                raw: false,
+                cookies: 2,
+                logins: 1
+            }
+        );
         let back = cookies::export(&udd).unwrap();
-        let mut pairs: Vec<_> = back.iter().map(|c| (c.domain.as_str(), c.name.as_str(), c.value.as_str())).collect();
+        let mut pairs: Vec<_> = back
+            .iter()
+            .map(|c| (c.domain.as_str(), c.name.as_str(), c.value.as_str()))
+            .collect();
         pairs.sort();
-        assert_eq!(pairs, [(".shop.example", "sid", "s3cret"), ("mail.example", "lang", "de")]);
+        assert_eq!(
+            pairs,
+            [
+                (".shop.example", "sid", "s3cret"),
+                ("mail.example", "lang", "de")
+            ]
+        );
         let logins = cookies::export_logins(&udd).unwrap();
         assert_eq!(logins.len(), 1);
-        assert_eq!((logins[0].id, logins[0].value.as_str()), (7, b64(b"hunter2").as_str()));
+        assert_eq!(
+            (logins[0].id, logins[0].value.as_str()),
+            (7, b64(b"hunter2").as_str())
+        );
         let state = fs::read_to_string(udd.join("Local State")).unwrap();
-        assert!(!state.contains("RFBBUElmb3JlaWdu"), "the other machine's key stays out: {state}");
-        assert!(state.contains("\"browser\""), "the rest of Local State stays");
+        assert!(
+            !state.contains("RFBBUElmb3JlaWdu"),
+            "the other machine's key stays out: {state}"
+        );
+        assert!(
+            state.contains("\"browser\""),
+            "the rest of Local State stays"
+        );
         assert!(!udd.join("Default/Network/Cookies").exists());
-        assert_eq!(fs::read(udd.join("Default/Preferences")).unwrap(), br#"{"profile":{"name":"x"}}"#);
-        assert!(!dir.join("escape.txt").exists() && !dir.parent().unwrap().join("climb.txt").exists());
+        assert_eq!(
+            fs::read(udd.join("Default/Preferences")).unwrap(),
+            br#"{"profile":{"name":"x"}}"#
+        );
+        assert!(
+            !dir.join("escape.txt").exists() && !dir.parent().unwrap().join("climb.txt").exists()
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -451,20 +531,38 @@ mod tests {
         fs::create_dir_all(&src).unwrap();
         put(&src.join("Local State"), b"{}");
         cookies::import(&src, &jar()).unwrap();
-        put(&src.join("Default/Local Storage/leveldb/000003.log"), b"site storage");
+        put(
+            &src.join("Default/Local Storage/leveldb/000003.log"),
+            b"site storage",
+        );
         put(&src.join("Default/Cache/Cache_Data/data_1"), b"cache");
-        put(&src.join("Default/Service Worker/CacheStorage/x/1"), b"cache");
-        put(&src.join("Default/Service Worker/Database/CURRENT"), b"registrations");
+        put(
+            &src.join("Default/Service Worker/CacheStorage/x/1"),
+            b"cache",
+        );
+        put(
+            &src.join("Default/Service Worker/Database/CURRENT"),
+            b"registrations",
+        );
         put(&src.join("GPUCache/data_0"), b"cache");
         put(&src.join("fingerprint.json"), b"{}");
         let zip = dir.join("s.zip");
         pack(&src, &zip, 1 << 30).unwrap();
         let listed = names(&zip);
-        for n in ["manifest.json", "cookies.json", "passwords.json", "udd/Default/Cookies", "udd/Default/Service Worker/Database/CURRENT"] {
+        for n in [
+            "manifest.json",
+            "cookies.json",
+            "passwords.json",
+            "udd/Default/Cookies",
+            "udd/Default/Service Worker/Database/CURRENT",
+        ] {
             assert!(listed.iter().any(|l| l == n), "{n} missing: {listed:?}");
         }
         for n in ["Cache", "CacheStorage", "GPUCache", "fingerprint.json"] {
-            assert!(!listed.iter().any(|l| l.contains(n)), "{n} packed: {listed:?}");
+            assert!(
+                !listed.iter().any(|l| l.contains(n)),
+                "{n} packed: {listed:?}"
+            );
         }
 
         let udd = dir.join("udd");
@@ -472,10 +570,16 @@ mod tests {
         // Raw only between the same macOS or Linux; Windows always rebuilds.
         assert_eq!(got.raw, !cfg!(windows));
         if !cfg!(windows) {
-            assert_eq!(fs::read(udd.join("Default/Cookies")).unwrap(), fs::read(src.join("Default/Cookies")).unwrap());
+            assert_eq!(
+                fs::read(udd.join("Default/Cookies")).unwrap(),
+                fs::read(src.join("Default/Cookies")).unwrap()
+            );
         }
         assert_eq!(cookies::export(&udd).unwrap().len(), 2);
-        assert_eq!(fs::read(udd.join("Default/Local Storage/leveldb/000003.log")).unwrap(), b"site storage");
+        assert_eq!(
+            fs::read(udd.join("Default/Local Storage/leveldb/000003.log")).unwrap(),
+            b"site storage"
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -485,9 +589,18 @@ mod tests {
         let src = dir.join("src");
         put(&src.join("Local State"), b"{}");
         put(&src.join("Default/Preferences"), &[b'p'; 1000]);
-        put(&src.join("Default/IndexedDB/https_big_0.indexeddb.leveldb/000005.ldb"), &[1; 60_000]);
-        put(&src.join("Default/IndexedDB/https_small_0.indexeddb.leveldb/000005.ldb"), &[2; 10_000]);
-        put(&src.join("Default/Service Worker/Database/CURRENT"), &[3; 30_000]);
+        put(
+            &src.join("Default/IndexedDB/https_big_0.indexeddb.leveldb/000005.ldb"),
+            &[1; 60_000],
+        );
+        put(
+            &src.join("Default/IndexedDB/https_small_0.indexeddb.leveldb/000005.ldb"),
+            &[2; 10_000],
+        );
+        put(
+            &src.join("Default/Service Worker/Database/CURRENT"),
+            &[3; 30_000],
+        );
         let zip = dir.join("s.zip");
         let packed = pack(&src, &zip, 50_000).unwrap();
         assert_eq!(packed.left_out, ["Default/IndexedDB/https_big_0"]);
@@ -507,15 +620,30 @@ mod tests {
         let dir = temp("idb-blobs");
         let src = dir.join("src");
         put(&src.join("Local State"), b"{}");
-        put(&src.join("Default/IndexedDB/https_big_0.indexeddb.blob/1/00/1"), &[1; 60_000]);
-        put(&src.join("Default/IndexedDB/https_big_0.indexeddb.leveldb/000005.ldb"), &[2; 1_000]);
-        put(&src.join("Default/IndexedDB/https_other_0.indexeddb.leveldb/000005.ldb"), &[3; 20_000]);
+        put(
+            &src.join("Default/IndexedDB/https_big_0.indexeddb.blob/1/00/1"),
+            &[1; 60_000],
+        );
+        put(
+            &src.join("Default/IndexedDB/https_big_0.indexeddb.leveldb/000005.ldb"),
+            &[2; 1_000],
+        );
+        put(
+            &src.join("Default/IndexedDB/https_other_0.indexeddb.leveldb/000005.ldb"),
+            &[3; 20_000],
+        );
         let zip = dir.join("s.zip");
         let packed = pack(&src, &zip, 40_000).unwrap();
         assert_eq!(packed.left_out, ["Default/IndexedDB/https_big_0"]);
         let listed = names(&zip);
-        assert!(!listed.iter().any(|n| n.contains("https_big_0")), "{listed:?}");
-        assert!(listed.iter().any(|n| n.contains("https_other_0")), "{listed:?}");
+        assert!(
+            !listed.iter().any(|n| n.contains("https_big_0")),
+            "{listed:?}"
+        );
+        assert!(
+            listed.iter().any(|n| n.contains("https_other_0")),
+            "{listed:?}"
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -524,8 +652,10 @@ mod tests {
         let dir = temp("newer");
         let zip_path = dir.join("n.zip");
         let mut z = zip::ZipWriter::new(fs::File::create(&zip_path).unwrap());
-        z.start_file(MANIFEST, zip::write::SimpleFileOptions::default()).unwrap();
-        z.write_all(br#"{"format":99,"os":"macos","made_at":1,"launcher":"9"}"#).unwrap();
+        z.start_file(MANIFEST, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        z.write_all(br#"{"format":99,"os":"macos","made_at":1,"launcher":"9"}"#)
+            .unwrap();
         z.finish().unwrap();
         let err = unpack(&zip_path, &dir.join("udd")).unwrap_err().to_string();
         assert!(err.contains("newer launcher"), "{err}");

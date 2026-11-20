@@ -77,6 +77,7 @@ export function BrowserColumn({
           <SelectField
             aria-label={t("projectEditor.chooseProfile")}
             value={target ?? ""}
+            disabled={browser.busy}
             onChange={(v) => onTarget(v || null)}
             options={[
               { value: "", label: t("projectEditor.chooseProfile") },
@@ -99,7 +100,7 @@ export function BrowserColumn({
             >
               {recording ? t("liveView.stopRecording") : t("liveView.record")}
             </Button>
-            <Button variant="neutral" mode="ghost" size="2xsmall" aria-label={t("liveView.stopLabel")} onClick={() => void browser.stop()}>
+            <Button variant="neutral" mode="ghost" size="2xsmall" disabled={browser.busy} aria-label={t("liveView.stopLabel")} onClick={() => void browser.stop()}>
               {t("liveView.stop")}
             </Button>
           </>

@@ -29,7 +29,14 @@ pub async fn spawn(mut cmd: Command) -> io::Result<(Child, Tie)> {
         cmd.pre_exec(move || {
             // SIGHUP: Chromium quits and saves on it, as on SIGINT (SIGTERM loses fresh cookies). Not SIGINT
             // itself: the reaper sends that, and a second of the same signal kills it unsaved.
-            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGHUP as libc::c_ulong, 0, 0, 0) != 0 {
+            if libc::prctl(
+                libc::PR_SET_PDEATHSIG,
+                libc::SIGHUP as libc::c_ulong,
+                0,
+                0,
+                0,
+            ) != 0
+            {
                 return Err(io::Error::last_os_error());
             }
             // The launcher died before the line above: nothing would send it.
@@ -40,9 +47,17 @@ pub async fn spawn(mut cmd: Command) -> io::Result<(Child, Tie)> {
         });
     }
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let ask = linux::Ask { cmd, rt: tokio::runtime::Handle::current(), tx };
-    linux::spawner().send(ask).map_err(|_| io::Error::other("the spawner thread is gone"))?;
-    let child = rx.await.map_err(|_| io::Error::other("the spawner thread is gone"))??;
+    let ask = linux::Ask {
+        cmd,
+        rt: tokio::runtime::Handle::current(),
+        tx,
+    };
+    linux::spawner()
+        .send(ask)
+        .map_err(|_| io::Error::other("the spawner thread is gone"))?;
+    let child = rx
+        .await
+        .map_err(|_| io::Error::other("the spawner thread is gone"))??;
     Ok((child, Tie::default()))
 }
 
@@ -71,7 +86,10 @@ mod linux {
                     let _ = tx.send(cmd.spawn());
                 }
             };
-            if let Err(e) = std::thread::Builder::new().name("browser-spawner".into()).spawn(run) {
+            if let Err(e) = std::thread::Builder::new()
+                .name("browser-spawner".into())
+                .spawn(run)
+            {
                 eprintln!("[launcher] the spawner thread did not start: {e}");
             }
             tx
@@ -89,7 +107,9 @@ pub async fn spawn(mut cmd: Command) -> io::Result<(Child, Tie)> {
     let job = win::Job::new().filter(|j| child.raw_handle().is_some_and(|h| j.assign(h)));
     if !win::resume(pid) {
         let _ = child.start_kill();
-        return Err(io::Error::other("the browser was started held and could not be let go"));
+        return Err(io::Error::other(
+            "the browser was started held and could not be let go",
+        ));
     }
     if job.is_none() {
         eprintln!("[launcher] pid {pid} is not in a job: it may outlive a launcher that is killed");
@@ -105,8 +125,9 @@ mod win {
         CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
     };
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
 
@@ -128,7 +149,12 @@ mod win {
             info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
             let size = std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32;
             let set = unsafe {
-                SetInformationJobObject(job.0, JobObjectExtendedLimitInformation, &info as *const _ as *const _, size)
+                SetInformationJobObject(
+                    job.0,
+                    JobObjectExtendedLimitInformation,
+                    &info as *const _ as *const _,
+                    size,
+                )
             };
             (set != 0).then_some(job)
         }
@@ -145,7 +171,15 @@ mod win {
             let mut copy: HANDLE = std::ptr::null_mut();
             // SAFETY: our job and a process handle with PROCESS_DUP_HANDLE, both live for the call.
             unsafe {
-                DuplicateHandle(GetCurrentProcess(), self.0, process as HANDLE, &mut copy, 0, 0, DUPLICATE_SAME_ACCESS) != 0
+                DuplicateHandle(
+                    GetCurrentProcess(),
+                    self.0,
+                    process as HANDLE,
+                    &mut copy,
+                    0,
+                    0,
+                    DUPLICATE_SAME_ACCESS,
+                ) != 0
             }
         }
     }
@@ -196,7 +230,8 @@ mod tests {
 
     fn ping(seconds: &str) -> tokio::process::Command {
         let mut c = tokio::process::Command::new("ping");
-        c.args(["-n", seconds, "127.0.0.1"]).stdout(std::process::Stdio::null());
+        c.args(["-n", seconds, "127.0.0.1"])
+            .stdout(std::process::Stdio::null());
         c
     }
 
@@ -208,8 +243,14 @@ mod tests {
         assert!(tie.lend(reaper.raw_handle().unwrap()));
         drop(tie);
         tokio::time::sleep(Duration::from_millis(500)).await;
-        assert!(browser.try_wait().unwrap().is_none(), "ended with the launcher's handle");
+        assert!(
+            browser.try_wait().unwrap().is_none(),
+            "ended with the launcher's handle"
+        );
         reaper.kill().await.unwrap();
-        tokio::time::timeout(Duration::from_secs(5), browser.wait()).await.expect("ended with the reaper").unwrap();
+        tokio::time::timeout(Duration::from_secs(5), browser.wait())
+            .await
+            .expect("ended with the reaper")
+            .unwrap();
     }
 }

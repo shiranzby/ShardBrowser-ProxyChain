@@ -52,13 +52,13 @@ export function ExtensionPicker({
     [value, items],
   );
   if (items.length === 0) {
+    if (onAdd) return null;
     return (
       <p className={cn("m-0 text-secondary text-text-soft-400", listOnly && "p-0")}>
-        {t("extensionPicker.emptyLibrary")}{!onAdd && (<> {" "}
+        {t("extensionPicker.emptyLibrary")}{" "}
           <Button mode="link" size="3xsmall" onClick={() => go("extensions")}>
             {t("extensionPicker.addOne")}
           </Button>
-        </>)}
       </p>
     );
   }

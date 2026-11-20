@@ -205,7 +205,7 @@ export default function Select({
         tabIndex={disabled ? undefined : 0}
         aria-haspopup={isSearchable ? 'dialog' : 'listbox'}
         aria-expanded={open}
-        aria-controls={open && !isSearchable ? listId : undefined}
+        aria-controls={open ? listId : undefined}
         aria-activedescendant={open && !isSearchable && nav.activeId ? nav.optionId(nav.activeId) : undefined}
         aria-invalid={hasError || undefined}
         aria-disabled={disabled || undefined}
@@ -251,6 +251,7 @@ export default function Select({
         <Portal>
           <div
             {...presence.rootProps}
+            id={isSearchable ? listId : undefined}
             ref={mergeRefs(popupRef, presence.rootProps.ref)}
             role={isSearchable ? 'dialog' : undefined}
             aria-label={isSearchable ? (label ?? aria['aria-label']) : undefined}

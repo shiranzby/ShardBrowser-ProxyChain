@@ -30,16 +30,19 @@ pub use error::CmdError;
 pub use cache::ready;
 
 /// A write only this machine's own profiles take: a run's profile steps, the launcher's own fixes.
-pub const PERSONAL_ONLY: &str = "not offered in a team space yet: this writes only your own profiles";
+pub const PERSONAL_ONLY: &str =
+    "not offered in a team space yet: this writes only your own profiles";
 /// A door the team space does not have.
 pub const NOT_IN_TEAM: &str = "not offered in a team space";
 /// A door a team's profiles do not have yet: cookies kept apart from a start, temporary ones.
 pub const TEAM_NOT_YET: &str = "not offered for a team's profiles yet";
 /// Why a switch is refused.
 pub const SWITCH_WHILE_STARTING: &str = "a profile is starting: switch spaces once it has started";
-pub const SWITCH_WHILE_MOVING: &str = "ShardBrowser is moving or resetting its data: switch spaces when that finishes";
+pub const SWITCH_WHILE_MOVING: &str =
+    "ShardBrowser is moving or resetting its data: switch spaces when that finishes";
 /// Why a launch is refused while the space changes.
-pub const LAUNCH_WHILE_SWITCHING: &str = "the launcher is switching spaces: start the profile again in a moment";
+pub const LAUNCH_WHILE_SWITCHING: &str =
+    "the launcher is switching spaces: start the profile again in a moment";
 
 /// The team the doors work in now; None in the personal space.
 fn team_now() -> Option<String> {
@@ -65,7 +68,10 @@ pub struct Ticket {
 impl Ticket {
     /// The space in use now.
     pub fn now() -> Ticket {
-        Ticket { epoch: crate::team::space_epoch(), team: team_now() }
+        Ticket {
+            epoch: crate::team::space_epoch(),
+            team: team_now(),
+        }
     }
 
     pub fn epoch(&self) -> u64 {
@@ -121,13 +127,18 @@ pub fn ticket(asked: Option<u64>) -> Result<Ticket, CmdError> {
 }
 
 /// A write from the window without its space's edition, refused in a team.
-pub const NO_EPOCH: &str = "a write in a team space has to name the space it was asked in (epoch): nothing was written";
+pub const NO_EPOCH: &str =
+    "a write in a team space has to name the space it was asked in (epoch): nothing was written";
 
 /// The window's ticket: in a team it must say which edition the write was asked under.
 pub fn window_ticket(asked: Option<u64>) -> Result<Ticket, CmdError> {
     let t = ticket(asked)?;
     if asked.is_none() && t.team.is_some() {
-        return Err(CmdError::Refused { status: 400, code: "space_unknown".into(), message: NO_EPOCH.into() });
+        return Err(CmdError::Refused {
+            status: 400,
+            code: "space_unknown".into(),
+            message: NO_EPOCH.into(),
+        });
     }
     Ok(t)
 }
@@ -236,7 +247,7 @@ pub async fn settle() {
 }
 
 /// Delete all data: every team forgotten here, its channel and permission, what
-/// is left in `team-open`, and the secret values kept for its projects. None of
+/// is left in `team-open` or `team-recovery`, and the secret values kept for its projects. None of
 /// it goes into the backup.
 pub fn forget_teams() -> Result<()> {
     let teams = crate::team::forget_all()?;
@@ -271,7 +282,11 @@ pub fn cdp_pass(id: &str) -> Result<crate::process::CdpInfo, String> {
         return Err(format!("no profile {id} in the space in use"));
     }
     if !may_debug(id) {
-        return Err(CmdError::Forbidden(error::Need { right: "cookies", on: "profile" }).to_string());
+        return Err(CmdError::Forbidden(error::Need {
+            right: "cookies",
+            on: "profile",
+        })
+        .to_string());
     }
     crate::process::Tracker::shared()
         .cdp(id)
@@ -281,7 +296,11 @@ pub fn cdp_pass(id: &str) -> Result<crate::process::CdpInfo, String> {
 fn may_debug(id: &str) -> bool {
     let Some(team) = team_now() else { return true };
     cache::row(&team, id).is_some_and(|r| {
-        perm::allows(&team, team_model::Action::Cookies, &team_model::Target::profile(id, &r.folder))
+        perm::allows(
+            &team,
+            team_model::Action::Cookies,
+            &team_model::Target::profile(id, &r.folder),
+        )
     })
 }
 
@@ -292,7 +311,9 @@ pub mod profile {
     use std::path::PathBuf;
 
     pub use super::write::{Made, SaveOpts};
-    pub use local::{claimed_screen, claims_mobile, names_a_window, OpenOn, Origin, ProfileMeta, StoredProfile};
+    pub use local::{
+        claimed_screen, claims_mobile, names_a_window, OpenOn, Origin, ProfileMeta, StoredProfile,
+    };
 
     fn missing_here(id: &str) -> anyhow::Error {
         CmdError::Missing(format!("no profile {id} in your own space")).into()
@@ -333,7 +354,9 @@ pub mod profile {
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
         if any_unsealed() {
-            eprintln!("[launcher] a protected profile did not close in time: sealed at its next start");
+            eprintln!(
+                "[launcher] a protected profile did not close in time: sealed at its next start"
+            );
         }
     }
 
@@ -426,13 +449,25 @@ pub mod profile {
     }
 
     /// Saves a profile built whole (the editor, the API); new when its id is empty.
-    pub async fn save(door: Door, t: &Ticket, stored: StoredProfile, opts: SaveOpts) -> Result<ProfileMeta> {
+    pub async fn save(
+        door: Door,
+        t: &Ticket,
+        stored: StoredProfile,
+        opts: SaveOpts,
+    ) -> Result<ProfileMeta> {
         local::validate_proxy_route(&stored.meta)?;
-        if let Some(id) = stored.meta.proxy_route.as_ref().and_then(|route| route.first_proxy_id()) {
+        if let Some(id) = stored
+            .meta
+            .proxy_route
+            .as_ref()
+            .and_then(|route| route.first_proxy_id())
+        {
             super::proxy::for_route(t.team(), id).await?;
         }
         stored.meta.proxy_chain_policy.validate()?;
-        if let Some(proxy) = &stored.meta.inline_proxy { proxy.proxy_chain_policy.validate()?; }
+        if let Some(proxy) = &stored.meta.inline_proxy {
+            proxy.proxy_chain_policy.validate()?;
+        }
         match t.team() {
             Some(team) => Ok(write::save_profile(door, t, team, stored, opts).await?),
             None => {
@@ -455,7 +490,11 @@ pub mod profile {
             if let Some(sent) = opts.sent_rev {
                 let on_disk = local::current_rev(&stored.meta.id);
                 if sent != on_disk {
-                    let stale = CmdError::Stale { what: "profile", now: Some(on_disk), had: Some(sent) };
+                    let stale = CmdError::Stale {
+                        what: "profile",
+                        now: Some(on_disk),
+                        had: Some(sent),
+                    };
                     return Err(anyhow::Error::new(stale).context(format!(
                         "This profile changed after you opened it (rev {on_disk}, you have {sent}) \
                          — probably through the API or another window. Reopen it and apply your \
@@ -487,7 +526,14 @@ pub mod profile {
 
     /// The row a personal profile's settings make.
     fn meta_of(stored: &StoredProfile) -> ProfileMeta {
-        let text = |k: &str, or: &str| stored.config.get(k).and_then(|v| v.as_str()).unwrap_or(or).to_string();
+        let text = |k: &str, or: &str| {
+            stored
+                .config
+                .get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or(or)
+                .to_string()
+        };
         ProfileMeta {
             proxy_route: stored.meta.proxy_route.clone(),
             proxy_chain_policy: stored.meta.proxy_chain_policy,
@@ -558,7 +604,14 @@ pub mod profile {
         let (full, key) = super::local::protect::unlock(id, password)?;
         let udd = super::local::protect::open_data(id, &key)?;
         UNSEALED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Ok((full, udd, Unsealed { id: id.to_string(), key: Some(key) }))
+        Ok((
+            full,
+            udd,
+            Unsealed {
+                id: id.to_string(),
+                key: Some(key),
+            },
+        ))
     }
 
     pub fn save_raw(stored: &mut StoredProfile) -> Result<()> {
@@ -625,7 +678,12 @@ pub mod profile {
         }
     }
 
-    pub async fn bind_proxy(door: Door, t: &Ticket, id: &str, proxy_id: Option<String>) -> Result<()> {
+    pub async fn bind_proxy(
+        door: Door,
+        t: &Ticket,
+        id: &str,
+        proxy_id: Option<String>,
+    ) -> Result<()> {
         match t.team() {
             Some(team) => Ok(write::bind_proxy(door, t, team, id, proxy_id).await?),
             None => {
@@ -653,7 +711,12 @@ pub mod profile {
     }
 
     /// The folder's kept entry and its look go with it, as with a rename.
-    pub async fn delete_folder(door: Door, t: &Ticket, name: &str, delete_profiles: bool) -> Result<usize> {
+    pub async fn delete_folder(
+        door: Door,
+        t: &Ticket,
+        name: &str,
+        delete_profiles: bool,
+    ) -> Result<usize> {
         if let Some(team) = t.team() {
             return Ok(write::delete_folder(door, t, team, name, delete_profiles).await?);
         }
@@ -702,29 +765,50 @@ pub mod proxy {
     use anyhow::Result;
 
     pub use local::{
-        can_send_udp_directly, country_to_locale, country_to_timezone,
-        parse_bulk, parse_single, GeoInfo, ProxyEntry, ProxyKind, ProxyCapabilities, TestSnapshot,
+        can_send_udp_directly, country_to_locale, country_to_timezone, parse_bulk, parse_single,
+        GeoInfo, ProxyCapabilities, ProxyEntry, ProxyKind, TestSnapshot,
     };
-    pub(crate) use local::{probe as probe_on_route, geo_check_via as geo_check_on_route, geo_check_prepared, Socks5ProbeError, HttpProbeError, GeoLookupError, GeoProviderFailure};
+    pub(crate) use local::{
+        geo_check_prepared, geo_check_via as geo_check_on_route, probe as probe_on_route,
+        GeoLookupError, GeoProviderFailure, HttpProbeError, Socks5ProbeError,
+    };
 
     pub async fn probe(entry: &ProxyEntry) -> Result<u128> {
         let settings = crate::proxy_chain::saved_settings()?;
-        let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?;
+        let config = crate::proxy_chain::policy::effective(
+            &settings.proxy_chain,
+            Default::default(),
+            entry.proxy_chain_policy,
+        )?;
         let prepared = crate::proxy_chain::prepare(Some(entry), &config).await?;
         if let Some(ms) = prepared.as_ref().and_then(|p| p.verified_tcp_ms) {
-            prepared.expect("verified route exists").tunnel.shutdown().await;
+            prepared
+                .expect("verified route exists")
+                .tunnel
+                .shutdown()
+                .await;
             return Ok(ms);
         }
         let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
         match local::probe(effective).await {
-            Err(e) if prepared.is_some() => Err(crate::proxy_chain::profile_failure(&prepared.as_ref().unwrap().tunnel, &e).into()),
+            Err(e) if prepared.is_some() => Err(crate::proxy_chain::profile_failure(
+                &prepared.as_ref().unwrap().tunnel,
+                &e,
+            )
+            .into()),
             result => result,
         }
     }
 
     pub async fn probe_udp(entry: &ProxyEntry) -> Result<u128> {
         let settings = crate::proxy_chain::saved_settings()?;
-        if crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?.enabled {
+        if crate::proxy_chain::policy::effective(
+            &settings.proxy_chain,
+            Default::default(),
+            entry.proxy_chain_policy,
+        )?
+        .enabled
+        {
             anyhow::bail!("Proxy-chain V1 does not support UDP. This is a transport limitation, not the profile proxy's capability.");
         }
         local::probe_udp(entry).await
@@ -734,21 +818,40 @@ pub mod proxy {
         geo_check_via(Some(entry), provider).await
     }
 
-    pub async fn geo_check_via(entry: Option<&ProxyEntry>, provider: Option<String>) -> Result<GeoInfo> {
-        let Some(entry) = entry else { return local::geo_check_via(None, provider).await };
+    pub async fn geo_check_via(
+        entry: Option<&ProxyEntry>,
+        provider: Option<String>,
+    ) -> Result<GeoInfo> {
+        let Some(entry) = entry else {
+            return local::geo_check_via(None, provider).await;
+        };
         let settings = crate::proxy_chain::saved_settings()?;
-        let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy)?;
+        let config = crate::proxy_chain::policy::effective(
+            &settings.proxy_chain,
+            Default::default(),
+            entry.proxy_chain_policy,
+        )?;
         let prepared = crate::proxy_chain::prepare(Some(entry), &config).await?;
         if provider.is_none() {
             if let Some(geo) = prepared.as_ref().and_then(|p| p.verified_geo.clone()) {
-                prepared.expect("verified route exists").tunnel.shutdown().await;
+                prepared
+                    .expect("verified route exists")
+                    .tunnel
+                    .shutdown()
+                    .await;
                 return Ok(geo);
             }
         }
         let effective = prepared.as_ref().map_or(entry, |p| &p.effective);
-        local::geo_check_via(Some(effective), provider).await.map_err(|e| if prepared.is_some() {
-            anyhow::anyhow!("The exit IP request through the profile proxy chain failed.")
-        } else { e })
+        local::geo_check_via(Some(effective), provider)
+            .await
+            .map_err(|e| {
+                if prepared.is_some() {
+                    anyhow::anyhow!("The exit IP request through the profile proxy chain failed.")
+                } else {
+                    e
+                }
+            })
     }
 
     /// A team's proxies carry an address only where this member may use them.
@@ -775,7 +878,8 @@ pub mod proxy {
                 let data = super::remote::read_proxy(&client, id).await?;
                 super::remote::proxy(&data.row, Some(&data.data))
             }
-            None => local::get(id)?.ok_or_else(|| anyhow::anyhow!("The selected proxy no longer exists."))?,
+            None => local::get(id)?
+                .ok_or_else(|| anyhow::anyhow!("The selected proxy no longer exists."))?,
         };
         if entry.host.trim().is_empty() || entry.port == 0 {
             anyhow::bail!("The selected proxy is unavailable or cannot be read in this space.");
@@ -808,7 +912,12 @@ pub mod proxy {
     }
 
     /// As [`upsert_dedup`], but a new password for the profile's own proxy changes it.
-    pub async fn upsert_for_binding(door: Door, t: &Ticket, entry: ProxyEntry, bound_id: Option<&str>) -> Result<ProxyEntry> {
+    pub async fn upsert_for_binding(
+        door: Door,
+        t: &Ticket,
+        entry: ProxyEntry,
+        bound_id: Option<&str>,
+    ) -> Result<ProxyEntry> {
         entry.proxy_chain_policy.validate()?;
         match t.team() {
             Some(team) => Ok(write::save_proxy_for_binding(door, t, team, entry, bound_id).await?),
@@ -821,7 +930,9 @@ pub mod proxy {
 
     /// Adds each proxy not kept yet; answers how many went in.
     pub async fn bulk_save(door: Door, t: &Ticket, entries: Vec<ProxyEntry>) -> Result<usize> {
-        for entry in &entries { entry.proxy_chain_policy.validate()?; }
+        for entry in &entries {
+            entry.proxy_chain_policy.validate()?;
+        }
         match t.team() {
             Some(team) => Ok(write::save_proxies(door, t, team, entries).await?),
             None => {
@@ -837,7 +948,9 @@ pub mod proxy {
             None => {
                 t.still()?;
                 if local::get(id)?.is_none() {
-                    return Err(CmdError::Missing(format!("no proxy {id} in your own space")).into());
+                    return Err(
+                        CmdError::Missing(format!("no proxy {id} in your own space")).into(),
+                    );
                 }
                 local::delete(id)
             }
@@ -847,7 +960,11 @@ pub mod proxy {
     /// Tests the proxy and keeps the result in its history; a team's only in memory.
     pub async fn full_test(entry: &ProxyEntry) -> Result<TestSnapshot> {
         match team_now() {
-            Some(team) => Ok(cache::keep_test(&team, &entry.id, local::measure(entry).await)),
+            Some(team) => Ok(cache::keep_test(
+                &team,
+                &entry.id,
+                local::measure(entry).await,
+            )),
             None => local::full_test(entry).await,
         }
     }
@@ -862,8 +979,13 @@ pub mod proxy {
     pub fn latest_test(id: &str) -> Option<TestSnapshot> {
         let entry = get(id).ok()??;
         if entry.proxy_chain_policy == crate::proxy_chain::policy::ChainPolicy::PreferFirstHop {
-            return history(id).ok()?.into_iter().rev().find(|s| s.transport.as_deref() == Some("proxy_chain") &&
-                matches!(s.route.as_deref(), Some("first_hop" | "assigned_proxy_fallback" | "same_proxy_endpoint")));
+            return history(id).ok()?.into_iter().rev().find(|s| {
+                s.transport.as_deref() == Some("proxy_chain")
+                    && matches!(
+                        s.route.as_deref(),
+                        Some("first_hop" | "assigned_proxy_fallback" | "same_proxy_endpoint")
+                    )
+            });
         }
         latest_test_for(&entry)
     }
@@ -872,15 +994,58 @@ pub mod proxy {
     /// The proxy list instead uses the saved proxy's policy via latest_test.
     pub fn latest_test_for(entry: &ProxyEntry) -> Option<TestSnapshot> {
         let settings = crate::proxy_chain::saved_settings().ok()?;
-        let config = crate::proxy_chain::policy::effective(&settings.proxy_chain, Default::default(), entry.proxy_chain_policy).ok()?;
+        let config = crate::proxy_chain::policy::effective(
+            &settings.proxy_chain,
+            Default::default(),
+            entry.proxy_chain_policy,
+        )
+        .ok()?;
         // Adaptive policy requires a fresh route decision. A previous route,
         // even one with the same exit IP, is never its capability fallback.
-        if config.allow_assigned_fallback { return None; }
+        if config.allow_assigned_fallback {
+            return None;
+        }
         let enabled = config.enabled;
         history(&entry.id).ok()?.into_iter().rev().find(|s| {
-            if enabled { s.transport.as_deref() == Some("proxy_chain") && matches!(s.route.as_deref(), None | Some("first_hop")) }
-            else { s.transport.as_deref() != Some("proxy_chain") }
+            if enabled {
+                s.transport.as_deref() == Some("proxy_chain")
+                    && matches!(s.route.as_deref(), None | Some("first_hop"))
+            } else {
+                s.transport.as_deref() != Some("proxy_chain")
+            }
         })
+    }
+}
+
+pub mod proxy_folders {
+    use super::local::proxy_folders as local;
+    use super::{Ticket, NOT_IN_TEAM};
+    use anyhow::Result;
+
+    pub use local::{ProxyFolder, ProxyFolderState};
+
+    pub fn list() -> Result<ProxyFolderState> {
+        local::list()
+    }
+
+    pub fn add(t: &Ticket, name: &str, parent: &str) -> Result<ProxyFolderState> {
+        t.here(NOT_IN_TEAM)?;
+        local::add(name, parent)
+    }
+
+    pub fn rename(t: &Ticket, old: &str, new: &str) -> Result<ProxyFolderState> {
+        t.here(NOT_IN_TEAM)?;
+        local::rename(old, new)
+    }
+
+    pub fn delete(t: &Ticket, name: &str) -> Result<ProxyFolderState> {
+        t.here(NOT_IN_TEAM)?;
+        local::delete(name)
+    }
+
+    pub fn set_parent(t: &Ticket, name: &str, parent: &str) -> Result<ProxyFolderState> {
+        t.here(NOT_IN_TEAM)?;
+        local::set_parent(name, parent)
     }
 }
 
@@ -923,7 +1088,11 @@ pub mod tags {
     }
 
     /// Gives each listed profile exactly these tags; an empty list clears it.
-    pub async fn assign(door: Door, t: &Ticket, by_profile: BTreeMap<String, Vec<String>>) -> Result<()> {
+    pub async fn assign(
+        door: Door,
+        t: &Ticket,
+        by_profile: BTreeMap<String, Vec<String>>,
+    ) -> Result<()> {
         match t.team() {
             Some(team) => Ok(write::assign_tags(door, t, team, by_profile).await?),
             None => {
@@ -968,7 +1137,12 @@ pub mod folders {
 
     /// Team servers do not carry hierarchy; never reinterpret their folder
     /// permission scopes as inherited rights.
-    pub fn set_parent(t: &Ticket, name: &str, parent: &str, meta: Option<FolderMeta>) -> Result<()> {
+    pub fn set_parent(
+        t: &Ticket,
+        name: &str,
+        parent: &str,
+        meta: Option<FolderMeta>,
+    ) -> Result<()> {
         t.here(NOT_IN_TEAM)?;
         local::set_parent(name, parent, meta)
     }
@@ -976,7 +1150,14 @@ pub mod folders {
     /// A team folder's look is its colour alone.
     pub async fn set_meta(door: Door, t: &Ticket, name: &str, meta: FolderMeta) -> Result<()> {
         match t.team() {
-            Some(team) => Ok(write::set_folder_color(door, t, team, name, meta.color.as_deref().unwrap_or("")).await?),
+            Some(team) => Ok(write::set_folder_color(
+                door,
+                t,
+                team,
+                name,
+                meta.color.as_deref().unwrap_or(""),
+            )
+            .await?),
             None => {
                 t.still()?;
                 local::set_meta(name, meta)
@@ -996,7 +1177,10 @@ pub mod folders {
 
         #[test]
         fn hierarchy_is_refused_in_a_team_before_reading_local_folders() {
-            let ticket = Ticket { epoch: 0, team: Some("synthetic-team".into()) };
+            let ticket = Ticket {
+                epoch: 0,
+                team: Some("synthetic-team".into()),
+            };
             let err = set_parent(&ticket, "Child", "Parent", None).unwrap_err();
             assert!(err.to_string().contains(NOT_IN_TEAM));
         }
@@ -1082,7 +1266,9 @@ pub mod extensions {
     use local::updates::Env;
     use std::path::{Path, PathBuf};
 
-    pub use local::updates::{Done as UpdateDone, ExtensionUpdate, Linked as LinkDone, News as UpdateNews};
+    pub use local::updates::{
+        Done as UpdateDone, ExtensionUpdate, Linked as LinkDone, News as UpdateNews,
+    };
     pub use local::{import_each, ExtensionEntry, Imported};
 
     /// Updates of a team's extensions come later (design v2).
@@ -1102,7 +1288,12 @@ pub mod extensions {
 
     /// One the space holds already is refused (`already_in_library`); `separate`
     /// adds it beside, in this machine's library, when its id would differ.
-    pub async fn import_as(door: Door, t: &Ticket, src: &Path, separate: bool) -> Result<ExtensionEntry> {
+    pub async fn import_as(
+        door: Door,
+        t: &Ticket,
+        src: &Path,
+        separate: bool,
+    ) -> Result<ExtensionEntry> {
         match t.team() {
             Some(team) => items::import_extension(door, t, team, src).await,
             None => {
@@ -1117,7 +1308,12 @@ pub mod extensions {
     }
 
     /// A Web Store link is read as strictly as the front reads it (SEC-08).
-    pub async fn import_url_as(door: Door, t: &Ticket, raw: &str, separate: bool) -> Result<ExtensionEntry> {
+    pub async fn import_url_as(
+        door: Door,
+        t: &Ticket,
+        raw: &str,
+        separate: bool,
+    ) -> Result<ExtensionEntry> {
         match t.team() {
             Some(team) => items::import_extension_url(door, t, team, raw).await,
             None => {
@@ -1168,7 +1364,12 @@ pub mod extensions {
 
     /// A team profile's extensions, unpacked into its open copy at `into`;
     /// `profile` is its id and name.
-    pub async fn unpack_for_team(team: &str, profile: (&str, &str), ids: &[String], into: &Path) -> Vec<PathBuf> {
+    pub async fn unpack_for_team(
+        team: &str,
+        profile: (&str, &str),
+        ids: &[String],
+        into: &Path,
+    ) -> Vec<PathBuf> {
         items::unpack_for_profile(team, profile, ids, into).await
     }
 
@@ -1191,7 +1392,13 @@ pub mod extensions {
         Env::real(None).map_or(0, |env| local::updates::load(&env.book).last_check_at)
     }
 
-    pub async fn update(door: Door, t: &Ticket, id: &str, confirmed: bool, engine: Option<String>) -> Result<UpdateDone> {
+    pub async fn update(
+        door: Door,
+        t: &Ticket,
+        id: &str,
+        confirmed: bool,
+        engine: Option<String>,
+    ) -> Result<UpdateDone> {
         match t.team() {
             Some(team) => {
                 super::doors::clear(door, team, &Default::default())?;
@@ -1205,7 +1412,14 @@ pub mod extensions {
     }
 
     /// Links a library extension to its Web Store item, by its key or its files.
-    pub async fn link_source(door: Door, t: &Ticket, id: &str, link: &str, confirmed: bool, engine: Option<String>) -> Result<LinkDone> {
+    pub async fn link_source(
+        door: Door,
+        t: &Ticket,
+        id: &str,
+        link: &str,
+        confirmed: bool,
+        engine: Option<String>,
+    ) -> Result<LinkDone> {
         match t.team() {
             Some(team) => {
                 super::doors::clear(door, team, &Default::default())?;
@@ -1298,13 +1512,22 @@ pub mod automation {
 
     /// Taking a team's project out needs the team's TakeOut.
     pub fn export(id: &str) -> Result<Bundle> {
-        let Some(team) = team_now() else { return local::export(id) };
+        let Some(team) = team_now() else {
+            return local::export(id);
+        };
         let project = cache::projects(&team)
             .into_iter()
             .find(|p| p.id == id)
             .ok_or_else(|| CmdError::Missing(format!("no project {id} in this team")))?;
-        if !super::perm::allows(&team, team_model::Action::TakeOut, &team_model::Target::team()) {
-            let need = super::error::Need { right: "take_out", on: "team" };
+        if !super::perm::allows(
+            &team,
+            team_model::Action::TakeOut,
+            &team_model::Target::team(),
+        ) {
+            let need = super::error::Need {
+                right: "take_out",
+                on: "team",
+            };
             return Err(CmdError::Forbidden(need)).context("not allowed in this team");
         }
         Ok(local::bundle(project))
@@ -1383,11 +1606,17 @@ mod tests {
         let _serial = crate::migrate::serial();
         let _root = crate::store::test_root("switch-gate").with_config();
         let launching = crate::launch::Launching::start();
-        let starting = super::switch(Space::Personal).await.unwrap_err().to_string();
+        let starting = super::switch(Space::Personal)
+            .await
+            .unwrap_err()
+            .to_string();
         drop(launching);
         assert_eq!(starting, super::SWITCH_WHILE_STARTING);
         assert!(crate::migrate::hold());
-        let moving = super::switch(Space::Personal).await.unwrap_err().to_string();
+        let moving = super::switch(Space::Personal)
+            .await
+            .unwrap_err()
+            .to_string();
         crate::migrate::release();
         assert_eq!(moving, super::SWITCH_WHILE_MOVING);
 
@@ -1396,14 +1625,26 @@ mod tests {
         assert!(super::switching() && super::Gate::take().is_err());
         let launch = crate::launch::launch_profile("any", false, false).await;
         drop(gate);
-        assert_eq!(launch.err().map(|e| e.to_string()).as_deref(), Some(super::LAUNCH_WHILE_SWITCHING));
+        assert_eq!(
+            launch.err().map(|e| e.to_string()).as_deref(),
+            Some(super::LAUNCH_WHILE_SWITCHING)
+        );
         assert!(!super::switching());
-        assert_eq!(super::switch(Space::Personal).await.unwrap().space, Space::Personal);
+        assert_eq!(
+            super::switch(Space::Personal).await.unwrap().space,
+            Space::Personal
+        );
     }
 
     fn put_profile(id: &str, folder: &str) {
         let body = serde_json::json!({ "_meta": { "id": id, "folder": folder } });
-        fs::write(crate::store::profiles_dir().unwrap().join(format!("{id}.json")), body.to_string()).unwrap();
+        fs::write(
+            crate::store::profiles_dir()
+                .unwrap()
+                .join(format!("{id}.json")),
+            body.to_string(),
+        )
+        .unwrap();
     }
     fn folder_of(id: &str) -> String {
         profile::load_raw(id).unwrap().meta.folder
@@ -1412,7 +1653,10 @@ mod tests {
         super::Ticket::now()
     }
     fn red() -> folders::FolderMeta {
-        folders::FolderMeta { color: Some("red".into()), icon: "cart".into() }
+        folders::FolderMeta {
+            color: Some("red".into()),
+            icon: "cart".into(),
+        }
     }
 
     #[tokio::test]
@@ -1421,10 +1665,19 @@ mod tests {
         put_profile("fa1", "Ads");
         put_profile("fa2", "Ads");
         put_profile("fa3", "Other");
-        folders::add(Door("folder_add"), &here(), "Ads").await.unwrap();
-        folders::set_meta(Door("folder_meta_set"), &here(), "Ads", red()).await.unwrap();
+        folders::add(Door("folder_add"), &here(), "Ads")
+            .await
+            .unwrap();
+        folders::set_meta(Door("folder_meta_set"), &here(), "Ads", red())
+            .await
+            .unwrap();
 
-        assert_eq!(profile::rename_folder(Door("folder_rename"), &here(), "Ads", "Shops").await.unwrap(), 2);
+        assert_eq!(
+            profile::rename_folder(Door("folder_rename"), &here(), "Ads", "Shops")
+                .await
+                .unwrap(),
+            2
+        );
         assert_eq!(folder_of("fa1"), "Shops");
         let s = folders::list().unwrap();
         assert_eq!(s.registry, ["Shops"]);
@@ -1432,10 +1685,20 @@ mod tests {
         assert!(!s.meta.contains_key("Ads"));
 
         // A folder only its profiles held stays unkept.
-        assert_eq!(profile::rename_folder(Door("folder_rename"), &here(), "Other", "Else").await.unwrap(), 1);
+        assert_eq!(
+            profile::rename_folder(Door("folder_rename"), &here(), "Other", "Else")
+                .await
+                .unwrap(),
+            1
+        );
         assert_eq!(folders::list().unwrap().registry, ["Shops"]);
 
-        assert_eq!(profile::delete_folder(Door("folder_delete"), &here(), "Shops", false).await.unwrap(), 2);
+        assert_eq!(
+            profile::delete_folder(Door("folder_delete"), &here(), "Shops", false)
+                .await
+                .unwrap(),
+            2
+        );
         assert_eq!(folder_of("fa2"), "");
         assert_eq!(folders::list().unwrap(), folders::FolderState::default());
     }
@@ -1446,21 +1709,45 @@ mod tests {
         put_profile("fb1", "Ads");
         put_profile("fb2", "Shops");
         let path = crate::store::folders_path().unwrap();
-        let profile_paths = ["fb1", "fb2"].map(|id| crate::store::profiles_dir().unwrap().join(format!("{id}.json")));
+        let profile_paths = ["fb1", "fb2"].map(|id| {
+            crate::store::profiles_dir()
+                .unwrap()
+                .join(format!("{id}.json"))
+        });
         let before = profile_paths.each_ref().map(|path| fs::read(path).unwrap());
         // Version 2 is supported now. An unknown future version and a broken
         // parents field must be preserved just as exactly as malformed JSON.
-        for body in ["{not json", r#"{"version": 3, "registry": ["Ads"]}"#,
-            r#"{"version":2,"registry":["Ads"],"parents":{"Child":42}}"#] {
+        for body in [
+            "{not json",
+            r#"{"version": 3, "registry": ["Ads"]}"#,
+            r#"{"version":2,"registry":["Ads"],"parents":{"Child":42}}"#,
+        ] {
             fs::write(&path, body).unwrap();
             for next in ["Ads2", "", "Ads"] {
-                assert!(profile::rename_folder(Door("folder_rename"), &here(), "Ads", next).await.is_err());
-                assert_eq!(profile_paths.each_ref().map(|path| fs::read(path).unwrap()), before);
+                assert!(
+                    profile::rename_folder(Door("folder_rename"), &here(), "Ads", next)
+                        .await
+                        .is_err()
+                );
+                assert_eq!(
+                    profile_paths.each_ref().map(|path| fs::read(path).unwrap()),
+                    before
+                );
                 assert_eq!(fs::read_to_string(&path).unwrap(), body);
             }
             for delete_profiles in [false, true] {
-                assert!(profile::delete_folder(Door("folder_delete"), &here(), "Shops", delete_profiles).await.is_err());
-                assert_eq!(profile_paths.each_ref().map(|path| fs::read(path).unwrap()), before);
+                assert!(profile::delete_folder(
+                    Door("folder_delete"),
+                    &here(),
+                    "Shops",
+                    delete_profiles
+                )
+                .await
+                .is_err());
+                assert_eq!(
+                    profile_paths.each_ref().map(|path| fs::read(path).unwrap()),
+                    before
+                );
                 assert_eq!(folder_of("fb2"), "Shops");
             }
             assert_eq!(fs::read_to_string(&path).unwrap(), body, "left as it was");
@@ -1474,12 +1761,28 @@ mod tests {
         for version in [1, 2] {
             put_profile("fv1", "Ads");
             put_profile("fv2", "Child");
-            let parents = if version == 2 { serde_json::json!({ "Child": "Ads" }) } else { serde_json::json!({}) };
+            let parents = if version == 2 {
+                serde_json::json!({ "Child": "Ads" })
+            } else {
+                serde_json::json!({})
+            };
             fs::write(&path, serde_json::json!({"version":version,"registry":["Ads","Child"],"meta":{},"parents":parents}).to_string()).unwrap();
-            assert_eq!(profile::rename_folder(Door("folder_rename"), &here(), "Ads", "Renamed").await.unwrap(), 1);
+            assert_eq!(
+                profile::rename_folder(Door("folder_rename"), &here(), "Ads", "Renamed")
+                    .await
+                    .unwrap(),
+                1
+            );
             assert_eq!(folder_of("fv1"), "Renamed");
-            if version == 2 { assert_eq!(folders::list().unwrap().parents["Child"], "Renamed"); }
-            assert_eq!(profile::delete_folder(Door("folder_delete"), &here(), "Renamed", false).await.unwrap(), 1);
+            if version == 2 {
+                assert_eq!(folders::list().unwrap().parents["Child"], "Renamed");
+            }
+            assert_eq!(
+                profile::delete_folder(Door("folder_delete"), &here(), "Renamed", false)
+                    .await
+                    .unwrap(),
+                1
+            );
             assert_eq!(folder_of("fv1"), "");
             assert_eq!(folder_of("fv2"), "Child");
             let state = folders::list().unwrap();

@@ -15,7 +15,7 @@ const start = async (page: Page, name: string) => {
   await expect(row(page, name).getByRole("button", { name: "Stop" })).toBeVisible();
   await page.waitForTimeout(1200); // the mock's launch takes 900 ms; a start counts once confirmed
 };
-const modal = (page: Page) => page.getByRole("dialog", { name: /Enjoying ShardBrowser/ });
+const modal = (page: Page) => page.getByRole("dialog", { name: /Enjoying ShyShard/ });
 
 test("a fresh install never sees the ask (?mock=empty)", async ({ page }) => {
   await seed(page, null);

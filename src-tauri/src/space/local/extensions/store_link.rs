@@ -27,7 +27,8 @@ pub fn store_id(raw: &str) -> Option<String> {
 fn detail_id(path: &str) -> Option<String> {
     // An id, then the end of the path or a slash.
     fn ends_id(s: &str) -> Option<&str> {
-        s.get(..32).filter(|id| is_id(id) && matches!(s.as_bytes().get(32), None | Some(b'/')))
+        s.get(..32)
+            .filter(|id| is_id(id) && matches!(s.as_bytes().get(32), None | Some(b'/')))
     }
     let mut from = 0;
     while let Some(at) = path[from..].find("/detail/") {
@@ -83,7 +84,10 @@ mod tests {
             format!("https://chrome.google.com/detail/metamask/{ID}"),
             format!("https://chrome.google.com/webstore/../detail/metamask/{ID}"),
             format!("https://chromewebstore.google.com/detail/metamask/{ID}x"),
-            format!("https://chromewebstore.google.com/detail/metamask/{}", ID.to_uppercase()),
+            format!(
+                "https://chromewebstore.google.com/detail/metamask/{}",
+                ID.to_uppercase()
+            ),
             format!("https://chromewebstore.google.com/detail/a/b/{ID}"),
             format!("https://chromewebstore.google.com/metamask/{ID}"),
             format!("chromewebstore.google.com/detail/metamask/{ID}"),

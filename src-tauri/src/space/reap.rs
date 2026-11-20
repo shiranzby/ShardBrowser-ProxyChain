@@ -25,7 +25,11 @@ pub fn in_reaper() -> bool {
 
 /// What follows the program on a reaper's command line.
 pub fn argv(ppid: u32, dir: &Path) -> Vec<OsString> {
-    vec![FLAG.into(), ppid.to_string().into(), dir.as_os_str().to_owned()]
+    vec![
+        FLAG.into(),
+        ppid.to_string().into(),
+        dir.as_os_str().to_owned(),
+    ]
 }
 
 /// Run as a reaper when the command line asks for one: its exit code then.
@@ -46,7 +50,10 @@ pub fn from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
 /// The data root a copy lives under: only `<root>/team-open/<home>/<id>` is reaped.
 fn data_root_of(dir: &Path) -> Option<PathBuf> {
     use std::path::Component;
-    let plain = dir.is_absolute() && !dir.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir));
+    let plain = dir.is_absolute()
+        && !dir
+            .components()
+            .any(|c| matches!(c, Component::ParentDir | Component::CurDir));
     let open = dir.parent()?.parent()?;
     if !plain || open.file_name()? != "team-open" {
         return None;
@@ -60,8 +67,21 @@ fn run(ppid: u32, dir: PathBuf) -> i32 {
         eprintln!("[reaper] {} is not an open copy", dir.display());
         return 2;
     };
+    match crate::portable::root() {
+        Ok(Some(portable)) if root != portable.join("shardx-launcher") => {
+            eprintln!("[reaper] the open copy is outside this portable data root");
+            return 2;
+        }
+        Err(error) => {
+            eprintln!("[reaper] could not resolve the portable data root: {error:#}");
+            return 2;
+        }
+        _ => {}
+    }
     crate::store::set_data_root(Some(root));
-    let Some(nonce) = super::open::nonce_at(&dir) else { return 0 };
+    let Some(nonce) = super::open::nonce_at(&dir) else {
+        return 0;
+    };
     let mut parent = parent::Parent::watch(ppid);
     loop {
         if !super::open::still_there(&dir, &nonce) {
@@ -71,8 +91,16 @@ fn run(ppid: u32, dir: PathBuf) -> i32 {
             break;
         }
     }
-    eprintln!("[reaper] the launcher (pid {ppid}) is gone; closing {}", dir.display());
-    let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else { return 1 };
+    eprintln!(
+        "[reaper] the launcher (pid {ppid}) is gone; closing {}",
+        dir.display()
+    );
+    let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    else {
+        return 1;
+    };
     let mine = rt.block_on(super::open::reap(dir.clone(), &nonce));
     drop(rt);
     // What a lock held up is tried again a while; the next start's sweep has the rest.
@@ -96,7 +124,11 @@ impl Reaper {
         #[cfg(windows)]
         {
             use std::os::windows::io::AsRawHandle;
-            if !self.process.as_ref().is_some_and(|p| tie.lend(p.as_raw_handle())) {
+            if !self
+                .process
+                .as_ref()
+                .is_some_and(|p| tie.lend(p.as_raw_handle()))
+            {
                 eprintln!("[launcher] the reaper holds no job: a launcher killed ends the browser unsaved");
             }
         }
@@ -122,7 +154,11 @@ pub fn spawn(dir: &Path) -> std::io::Result<Reaper> {
     #[cfg(windows)]
     let reaper = Reaper {
         // SAFETY: the child's own handle, live while `child` is; the copy is ours.
-        process: child.raw_handle().and_then(|h| unsafe { std::os::windows::io::BorrowedHandle::borrow_raw(h) }.try_clone_to_owned().ok()),
+        process: child.raw_handle().and_then(|h| {
+            unsafe { std::os::windows::io::BorrowedHandle::borrow_raw(h) }
+                .try_clone_to_owned()
+                .ok()
+        }),
     };
     #[cfg(not(windows))]
     let reaper = Reaper::default();
@@ -136,13 +172,19 @@ pub fn spawn(dir: &Path) -> std::io::Result<Reaper> {
 fn command(dir: &Path, _break_away: bool) -> std::io::Result<tokio::process::Command> {
     use std::process::Stdio;
     // On Linux the running binary even when an update replaced it on disk.
-    let exe = if cfg!(target_os = "linux") { PathBuf::from("/proc/self/exe") } else { std::env::current_exe()? };
+    let exe = if cfg!(target_os = "linux") {
+        PathBuf::from("/proc/self/exe")
+    } else {
+        std::env::current_exe()?
+    };
     let mut cmd = tokio::process::Command::new(exe);
     #[cfg(not(test))]
     cmd.args(argv(std::process::id(), dir));
     #[cfg(test)]
     tests::as_reaper_command(&mut cmd, dir);
-    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     #[cfg(unix)]
     // SAFETY: setsid is async-signal-safe. A session of its own: no hangup or group signal reaches it.
     unsafe {
@@ -156,7 +198,11 @@ fn command(dir: &Path, _break_away: bool) -> std::io::Result<tokio::process::Com
         use windows_sys::Win32::System::Threading::{
             CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
         };
-        let away = if _break_away { CREATE_BREAKAWAY_FROM_JOB } else { 0 };
+        let away = if _break_away {
+            CREATE_BREAKAWAY_FROM_JOB
+        } else {
+            0
+        };
         cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | away);
     }
     Ok(cmd)

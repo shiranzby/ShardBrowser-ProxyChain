@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { countActiveProxyFilters, filterProxies, proxyStatus, useProfileCountByProxy, useProxy, type ProxyFilters } from "../../../entities/proxy";
+import { countActiveProxyFilters, filterProxies, proxyFolder, proxyStatus, useProfileCountByProxy, useProxy, type ProxyFilters } from "../../../entities/proxy";
 import { fmtCountry } from "../../../shared/lib/format";
 import { CountryFlag } from "../../../shared/ui/CountryFlag";
 import { useT } from "../../../shared/i18n";
@@ -14,7 +14,7 @@ function words(t: (k: string) => string) {
   return {
     state: { working: t("proxyFilters.statusWorking"), failed: t("proxyFilters.statusFailed"), untested: t("proxyFilters.statusUntested") },
     used: { used: t("proxyFilters.used"), unused: t("proxyFilters.unused") },
-    field: { status: t("profileFilterBar.statusTitle"), used: t("proxyFilters.usedTitle"), kind: t("proxyFilters.kindTitle"), country: t("proxyFilters.countryTitle") },
+    field: { status: t("profileFilterBar.statusTitle"), used: t("proxyFilters.usedTitle"), kind: t("proxyFilters.kindTitle"), country: t("proxyFilters.countryTitle"), folder: t("proxyFilters.folderTitle") },
   };
 }
 
@@ -46,6 +46,8 @@ export function useProxyFilterFields(enabled: boolean): FilterField[] {
     const usedBy = count("used", "any", (id) => (used[id] > 0 ? "used" : "unused"));
     const kind = count("kind", "", (id) => byId.get(id)?.kind ?? "");
     const country = count("country", "", ccOf);
+    const folder = count("folder", "", (id) => proxyFolder(byId.get(id)!));
+    const folders = [...new Set(proxies.map(proxyFolder).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     const countries = [...new Set(proxies.map((p) => ccOf(p.id)).filter(Boolean))].sort();
     const fields: FilterField[] = [
       {
@@ -69,6 +71,11 @@ export function useProxyFilterFields(enabled: boolean): FilterField[] {
         // The flag in the row's 14 px icon slot, as the Profiles menu's.
         values: countries.map((c) => ({ value: c, label: fmtCountry(c), count: country.get(c) ?? 0, icon: <CountryFlag cc={c} height={10} />, keywords: [c] })),
       }] : []),
+      ...(folders.length > 0 ? [{
+        id: "folder", label: w.field.folder, current: filters.folder || null,
+        set: (v: string | null) => setFilters({ folder: v ?? "" }),
+        values: folders.map((f) => ({ value: f, label: f, count: folder.get(f) ?? 0 })),
+      }] : []),
     ];
     return fields;
   }, [enabled, t, proxies, snapshots, search, filters, setFilters, used]);
@@ -88,6 +95,7 @@ export function useProxyFilterChips(): FilterChip[] {
     if (filters.used !== "any") out.push(chip("used", w.field.used, w.used[filters.used], () => setFilters({ used: "any" })));
     if (filters.kind) out.push(chip("kind", w.field.kind, KIND_LABEL[filters.kind], () => setFilters({ kind: "" })));
     if (filters.country) out.push(chip("country", w.field.country, fmtCountry(filters.country), () => setFilters({ country: "" })));
+    if (filters.folder) out.push(chip("folder", w.field.folder, filters.folder, () => setFilters({ folder: "" })));
     return out;
   }, [t, filters, setFilters]);
 }

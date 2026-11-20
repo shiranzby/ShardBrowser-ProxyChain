@@ -40,7 +40,9 @@ fn path(team: &str) -> Result<PathBuf> {
 fn read(team: &str) -> Result<Kept> {
     let p = path(team)?;
     match fs::read(&p) {
-        Ok(b) => serde_json::from_slice(&b).with_context(|| format!("{} is not readable", p.display())),
+        Ok(b) => {
+            serde_json::from_slice(&b).with_context(|| format!("{} is not readable", p.display()))
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Kept::new()),
         Err(e) => Err(e).with_context(|| format!("read {}", p.display())),
     }
@@ -51,7 +53,9 @@ fn write(team: &str, kept: &Kept) -> Result<()> {
     let p = path(team)?;
     if kept.is_empty() {
         return match fs::remove_file(&p) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e).with_context(|| format!("remove {}", p.display())),
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(e).with_context(|| format!("remove {}", p.display()))
+            }
             _ => Ok(()),
         };
     }
@@ -62,7 +66,9 @@ fn write(team: &str, kept: &Kept) -> Result<()> {
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
     {
-        let mut f = o.open(&tmp).with_context(|| format!("write {}", tmp.display()))?;
+        let mut f = o
+            .open(&tmp)
+            .with_context(|| format!("write {}", tmp.display()))?;
         f.write_all(&serde_json::to_vec(kept)?)?;
         f.sync_all()?;
     }
@@ -81,7 +87,9 @@ fn blank(v: &Value) -> bool {
 pub fn take(p: &mut Project) -> Steps {
     let mut steps = Steps::new();
     for b in &mut p.blocks {
-        let Value::Object(map) = &mut b.params else { continue };
+        let Value::Object(map) = &mut b.params else {
+            continue;
+        };
         let mut vals = BTreeMap::new();
         for name in &b.secrets {
             if let Some(slot) = map.get_mut(name) {
@@ -102,7 +110,8 @@ pub fn take(p: &mut Project) -> Steps {
 pub fn keep(team: &str, project_id: &str, steps: Steps) -> Result<()> {
     let _g = lock();
     let mut kept = read(team)?;
-    let had = kept.get(project_id) == Some(&steps) || (steps.is_empty() && !kept.contains_key(project_id));
+    let had = kept.get(project_id) == Some(&steps)
+        || (steps.is_empty() && !kept.contains_key(project_id));
     if had {
         return Ok(());
     }
@@ -128,10 +137,16 @@ pub fn fill(team: &str, projects: &mut [Project]) {
         }
     };
     for p in projects {
-        let Some(steps) = kept.get(&p.id) else { continue };
+        let Some(steps) = kept.get(&p.id) else {
+            continue;
+        };
         for b in &mut p.blocks {
-            let Some(vals) = steps.get(&b.id) else { continue };
-            let Value::Object(map) = &mut b.params else { continue };
+            let Some(vals) = steps.get(&b.id) else {
+                continue;
+            };
+            let Value::Object(map) = &mut b.params else {
+                continue;
+            };
             for name in &b.secrets {
                 if let Some(v) = vals.get(name) {
                     map.insert(name.clone(), v.clone());
@@ -166,7 +181,9 @@ pub fn forget_all() -> Result<()> {
     let _g = lock();
     let d = dir()?;
     match fs::remove_dir_all(&d) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e).with_context(|| format!("remove {}", d.display())),
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(e).with_context(|| format!("remove {}", d.display()))
+        }
         _ => Ok(()),
     }
 }

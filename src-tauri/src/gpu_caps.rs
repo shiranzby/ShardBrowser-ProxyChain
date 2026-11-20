@@ -189,7 +189,9 @@ async fn evaluate_in_core(port: u16) -> Result<String> {
         },
     });
     socket
-        .send(tokio_tungstenite::tungstenite::Message::Text(msg.to_string()))
+        .send(tokio_tungstenite::tungstenite::Message::Text(
+            msg.to_string(),
+        ))
         .await?;
     // A closed socket ends the wait; the old loop spun on it until its deadline.
     while let Some(msg) = socket.next().await {
@@ -236,23 +238,38 @@ impl Flight {
         if !force && ours {
             match &memo.answer {
                 Some(Ok(caps)) => return Ok(caps.clone()),
-                Some(Err(why)) => return Err(anyhow!("the GPU check failed earlier in this run: {why}")),
+                Some(Err(why)) => {
+                    return Err(anyhow!("the GPU check failed earlier in this run: {why}"))
+                }
                 None => {}
             }
         }
         if !force {
             if let Some(hit) = disk() {
-                *memo = Memo { engine: engine.to_string(), answer: Some(Ok(hit.clone())) };
+                *memo = Memo {
+                    engine: engine.to_string(),
+                    answer: Some(Ok(hit.clone())),
+                };
                 return Ok(hit);
             }
         }
         let got = ask().await;
         let had_good = ours && matches!(memo.answer, Some(Ok(_)));
         match &got {
-            Ok(caps) => *memo = Memo { engine: engine.to_string(), answer: Some(Ok(caps.clone())) },
+            Ok(caps) => {
+                *memo = Memo {
+                    engine: engine.to_string(),
+                    answer: Some(Ok(caps.clone())),
+                }
+            }
             // A failed re-check keeps the good answer it was meant to refresh.
             Err(_) if had_good => {}
-            Err(e) => *memo = Memo { engine: engine.to_string(), answer: Some(Err(format!("{e:#}"))) },
+            Err(e) => {
+                *memo = Memo {
+                    engine: engine.to_string(),
+                    answer: Some(Err(format!("{e:#}"))),
+                }
+            }
         }
         got
     }
@@ -276,10 +293,17 @@ pub async fn probe(force: bool) -> Result<HostGlCaps> {
     // None starts while an install replaces the engine (not remembered either);
     // an install waits for one under way, held through the answer.
     let Some(_engine_use) = runtime::engine_use() else {
-        return cached_for(&engine).filter(|_| !force).ok_or_else(|| anyhow!("{}", runtime::UPDATING));
+        return cached_for(&engine)
+            .filter(|_| !force)
+            .ok_or_else(|| anyhow!("{}", runtime::UPDATING));
     };
     flight()
-        .answer(force, &engine, || cached_for(&engine), || ask_engine(&binary, &engine))
+        .answer(
+            force,
+            &engine,
+            || cached_for(&engine),
+            || ask_engine(&binary, &engine),
+        )
         .await
 }
 
@@ -288,7 +312,10 @@ async fn ask_engine(binary: &Path, engine: &str) -> Result<HostGlCaps> {
     let caps = parse_answer(&raw, engine)?;
     // A cache that cannot be written costs a probe next run, not this answer.
     if let (true, Ok(path)) = (worth_keeping(&caps, engine), cache_path()) {
-        let disk = Disk { format: DISK_FORMAT, caps: caps.clone() };
+        let disk = Disk {
+            format: DISK_FORMAT,
+            caps: caps.clone(),
+        };
         if let Ok(text) = serde_json::to_string_pretty(&disk) {
             let _ = std::fs::write(path, text);
         }
@@ -301,7 +328,11 @@ fn parse_answer(raw: &str, engine: &str) -> Result<HostGlCaps> {
     let parsed: Value = serde_json::from_str(raw)?;
     let list = |v: &Value| -> Vec<String> {
         v.as_array()
-            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default()
     };
     let caps = HostGlCaps {
@@ -527,8 +558,14 @@ mod tests {
             "webgpu": { "features": ["texture-compression-etc2", "subgroups", "shader-f16"] }
         });
         let c = compat(&payload, &caps());
-        assert_eq!(c.missing_webgpu, vec!["texture-compression-etc2", "subgroups"]);
-        assert!(!c.compatible, "the profile asks for what the machine has not got");
+        assert_eq!(
+            c.missing_webgpu,
+            vec!["texture-compression-etc2", "subgroups"]
+        );
+        assert!(
+            !c.compatible,
+            "the profile asks for what the machine has not got"
+        );
     }
 
     /// A profile with no list at all keeps the old behaviour — the host's own
@@ -576,11 +613,18 @@ mod tests {
         c.webgpu = None;
         let json = serde_json::to_string(&c).unwrap();
         let back: HostGlCaps = serde_json::from_str(&json).unwrap();
-        assert!(back.webgpu.is_none(), "the field must survive the round trip");
+        assert!(
+            back.webgpu.is_none(),
+            "the field must survive the round trip"
+        );
     }
 
     fn on_disk(c: &HostGlCaps, format: u32) -> String {
-        serde_json::to_string(&Disk { format, caps: c.clone() }).unwrap()
+        serde_json::to_string(&Disk {
+            format,
+            caps: c.clone(),
+        })
+        .unwrap()
     }
 
     /// WebGL without WebGPU (Linux, old GPUs, VMs) is an answer: kept, not
@@ -589,7 +633,10 @@ mod tests {
     fn a_machine_without_webgpu_is_kept() {
         let mut c = caps();
         c.webgpu = Some(Vec::new());
-        assert_eq!(read_disk(&on_disk(&c, DISK_FORMAT), "").unwrap().webgpu, Some(vec![]));
+        assert_eq!(
+            read_disk(&on_disk(&c, DISK_FORMAT), "").unwrap().webgpu,
+            Some(vec![])
+        );
     }
 
     #[test]
@@ -600,7 +647,10 @@ mod tests {
         let mut unasked = caps();
         unasked.webgpu = None;
         assert!(read_disk(&on_disk(&unasked, DISK_FORMAT), "").is_none());
-        assert!(read_disk(&on_disk(&caps(), DISK_FORMAT), "156.0.1.2").is_none(), "another build");
+        assert!(
+            read_disk(&on_disk(&caps(), DISK_FORMAT), "156.0.1.2").is_none(),
+            "another build"
+        );
         // A record from before the format: its empty WebGPU may be about:blank's.
         assert!(read_disk(&serde_json::to_string(&caps()).unwrap(), "").is_none());
         assert!(read_disk(&on_disk(&caps(), DISK_FORMAT), "").is_some());
@@ -648,7 +698,10 @@ mod tests {
             Err::<HostGlCaps, _>(anyhow!("no display"))
         };
         assert!(flight.answer(false, "156", || None, fail).await.is_err());
-        let again = flight.answer(false, "156", || None, fail).await.unwrap_err();
+        let again = flight
+            .answer(false, "156", || None, fail)
+            .await
+            .unwrap_err();
         assert!(again.to_string().contains("no display"), "{again}");
         assert_eq!(asked.load(SeqCst), 1, "remembered, not asked again");
         assert!(flight.answer(true, "156", || None, fail).await.is_err());
@@ -665,7 +718,10 @@ mod tests {
             asked.fetch_add(1, SeqCst);
             Err::<HostGlCaps, _>(anyhow!("wedged"))
         };
-        assert!(flight.answer(false, "156", || Some(caps()), fail).await.is_ok());
+        assert!(flight
+            .answer(false, "156", || Some(caps()), fail)
+            .await
+            .is_ok());
         assert_eq!(asked.load(SeqCst), 0);
         assert!(flight.answer(true, "156", || None, fail).await.is_err());
         assert!(flight.answer(false, "156", || None, fail).await.is_ok());
@@ -699,7 +755,8 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn an_engine_that_never_answers_is_killed_at_the_deadline() {
-        let dir = std::env::temp_dir().join(format!("shardx-glcaps-test-wedged-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("shardx-glcaps-test-wedged-{}", std::process::id()));
         let (args, pids) = (dir.join("args"), dir.join("pids"));
         let engine = fake_engine(
             &dir,
@@ -710,9 +767,15 @@ mod tests {
             ),
         );
         let started = std::time::Instant::now();
-        let err = run_probe(&engine, Duration::from_millis(1500)).await.unwrap_err();
+        let err = run_probe(&engine, Duration::from_millis(1500))
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("did not answer"), "{err:#}");
-        assert!(started.elapsed() < Duration::from_secs(8), "{:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_secs(8),
+            "{:?}",
+            started.elapsed()
+        );
 
         let pids: Vec<i32> = std::fs::read_to_string(&pids)
             .unwrap()
@@ -727,7 +790,10 @@ mod tests {
         assert!(pids.iter().all(|&p| !alive(p)), "left running: {pids:?}");
 
         let args = std::fs::read_to_string(&args).unwrap();
-        let udd = args.lines().find_map(|l| l.strip_prefix("--user-data-dir=")).unwrap();
+        let udd = args
+            .lines()
+            .find_map(|l| l.strip_prefix("--user-data-dir="))
+            .unwrap();
         assert!(!Path::new(udd).exists(), "scratch dir left behind: {udd}");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -737,12 +803,22 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn an_engine_that_quits_is_not_waited_out() {
-        let dir = std::env::temp_dir().join(format!("shardx-glcaps-test-quits-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("shardx-glcaps-test-quits-{}", std::process::id()));
         let engine = fake_engine(&dir, "exit 3");
         let started = std::time::Instant::now();
-        let err = run_probe(&engine, Duration::from_secs(20)).await.unwrap_err();
-        assert!(err.to_string().contains("quit before it answered"), "{err:#}");
-        assert!(started.elapsed() < Duration::from_secs(5), "{:?}", started.elapsed());
+        let err = run_probe(&engine, Duration::from_secs(20))
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("quit before it answered"),
+            "{err:#}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -1,10 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { openApp, reloadApp } from "./support/app";
 
-// Marketing trial offers are intentionally suppressed in ShardBrowser. The
-// server endpoint remains available for upstream compatibility, but it must
-// never interrupt startup or take focus from the operator.
-test("does not show the ProxyShard residential trial at startup", async ({ page }) => {
+test("hides the trial by default and restores it only after saving the appearance setting", async ({ page }) => {
   await page.addInitScript(() => {
     (window as { __shardxMockTrialOffer?: unknown }).__shardxMockTrialOffer = {
       show: true,
@@ -25,5 +22,19 @@ test("does not show the ProxyShard residential trial at startup", async ({ page 
   )).toBe("");
   await reloadApp(page);
   await expect(page.getByRole("heading", { name: "All profiles" })).toBeVisible();
-  await expect(page.getByRole("dialog", { name: /100 MB|premium residential|高级住宅/ })).toHaveCount(0);
+  const trial = page.getByRole("dialog", { name: /100 MB/ });
+  await expect(trial).toHaveCount(0);
+  const requests = () => page.evaluate(() => (window as any).__shardxMock.log.filter((entry: any) => entry.cmd === "ps_trial_offer").length);
+  expect(await requests()).toBe(0);
+
+  await page.locator("[data-nav='settings']").click();
+  await page.getByRole("tab", { name: "Appearance", exact: true }).click();
+  const toggle = page.getByRole("switch", { name: "Hide ProxyShard trial offer", exact: true });
+  await expect(toggle).toBeChecked();
+  await toggle.click();
+  await page.locator("[data-save-bar]").getByRole("button", { name: "Save", exact: true }).click();
+  await expect(trial).toBeVisible();
+  expect(await requests()).toBe(1);
+  await trial.getByRole("button", { name: "Not now", exact: true }).click();
+  await expect(trial).toHaveCount(0);
 });

@@ -49,7 +49,10 @@ fn host_of(server: &str) -> String {
 }
 
 pub(super) fn now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// A lease lasts this long on the server unless renewed.
@@ -109,7 +112,11 @@ struct Run {
 }
 
 fn run() -> std::sync::MutexGuard<'static, Run> {
-    static RUN: std::sync::Mutex<Run> = std::sync::Mutex::new(Run { syncing: false, offline: false, error: None });
+    static RUN: std::sync::Mutex<Run> = std::sync::Mutex::new(Run {
+        syncing: false,
+        offline: false,
+        error: None,
+    });
     RUN.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -121,8 +128,18 @@ pub fn state() -> SyncState {
 fn state_at(rev: u64) -> SyncState {
     let b = book::read();
     let Some(place) = crate::team::sync_place() else {
-        let status = SyncStatus { state: "idle", last_sync_at: None, pending: 0, error: None };
-        return SyncState { rev, connection: None, kinds: Kinds::default(), status };
+        let status = SyncStatus {
+            state: "idle",
+            last_sync_at: None,
+            pending: 0,
+            error: None,
+        };
+        return SyncState {
+            rev,
+            connection: None,
+            kinds: Kinds::default(),
+            status,
+        };
     };
     let connection = Some(SyncConnection {
         server: place.server,
@@ -131,20 +148,36 @@ fn state_at(rev: u64) -> SyncState {
         device_name: crate::team::device_name(),
     });
     let r = run();
-    let error = if b.removed { Some(REMOVED.to_string()) } else { r.error.clone() };
+    let error = if b.removed {
+        Some(REMOVED.to_string())
+    } else {
+        r.error.clone()
+    };
     let state = match () {
         _ if r.syncing => "syncing",
         _ if error.is_some() => "error",
         _ if r.offline => "offline",
         _ => "idle",
     };
-    let status = SyncStatus { state, last_sync_at: b.last_sync_at, pending: pending(&b), error: error.filter(|_| state == "error") };
-    SyncState { rev, connection, kinds: b.kinds.clone(), status }
+    let status = SyncStatus {
+        state,
+        last_sync_at: b.last_sync_at,
+        pending: pending(&b),
+        error: error.filter(|_| state == "error"),
+    };
+    SyncState {
+        rev,
+        connection,
+        kinds: b.kinds.clone(),
+        status,
+    }
 }
 
 /// What the server has not taken yet: the outbox, sessions and the kinds.
 fn pending(b: &Book) -> usize {
-    book::outbox().entries.len() + b.sessions.values().filter(|s| s.dirty).count() + usize::from(b.kinds_dirty)
+    book::outbox().entries.len()
+        + b.sessions.values().filter(|s| s.dirty).count()
+        + usize::from(b.kinds_dirty)
 }
 
 /// Something changed: the next edition, told to every window.
@@ -156,7 +189,10 @@ fn changed() -> SyncState {
     #[cfg(test)]
     tests::heard(&st);
     let tell = super::live::default_tell();
-    tell("sync-changed", serde_json::to_value(&st).unwrap_or_default());
+    tell(
+        "sync-changed",
+        serde_json::to_value(&st).unwrap_or_default(),
+    );
     st
 }
 
@@ -178,7 +214,11 @@ fn client() -> Result<TeamClient> {
 // ---- the commands ----
 
 /// Connect to an invite's server and token, or to a team joined here.
-pub async fn connect(server: Option<String>, token: Option<String>, team_id: Option<String>) -> Result<SyncState> {
+pub async fn connect(
+    server: Option<String>,
+    token: Option<String>,
+    team_id: Option<String>,
+) -> Result<SyncState> {
     if crate::team::sync_place().is_some() {
         bail!(ALREADY_CONNECTED);
     }
@@ -326,7 +366,10 @@ pub async fn profile_take(id: &str) -> Result<ProfileMeta> {
         bail!("no profile {id} in your own space");
     }
     let c = client()?;
-    let path = format!("/me/profiles/{}/lease?takeover=true", super::admin::seg(id)?);
+    let path = format!(
+        "/me/profiles/{}/lease?takeover=true",
+        super::admin::seg(id)?
+    );
     match c.call(Method::POST, &path, None).await {
         Ok(_) => {}
         Err(TeamError::Offline(_)) => bail!(no_answer(&place.server)),
@@ -338,7 +381,9 @@ pub async fn profile_take(id: &str) -> Result<ProfileMeta> {
     })?;
     changed();
     rows_changed(&["profiles"]);
-    rows(&[id.to_string()])?.pop().ok_or_else(|| anyhow::anyhow!("no profile {id} in your own space"))
+    rows(&[id.to_string()])?
+        .pop()
+        .ok_or_else(|| anyhow::anyhow!("no profile {id} in your own space"))
 }
 
 fn personal_space() -> Result<()> {
@@ -370,7 +415,12 @@ pub fn decorate(rows: &mut [ProfileMeta]) {
 
 fn profile_sync(b: &Book, id: &str, mine: &str) -> ProfileSync {
     if !b.syncs(id) {
-        return ProfileSync { on: false, open_on: None, seen_at: None, conflict: None };
+        return ProfileSync {
+            on: false,
+            open_on: None,
+            seen_at: None,
+            conflict: None,
+        };
     }
     let held = b.held_by(id).filter(|h| h.device_id != mine);
     ProfileSync {
@@ -403,7 +453,9 @@ fn synced(id: &str) -> Option<(crate::team::SyncPlace, Book)> {
 /// Refused while another of the person's computers has the profile open, by
 /// what the server says now, or what it said last when it does not answer.
 pub async fn refuse_if_open_elsewhere(id: &str) -> Result<()> {
-    let Some((_, b)) = synced(id) else { return Ok(()) };
+    let Some((_, b)) = synced(id) else {
+        return Ok(());
+    };
     let mine = crate::team::device_id();
     let last_heard = || match b.held_by(id).filter(|h| h.device_id != mine) {
         Some(h) => Err(CmdError::Leased(h.device_name.clone()).into()),
@@ -422,11 +474,14 @@ pub async fn refuse_if_open_elsewhere(id: &str) -> Result<()> {
     let path = format!("/me/profiles/{}", super::admin::seg(id)?);
     let held = match c.get::<Row>(&path).await {
         Ok(row) => {
-            let held = row.open_on.filter(|l| l.device_id != mine).map(|l| book::Held {
-                device_id: l.device_id,
-                device_name: l.device_name,
-                expires_at: l.expires_at,
-            });
+            let held = row
+                .open_on
+                .filter(|l| l.device_id != mine)
+                .map(|l| book::Held {
+                    device_id: l.device_id,
+                    device_name: l.device_name,
+                    expires_at: l.expires_at,
+                });
             let _ = book::change(|b| {
                 match &held {
                     Some(h) => b.held.insert(id.to_string(), h.clone()),
@@ -453,7 +508,9 @@ pub async fn refuse_if_open_elsewhere(id: &str) -> Result<()> {
 /// to date or kept. None for one that does not sync, and for one started while
 /// the server does not answer (its session goes up later).
 pub async fn open_for_start(id: &str, udd: &Path, cdp: bool) -> Result<Option<Handoff>> {
-    let Some((place, b)) = synced(id) else { return Ok(None) };
+    let Some((place, b)) = synced(id) else {
+        return Ok(None);
+    };
     if run().offline {
         return started_unsent(id, "it did not answer lately");
     }
@@ -463,21 +520,27 @@ pub async fn open_for_start(id: &str, udd: &Path, cdp: bool) -> Result<Option<Ha
             eprintln!("[sync] {id}: not sent before its start: {e}");
         }
     }
-    let name = super::local::profile::load_raw(id).map(|s| super::remote::name_of(&s)).unwrap_or_default();
-    let (hand, server) = match open::open_own(&place.team_id, id, &name, udd.to_path_buf(), cdp).await {
-        Ok(got) => got,
-        // Open on another computer, or still closing here: refused.
-        Err(e) if matches!(super::error::find(&e), Some(CmdError::Leased(_))) || e.to_string() == open::BUSY => {
-            return Err(e)
-        }
-        // The person's own profile starts all the same; its session goes up later.
-        Err(e) => {
-            if matches!(super::error::find(&e), Some(CmdError::Offline(_))) {
-                run().offline = true;
+    let name = super::local::profile::load_raw(id)
+        .map(|s| super::remote::name_of(&s))
+        .unwrap_or_default();
+    let (hand, server) =
+        match open::open_own(&place.team_id, id, &name, udd.to_path_buf(), cdp).await {
+            Ok(got) => got,
+            // Open on another computer, or still closing here: refused.
+            Err(e)
+                if matches!(super::error::find(&e), Some(CmdError::Leased(_)))
+                    || e.to_string() == open::BUSY =>
+            {
+                return Err(e)
             }
-            return started_unsent(id, &format!("{e:#}"));
-        }
-    };
+            // The person's own profile starts all the same; its session goes up later.
+            Err(e) => {
+                if matches!(super::error::find(&e), Some(CmdError::Offline(_))) {
+                    run().offline = true;
+                }
+                return started_unsent(id, &format!("{e:#}"));
+            }
+        };
     let here = book::read().sessions.get(id).copied();
     let has_data = udd.join("Default").exists();
     let took = match here {
@@ -498,7 +561,8 @@ pub async fn open_for_start(id: &str, udd: &Path, cdp: bool) -> Result<Option<Ha
     }
     let _ = book::change(|b| {
         let dirty = !took && b.sessions.get(id).is_some_and(|s| s.dirty);
-        b.sessions.insert(id.to_string(), Sess { rev: server, dirty });
+        b.sessions
+            .insert(id.to_string(), Sess { rev: server, dirty });
     });
     Ok(Some(hand))
 }
@@ -521,7 +585,13 @@ pub fn session_closed(id: &str, outcome: &Outcome, ran: bool) {
     }
     let r = match outcome {
         Outcome::Saved(rev) => book::change(|b| {
-            b.sessions.insert(id.to_string(), Sess { rev: *rev, dirty: false });
+            b.sessions.insert(
+                id.to_string(),
+                Sess {
+                    rev: *rev,
+                    dirty: false,
+                },
+            );
         }),
         // Sent from another computer meanwhile, or taken from this one: both kept.
         Outcome::Stale if ran || book::read().sessions.get(id).is_some_and(|s| s.dirty) => {

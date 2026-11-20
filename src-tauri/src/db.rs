@@ -69,9 +69,9 @@ pub fn open(name: &str, driver: &str, target: &str, database: Option<&str>) -> R
             let client = mongodb::sync::Client::with_uri_str(target)?;
             let db = match database {
                 Some(d) if !d.trim().is_empty() => client.database(d.trim()),
-                _ => client
-                    .default_database()
-                    .ok_or_else(|| anyhow!("mongodb needs a database — put it in the URI or the database field"))?,
+                _ => client.default_database().ok_or_else(|| {
+                    anyhow!("mongodb needs a database — put it in the URI or the database field")
+                })?,
             };
             Handle::Mongo(db)
         }
@@ -211,7 +211,10 @@ pub fn query(name: &str, statement: &str) -> Result<(Vec<String>, Vec<Value>)> {
                 let row = row?;
                 let mut obj = Map::new();
                 for (i, col) in cols.iter().enumerate() {
-                    let v = row.as_ref(i).map(mysql_value_to_json).unwrap_or(Value::Null);
+                    let v = row
+                        .as_ref(i)
+                        .map(mysql_value_to_json)
+                        .unwrap_or(Value::Null);
                     obj.insert(col.clone(), v);
                 }
                 out.push(Value::Object(obj));
@@ -269,8 +272,16 @@ mod tests {
     fn sqlite_open_exec_query_roundtrip() {
         let name = "test_conn_rt";
         open(name, "sqlite", ":memory:", None).unwrap();
-        exec(name, "CREATE TABLE t(id INTEGER PRIMARY KEY, who TEXT, n REAL);").unwrap();
-        let out = exec(name, "INSERT INTO t(who, n) VALUES ('ada', 1.5), ('bob', 2.0);").unwrap();
+        exec(
+            name,
+            "CREATE TABLE t(id INTEGER PRIMARY KEY, who TEXT, n REAL);",
+        )
+        .unwrap();
+        let out = exec(
+            name,
+            "INSERT INTO t(who, n) VALUES ('ada', 1.5), ('bob', 2.0);",
+        )
+        .unwrap();
         assert_eq!(out.get("changes").unwrap().as_i64().unwrap(), 2);
 
         let (cols, rows) = query(name, "SELECT who, n FROM t ORDER BY id;").unwrap();

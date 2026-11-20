@@ -21,9 +21,13 @@ const VERIFIED_CONTENTS_MAX: u64 = 32 << 20;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceRef {
-    Webstore { id: String },
+    Webstore {
+        id: String,
+    },
     /// v2: a direct https link to a .crx or .zip.
-    Url { url: String },
+    Url {
+        url: String,
+    },
 }
 
 impl SourceRef {
@@ -158,7 +162,9 @@ pub fn recover(root: &Path) -> Origin {
     if let Ok(m) = read_manifest(root) {
         if let Some(k) = m.get("key") {
             // A key Chrome cannot read loads nothing: no source either.
-            let Some(der) = k.as_str().and_then(decode_key) else { return Origin::default() };
+            let Some(der) = k.as_str().and_then(decode_key) else {
+                return Origin::default();
+            };
             return Origin {
                 source: Some(SourceRef::webstore(&id_from_key(&der))),
                 how: Some(How::ManifestKey),
@@ -168,7 +174,11 @@ pub fn recover(root: &Path) -> Origin {
     }
     let vc = root.join("_metadata").join("verified_contents.json");
     let small = fs::metadata(&vc).is_ok_and(|m| m.is_file() && m.len() <= VERIFIED_CONTENTS_MAX);
-    match small.then(|| fs::read(&vc).ok()).flatten().and_then(|b| crx::verified_item(&b)) {
+    match small
+        .then(|| fs::read(&vc).ok())
+        .flatten()
+        .and_then(|b| crx::verified_item(&b))
+    {
         Some(item) => Origin {
             source: Some(SourceRef::webstore(&item.id)),
             how: Some(How::VerifiedContents),

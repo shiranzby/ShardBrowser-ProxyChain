@@ -53,6 +53,7 @@ export function FingerprintCard({ entry, inPeek }: {
         {/* A plain badge: nothing focusable inside the card. Peek explains the mismatch. */}
         {compat && !compat.compatible && <Badge color="warning" size="small">{t("incompatibleNotice.badgeLabel")}</Badge>}
         {entry.chrome && engine && entry.chrome !== engine && <Badge color="gray" size="small">Chrome {entry.chrome}</Badge>}
+        {(entry.tags ?? []).map((tag) => <Badge key={tag} color="gray" size="small">{tag}</Badge>)}
       </span>
     </div>
   );

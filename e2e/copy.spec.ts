@@ -19,6 +19,12 @@ test("assigning proxies is one verb from the button to the toast", async ({ page
   await expect(dialog).not.toContainText(/\b(?:[Bb]ind|[Dd]istribut)/);
 });
 
+test("proxy folders are visible in the proxy list", async ({ page }) => {
+  await openApp(page, { section: "proxies" });
+  const row = proxyRow(page, "DC Tokyo");
+  await expect(row.locator("[data-cell='folder']")).toHaveText("Japan");
+});
+
 test("Peek is named as Peek", async ({ page }) => {
   await openApp(page);
   await row(page, "Etsy craft shop").locator("[data-cell='name']").click();
@@ -111,13 +117,14 @@ test("Chinese: Pin is 置顶 everywhere, Peek is 预览", async ({ page }) => {
   await expect(page.locator("main")).not.toContainText("Peek");
 });
 
-test("Chinese: What's new says the notes are in English", async ({ page }) => {
+test("Chinese: the command palette opens localized release notes", async ({ page }) => {
   await zh(page);
   await openApp(page);
   await page.keyboard.press("ControlOrMeta+k");
   await page.getByRole("combobox").fill("更新内容");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog")).toContainText("更新说明仅提供英文版");
+  await expect(page.getByRole("dialog")).toContainText("代理链控制");
+  await expect(page.getByRole("dialog").getByRole("button", { name: "English", exact: true })).toBeVisible();
 });
 
 test("Chinese: no button, tab or menu label is clipped", async ({ page }) => {

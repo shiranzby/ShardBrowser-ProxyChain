@@ -22,7 +22,13 @@ pub(super) enum Route {
 
 /// Best first. With the bus quit offered: it, CDP (no "Leave site?" holds either), the OS's ask.
 /// Otherwise unix: SIGINT, CDP; Windows or no pid: the bus close, CDP, its windows.
-pub(super) fn routes(quit: bool, bus: bool, cdp: Option<String>, pid: bool, windows: bool) -> Vec<Route> {
+pub(super) fn routes(
+    quit: bool,
+    bus: bool,
+    cdp: Option<String>,
+    pid: bool,
+    windows: bool,
+) -> Vec<Route> {
     let cdp = cdp.map(Route::Cdp);
     let os = pid.then_some(Route::Os);
     if quit {
@@ -32,7 +38,10 @@ pub(super) fn routes(quit: bool, bus: bool, cdp: Option<String>, pid: bool, wind
     if pid && !windows {
         return [os, cdp].into_iter().flatten().collect();
     }
-    [bus.then_some(Route::Bus), cdp, os].into_iter().flatten().collect()
+    [bus.then_some(Route::Bus), cdp, os]
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 /// The routes of one Stop, and the one that took the ask.
@@ -99,7 +108,11 @@ impl Stop {
         let bus = profile.zip(crate::bus_now());
         let quit = bus.as_ref().is_some_and(|(p, b)| b.quits(p));
         let routes = routes(quit, bus.is_some(), cdp, pid.is_some(), cfg!(windows));
-        Stop { pid, profile: profile.map(str::to_string), closing: Closing::new(routes) }
+        Stop {
+            pid,
+            profile: profile.map(str::to_string),
+            closing: Closing::new(routes),
+        }
     }
 
     pub(super) fn pid(&self) -> Option<u32> {
@@ -109,7 +122,11 @@ impl Stop {
     pub(super) async fn ask(&mut self) -> bool {
         let (pid, profile) = (self.pid, self.profile.as_deref());
         let took = self.closing.ask(|r| deliver(r, pid, profile)).await;
-        if let Some(r) = self.closing.took().filter(|r| cfg!(windows) || **r != Route::Os) {
+        if let Some(r) = self
+            .closing
+            .took()
+            .filter(|r| cfg!(windows) || **r != Route::Os)
+        {
             eprintln!("[tracker] pid {pid:?} asked to close by {}", name(r));
         }
         took
@@ -132,14 +149,24 @@ fn name(r: &Route) -> &'static str {
         Route::Quit => "the bus quit",
         Route::Bus => "the bus",
         Route::Cdp(_) => "CDP Browser.close",
-        Route::Os => if cfg!(windows) { "WM_CLOSE" } else { "SIGINT" },
+        Route::Os => {
+            if cfg!(windows) {
+                "WM_CLOSE"
+            } else {
+                "SIGINT"
+            }
+        }
     }
 }
 
 async fn deliver(route: Route, pid: Option<u32>, profile: Option<&str>) -> bool {
     match route {
-        Route::Quit => profile.zip(crate::bus_now()).is_some_and(|(p, bus)| bus.quit(p)),
-        Route::Bus => profile.zip(crate::bus_now()).is_some_and(|(p, bus)| bus.close(p)),
+        Route::Quit => profile
+            .zip(crate::bus_now())
+            .is_some_and(|(p, bus)| bus.quit(p)),
+        Route::Bus => profile
+            .zip(crate::bus_now())
+            .is_some_and(|(p, bus)| bus.close(p)),
         Route::Cdp(ws) => by_cdp(&ws).await,
         Route::Os => pid.is_some_and(super::request_close),
     }
@@ -151,7 +178,8 @@ async fn deliver(route: Route, pid: Option<u32>, profile: Option<&str>) -> bool 
 pub(super) fn close_windows(pid: u32) -> bool {
     use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetClassNameW, GetWindow, GetWindowThreadProcessId, PostMessageW, GW_OWNER, WM_CLOSE,
+        EnumWindows, GetClassNameW, GetWindow, GetWindowThreadProcessId, PostMessageW, GW_OWNER,
+        WM_CLOSE,
     };
     struct Find {
         pid: u32,
@@ -168,7 +196,9 @@ pub(super) fn close_windows(pid: u32) -> bool {
             if owner == f.pid && GetWindow(h, GW_OWNER).is_null() {
                 let mut name = [0u16; 32];
                 let n = GetClassNameW(h, name.as_mut_ptr(), name.len() as i32).max(0) as usize;
-                if name[..n] == *"Chrome_WidgetWin_1".encode_utf16().collect::<Vec<u16>>() && PostMessageW(h, WM_CLOSE, 0, 0) != 0 {
+                if name[..n] == *"Chrome_WidgetWin_1".encode_utf16().collect::<Vec<u16>>()
+                    && PostMessageW(h, WM_CLOSE, 0, 0) != 0
+                {
                     f.posted += 1;
                 }
             }
@@ -187,7 +217,8 @@ pub(super) fn cdp_in(udd: &Path) -> Option<String> {
     let mut lines = text.lines();
     let port = lines.next()?.trim().parse::<u16>().ok()?;
     let path = lines.next()?.trim();
-    path.starts_with("/devtools/browser/").then(|| format!("ws://127.0.0.1:{port}{path}"))
+    path.starts_with("/devtools/browser/")
+        .then(|| format!("ws://127.0.0.1:{port}{path}"))
 }
 
 /// CDP `Browser.close`. Taken when it answers, or drops the socket as it quits; an error answer is a no.
@@ -195,7 +226,9 @@ async fn by_cdp(ws: &str) -> bool {
     use futures_util::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message;
     const WAIT: Duration = Duration::from_secs(2);
-    let Ok(Ok((mut socket, _))) = tokio::time::timeout(WAIT, tokio_tungstenite::connect_async(ws)).await else {
+    let Ok(Ok((mut socket, _))) =
+        tokio::time::timeout(WAIT, tokio_tungstenite::connect_async(ws)).await
+    else {
         return false;
     };
     let ask = r#"{"id":1,"method":"Browser.close"}"#;
@@ -206,7 +239,9 @@ async fn by_cdp(ws: &str) -> bool {
         while let Some(m) = socket.next().await {
             let Ok(m) = m else { return true };
             let Message::Text(t) = m else { continue };
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) else { continue };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) else {
+                continue;
+            };
             if v["id"] == 1 {
                 return v.get("error").is_none();
             }
@@ -226,9 +261,18 @@ mod tests {
     #[test]
     fn windows_asks_the_bus_then_cdp_then_its_windows() {
         let cdp = || Some(WS.to_string());
-        assert_eq!(routes(false, true, cdp(), true, true), [Route::Bus, Route::Cdp(WS.into()), Route::Os]);
-        assert_eq!(routes(false, false, cdp(), true, true), [Route::Cdp(WS.into()), Route::Os]);
-        assert_eq!(routes(false, true, None, true, true), [Route::Bus, Route::Os]);
+        assert_eq!(
+            routes(false, true, cdp(), true, true),
+            [Route::Bus, Route::Cdp(WS.into()), Route::Os]
+        );
+        assert_eq!(
+            routes(false, false, cdp(), true, true),
+            [Route::Cdp(WS.into()), Route::Os]
+        );
+        assert_eq!(
+            routes(false, true, None, true, true),
+            [Route::Bus, Route::Os]
+        );
         assert_eq!(routes(false, false, None, true, true), [Route::Os]);
     }
 
@@ -236,7 +280,10 @@ mod tests {
     fn unix_asks_with_sigint_and_then_cdp_alone() {
         // SIGINT reaches a browser with no window too, and a second signal would kill it unsaved;
         // the bus close asks what SIGINT asked. CDP closes past a "Leave site?" prompt.
-        assert_eq!(routes(false, true, Some(WS.to_string()), true, false), [Route::Os, Route::Cdp(WS.into())]);
+        assert_eq!(
+            routes(false, true, Some(WS.to_string()), true, false),
+            [Route::Os, Route::Cdp(WS.into())]
+        );
         assert_eq!(routes(false, true, None, true, false), [Route::Os]);
         assert_eq!(routes(false, false, None, true, false), [Route::Os]);
     }
@@ -244,9 +291,18 @@ mod tests {
     #[test]
     fn a_browser_with_no_pid_is_asked_by_its_profile_alone() {
         for windows in [true, false] {
-            assert_eq!(routes(false, true, Some(WS.to_string()), false, windows), [Route::Bus, Route::Cdp(WS.into())]);
-            assert_eq!(routes(true, true, Some(WS.to_string()), false, windows), [Route::Quit, Route::Cdp(WS.into())]);
-            assert_eq!(routes(false, false, None, false, windows), Vec::<Route>::new());
+            assert_eq!(
+                routes(false, true, Some(WS.to_string()), false, windows),
+                [Route::Bus, Route::Cdp(WS.into())]
+            );
+            assert_eq!(
+                routes(true, true, Some(WS.to_string()), false, windows),
+                [Route::Quit, Route::Cdp(WS.into())]
+            );
+            assert_eq!(
+                routes(false, false, None, false, windows),
+                Vec::<Route>::new()
+            );
         }
     }
 
@@ -256,8 +312,14 @@ mod tests {
     fn the_bus_quit_leads_where_the_engine_offers_it() {
         let cdp = || Some(WS.to_string());
         for windows in [true, false] {
-            assert_eq!(routes(true, true, cdp(), true, windows), [Route::Quit, Route::Cdp(WS.into()), Route::Os]);
-            assert_eq!(routes(true, true, None, true, windows), [Route::Quit, Route::Os]);
+            assert_eq!(
+                routes(true, true, cdp(), true, windows),
+                [Route::Quit, Route::Cdp(WS.into()), Route::Os]
+            );
+            assert_eq!(
+                routes(true, true, None, true, windows),
+                [Route::Quit, Route::Os]
+            );
         }
     }
 
@@ -279,7 +341,10 @@ mod tests {
         assert!(c.ask(deliver.clone()).await);
         assert!(c.again(deliver.clone()).await);
         assert!(!c.again(deliver).await);
-        assert_eq!(*tried.lock().unwrap(), [Route::Quit, Route::Cdp(WS.into()), Route::Os]);
+        assert_eq!(
+            *tried.lock().unwrap(),
+            [Route::Quit, Route::Cdp(WS.into()), Route::Os]
+        );
 
         // The engine left the bus between Stop's look and its ask: CDP at once, not 5 s later.
         let (tried, deliver) = fake(&[Route::Os, Route::Cdp(WS.into())]);
@@ -302,11 +367,19 @@ mod tests {
         assert!(c.ask(deliver.clone()).await);
         assert!(c.again(deliver.clone()).await);
         assert!(c.again(deliver).await);
-        assert_eq!(*tried.lock().unwrap(), [Route::Quit, Route::Cdp(WS.into()), Route::Os]);
+        assert_eq!(
+            *tried.lock().unwrap(),
+            [Route::Quit, Route::Cdp(WS.into()), Route::Os]
+        );
     }
 
     /// A fake delivery: records each route tried, takes only those in `takes`.
-    fn fake(takes: &[Route]) -> (Arc<Mutex<Vec<Route>>>, impl FnMut(Route) -> std::future::Ready<bool> + Clone) {
+    fn fake(
+        takes: &[Route],
+    ) -> (
+        Arc<Mutex<Vec<Route>>>,
+        impl FnMut(Route) -> std::future::Ready<bool> + Clone,
+    ) {
         let tried = Arc::new(Mutex::new(Vec::new()));
         let (log, takes) = (tried.clone(), takes.to_vec());
         (tried, move |r: Route| {
@@ -346,36 +419,55 @@ mod tests {
         assert!(!c.ask(deliver.clone()).await);
         assert_eq!(c.took(), None);
         assert!(!c.again(deliver).await);
-        assert_eq!(*tried.lock().unwrap(), [Route::Bus, Route::Os, Route::Bus, Route::Os]);
+        assert_eq!(
+            *tried.lock().unwrap(),
+            [Route::Bus, Route::Os, Route::Bus, Route::Os]
+        );
     }
 
     /// Unix: a browser a page holds past SIGINT is closed over CDP, and SIGTERM is not sent.
     #[cfg(unix)]
     #[tokio::test]
     async fn a_held_browser_is_closed_over_cdp_past_quit_wait() {
-        let udd = std::env::temp_dir().join(format!("shardx-held-{}", uuid::Uuid::new_v4().simple()));
+        let udd =
+            std::env::temp_dir().join(format!("shardx-held-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&udd).unwrap();
         let (ws, served) = devtools(r#"{"id":1,"result":{}}"#).await;
-        let (port, path) = ws.trim_start_matches("ws://").split_once(':').unwrap().1.split_once('/').unwrap();
+        let (port, path) = ws
+            .trim_start_matches("ws://")
+            .split_once(':')
+            .unwrap()
+            .1
+            .split_once('/')
+            .unwrap();
         std::fs::write(udd.join("DevToolsActivePort"), format!("{port}\n/{path}\n")).unwrap();
         let got = udd.join("signals");
         let script = format!(
             "trap 'echo INT >> {g}' INT; trap 'echo TERM >> {g}' TERM; while :; do sleep 0.05; done",
             g = got.display()
         );
-        let mut child = tokio::process::Command::new("sh").args(["-c", &script]).spawn().unwrap();
+        let mut child = tokio::process::Command::new("sh")
+            .args(["-c", &script])
+            .spawn()
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(300)).await;
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
         let (ack, answer) = tokio::sync::oneshot::channel();
         tx.try_send(ack).unwrap();
         let watch = super::super::watch_child("p-held", &udd, &mut child, &mut rx);
-        let (_, answer) = tokio::time::timeout(Duration::from_secs(20), async { tokio::join!(watch, answer) })
-            .await
-            .expect("taken the hard way 3 s after the second ask");
+        let (_, answer) = tokio::time::timeout(Duration::from_secs(20), async {
+            tokio::join!(watch, answer)
+        })
+        .await
+        .expect("taken the hard way 3 s after the second ask");
         assert!(answer.unwrap());
         let asked: serde_json::Value = serde_json::from_str(&served.await.unwrap()).unwrap();
         assert_eq!(asked["method"], "Browser.close");
-        assert_eq!(std::fs::read_to_string(&got).unwrap(), "INT\n", "SIGTERM was sent as well");
+        assert_eq!(
+            std::fs::read_to_string(&got).unwrap(),
+            "INT\n",
+            "SIGTERM was sent as well"
+        );
         drop(tx);
         std::fs::remove_dir_all(&udd).unwrap();
     }
@@ -386,26 +478,50 @@ mod tests {
     #[tokio::test]
     async fn a_lock_holder_with_no_pid_is_still_asked_over_cdp() {
         use std::os::unix::fs::symlink;
-        let udd = std::env::temp_dir().join(format!("shardx-nopid-{}", uuid::Uuid::new_v4().simple()));
+        let udd =
+            std::env::temp_dir().join(format!("shardx-nopid-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&udd).unwrap();
         let out = std::process::Command::new("sh")
-            .args(["-c", "set -m; sleep 60 </dev/null >/dev/null 2>&1 & echo $!"])
+            .args([
+                "-c",
+                "set -m; sleep 60 </dev/null >/dev/null 2>&1 & echo $!",
+            ])
             .output()
             .unwrap();
         let holder: u32 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap();
         let lock = udd.join("SingletonLock");
-        symlink(format!("{}-{holder}", crate::reset::this_host().unwrap()), &lock).unwrap();
+        symlink(
+            format!("{}-{holder}", crate::reset::this_host().unwrap()),
+            &lock,
+        )
+        .unwrap();
         // Written an hour before that process began: its pid is not taken for the browser's.
         let path = std::ffi::CString::new(lock.as_os_str().as_encoded_bytes()).unwrap();
-        let then = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() - 3600;
-        let tv = libc::timeval { tv_sec: then as _, tv_usec: 0 };
+        let then = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            - 3600;
+        let tv = libc::timeval {
+            tv_sec: then as _,
+            tv_usec: 0,
+        };
         // SAFETY: a NUL-terminated path and two times.
-        assert_eq!(unsafe { libc::lutimes(path.as_ptr(), [tv, tv].as_ptr()) }, 0);
+        assert_eq!(
+            unsafe { libc::lutimes(path.as_ptr(), [tv, tv].as_ptr()) },
+            0
+        );
         assert!(crate::reset::lock_is_live(&udd));
         assert_eq!(super::super::lock_holder_pid(&udd), None);
 
         let (ws, served) = devtools(r#"{"id":1,"result":{}}"#).await;
-        let (port, path) = ws.trim_start_matches("ws://").split_once(':').unwrap().1.split_once('/').unwrap();
+        let (port, path) = ws
+            .trim_start_matches("ws://")
+            .split_once(':')
+            .unwrap()
+            .1
+            .split_once('/')
+            .unwrap();
         std::fs::write(udd.join("DevToolsActivePort"), format!("{port}\n/{path}\n")).unwrap();
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
         let mut watch = std::pin::pin!(super::super::watch_lock("p-nopid", &udd, &mut rx));
@@ -421,22 +537,37 @@ mod tests {
             _ = press => {}
         }
         // SAFETY: signal 0 delivers nothing.
-        assert_eq!(unsafe { libc::kill(holder as libc::pid_t, 0) }, 0, "the process on the lock was signalled");
+        assert_eq!(
+            unsafe { libc::kill(holder as libc::pid_t, 0) },
+            0,
+            "the process on the lock was signalled"
+        );
         // SAFETY: the test's own stray process.
         unsafe { libc::kill(holder as libc::pid_t, libc::SIGKILL) };
-        tokio::time::timeout(Duration::from_secs(10), watch).await.expect("the watch ends once the lock is free");
+        tokio::time::timeout(Duration::from_secs(10), watch)
+            .await
+            .expect("the watch ends once the lock is free");
         std::fs::remove_dir_all(&udd).unwrap();
     }
 
     #[test]
     fn the_debugging_socket_is_read_from_the_profile_folder() {
-        let udd = std::env::temp_dir().join(format!("shardx-cdp-{}", uuid::Uuid::new_v4().simple()));
+        let udd =
+            std::env::temp_dir().join(format!("shardx-cdp-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&udd).unwrap();
         assert_eq!(cdp_in(&udd), None);
         let file = udd.join("DevToolsActivePort");
         std::fs::write(&file, "53122\n/devtools/browser/0b1c\n").unwrap();
-        assert_eq!(cdp_in(&udd).as_deref(), Some("ws://127.0.0.1:53122/devtools/browser/0b1c"));
-        for bad in ["", "x\n/devtools/browser/a\n", "1\n", "1\n/devtools/page/a\n"] {
+        assert_eq!(
+            cdp_in(&udd).as_deref(),
+            Some("ws://127.0.0.1:53122/devtools/browser/0b1c")
+        );
+        for bad in [
+            "",
+            "x\n/devtools/browser/a\n",
+            "1\n",
+            "1\n/devtools/page/a\n",
+        ] {
             std::fs::write(&file, bad).unwrap();
             assert_eq!(cdp_in(&udd), None, "{bad:?}");
         }
@@ -448,11 +579,16 @@ mod tests {
         use futures_util::{SinkExt, StreamExt};
         use tokio_tungstenite::tungstenite::Message;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let ws = format!("ws://{}/devtools/browser/test", listener.local_addr().unwrap());
+        let ws = format!(
+            "ws://{}/devtools/browser/test",
+            listener.local_addr().unwrap()
+        );
         let served = tokio::spawn(async move {
             let (tcp, _) = listener.accept().await.unwrap();
             let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
-            let Some(Ok(Message::Text(asked))) = socket.next().await else { panic!("no ask") };
+            let Some(Ok(Message::Text(asked))) = socket.next().await else {
+                panic!("no ask")
+            };
             let _ = socket.send(Message::Text(reply.into())).await;
             asked
         });
@@ -469,7 +605,11 @@ mod tests {
         let (ws, _served) = devtools(r#"{"id":1,"error":{"code":-32000,"message":"no"}}"#).await;
         assert!(!by_cdp(&ws).await, "an error answer is a refusal");
         // Nothing listening there: the next route is tried.
-        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         assert!(!by_cdp(&format!("ws://127.0.0.1:{port}/devtools/browser/x")).await);
     }
 
@@ -479,8 +619,12 @@ mod tests {
         let bus = crate::sync_bus::Bus::start("tok".into()).await.unwrap();
         let mut members = Vec::new();
         for profile in ["p1", "p2"] {
-            let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", bus.port)).await.unwrap();
-            let hello = format!("{{\"hello\":\"g-{profile}\",\"token\":\"tok\",\"profile\":\"{profile}\"}}\n");
+            let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", bus.port))
+                .await
+                .unwrap();
+            let hello = format!(
+                "{{\"hello\":\"g-{profile}\",\"token\":\"tok\",\"profile\":\"{profile}\"}}\n"
+            );
             tcp.write_all(hello.as_bytes()).await.unwrap();
             members.push(BufReader::new(tcp).lines());
         }
@@ -492,7 +636,10 @@ mod tests {
         }
         assert!(!bus.close("p3"), "not on the bus");
         assert!(bus.close("p1"));
-        let line = tokio::time::timeout(Duration::from_secs(5), members[0].next_line()).await.unwrap().unwrap();
+        let line = tokio::time::timeout(Duration::from_secs(5), members[0].next_line())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(line.as_deref(), Some(r#"{"close":true}"#));
         let other = tokio::time::timeout(Duration::from_millis(300), members[1].next_line()).await;
         assert!(other.is_err(), "p2 was told something: {other:?}");
@@ -503,12 +650,17 @@ mod tests {
     /// A browser on `bus` as `profile`, greeting as the engine does; `quit` as a new engine says.
     async fn member(bus: &crate::sync_bus::Bus, profile: &str, quit: bool) -> Member {
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-        let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", bus.port)).await.unwrap();
-        let mut hello = serde_json::json!({"hello": "default", "token": bus.token, "profile": profile});
+        let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", bus.port))
+            .await
+            .unwrap();
+        let mut hello =
+            serde_json::json!({"hello": "default", "token": bus.token, "profile": profile});
         if quit {
             hello["quit"] = true.into();
         }
-        tcp.write_all(format!("{hello}\n").as_bytes()).await.unwrap();
+        tcp.write_all(format!("{hello}\n").as_bytes())
+            .await
+            .unwrap();
         for _ in 0..200 {
             if bus.group_of(profile).is_some() {
                 break;
@@ -519,7 +671,10 @@ mod tests {
     }
 
     async fn next_line(m: &mut Member, wait: Duration) -> Option<String> {
-        tokio::time::timeout(wait, m.next_line()).await.ok().and_then(|l| l.unwrap())
+        tokio::time::timeout(wait, m.next_line())
+            .await
+            .ok()
+            .and_then(|l| l.unwrap())
     }
 
     #[tokio::test]
@@ -533,21 +688,40 @@ mod tests {
         assert!(!bus.quit("p-old"));
         assert!(!bus.quit("p-gone"));
         assert!(bus.quit("p-new"));
-        assert_eq!(next_line(&mut new, Duration::from_secs(5)).await.as_deref(), Some(r#"{"quit":true}"#));
-        assert_eq!(next_line(&mut old, Duration::from_millis(300)).await, None, "the old engine was sent the quit");
+        assert_eq!(
+            next_line(&mut new, Duration::from_secs(5)).await.as_deref(),
+            Some(r#"{"quit":true}"#)
+        );
+        assert_eq!(
+            next_line(&mut old, Duration::from_millis(300)).await,
+            None,
+            "the old engine was sent the quit"
+        );
         // The old engine still gets the close it always got.
         assert!(bus.close("p-old"));
-        assert_eq!(next_line(&mut old, Duration::from_secs(5)).await.as_deref(), Some(r#"{"close":true}"#));
+        assert_eq!(
+            next_line(&mut old, Duration::from_secs(5)).await.as_deref(),
+            Some(r#"{"close":true}"#)
+        );
     }
 
     /// A browser on `bus` as `profile` in `group`, as an engine greets.
     async fn in_group(bus: &crate::sync_bus::Bus, group: &str, profile: &str) -> Member {
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-        let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", bus.port)).await.unwrap();
+        let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", bus.port))
+            .await
+            .unwrap();
         let hello = serde_json::json!({"hello": group, "token": bus.token, "profile": profile});
-        tcp.write_all(format!("{hello}\n").as_bytes()).await.unwrap();
+        tcp.write_all(format!("{hello}\n").as_bytes())
+            .await
+            .unwrap();
         for _ in 0..200 {
-            if bus.status(group).members.iter().any(|m| m.profile == profile) {
+            if bus
+                .status(group)
+                .members
+                .iter()
+                .any(|m| m.profile == profile)
+            {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -557,7 +731,11 @@ mod tests {
 
     async fn say(m: &mut Member, line: &str) {
         use tokio::io::AsyncWriteExt;
-        m.get_mut().get_mut().write_all(format!("{line}\n").as_bytes()).await.unwrap();
+        m.get_mut()
+            .get_mut()
+            .write_all(format!("{line}\n").as_bytes())
+            .await
+            .unwrap();
     }
 
     /// A member cannot send another an instruction: every lone browser is in "default", so a
@@ -567,13 +745,24 @@ mod tests {
         let bus = crate::sync_bus::Bus::start("tok".into()).await.unwrap();
         let mut a = in_group(&bus, "default", "p-a").await;
         let mut b = in_group(&bus, "default", "p-b").await;
-        for line in [r#"{"quit":true}"#, r#"{"close":true}"#, r#"{"bounds":{"x":0,"y":0,"w":9,"h":9}}"#] {
+        for line in [
+            r#"{"quit":true}"#,
+            r#"{"close":true}"#,
+            r#"{"bounds":{"x":0,"y":0,"w":9,"h":9}}"#,
+        ] {
             say(&mut a, line).await;
         }
         say(&mut a, r#"{"t":"mouse","n":1}"#).await;
-        assert_eq!(next_line(&mut b, Duration::from_secs(5)).await.as_deref(), Some(r#"{"t":"mouse","n":1}"#));
+        assert_eq!(
+            next_line(&mut b, Duration::from_secs(5)).await.as_deref(),
+            Some(r#"{"t":"mouse","n":1}"#)
+        );
         assert_eq!(next_line(&mut b, Duration::from_millis(300)).await, None);
-        assert_eq!(next_line(&mut a, Duration::from_millis(100)).await, None, "echoed to the sender");
+        assert_eq!(
+            next_line(&mut a, Duration::from_millis(100)).await,
+            None,
+            "echoed to the sender"
+        );
     }
 
     /// A browser that changes group greets again on a new connection. The old one closing after
@@ -599,7 +788,10 @@ mod tests {
         }
         assert!(bus.status("default").members.is_empty());
         assert_eq!(bus.group_of("p-r").as_deref(), Some("g-new"));
-        assert!(bus.helper_fields("p-r").is_some(), "the old connection took the offer with it");
+        assert!(
+            bus.helper_fields("p-r").is_some(),
+            "the old connection took the offer with it"
+        );
         drop(new);
         for _ in 0..200 {
             if bus.helper_fields("p-r").is_none() {
@@ -607,7 +799,10 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        assert!(bus.helper_fields("p-r").is_none(), "the offer outlived the browser");
+        assert!(
+            bus.helper_fields("p-r").is_none(),
+            "the offer outlived the browser"
+        );
     }
 
     /// The whole ask as Stop makes it, over the launcher's own bus: an engine that offers the
@@ -619,13 +814,23 @@ mod tests {
         let mut s = Stop::new(None, Some("p-stop-new"), None);
         assert_eq!(s.closing.routes, [Route::Quit]);
         assert!(s.ask().await);
-        assert_eq!(next_line(&mut new, Duration::from_secs(5)).await.as_deref(), Some(r#"{"quit":true}"#));
-        assert_eq!(next_line(&mut new, Duration::from_millis(300)).await, None, "asked twice");
+        assert_eq!(
+            next_line(&mut new, Duration::from_secs(5)).await.as_deref(),
+            Some(r#"{"quit":true}"#)
+        );
+        assert_eq!(
+            next_line(&mut new, Duration::from_millis(300)).await,
+            None,
+            "asked twice"
+        );
 
         let mut old = member(&bus, "p-stop-old", false).await;
         let mut s = Stop::new(None, Some("p-stop-old"), None);
         assert_eq!(s.closing.routes, [Route::Bus]);
         assert!(s.ask().await);
-        assert_eq!(next_line(&mut old, Duration::from_secs(5)).await.as_deref(), Some(r#"{"close":true}"#));
+        assert_eq!(
+            next_line(&mut old, Duration::from_secs(5)).await.as_deref(),
+            Some(r#"{"close":true}"#)
+        );
     }
 }

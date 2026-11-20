@@ -22,7 +22,8 @@ export function AboutSection() {
     invoke<RtUpdate>("launcher_update_check").then(setInfo).catch(() => setFailed(true));
   }, []);
 
-  const releaseUrl = info?.update_available ? info.release_url : null;
+  const publishedReleaseUrl = info?.release_url;
+  const releaseUrl = info?.update_available ? publishedReleaseUrl : null;
   const status = failed
     ? t("settings.aboutOffline")
     : info === null
@@ -30,7 +31,9 @@ export function AboutSection() {
       : info.update_available
         ? t("settings.aboutUpdate", { v: info.latest ?? "" })
         : info.latest
-          ? t("settings.aboutUpToDate")
+          ? info.comparable
+            ? t("settings.aboutUpToDate")
+            : t("settings.aboutUncompared")
           : t("settings.aboutOffline");
 
   // Page tips back on. This page counts as seen, so the press does not start
@@ -55,6 +58,19 @@ export function AboutSection() {
         <DetailRow id="updates" label={t("settings.aboutUpdatesLabel")}>
           <span className={info?.update_available ? "text-warning-text" : undefined}>{status}</span>
         </DetailRow>
+        {info?.latest && (
+          <DetailRow id="latest-release" label={t("settings.aboutLatestRelease")}>
+            {publishedReleaseUrl ? (
+              <a
+                href={publishedReleaseUrl}
+                className="text-primary-text underline underline-offset-2"
+                onClick={(e) => { e.preventDefault(); void openUrl(publishedReleaseUrl).catch(() => {}); }}
+              >
+                {info.latest}
+              </a>
+            ) : info.latest}
+          </DetailRow>
+        )}
         <DetailRow id="website" label={t("settings.aboutWebsiteLabel")}>
           {/* A real href for the link's role; the click opens the system browser. */}
           <a

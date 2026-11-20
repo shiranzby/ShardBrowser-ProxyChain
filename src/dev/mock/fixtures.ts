@@ -87,13 +87,17 @@ export type MockFolders = { registry: string[]; meta: Record<string, { color: st
 
 export type MockState = {
   providerDefaults?: import("../../entities/proxy/model/api").ProviderDefaults & { password?: string; tnb_api_password?: string; tnb_proxy_password?: string; custom_api_password?: string; custom_proxy_password?: string };
+  customProviders?: Record<string, NonNullable<MockState["providerDefaults"]>>;
+  tnbGeneration?: Pick<NonNullable<MockState["providerDefaults"]>, "name" | "folder" | "country" | "state" | "city" | "session_type" | "session_minutes" | "generation_count">;
   version: number;
   profiles: Record<string, StoredProfile>;
   /** Insertion order, which is what profile_list returns. */
   order: string[];
   proxies: ProxyEntry[];
+  proxyFolders?: { folders: { name: string; parent: string }[] };
   snapshots: Record<string, ProxyTestSnapshot[]>;
   fingerprints: FingerprintEntry[];
+  fingerprintBackups?: Record<string, FingerprintEntry>;
   extensions: ExtensionEntry[];
   /** Web Store update records by entry id (extUpdates.ts); made on first read. */
   extUpdates?: Record<string, ExtensionUpdate>;
@@ -339,7 +343,7 @@ const PROXIES: ProxyEntry[] = [
   { id: "px-us-1", name: "ProxyShard resi US", kind: "socks5", host: "relay-eu.proxyshard.example", port: 1080, username: "plan-premium_country-us_session-a1f9", password: "mock-pass-1", country: "US", notes: "Sticky session, premium tier" },
   { id: "px-us-2", name: "DC New York", kind: "socks5", host: "203.0.113.18", port: 1080, username: "shard", password: "mock-pass-2", country: "US", notes: "" },
   { id: "px-de-1", name: "ISP Frankfurt", kind: "http", host: "198.51.100.7", port: 8080, username: "shard", password: "mock-pass-3", country: "DE", notes: "Unlimited ISP" },
-  { id: "px-jp-1", name: "DC Tokyo", kind: "socks5", host: "203.0.113.90", port: 1080, username: "shard", password: "mock-pass-4", country: "JP", notes: "" },
+  { id: "px-jp-1", name: "DC Tokyo", kind: "socks5", host: "203.0.113.90", port: 1080, username: "shard", password: "mock-pass-4", country: "JP", notes: "", folder: "Japan" },
   { id: "px-mobile-1", name: "Mobile UK EE", kind: "socks5", host: "relay-ru.proxyshard.example", port: 1080, username: "plan-mobile_country-gb_session-77c0", password: "mock-pass-5", country: "GB", notes: "Rotates every 10 min" },
   { id: "px-dead", name: "Old datacenter (expired)", kind: "https", host: "192.0.2.66", port: 443, username: "", password: "", country: "NL", notes: "Order lapsed 2 weeks ago" },
   // Never tested (e2e/status-dots.spec.ts): no entry in the snapshot loop
@@ -693,6 +697,7 @@ export function seed(): MockState {
     profiles,
     order,
     proxies: empty ? [] : [...PROXIES.map((p) => ({ ...p })), ...extraProxies()],
+    proxyFolders: { folders: [] },
     snapshots,
     fingerprints,
     extensions: empty ? [] : EXTENSIONS.map((e) => ({ ...e })),

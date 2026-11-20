@@ -39,8 +39,19 @@ impl ChainError {
         }
     }
 
-    pub fn with_proxy_response(mut self, protocol: &'static str, phase: &'static str, response_code: u16, target: Option<&'static str>) -> Self {
-        self.details=Some(ProxyFailureDetails{protocol,phase,response_code,target});
+    pub fn with_proxy_response(
+        mut self,
+        protocol: &'static str,
+        phase: &'static str,
+        response_code: u16,
+        target: Option<&'static str>,
+    ) -> Self {
+        self.details = Some(ProxyFailureDetails {
+            protocol,
+            phase,
+            response_code,
+            target,
+        });
         self
     }
 }

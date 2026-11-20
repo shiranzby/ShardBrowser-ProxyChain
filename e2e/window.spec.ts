@@ -3,6 +3,8 @@ import { openApp } from "./support/app";
 
 const WINDOWS_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36";
+const MAC_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36";
 
 /** Window commands the app sent to the mock backend, e.g. "plugin:window|minimize". */
 function windowCalls(page: Page) {
@@ -40,10 +42,13 @@ test("pressing the gray ground around and between the panels drags the window, a
 
 test("in the real macOS window a 38 px strip holds the traffic lights and the mark sits at the normal left inset", async ({ page }) => {
   // Tauri sets window.isTauri; the traffic lights exist only in its window.
-  await page.addInitScript(() => { (window as unknown as { isTauri: boolean }).isTauri = true; });
+  await page.addInitScript((ua) => {
+    Object.defineProperty(navigator, "userAgent", { get: () => ua });
+    (window as unknown as { isTauri: boolean }).isTauri = true;
+  }, MAC_UA);
   await openApp(page);
   const mark = page.locator("aside [data-brand]");
-  await expect(mark).toContainText("ShardBrowser");
+  await expect(mark).toContainText("ShyShard");
   const box = (await mark.boundingBox())!;
   // The panels start below a 38 px title strip that holds the lights
   // (trafficLightPosition 14,21); the mark is not pushed right of them.
@@ -66,6 +71,7 @@ test("without traffic lights (the browser preview) the mark sits at the left, in
 });
 
 test("no window controls on macOS: the system traffic lights are used", async ({ page }) => {
+  await page.addInitScript((ua) => { Object.defineProperty(navigator, "userAgent", { get: () => ua }); }, MAC_UA);
   await openApp(page);
   await expect(page.getByRole("button", { name: "Minimize" })).toHaveCount(0);
 });

@@ -54,10 +54,14 @@ async fn geo_response(stream: &mut TcpStream, ip: &str) -> std::io::Result<()> {
 }
 
 async fn http_proxy(destination: Option<SocketAddr>, geo_ok: bool) -> Service {
-    http_proxy_with_exit(destination,geo_ok,"198.51.100.44").await
+    http_proxy_with_exit(destination, geo_ok, "198.51.100.44").await
 }
 
-async fn http_proxy_with_exit(destination: Option<SocketAddr>, geo_ok: bool, ip:&'static str) -> Service {
+async fn http_proxy_with_exit(
+    destination: Option<SocketAddr>,
+    geo_ok: bool,
+    ip: &'static str,
+) -> Service {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -169,7 +173,12 @@ async fn socks_proxy(username: &'static str, password: &'static str, ip: &'stati
     socks_proxy_with_probe_rule(username, password, ip, false).await
 }
 
-async fn socks_proxy_with_probe_rule(username: &'static str, password: &'static str, ip: &'static str, refuse_probe: bool) -> Service {
+async fn socks_proxy_with_probe_rule(
+    username: &'static str,
+    password: &'static str,
+    ip: &'static str,
+    refuse_probe: bool,
+) -> Service {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -216,36 +225,108 @@ fn assigned(addr: SocketAddr, kind: &str) -> crate::space::proxy::ProxyEntry {
 
 #[tokio::test]
 async fn live_geo_on_the_selected_route_survives_a_probe_target_refusal_on_repeated_tests() {
-    use super::{policy::ChainPolicy,route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,Route};
+    use super::{
+        policy::ChainPolicy,
+        route::{FirstHop, ProfileProxyRoute as R, SecondHop},
+        routing, Route,
+    };
     let _root = crate::store::test_root("probe-target-refusal-with-live-exit");
-    crate::settings::save(&crate::settings::Settings { geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
+    crate::settings::save(&crate::settings::Settings {
+        geo_checker: Some("ip-api.com".into()),
+        ..Default::default()
+    })
+    .unwrap();
     let second = socks_proxy_with_probe_rule(SECOND_USER, SECOND_PASS, "198.51.100.88", true).await;
     let entry = assigned(second.addr, "socks5");
     let before = serde_json::to_value(&entry).unwrap();
     let first = http_proxy(Some(second.addr), true).await;
     let first_entry = assigned(first.addr, "http");
-    let chain = R::Chain { first: FirstHop::Proxy { proxy_id: first_entry.id.clone() }, second: SecondHop::Proxy };
-    for (route, expected) in [(R::Proxy, Route::ExplicitProxy), (chain, Route::ExplicitChain)] {
+    let chain = R::Chain {
+        first: FirstHop::Proxy {
+            proxy_id: first_entry.id.clone(),
+        },
+        second: SecondHop::Proxy,
+    };
+    for (route, expected) in [
+        (R::Proxy, Route::ExplicitProxy),
+        (chain, Route::ExplicitChain),
+    ] {
         for _ in 0..2 {
-            let result = routing::test_resolved_route(Some(&route), ChainPolicy::Enabled, Some(&entry), Some(&first_entry)).await.unwrap();
-            assert_eq!(result.route, Some(expected), "the live exit must come from the selected route without fallback");
+            let result = routing::test_resolved_route(
+                Some(&route),
+                ChainPolicy::Enabled,
+                Some(&entry),
+                Some(&first_entry),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                result.route,
+                Some(expected),
+                "the live exit must come from the selected route without fallback"
+            );
             assert_eq!(result.profile_proxy.state, "ok");
-            assert_eq!(result.system_proxy.state, if expected == Route::ExplicitChain { "ok" } else { "not_tested" });
+            assert_eq!(
+                result.system_proxy.state,
+                if expected == Route::ExplicitChain {
+                    "ok"
+                } else {
+                    "not_tested"
+                }
+            );
             assert_eq!(result.exit_ip.as_deref(), Some("198.51.100.88"));
             assert_eq!(result.exit_geo.as_ref().unwrap().provider, "ip-api.com");
-            assert!(result.exit_error.is_none() && result.exit_error_code.is_none() && result.first_hop_error_code.is_none());
-            assert_eq!(serde_json::to_value(&entry).unwrap(), before, "testing must not rewrite the assigned proxy");
+            assert!(
+                result.exit_error.is_none()
+                    && result.exit_error_code.is_none()
+                    && result.first_hop_error_code.is_none()
+            );
+            assert_eq!(
+                serde_json::to_value(&entry).unwrap(),
+                before,
+                "testing must not rewrite the assigned proxy"
+            );
         }
     }
     let requests = second.requests.lock().unwrap();
-    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 0, "successful Geo traffic needs no separate probe connection");
-    assert_eq!(requests.iter().filter(|r| *r == "SOCKS ip-api.com:80").count(), 4, "every result needs fresh authenticated traffic to the Geo target");
-    assert!(!requests.iter().any(|r| r.contains("MISMATCH") || r.contains("NOT_REMOTE_DNS")));
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| *r == "SOCKS example.com:443")
+            .count(),
+        0,
+        "successful Geo traffic needs no separate probe connection"
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| *r == "SOCKS ip-api.com:80")
+            .count(),
+        4,
+        "every result needs fresh authenticated traffic to the Geo target"
+    );
+    assert!(!requests
+        .iter()
+        .any(|r| r.contains("MISMATCH") || r.contains("NOT_REMOTE_DNS")));
     let first_requests = first.requests.lock().unwrap();
-    assert_eq!(first_requests.len(), 2, "each successful chained test needs one first-hop connection for Geo");
+    assert_eq!(
+        first_requests.len(),
+        2,
+        "each successful chained test needs one first-hop connection for Geo"
+    );
     let fixed_target = format!("CONNECT {}:{} HTTP/1.1", entry.host, entry.port);
-    assert!(first_requests.iter().any(|head| head.starts_with(&fixed_target)), "the selected chain must connect to the assigned proxy");
-    assert!(first_requests.iter().all(|head| head.starts_with(&fixed_target)), "successful tests must retain the selected chain without independent first-hop checks");
+    assert!(
+        first_requests
+            .iter()
+            .any(|head| head.starts_with(&fixed_target)),
+        "the selected chain must connect to the assigned proxy"
+    );
+    assert!(
+        first_requests
+            .iter()
+            .all(|head| head.starts_with(&fixed_target)),
+        "successful tests must retain the selected chain without independent first-hop checks"
+    );
 }
 
 #[tokio::test]
@@ -258,28 +339,69 @@ async fn legacy_profile_tests_accept_fresh_geo_when_the_probe_target_is_refused(
     entry.proxy_chain_policy = ChainPolicy::Inherit;
     save_assigned_profile(&entry, "inherit");
     let before = std::fs::read(crate::store::proxies_path().unwrap()).unwrap();
-    let profile_path = crate::store::profiles_dir().unwrap().join("adaptive-profile.json");
+    let profile_path = crate::store::profiles_dir()
+        .unwrap()
+        .join("adaptive-profile.json");
     let profile_before = std::fs::read(&profile_path).unwrap();
     for enabled in [false, true] {
         let mut stored = config(first.addr, "http");
         stored.enabled = enabled;
         stored.apply_update(&Default::default()).unwrap();
-        crate::settings::save(&crate::settings::Settings { proxy_chain: stored.clone(), geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
+        crate::settings::save(&crate::settings::Settings {
+            proxy_chain: stored.clone(),
+            geo_checker: Some("ip-api.com".into()),
+            ..Default::default()
+        })
+        .unwrap();
         for _ in 0..2 {
-            let result = super::test("profile".into(), stored.public(), Some("adaptive-profile".into())).await.unwrap();
+            let result = super::test(
+                "profile".into(),
+                stored.public(),
+                Some("adaptive-profile".into()),
+            )
+            .await
+            .unwrap();
             assert_eq!(result.profile_proxy.state, "ok");
-            assert_eq!(result.system_proxy.state, if enabled { "ok" } else { "not_tested" });
+            assert_eq!(
+                result.system_proxy.state,
+                if enabled { "ok" } else { "not_tested" }
+            );
             assert_eq!(result.exit_ip.as_deref(), Some("198.51.100.89"));
             assert!(result.exit_error.is_none() && result.first_hop_error_code.is_none());
-            if enabled { assert_eq!(result.route, Some(super::Route::FirstHop), "a probe-only failure must not bypass the first hop"); }
-            assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), before);
+            if enabled {
+                assert_eq!(
+                    result.route,
+                    Some(super::Route::FirstHop),
+                    "a probe-only failure must not bypass the first hop"
+                );
+            }
+            assert_eq!(
+                std::fs::read(crate::store::proxies_path().unwrap()).unwrap(),
+                before
+            );
             assert_eq!(std::fs::read(&profile_path).unwrap(), profile_before);
         }
     }
     let requests = second.requests.lock().unwrap();
-    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 0);
-    assert_eq!(requests.iter().filter(|r| *r == "SOCKS ip-api.com:80").count(), 4);
-    assert_eq!(first.requests.lock().unwrap().len(), 2, "both chained tests carry only fresh Geo through the first hop");
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| *r == "SOCKS example.com:443")
+            .count(),
+        0
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| *r == "SOCKS ip-api.com:80")
+            .count(),
+        4
+    );
+    assert_eq!(
+        first.requests.lock().unwrap().len(),
+        2,
+        "both chained tests carry only fresh Geo through the first hop"
+    );
 }
 
 #[tokio::test]
@@ -294,265 +416,591 @@ async fn proxy_list_chain_tests_do_not_mark_a_live_geo_route_failed_for_one_prob
     let before = std::fs::read(crate::store::proxies_path().unwrap()).unwrap();
     let mut stored = config(first.addr, "http");
     stored.apply_update(&Default::default()).unwrap();
-    crate::settings::save(&crate::settings::Settings { proxy_chain: stored, geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
+    crate::settings::save(&crate::settings::Settings {
+        proxy_chain: stored,
+        geo_checker: Some("ip-api.com".into()),
+        ..Default::default()
+    })
+    .unwrap();
     for _ in 0..2 {
         let snapshot = crate::space::proxy::full_test(&entry).await.unwrap();
         assert_eq!(snapshot.transport.as_deref(), Some("proxy_chain"));
         assert_eq!(snapshot.route.as_deref(), Some("first_hop"));
         assert_eq!(snapshot.ip, "198.51.100.90");
         assert_eq!(snapshot.provider, "ip-api.com");
-        assert!(snapshot.tcp_ms.is_some(), "authenticated Geo traffic supplies fresh route reachability");
-        assert!(snapshot.chain_error.is_none() && snapshot.geo_error.is_none() && snapshot.first_hop_error_code.is_none());
+        assert!(
+            snapshot.tcp_ms.is_some(),
+            "authenticated Geo traffic supplies fresh route reachability"
+        );
+        assert!(
+            snapshot.chain_error.is_none()
+                && snapshot.geo_error.is_none()
+                && snapshot.first_hop_error_code.is_none()
+        );
         assert_eq!(snapshot.udp_state.as_deref(), Some("unsupported_by_chain"));
-        assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), before);
+        assert_eq!(
+            std::fs::read(crate::store::proxies_path().unwrap()).unwrap(),
+            before
+        );
     }
     let requests = second.requests.lock().unwrap();
-    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(), 2);
-    assert_eq!(requests.iter().filter(|r| *r == "SOCKS ip-api.com:80").count(), 2);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| *r == "SOCKS example.com:443")
+            .count(),
+        2
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| *r == "SOCKS ip-api.com:80")
+            .count(),
+        2
+    );
     assert_eq!(first.requests.lock().unwrap().len(), 6);
 }
 
 async fn socks_connect_refusal(reply: u8) -> Service {
-    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr=listener.local_addr().unwrap();
-    let requests=Arc::new(Mutex::new(Vec::new()));
-    let record=requests.clone();
-    let task=tokio::spawn(async move {
-        while let Ok((mut stream,_))=listener.accept().await {
-            let mut greeting=[0;2];
-            if stream.read_exact(&mut greeting).await.is_err() {continue;}
-            assert_eq!(greeting[0],5);
-            let mut methods=vec![0;greeting[1] as usize];
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let record = requests.clone();
+    let task = tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let mut greeting = [0; 2];
+            if stream.read_exact(&mut greeting).await.is_err() {
+                continue;
+            }
+            assert_eq!(greeting[0], 5);
+            let mut methods = vec![0; greeting[1] as usize];
             stream.read_exact(&mut methods).await.unwrap();
             assert!(methods.contains(&2));
-            stream.write_all(&[5,2]).await.unwrap();
-            assert_eq!(stream.read_u8().await.unwrap(),1);
-            let mut username=vec![0;stream.read_u8().await.unwrap() as usize];
+            stream.write_all(&[5, 2]).await.unwrap();
+            assert_eq!(stream.read_u8().await.unwrap(), 1);
+            let mut username = vec![0; stream.read_u8().await.unwrap() as usize];
             stream.read_exact(&mut username).await.unwrap();
-            let mut password=vec![0;stream.read_u8().await.unwrap() as usize];
+            let mut password = vec![0; stream.read_u8().await.unwrap() as usize];
             stream.read_exact(&mut password).await.unwrap();
-            assert_eq!(username,SECOND_USER.as_bytes());
-            assert_eq!(password,SECOND_PASS.as_bytes());
-            stream.write_all(&[1,0]).await.unwrap();
-            let mut header=[0;4];stream.read_exact(&mut header).await.unwrap();
-            assert_eq!(header,[5,1,0,3]);
-            let mut host=vec![0;stream.read_u8().await.unwrap() as usize];
+            assert_eq!(username, SECOND_USER.as_bytes());
+            assert_eq!(password, SECOND_PASS.as_bytes());
+            stream.write_all(&[1, 0]).await.unwrap();
+            let mut header = [0; 4];
+            stream.read_exact(&mut header).await.unwrap();
+            assert_eq!(header, [5, 1, 0, 3]);
+            let mut host = vec![0; stream.read_u8().await.unwrap() as usize];
             stream.read_exact(&mut host).await.unwrap();
-            let port=stream.read_u16().await.unwrap();
-            record.lock().unwrap().push(format!("{}:{port}",String::from_utf8_lossy(&host)));
-            stream.write_all(&[5,reply,0,1,0,0,0,0,0,0]).await.unwrap();
+            let port = stream.read_u16().await.unwrap();
+            record
+                .lock()
+                .unwrap()
+                .push(format!("{}:{port}", String::from_utf8_lossy(&host)));
+            stream
+                .write_all(&[5, reply, 0, 1, 0, 0, 0, 0, 0, 0])
+                .await
+                .unwrap();
         }
     });
-    Service{addr,requests,task}
+    Service {
+        addr,
+        requests,
+        task,
+    }
 }
 
 #[tokio::test]
 async fn explicit_single_proxy_failures_keep_socks_response_details_and_skip_global_chain() {
-    use super::{policy::ChainPolicy,route::ProfileProxyRoute as R,routing};
-    let _root=crate::store::test_root("explicit-single-proxy-response");
-    let first=http_proxy(None,true).await;
-    crate::settings::save(&crate::settings::Settings{proxy_chain:ProxyChainSettings{
-        enabled:true,invalid:true,host:first.addr.ip().to_string(),port:first.addr.port(),..Default::default()
-    },..Default::default()}).unwrap();
-    for reply in [4,5] {
-        let endpoint=socks_connect_refusal(reply).await;
-        let entry=assigned(endpoint.addr,"socks5");
-        let before=serde_json::to_value(&entry).unwrap();
-        for policy in [ChainPolicy::Enabled,ChainPolicy::PreferFirstHop] {
-            let result=routing::test_resolved_route(Some(&R::Proxy),policy,Some(&entry),None).await.unwrap();
-            assert_eq!(result.system_proxy.state,"not_tested");
-            assert_eq!(result.profile_proxy.state,"failed");
-            assert_eq!(result.profile_proxy.error_code,Some("proxy_chain_profile_connect_failed"));
-            assert!(result.exit_ip.is_none()&&result.exit_geo.is_none());
-            let dto=serde_json::to_value(result).unwrap();
-            assert_eq!(dto["profile_proxy"]["error_details"],json!({"protocol":"socks5","phase":"connect","response_code":reply,"target":"example.com:443"}));
+    use super::{policy::ChainPolicy, route::ProfileProxyRoute as R, routing};
+    let _root = crate::store::test_root("explicit-single-proxy-response");
+    let first = http_proxy(None, true).await;
+    crate::settings::save(&crate::settings::Settings {
+        proxy_chain: ProxyChainSettings {
+            enabled: true,
+            invalid: true,
+            host: first.addr.ip().to_string(),
+            port: first.addr.port(),
+            ..Default::default()
+        },
+        ..Default::default()
+    })
+    .unwrap();
+    for reply in [4, 5] {
+        let endpoint = socks_connect_refusal(reply).await;
+        let entry = assigned(endpoint.addr, "socks5");
+        let before = serde_json::to_value(&entry).unwrap();
+        for policy in [ChainPolicy::Enabled, ChainPolicy::PreferFirstHop] {
+            let result = routing::test_resolved_route(Some(&R::Proxy), policy, Some(&entry), None)
+                .await
+                .unwrap();
+            assert_eq!(result.system_proxy.state, "not_tested");
+            assert_eq!(result.profile_proxy.state, "failed");
+            assert_eq!(
+                result.profile_proxy.error_code,
+                Some("proxy_chain_profile_connect_failed")
+            );
+            assert!(result.exit_ip.is_none() && result.exit_geo.is_none());
+            let dto = serde_json::to_value(result).unwrap();
+            assert_eq!(
+                dto["profile_proxy"]["error_details"],
+                json!({"protocol":"socks5","phase":"connect","response_code":reply,"target":"example.com:443"})
+            );
             assert!(dto["system_proxy"].get("error_details").is_none());
-            for secret in [SECOND_USER,SECOND_PASS] {assert!(!dto.to_string().contains(secret));}
+            for secret in [SECOND_USER, SECOND_PASS] {
+                assert!(!dto.to_string().contains(secret));
+            }
         }
-        assert_eq!(serde_json::to_value(&entry).unwrap(),before);
-        let requests=endpoint.requests.lock().unwrap();
-        assert_eq!(requests.iter().filter(|target| target.as_str()=="example.com:443").count(),4,
-            "each policy makes the original probe and the bounded same-route HTTPS alternative");
-        assert_eq!(requests.iter().filter(|target| target.as_str()=="example.org:443").count(),2,
-            "the second HTTPS target remains bounded to one attempt per policy");
-        assert!(requests.iter().any(|target| target=="ip-api.com:80"),"failed reach probes still check the live exit on this route");
-        assert!(requests.iter().all(|target|matches!(target.as_str(),"example.com:443"|"example.org:443"|"ip-api.com:80"|"ipapi.co:443"|"ipwho.is:443")));
+        assert_eq!(serde_json::to_value(&entry).unwrap(), before);
+        let requests = endpoint.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|target| target.as_str() == "example.com:443")
+                .count(),
+            4,
+            "each policy makes the original probe and the bounded same-route HTTPS alternative"
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|target| target.as_str() == "example.org:443")
+                .count(),
+            2,
+            "the second HTTPS target remains bounded to one attempt per policy"
+        );
+        assert!(
+            requests.iter().any(|target| target == "ip-api.com:80"),
+            "failed reach probes still check the live exit on this route"
+        );
+        assert!(requests.iter().all(|target| matches!(
+            target.as_str(),
+            "example.com:443"
+                | "example.org:443"
+                | "ip-api.com:80"
+                | "ipapi.co:443"
+                | "ipwho.is:443"
+        )));
     }
-    let endpoint=socks_proxy(SECOND_USER,"different synthetic secret","198.51.100.88").await;
-    let entry=assigned(endpoint.addr,"socks5");
-    let result=routing::test_resolved_route(Some(&R::Proxy),ChainPolicy::PreferFirstHop,Some(&entry),None).await.unwrap();
-    assert_eq!(result.system_proxy.state,"not_tested");
-    assert_eq!(result.profile_proxy.error_code,Some("proxy_chain_profile_auth_failed"));
-    assert!(result.exit_ip.is_none()&&result.exit_geo.is_none());
-    let dto=serde_json::to_value(result).unwrap();
-    assert_eq!(dto["profile_proxy"]["error_details"],json!({"protocol":"socks5","phase":"authentication","response_code":1}));
-    assert_eq!(&*endpoint.requests.lock().unwrap(),&["AUTHENTICATION_MISMATCH"]);
-    assert!(first.requests.lock().unwrap().is_empty(),"an explicit single proxy must never try the global first hop");
+    let endpoint = socks_proxy(SECOND_USER, "different synthetic secret", "198.51.100.88").await;
+    let entry = assigned(endpoint.addr, "socks5");
+    let result = routing::test_resolved_route(
+        Some(&R::Proxy),
+        ChainPolicy::PreferFirstHop,
+        Some(&entry),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.system_proxy.state, "not_tested");
+    assert_eq!(
+        result.profile_proxy.error_code,
+        Some("proxy_chain_profile_auth_failed")
+    );
+    assert!(result.exit_ip.is_none() && result.exit_geo.is_none());
+    let dto = serde_json::to_value(result).unwrap();
+    assert_eq!(
+        dto["profile_proxy"]["error_details"],
+        json!({"protocol":"socks5","phase":"authentication","response_code":1})
+    );
+    assert_eq!(
+        &*endpoint.requests.lock().unwrap(),
+        &["AUTHENTICATION_MISMATCH"]
+    );
+    assert!(
+        first.requests.lock().unwrap().is_empty(),
+        "an explicit single proxy must never try the global first hop"
+    );
 }
 
 #[tokio::test]
 async fn explicit_single_http_proxy_failures_keep_status_without_private_response_text() {
-    use super::{policy::ChainPolicy,route::ProfileProxyRoute as R,routing};
-    let _root=crate::store::test_root("explicit-single-http-response");
-    for status in [403,407] {
-        let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr=listener.local_addr().unwrap();let requests=Arc::new(Mutex::new(Vec::new()));let record=requests.clone();
-        let server=Service{addr,requests,task:tokio::spawn(async move {
-            while let Ok((mut stream,_))=listener.accept().await {
-                let Ok(request)=http_head(&mut stream).await else {continue;};
-                record.lock().unwrap().push(request.lines().next().unwrap_or_default().to_owned());
-                let _=stream.write_all(format!("HTTP/1.1 {status} fixture-private-detail\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes()).await;
-            }
-        })};
-        let entry=assigned(server.addr,"http");
-        let result=routing::test_resolved_route(Some(&R::Proxy),ChainPolicy::Enabled,Some(&entry),None).await.unwrap();
-        assert_eq!(result.system_proxy.state,"not_tested");
-        assert_eq!(result.profile_proxy.state,"failed");
-        assert_eq!(result.profile_proxy.error_code,Some(if status==407 {"proxy_chain_profile_auth_failed"} else {"proxy_chain_profile_connect_failed"}));
-        let dto=serde_json::to_value(result).unwrap();
-        let expected=if status==407 {json!({"protocol":"http","phase":"authentication","response_code":407})}
-            else {json!({"protocol":"http","phase":"connect","response_code":403,"target":"example.com:443"})};
-        assert_eq!(dto["profile_proxy"]["error_details"],expected);
-        let safe=dto.to_string();
-        for secret in [SECOND_USER,SECOND_PASS,"fixture-private-detail"] {assert!(!safe.contains(secret));}
-        let requests=server.requests.lock().unwrap();
-        assert_eq!(requests.first().map(String::as_str),Some("CONNECT ip-api.com:80 HTTP/1.1"),"the live exit request must run before a connectivity probe");
-        if status==407 {assert_eq!(requests.len(),1,"an explicit authentication refusal must not be retried");}
-        else {assert_eq!(requests.last().map(String::as_str),Some("CONNECT example.com:443 HTTP/1.1"),"the final protocol probe must preserve the parsed CONNECT refusal");}
+    use super::{policy::ChainPolicy, route::ProfileProxyRoute as R, routing};
+    let _root = crate::store::test_root("explicit-single-http-response");
+    for status in [403, 407] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let record = requests.clone();
+        let server = Service {
+            addr,
+            requests,
+            task: tokio::spawn(async move {
+                while let Ok((mut stream, _)) = listener.accept().await {
+                    let Ok(request) = http_head(&mut stream).await else {
+                        continue;
+                    };
+                    record
+                        .lock()
+                        .unwrap()
+                        .push(request.lines().next().unwrap_or_default().to_owned());
+                    let _=stream.write_all(format!("HTTP/1.1 {status} fixture-private-detail\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes()).await;
+                }
+            }),
+        };
+        let entry = assigned(server.addr, "http");
+        let result =
+            routing::test_resolved_route(Some(&R::Proxy), ChainPolicy::Enabled, Some(&entry), None)
+                .await
+                .unwrap();
+        assert_eq!(result.system_proxy.state, "not_tested");
+        assert_eq!(result.profile_proxy.state, "failed");
+        assert_eq!(
+            result.profile_proxy.error_code,
+            Some(if status == 407 {
+                "proxy_chain_profile_auth_failed"
+            } else {
+                "proxy_chain_profile_connect_failed"
+            })
+        );
+        let dto = serde_json::to_value(result).unwrap();
+        let expected = if status == 407 {
+            json!({"protocol":"http","phase":"authentication","response_code":407})
+        } else {
+            json!({"protocol":"http","phase":"connect","response_code":403,"target":"example.com:443"})
+        };
+        assert_eq!(dto["profile_proxy"]["error_details"], expected);
+        let safe = dto.to_string();
+        for secret in [SECOND_USER, SECOND_PASS, "fixture-private-detail"] {
+            assert!(!safe.contains(secret));
+        }
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(
+            requests.first().map(String::as_str),
+            Some("CONNECT ip-api.com:80 HTTP/1.1"),
+            "the live exit request must run before a connectivity probe"
+        );
+        if status == 407 {
+            assert_eq!(
+                requests.len(),
+                1,
+                "an explicit authentication refusal must not be retried"
+            );
+        } else {
+            assert_eq!(
+                requests.last().map(String::as_str),
+                Some("CONNECT example.com:443 HTTP/1.1"),
+                "the final protocol probe must preserve the parsed CONNECT refusal"
+            );
+        }
     }
 }
 
 #[tokio::test]
 async fn explicit_proxy_routes_ignore_global_chain_and_preserve_their_selected_binding() {
-    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing};
-    let _root=crate::store::test_root("explicit-proxy-route");
-    let server=socks_proxy(SECOND_USER,SECOND_PASS,"198.51.100.85").await;
-    let assigned=assigned(server.addr,"socks5");
-    let before=serde_json::to_value(&assigned).unwrap();
-    crate::settings::save(&crate::settings::Settings{proxy_chain:ProxyChainSettings{enabled:true,invalid:true,..Default::default()},..Default::default()}).unwrap();
-    for route in [R::Proxy,R::Chain{first:FirstHop::Direct,second:SecondHop::Proxy},R::Chain{first:FirstHop::Proxy{proxy_id:assigned.id.clone()},second:SecondHop::Direct}] {
-        let prepared=routing::prepare_route(&route,Some(&assigned),Some(&assigned),false).await.unwrap().prepared.unwrap();
-        assert_eq!(prepared.verified_geo.as_ref().unwrap().ip,"198.51.100.85");
-        assert_eq!(prepared.effective.password,SECOND_PASS);
-        assert_eq!(serde_json::to_value(&assigned).unwrap(),before);
+    use super::{
+        route::{FirstHop, ProfileProxyRoute as R, SecondHop},
+        routing,
+    };
+    let _root = crate::store::test_root("explicit-proxy-route");
+    let server = socks_proxy(SECOND_USER, SECOND_PASS, "198.51.100.85").await;
+    let assigned = assigned(server.addr, "socks5");
+    let before = serde_json::to_value(&assigned).unwrap();
+    crate::settings::save(&crate::settings::Settings {
+        proxy_chain: ProxyChainSettings {
+            enabled: true,
+            invalid: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    })
+    .unwrap();
+    for route in [
+        R::Proxy,
+        R::Chain {
+            first: FirstHop::Direct,
+            second: SecondHop::Proxy,
+        },
+        R::Chain {
+            first: FirstHop::Proxy {
+                proxy_id: assigned.id.clone(),
+            },
+            second: SecondHop::Direct,
+        },
+    ] {
+        let prepared = routing::prepare_route(&route, Some(&assigned), Some(&assigned), false)
+            .await
+            .unwrap()
+            .prepared
+            .unwrap();
+        assert_eq!(prepared.verified_geo.as_ref().unwrap().ip, "198.51.100.85");
+        assert_eq!(prepared.effective.password, SECOND_PASS);
+        assert_eq!(serde_json::to_value(&assigned).unwrap(), before);
         prepared.tunnel.shutdown().await;
     }
-    for route in [R::Direct,R::Chain{first:FirstHop::Direct,second:SecondHop::Direct}] {
-        let ready=routing::prepare_route(&route,None,None,false).await.unwrap();
-        assert!(ready.proxy.is_none()&&ready.prepared.is_none());
+    for route in [
+        R::Direct,
+        R::Chain {
+            first: FirstHop::Direct,
+            second: SecondHop::Direct,
+        },
+    ] {
+        let ready = routing::prepare_route(&route, None, None, false)
+            .await
+            .unwrap();
+        assert!(ready.proxy.is_none() && ready.prepared.is_none());
     }
 }
 
 #[tokio::test]
 async fn a_legacy_first_only_proxy_failure_uses_the_single_proxy_stage_and_address() {
-    use super::{policy::ChainPolicy,route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing};
-    let _root=crate::store::test_root("first-only-proxy-failure-address");
-    let endpoint=socks_connect_refusal(4).await;
-    let entry=assigned(endpoint.addr,"socks5");
-    let expected_address=format!("{}:{}",entry.host,entry.port);
-    let single=routing::test_resolved_route(Some(&R::Proxy),ChainPolicy::Disabled,Some(&entry),None).await.unwrap();
-    let mut inactive=entry.clone();inactive.id="inactive-assigned".into();inactive.host="inactive-assigned.invalid".into();
-    let route=R::Chain{first:FirstHop::Proxy{proxy_id:entry.id.clone()},second:SecondHop::Direct};
-    let first_only=routing::test_resolved_route(Some(&route),ChainPolicy::Enabled,Some(&inactive),Some(&entry)).await.unwrap();
-    assert_eq!(single.profile_proxy.state,"failed");
-    assert_eq!(first_only.system_proxy.state,"not_tested");
-    assert_eq!(first_only.profile_proxy.state,"failed");
-    assert_eq!(first_only.profile_proxy.error_code,single.profile_proxy.error_code,"the same selected proxy must retain the actual failure");
-    assert_eq!(first_only.profile_proxy.error_details,single.profile_proxy.error_details);
-    assert!(first_only.exit_ip.is_none()&&first_only.exit_geo.is_none());
-    assert_eq!(first_only.proxy_address.as_deref(),Some(expected_address.as_str()));
-    assert_eq!(first_only.proxy_kind,Some("socks5"));
-    assert_eq!(first_only.profile_proxy_address.as_deref(),Some(expected_address.as_str()),"the inactive assigned binding must not be shown as the exit proxy");
+    use super::{
+        policy::ChainPolicy,
+        route::{FirstHop, ProfileProxyRoute as R, SecondHop},
+        routing,
+    };
+    let _root = crate::store::test_root("first-only-proxy-failure-address");
+    let endpoint = socks_connect_refusal(4).await;
+    let entry = assigned(endpoint.addr, "socks5");
+    let expected_address = format!("{}:{}", entry.host, entry.port);
+    let single =
+        routing::test_resolved_route(Some(&R::Proxy), ChainPolicy::Disabled, Some(&entry), None)
+            .await
+            .unwrap();
+    let mut inactive = entry.clone();
+    inactive.id = "inactive-assigned".into();
+    inactive.host = "inactive-assigned.invalid".into();
+    let route = R::Chain {
+        first: FirstHop::Proxy {
+            proxy_id: entry.id.clone(),
+        },
+        second: SecondHop::Direct,
+    };
+    let first_only = routing::test_resolved_route(
+        Some(&route),
+        ChainPolicy::Enabled,
+        Some(&inactive),
+        Some(&entry),
+    )
+    .await
+    .unwrap();
+    assert_eq!(single.profile_proxy.state, "failed");
+    assert_eq!(first_only.system_proxy.state, "not_tested");
+    assert_eq!(first_only.profile_proxy.state, "failed");
+    assert_eq!(
+        first_only.profile_proxy.error_code, single.profile_proxy.error_code,
+        "the same selected proxy must retain the actual failure"
+    );
+    assert_eq!(
+        first_only.profile_proxy.error_details,
+        single.profile_proxy.error_details
+    );
+    assert!(first_only.exit_ip.is_none() && first_only.exit_geo.is_none());
+    assert_eq!(
+        first_only.proxy_address.as_deref(),
+        Some(expected_address.as_str())
+    );
+    assert_eq!(first_only.proxy_kind, Some("socks5"));
+    assert_eq!(
+        first_only.profile_proxy_address.as_deref(),
+        Some(expected_address.as_str()),
+        "the inactive assigned binding must not be shown as the exit proxy"
+    );
 }
 
 #[tokio::test]
 async fn explicit_chains_deduplicate_only_identical_entries_and_fallback_only_when_requested() {
-    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,Route};
-    let _root=crate::store::test_root("explicit-chain-route");
-    let second=socks_proxy(SECOND_USER,SECOND_PASS,"198.51.100.86").await;
-    let entry=assigned(second.addr,"socks5");
-    let route=R::Chain{first:FirstHop::Proxy{proxy_id:entry.id.clone()},second:SecondHop::Proxy};
-    let same=routing::prepare_route(&route,Some(&entry),Some(&entry),false).await.unwrap().prepared.unwrap();
-    assert_eq!(same.route,Route::SameProxyEndpoint);same.tunnel.shutdown().await;
-    let detected=routing::test_resolved_route(Some(&route),super::policy::ChainPolicy::Enabled,Some(&entry),Some(&entry)).await.unwrap();
-    assert_eq!(detected.route,Some(Route::SameProxyEndpoint));
-    assert_eq!(detected.system_proxy.state,"not_tested","the duplicate first hop was skipped, not tested successfully");
-    assert_eq!(detected.profile_proxy.state,"ok");
-    let first=http_proxy(None,true).await;
-    let first_entry=assigned(first.addr,"http");
-    assert!(routing::prepare_route(&route,Some(&entry),Some(&first_entry),false).await.is_err());
-    let fallback=routing::prepare_route(&route,Some(&entry),Some(&first_entry),true).await.unwrap().prepared.unwrap();
-    assert_eq!(fallback.route,Route::AssignedProxyFallback);
-    assert!(fallback.first_hop_error.is_some());assert_eq!(fallback.verified_geo.as_ref().unwrap().ip,"198.51.100.86");
+    use super::{
+        route::{FirstHop, ProfileProxyRoute as R, SecondHop},
+        routing, Route,
+    };
+    let _root = crate::store::test_root("explicit-chain-route");
+    let second = socks_proxy(SECOND_USER, SECOND_PASS, "198.51.100.86").await;
+    let entry = assigned(second.addr, "socks5");
+    let route = R::Chain {
+        first: FirstHop::Proxy {
+            proxy_id: entry.id.clone(),
+        },
+        second: SecondHop::Proxy,
+    };
+    let same = routing::prepare_route(&route, Some(&entry), Some(&entry), false)
+        .await
+        .unwrap()
+        .prepared
+        .unwrap();
+    assert_eq!(same.route, Route::SameProxyEndpoint);
+    same.tunnel.shutdown().await;
+    let detected = routing::test_resolved_route(
+        Some(&route),
+        super::policy::ChainPolicy::Enabled,
+        Some(&entry),
+        Some(&entry),
+    )
+    .await
+    .unwrap();
+    assert_eq!(detected.route, Some(Route::SameProxyEndpoint));
+    assert_eq!(
+        detected.system_proxy.state, "not_tested",
+        "the duplicate first hop was skipped, not tested successfully"
+    );
+    assert_eq!(detected.profile_proxy.state, "ok");
+    let first = http_proxy(None, true).await;
+    let first_entry = assigned(first.addr, "http");
+    assert!(
+        routing::prepare_route(&route, Some(&entry), Some(&first_entry), false)
+            .await
+            .is_err()
+    );
+    let fallback = routing::prepare_route(&route, Some(&entry), Some(&first_entry), true)
+        .await
+        .unwrap()
+        .prepared
+        .unwrap();
+    assert_eq!(fallback.route, Route::AssignedProxyFallback);
+    assert!(fallback.first_hop_error.is_some());
+    assert_eq!(fallback.verified_geo.as_ref().unwrap().ip, "198.51.100.86");
     fallback.tunnel.shutdown().await;
-    assert!(routing::prepare_route(&route,Some(&entry),None,true).await.is_err());
-    assert!(routing::prepare_route(&R::Proxy,None,None,true).await.is_err());
+    assert!(routing::prepare_route(&route, Some(&entry), None, true)
+        .await
+        .is_err());
+    assert!(routing::prepare_route(&R::Proxy, None, None, true)
+        .await
+        .is_err());
 }
 
 #[tokio::test]
 async fn explicit_route_failure_detection_keeps_both_failed_routes_and_the_first_error() {
-    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,policy::ChainPolicy};
-    let _root=crate::store::test_root("explicit-double-failure-stages");
-    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let first_addr=listener.local_addr().unwrap();
-    let requests=Arc::new(Mutex::new(Vec::new()));
-    let record=requests.clone();
-    let first=Service {addr:first_addr,requests,task:tokio::spawn(async move {
-        while let Ok((mut socket,_))=listener.accept().await {
-            if let Ok(head)=http_head(&mut socket).await { record.lock().unwrap().push(head); }
-            let _=socket.write_all(b"HTTP/1.1 403 Synthetic refusal\r\nContent-Length: 0\r\n\r\n").await;
-        }
-    })};
-    let second=socks_proxy(SECOND_USER,SECOND_PASS,"198.51.100.87").await;
-    let mut entry=assigned(second.addr,"socks5");
-    entry.password="wrong synthetic password".into();
-    let first_entry=assigned(first.addr,"http");
-    let route=R::Chain {first:FirstHop::Proxy {proxy_id:first_entry.id.clone()},second:SecondHop::Proxy};
-    let result=routing::test_resolved_route(Some(&route),ChainPolicy::PreferFirstHop,Some(&entry),Some(&first_entry)).await.unwrap();
-    assert_eq!(result.first_hop_error_code,Some("system_proxy_connect_refused"));
-    assert_eq!(result.system_proxy.state,"failed");
-    assert_eq!(result.system_proxy.error_code,Some("system_proxy_connect_refused"));
-    assert_eq!(result.profile_proxy.state,"failed");
-    assert_eq!(result.profile_proxy.error_code,Some("proxy_chain_routes_failed"));
-    assert!(result.exit_ip.is_none()&&result.exit_geo.is_none());
+    use super::{
+        policy::ChainPolicy,
+        route::{FirstHop, ProfileProxyRoute as R, SecondHop},
+        routing,
+    };
+    let _root = crate::store::test_root("explicit-double-failure-stages");
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let first_addr = listener.local_addr().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let record = requests.clone();
+    let first = Service {
+        addr: first_addr,
+        requests,
+        task: tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                if let Ok(head) = http_head(&mut socket).await {
+                    record.lock().unwrap().push(head);
+                }
+                let _ = socket
+                    .write_all(b"HTTP/1.1 403 Synthetic refusal\r\nContent-Length: 0\r\n\r\n")
+                    .await;
+            }
+        }),
+    };
+    let second = socks_proxy(SECOND_USER, SECOND_PASS, "198.51.100.87").await;
+    let mut entry = assigned(second.addr, "socks5");
+    entry.password = "wrong synthetic password".into();
+    let first_entry = assigned(first.addr, "http");
+    let route = R::Chain {
+        first: FirstHop::Proxy {
+            proxy_id: first_entry.id.clone(),
+        },
+        second: SecondHop::Proxy,
+    };
+    let result = routing::test_resolved_route(
+        Some(&route),
+        ChainPolicy::PreferFirstHop,
+        Some(&entry),
+        Some(&first_entry),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result.first_hop_error_code,
+        Some("system_proxy_connect_refused")
+    );
+    assert_eq!(result.system_proxy.state, "failed");
+    assert_eq!(
+        result.system_proxy.error_code,
+        Some("system_proxy_connect_refused")
+    );
+    assert_eq!(result.profile_proxy.state, "failed");
+    assert_eq!(
+        result.profile_proxy.error_code,
+        Some("proxy_chain_routes_failed")
+    );
+    assert!(result.exit_ip.is_none() && result.exit_geo.is_none());
     assert!(!first.requests.lock().unwrap().is_empty());
-    assert!(second.requests.lock().unwrap().iter().any(|r|r=="AUTHENTICATION_MISMATCH"));
-    let safe=serde_json::to_string(&result).unwrap();
-    for secret in [SECOND_PASS,"wrong synthetic password"] {assert!(!safe.contains(secret));}
+    assert!(second
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|r| r == "AUTHENTICATION_MISMATCH"));
+    let safe = serde_json::to_string(&result).unwrap();
+    for secret in [SECOND_PASS, "wrong synthetic password"] {
+        assert!(!safe.contains(secret));
+    }
 }
 
 #[tokio::test]
 async fn explicit_route_failure_detection_does_not_claim_an_identical_failed_endpoint_passed() {
-    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,policy::ChainPolicy};
-    let _root=crate::store::test_root("explicit-identical-failure-stages");
+    use super::{
+        policy::ChainPolicy,
+        route::{FirstHop, ProfileProxyRoute as R, SecondHop},
+        routing,
+    };
+    let _root = crate::store::test_root("explicit-identical-failure-stages");
     // This is a failed proxy CONNECT, distinct from a connected route whose
     // Geo sources failed (covered by the partial-result tests below).
-    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let requests=Arc::new(Mutex::new(Vec::new()));
-    let record=requests.clone();
-    let second=Service{addr:listener.local_addr().unwrap(),requests,task:tokio::spawn(async move {
-        while let Ok((mut socket,_))=listener.accept().await {
-            if let Ok(head)=http_head(&mut socket).await {record.lock().unwrap().push(head);}
-            let _=socket.write_all(b"HTTP/1.1 403 Synthetic refusal\r\nContent-Length: 0\r\n\r\n").await;
-        }
-    })};
-    let entry=assigned(second.addr,"http");
-    let route=R::Chain {first:FirstHop::Proxy {proxy_id:entry.id.clone()},second:SecondHop::Proxy};
-    let result=routing::test_resolved_route(Some(&route),ChainPolicy::Enabled,Some(&entry),Some(&entry)).await.unwrap();
-    assert_ne!(result.system_proxy.state,"ok");
-    assert_eq!(result.profile_proxy.state,"failed");
-    assert_eq!(result.profile_proxy.error_code,Some("proxy_chain_same_proxy_failed"));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let record = requests.clone();
+    let second = Service {
+        addr: listener.local_addr().unwrap(),
+        requests,
+        task: tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                if let Ok(head) = http_head(&mut socket).await {
+                    record.lock().unwrap().push(head);
+                }
+                let _ = socket
+                    .write_all(b"HTTP/1.1 403 Synthetic refusal\r\nContent-Length: 0\r\n\r\n")
+                    .await;
+            }
+        }),
+    };
+    let entry = assigned(second.addr, "http");
+    let route = R::Chain {
+        first: FirstHop::Proxy {
+            proxy_id: entry.id.clone(),
+        },
+        second: SecondHop::Proxy,
+    };
+    let result = routing::test_resolved_route(
+        Some(&route),
+        ChainPolicy::Enabled,
+        Some(&entry),
+        Some(&entry),
+    )
+    .await
+    .unwrap();
+    assert_ne!(result.system_proxy.state, "ok");
+    assert_eq!(result.profile_proxy.state, "failed");
+    assert_eq!(
+        result.profile_proxy.error_code,
+        Some("proxy_chain_same_proxy_failed")
+    );
     assert!(result.first_hop_error_code.is_none());
-    assert!(result.exit_ip.is_none()&&result.exit_geo.is_none());
-    assert!(!second.requests.lock().unwrap().iter().any(|head|head.starts_with(&format!("CONNECT {}:{} ",entry.host,entry.port))));
+    assert!(result.exit_ip.is_none() && result.exit_geo.is_none());
+    assert!(!second
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|head| head.starts_with(&format!("CONNECT {}:{} ", entry.host, entry.port))));
 }
 
 fn prefer(config: &ProxyChainSettings) -> ProxyChainSettings {
-    super::policy::effective(config, super::policy::ChainPolicy::PreferFirstHop, Default::default()).unwrap()
+    super::policy::effective(
+        config,
+        super::policy::ChainPolicy::PreferFirstHop,
+        Default::default(),
+    )
+    .unwrap()
 }
 
 fn save_assigned_profile(entry: &crate::space::proxy::ProxyEntry, profile_policy: &str) {
-    std::fs::write(crate::store::proxies_path().unwrap(), json!({"proxies":[entry]}).to_string()).unwrap();
+    std::fs::write(
+        crate::store::proxies_path().unwrap(),
+        json!({"proxies":[entry]}).to_string(),
+    )
+    .unwrap();
     std::fs::write(crate::store::profiles_dir().unwrap().join("adaptive-profile.json"), json!({
         "name":"Synthetic", "_meta":{"id":"adaptive-profile","proxy_id":entry.id,"proxy_chain_policy":profile_policy}
     }).to_string()).unwrap();
@@ -565,7 +1013,10 @@ async fn preferred_failed_first_hop_keeps_the_assigned_proxy_and_freezes_its_pro
     let first = http_proxy(None, true).await; // CONNECT closes before the second protocol.
     let entry = assigned(second.addr, "socks5");
     let original = serde_json::to_value(&entry).unwrap();
-    let prepared = super::prepare(Some(&entry), &prefer(&config(first.addr, "http"))).await.unwrap().unwrap();
+    let prepared = super::prepare(Some(&entry), &prefer(&config(first.addr, "http")))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(prepared.route, super::Route::AssignedProxyFallback);
     assert!(prepared.first_hop_error.is_some());
     assert_eq!(prepared.verified_geo.as_ref().unwrap().ip, "198.51.100.81");
@@ -575,8 +1026,18 @@ async fn preferred_failed_first_hop_keeps_the_assigned_proxy_and_freezes_its_pro
     assert_eq!(serde_json::to_value(&entry).unwrap(), original);
     let first_calls = first.requests.lock().unwrap().len();
     // Existing Session traffic is a fixed tunnel, not a new policy selection.
-    crate::settings::save(&crate::settings::Settings { proxy_chain: config(first.addr, "http"), ..Default::default() }).unwrap();
-    assert_eq!(crate::space::proxy::geo_check_on_route(Some(&prepared.effective), None).await.unwrap().ip, "198.51.100.81");
+    crate::settings::save(&crate::settings::Settings {
+        proxy_chain: config(first.addr, "http"),
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(
+        crate::space::proxy::geo_check_on_route(Some(&prepared.effective), None)
+            .await
+            .unwrap()
+            .ip,
+        "198.51.100.81"
+    );
     assert_eq!(first.requests.lock().unwrap().len(), first_calls);
     let closed = prepared.tunnel.closed_signal();
     prepared.tunnel.shutdown().await;
@@ -589,78 +1050,134 @@ async fn preferred_working_chain_with_matching_exits_keeps_both_hops() {
     let second = http_proxy(None, true).await;
     let first = http_proxy(Some(second.addr), true).await;
     let entry = assigned(second.addr, "http");
-    let before=serde_json::to_value(&entry).unwrap();
+    let before = serde_json::to_value(&entry).unwrap();
     save_assigned_profile(&entry, "inherit");
     let draft = config(first.addr, "http");
-    let first_result = super::test("system".into(), draft.clone(), None).await.unwrap();
-    let profile_result = super::test("profile".into(), draft, Some("adaptive-profile".into())).await.unwrap();
+    let first_result = super::test("system".into(), draft.clone(), None)
+        .await
+        .unwrap();
+    let profile_result = super::test("profile".into(), draft, Some("adaptive-profile".into()))
+        .await
+        .unwrap();
     assert_eq!(first_result.exit_ip, profile_result.exit_ip);
     assert_eq!(profile_result.route, Some(super::Route::FirstHop));
-    assert_eq!(profile_result.system_proxy.state,"ok","the verified first hop remains part of the route");
+    assert_eq!(
+        profile_result.system_proxy.state, "ok",
+        "the verified first hop remains part of the route"
+    );
     assert_eq!(profile_result.profile_proxy.state, "ok");
     assert!(profile_result.first_hop_error_code.is_none());
     assert!(!first.requests.lock().unwrap().is_empty());
-    assert_eq!(serde_json::to_value(&entry).unwrap(),before);
+    assert_eq!(serde_json::to_value(&entry).unwrap(), before);
 }
 
 #[tokio::test]
 async fn explicit_matching_exit_route_preserves_and_reports_both_hops() {
-    use super::{policy::ChainPolicy,route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,Route};
-    let _root=crate::store::test_root("explicit-fresh-matching-exits");
-    let second=http_proxy(None,true).await;
-    let first=http_proxy(Some(second.addr),true).await;
-    let entry=assigned(second.addr,"http");
-    let first_entry=assigned(first.addr,"http");
-    let before=serde_json::to_value(&entry).unwrap();
-    let route=R::Chain{first:FirstHop::Proxy{proxy_id:first_entry.id.clone()},second:SecondHop::Proxy};
+    use super::{
+        policy::ChainPolicy,
+        route::{FirstHop, ProfileProxyRoute as R, SecondHop},
+        routing, Route,
+    };
+    let _root = crate::store::test_root("explicit-fresh-matching-exits");
+    let second = http_proxy(None, true).await;
+    let first = http_proxy(Some(second.addr), true).await;
+    let entry = assigned(second.addr, "http");
+    let first_entry = assigned(first.addr, "http");
+    let before = serde_json::to_value(&entry).unwrap();
+    let route = R::Chain {
+        first: FirstHop::Proxy {
+            proxy_id: first_entry.id.clone(),
+        },
+        second: SecondHop::Proxy,
+    };
     for _ in 0..2 {
-        let result=routing::test_resolved_route(Some(&route),ChainPolicy::Enabled,Some(&entry),Some(&first_entry)).await.unwrap();
-        assert_eq!(result.route,Some(Route::ExplicitChain));
-        assert_eq!(result.source,Some("explicit_chain"));
-        assert_eq!(result.system_proxy.state,"ok");
-        assert_eq!(result.profile_proxy.state,"ok");
-        assert_eq!(result.exit_ip.as_deref(),Some("198.51.100.44"));
+        let result = routing::test_resolved_route(
+            Some(&route),
+            ChainPolicy::Enabled,
+            Some(&entry),
+            Some(&first_entry),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.route, Some(Route::ExplicitChain));
+        assert_eq!(result.source, Some("explicit_chain"));
+        assert_eq!(result.system_proxy.state, "ok");
+        assert_eq!(result.profile_proxy.state, "ok");
+        assert_eq!(result.exit_ip.as_deref(), Some("198.51.100.44"));
         assert!(result.first_hop_error_code.is_none());
-        assert_eq!(serde_json::to_value(&entry).unwrap(),before);
+        assert_eq!(serde_json::to_value(&entry).unwrap(), before);
     }
 }
 
 #[tokio::test]
 async fn legacy_strict_same_endpoint_geo_failure_keeps_the_duplicate_first_hop_unused() {
-    let _root=crate::store::test_root("legacy-strict-same-endpoint-partial-geo");
-    let second=http_proxy(None,false).await;
-    let mut entry=assigned(second.addr,"http");
-    entry.proxy_chain_policy=super::policy::ChainPolicy::Enabled;
-    save_assigned_profile(&entry,"inherit");
-    let before=std::fs::read(crate::store::proxies_path().unwrap()).unwrap();
-    let mut draft=config(second.addr,"http");
-    draft.username=SECOND_USER.into();
-    draft.password=PasswordUpdate::Replace(SECOND_PASS.into());
-    let result=super::test("profile".into(),draft,Some("adaptive-profile".into())).await.unwrap();
-    assert_eq!(result.route,Some(super::Route::SameProxyEndpoint));
-    assert_eq!(result.system_proxy.state,"not_tested","an omitted duplicate hop cannot be credited with a successful test");
-    assert_eq!(result.profile_proxy.state,"ok","the proxy CONNECT succeeded even though Geo failed");
+    let _root = crate::store::test_root("legacy-strict-same-endpoint-partial-geo");
+    let second = http_proxy(None, false).await;
+    let mut entry = assigned(second.addr, "http");
+    entry.proxy_chain_policy = super::policy::ChainPolicy::Enabled;
+    save_assigned_profile(&entry, "inherit");
+    let before = std::fs::read(crate::store::proxies_path().unwrap()).unwrap();
+    let mut draft = config(second.addr, "http");
+    draft.username = SECOND_USER.into();
+    draft.password = PasswordUpdate::Replace(SECOND_PASS.into());
+    let result = super::test("profile".into(), draft, Some("adaptive-profile".into()))
+        .await
+        .unwrap();
+    assert_eq!(result.route, Some(super::Route::SameProxyEndpoint));
+    assert_eq!(
+        result.system_proxy.state, "not_tested",
+        "an omitted duplicate hop cannot be credited with a successful test"
+    );
+    assert_eq!(
+        result.profile_proxy.state, "ok",
+        "the proxy CONNECT succeeded even though Geo failed"
+    );
     assert!(result.profile_proxy.latency_ms.is_some());
-    assert_eq!(result.exit_error_code,Some("proxy_chain_profile_geo_failed"));
-    assert!(result.exit_ip.is_none()&&result.exit_geo.is_none()&&result.exit_error_details.is_some());
-    assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(),before);
-    assert!(!second.requests.lock().unwrap().iter().any(|head|head.starts_with(&format!("CONNECT {}:{} ",entry.host,entry.port))));
+    assert_eq!(
+        result.exit_error_code,
+        Some("proxy_chain_profile_geo_failed")
+    );
+    assert!(
+        result.exit_ip.is_none()
+            && result.exit_geo.is_none()
+            && result.exit_error_details.is_some()
+    );
+    assert_eq!(
+        std::fs::read(crate::store::proxies_path().unwrap()).unwrap(),
+        before
+    );
+    assert!(!second
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|head| head.starts_with(&format!("CONNECT {}:{} ", entry.host, entry.port))));
 }
 
 #[tokio::test]
 async fn library_strict_partial_geo_keeps_tcp_and_selected_route_after_prepare_failure() {
-    let _root=crate::store::test_root("library-strict-partial-geo");
-    let second=http_proxy(None,false).await;
-    let mut entry=assigned(second.addr,"http");entry.proxy_chain_policy=super::policy::ChainPolicy::Enabled;
-    let mut config=config(second.addr,"http");config.username=SECOND_USER.into();config.password=PasswordUpdate::Replace(SECOND_PASS.into());
+    let _root = crate::store::test_root("library-strict-partial-geo");
+    let second = http_proxy(None, false).await;
+    let mut entry = assigned(second.addr, "http");
+    entry.proxy_chain_policy = super::policy::ChainPolicy::Enabled;
+    let mut config = config(second.addr, "http");
+    config.username = SECOND_USER.into();
+    config.password = PasswordUpdate::Replace(SECOND_PASS.into());
     config.apply_update(&Default::default()).unwrap();
-    crate::settings::save(&crate::settings::Settings{proxy_chain:config,..Default::default()}).unwrap();
-    let before=serde_json::to_value(&entry).unwrap();
-    let result=crate::space::proxy::full_test(&entry).await.unwrap();
-    assert_eq!(result.route.as_deref(),Some("same_proxy_endpoint"));
-    assert!(result.tcp_ms.is_some()&&result.ip.is_empty()&&result.geo_error.is_some());
-    assert_eq!(result.chain_error.as_ref().map(|error|error.code.as_str()),Some("proxy_chain_same_proxy_failed"));
-    assert_eq!(serde_json::to_value(&entry).unwrap(),before);
+    crate::settings::save(&crate::settings::Settings {
+        proxy_chain: config,
+        ..Default::default()
+    })
+    .unwrap();
+    let before = serde_json::to_value(&entry).unwrap();
+    let result = crate::space::proxy::full_test(&entry).await.unwrap();
+    assert_eq!(result.route.as_deref(), Some("same_proxy_endpoint"));
+    assert!(result.tcp_ms.is_some() && result.ip.is_empty() && result.geo_error.is_some());
+    assert_eq!(
+        result.chain_error.as_ref().map(|error| error.code.as_str()),
+        Some("proxy_chain_same_proxy_failed")
+    );
+    assert_eq!(serde_json::to_value(&entry).unwrap(), before);
 }
 
 #[tokio::test]
@@ -669,22 +1186,41 @@ async fn preferred_exact_endpoint_requires_protocol_host_port_and_credentials() 
     let second = http_proxy(None, true).await;
     let entry = assigned(second.addr, "http");
     let mut draft = config(second.addr, "http");
-    draft.username = SECOND_USER.into(); draft.password = PasswordUpdate::Replace(SECOND_PASS.into());
-    let prepared = super::prepare(Some(&entry), &prefer(&draft)).await.unwrap().unwrap();
+    draft.username = SECOND_USER.into();
+    draft.password = PasswordUpdate::Replace(SECOND_PASS.into());
+    let prepared = super::prepare(Some(&entry), &prefer(&draft))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(prepared.route, super::Route::SameProxyEndpoint);
     assert!(prepared.first_hop_error.is_none());
-    assert!(!second.requests.lock().unwrap().iter().any(|head| head.starts_with(&format!("CONNECT {}:{} ", entry.host, entry.port))));
+    assert!(!second
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|head| head.starts_with(&format!("CONNECT {}:{} ", entry.host, entry.port))));
     prepared.tunnel.shutdown().await;
     let mut hop = draft.hop(&draft).unwrap();
     assert!(super::same_endpoint(&entry, &hop).unwrap());
-    hop.password.push('x'); assert!(!super::same_endpoint(&entry, &hop).unwrap()); hop.password.pop();
-    hop.username.push('x'); assert!(!super::same_endpoint(&entry, &hop).unwrap()); hop.username.pop();
-    hop.port += 1; assert!(!super::same_endpoint(&entry, &hop).unwrap()); hop.port -= 1;
-    hop.kind = super::connector::ProxyKind::Socks5; assert!(!super::same_endpoint(&entry, &hop).unwrap());
-    let mut tls_entry = entry.clone(); tls_entry.kind = crate::space::proxy::ProxyKind::Https;
+    hop.password.push('x');
+    assert!(!super::same_endpoint(&entry, &hop).unwrap());
+    hop.password.pop();
+    hop.username.push('x');
+    assert!(!super::same_endpoint(&entry, &hop).unwrap());
+    hop.username.pop();
+    hop.port += 1;
+    assert!(!super::same_endpoint(&entry, &hop).unwrap());
+    hop.port -= 1;
+    hop.kind = super::connector::ProxyKind::Socks5;
+    assert!(!super::same_endpoint(&entry, &hop).unwrap());
+    let mut tls_entry = entry.clone();
+    tls_entry.kind = crate::space::proxy::ProxyKind::Https;
     assert!(!super::same_endpoint(&tls_entry, &draft.hop(&draft).unwrap()).unwrap());
-    let mut host_entry = entry.clone(); host_entry.host = "PROXY.EXAMPLE".into();
-    let mut host_hop = draft.hop(&draft).unwrap(); host_hop.host = "proxy.example".into();
+    let mut host_entry = entry.clone();
+    host_entry.host = "PROXY.EXAMPLE".into();
+    let mut host_hop = draft.hop(&draft).unwrap();
+    host_hop.host = "proxy.example".into();
     assert!(super::same_endpoint(&host_entry, &host_hop).unwrap());
 }
 
@@ -701,68 +1237,144 @@ async fn preferred_invalid_config_missing_proxy_and_corrupt_credentials_never_di
     draft.password = PasswordUpdate::Keep;
     draft.protected_password = Some("broken-dpapi".into());
     let error = super::prepare(Some(&entry), &draft).await.err().unwrap();
-    assert_eq!(error.downcast_ref::<super::error::ChainError>().unwrap().code, "proxy_chain_credentials_unavailable");
+    assert_eq!(
+        error
+            .downcast_ref::<super::error::ChainError>()
+            .unwrap()
+            .code,
+        "proxy_chain_credentials_unavailable"
+    );
     assert!(second.requests.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
 async fn strict_route_failure_keeps_its_route_and_explicit_preferred_double_failure_is_safe() {
     let _root = crate::store::test_root("preferred-vs-strict");
-    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();let addr=listener.local_addr().unwrap();
-    let requests=Arc::new(Mutex::new(Vec::new()));let record=requests.clone();
-    let second=Service{addr,requests,task:tokio::spawn(async move {
-        while let Ok((mut stream,_))=listener.accept().await {
-            let Ok(request)=http_head(&mut stream).await else {continue;};
-            record.lock().unwrap().push(request);
-            let _=stream.write_all(b"HTTP/1.1 407 Synthetic refusal\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
-        }
-    })};
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let record = requests.clone();
+    let second = Service {
+        addr,
+        requests,
+        task: tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let Ok(request) = http_head(&mut stream).await else {
+                    continue;
+                };
+                record.lock().unwrap().push(request);
+                let _=stream.write_all(b"HTTP/1.1 407 Synthetic refusal\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+            }
+        }),
+    };
     let first = http_proxy(None, true).await;
     let mut entry = assigned(second.addr, "http");
     entry.proxy_chain_policy = super::policy::ChainPolicy::Enabled;
     save_assigned_profile(&entry, "inherit");
-    let strict = super::test("profile".into(), config(first.addr, "http"), Some("adaptive-profile".into())).await.unwrap();
+    let strict = super::test(
+        "profile".into(),
+        config(first.addr, "http"),
+        Some("adaptive-profile".into()),
+    )
+    .await
+    .unwrap();
     assert_eq!(strict.profile_proxy.state, "failed");
-    assert!(strict.exit_ip.is_none(),"a failed chain cannot obtain its exit from another route");
-    assert!(strict.first_hop_error_code.is_none(),"strict mode does not choose an assigned fallback");
-    assert!(second.requests.lock().unwrap().is_empty(),"strict mode must not dial the assigned proxy directly");
-    let fixed_target=format!("CONNECT {}:{} ",entry.host,entry.port);
-    assert!(first.requests.lock().unwrap().iter().all(|request|request.starts_with(&fixed_target)),"a failed chain must not probe the first hop's independent exit");
+    assert!(
+        strict.exit_ip.is_none(),
+        "a failed chain cannot obtain its exit from another route"
+    );
+    assert!(
+        strict.first_hop_error_code.is_none(),
+        "strict mode does not choose an assigned fallback"
+    );
+    assert!(
+        second.requests.lock().unwrap().is_empty(),
+        "strict mode must not dial the assigned proxy directly"
+    );
+    let fixed_target = format!("CONNECT {}:{} ", entry.host, entry.port);
+    assert!(
+        first
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|request| request.starts_with(&fixed_target)),
+        "a failed chain must not probe the first hop's independent exit"
+    );
     entry.proxy_chain_policy = super::policy::ChainPolicy::PreferFirstHop;
     save_assigned_profile(&entry, "inherit");
-    let failed = super::test("profile".into(), config(first.addr, "http"), Some("adaptive-profile".into())).await.unwrap();
-    assert_eq!(failed.profile_proxy.error_code, Some("proxy_chain_routes_failed"));
+    let failed = super::test(
+        "profile".into(),
+        config(first.addr, "http"),
+        Some("adaptive-profile".into()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        failed.profile_proxy.error_code,
+        Some("proxy_chain_routes_failed")
+    );
     assert!(failed.first_hop_error_code.is_some());
     assert!(failed.exit_ip.is_none());
     assert!(!second.requests.lock().unwrap().is_empty());
     let serialized = serde_json::to_string(&failed).unwrap();
-    for secret in [FIRST_PASS, SECOND_PASS, "fixture-private-detail"] { assert!(!serialized.contains(secret)); }
+    for secret in [FIRST_PASS, SECOND_PASS, "fixture-private-detail"] {
+        assert!(!serialized.contains(secret));
+    }
 }
 
 #[tokio::test]
 async fn preferred_public_draft_uses_saved_first_hop_credentials_and_snapshot_keeps_route() {
     use base64::Engine;
     let _root = crate::store::test_root("preferred-saved-credentials");
-    let second = socks_proxy(SECOND_USER,SECOND_PASS,"198.51.100.82").await;
+    let second = socks_proxy(SECOND_USER, SECOND_PASS, "198.51.100.82").await;
     let first = http_proxy(Some(second.addr), true).await;
     let entry = assigned(second.addr, "socks5");
     save_assigned_profile(&entry, "inherit");
     let mut stored = config(first.addr, "http");
     stored.apply_update(&Default::default()).unwrap();
-    crate::settings::save(&crate::settings::Settings { proxy_chain: stored.clone(), ..Default::default() }).unwrap();
-    let result = super::test("profile".into(), stored.public(), Some("adaptive-profile".into())).await.unwrap();
+    crate::settings::save(&crate::settings::Settings {
+        proxy_chain: stored.clone(),
+        ..Default::default()
+    })
+    .unwrap();
+    let result = super::test(
+        "profile".into(),
+        stored.public(),
+        Some("adaptive-profile".into()),
+    )
+    .await
+    .unwrap();
     assert_eq!(result.route, Some(super::Route::FirstHop));
-    let expected = format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(format!("{FIRST_USER}:{FIRST_PASS}")));
-    assert!(first.requests.lock().unwrap().iter().all(|head| head.lines().any(|line|
-        line.split_once(':').is_some_and(|(name,value)|name.eq_ignore_ascii_case("proxy-authorization")&&value.trim()==expected))));
+    let expected = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(format!("{FIRST_USER}:{FIRST_PASS}"))
+    );
+    assert!(first
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|head| head
+            .lines()
+            .any(|line| line.split_once(':').is_some_and(|(name, value)| name
+                .eq_ignore_ascii_case("proxy-authorization")
+                && value.trim() == expected))));
     let snap = crate::space::proxy::full_test(&entry).await.unwrap();
     assert_eq!(snap.route.as_deref(), Some("first_hop"));
     assert_eq!(snap.transport.as_deref(), Some("proxy_chain"));
     assert_eq!(snap.udp_state.as_deref(), Some("unsupported_by_chain"));
     assert!(snap.udp_ms.is_none());
     let loaded = crate::space::proxy::latest_test(&entry.id).unwrap();
-    assert_eq!(loaded.route.as_deref(), Some("first_hop"), "display history survives a reload");
-    assert!(crate::space::proxy::latest_test_for(&entry).is_none(), "launch cannot reuse adaptive history as capability evidence");
+    assert_eq!(
+        loaded.route.as_deref(),
+        Some("first_hop"),
+        "display history survives a reload"
+    );
+    assert!(
+        crate::space::proxy::latest_test_for(&entry).is_none(),
+        "launch cannot reuse adaptive history as capability evidence"
+    );
 }
 
 #[tokio::test]
@@ -772,16 +1384,39 @@ async fn preferred_rejects_assigned_authentication_and_never_switches_after_rout
     let first = http_proxy(None, true).await;
     let mut entry = assigned(second.addr, "socks5");
     entry.password = "wrong synthetic password".into();
-    let error = super::prepare(Some(&entry), &prefer(&config(first.addr, "http"))).await.err().unwrap();
-    assert_eq!(error.downcast_ref::<super::error::ChainError>().unwrap().code, "proxy_chain_routes_failed");
-    assert!(second.requests.lock().unwrap().iter().any(|r| r == "AUTHENTICATION_MISMATCH"));
+    let error = super::prepare(Some(&entry), &prefer(&config(first.addr, "http")))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(
+        error
+            .downcast_ref::<super::error::ChainError>()
+            .unwrap()
+            .code,
+        "proxy_chain_routes_failed"
+    );
+    assert!(second
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|r| r == "AUTHENTICATION_MISMATCH"));
     entry.password = SECOND_PASS.into();
-    let prepared = super::prepare(Some(&entry), &prefer(&config(first.addr, "http"))).await.unwrap().unwrap();
+    let prepared = super::prepare(Some(&entry), &prefer(&config(first.addr, "http")))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(prepared.route, super::Route::AssignedProxyFallback);
     let first_calls = first.requests.lock().unwrap().len();
     drop(second);
-    assert!(crate::space::proxy::probe_on_route(&prepared.effective).await.is_err());
-    assert_eq!(first.requests.lock().unwrap().len(), first_calls, "a selected route cannot reconnect through the first hop");
+    assert!(crate::space::proxy::probe_on_route(&prepared.effective)
+        .await
+        .is_err());
+    assert_eq!(
+        first.requests.lock().unwrap().len(),
+        first_calls,
+        "a selected route cannot reconnect through the first hop"
+    );
     prepared.tunnel.shutdown().await;
 }
 
@@ -790,21 +1425,32 @@ async fn preferred_identical_endpoint_failure_is_reported_as_one_route() {
     let _root = crate::store::test_root("preferred-same-endpoint-error");
     let second = http_proxy(None, false).await;
     let mut entry = assigned(second.addr, "http");
-    entry.username = FIRST_USER.into(); entry.password = FIRST_PASS.into();
-    let error = super::prepare(Some(&entry), &prefer(&config(second.addr, "http"))).await.err().unwrap();
+    entry.username = FIRST_USER.into();
+    entry.password = FIRST_PASS.into();
+    let error = super::prepare(Some(&entry), &prefer(&config(second.addr, "http")))
+        .await
+        .err()
+        .unwrap();
     let error = error.downcast_ref::<super::error::ChainError>().unwrap();
     assert_eq!(error.code, "proxy_chain_same_proxy_failed");
     assert!(error.first_hop_error_code.is_none());
-    assert!(!second.requests.lock().unwrap().iter().any(|head| head.starts_with(&format!("CONNECT {}:{} ", entry.host, entry.port))));
+    assert!(!second
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|head| head.starts_with(&format!("CONNECT {}:{} ", entry.host, entry.port))));
 }
 
 #[tokio::test]
 async fn profile_choice_controls_detection_and_overrides_proxy_then_global() {
     let _root = crate::store::test_root("chain-policy-detection");
-    let second = http_proxy_with_exit(None,true,"198.51.100.83").await;
+    let second = http_proxy_with_exit(None, true, "198.51.100.83").await;
     let first = http_proxy(Some(second.addr), true).await;
     let proxies = crate::store::proxies_path().unwrap();
-    let profile = crate::store::profiles_dir().unwrap().join("policy-profile.json");
+    let profile = crate::store::profiles_dir()
+        .unwrap()
+        .join("policy-profile.json");
     for (global, proxy_policy, profile_policy, chained) in [
         (true, "enabled", "disabled", false),
         (true, "disabled", "inherit", false),
@@ -815,15 +1461,23 @@ async fn profile_choice_controls_detection_and_overrides_proxy_then_global() {
         std::fs::write(&proxies, json!({"proxies":[{"id":"policy-proxy","name":"Synthetic","kind":"http","host":"127.0.0.1","port":second.addr.port(),"proxy_chain_policy":proxy_policy}]}).to_string()).unwrap();
         std::fs::write(&profile, json!({"name":"Synthetic policy","_meta":{"id":"policy-profile","proxy_id":"policy-proxy","proxy_chain_policy":profile_policy}}).to_string()).unwrap();
         let before = first.requests.lock().unwrap().len();
-        let mut draft = config(first.addr, "http"); draft.enabled = global;
-        let dto = serde_json::to_value(super::test("profile".into(), draft, Some("policy-profile".into())).await.unwrap()).unwrap();
+        let mut draft = config(first.addr, "http");
+        draft.enabled = global;
+        let dto = serde_json::to_value(
+            super::test("profile".into(), draft, Some("policy-profile".into()))
+                .await
+                .unwrap(),
+        )
+        .unwrap();
         assert_eq!(dto["profile_proxy"]["state"], "ok", "{dto}");
         assert_eq!(dto["exit_ip"], "198.51.100.83");
         assert_eq!(first.requests.lock().unwrap().len() > before, chained);
-        assert_eq!(dto["system_proxy"]["state"], if chained { "ok" } else { "not_tested" });
+        assert_eq!(
+            dto["system_proxy"]["state"],
+            if chained { "ok" } else { "not_tested" }
+        );
     }
 }
-
 
 #[tokio::test]
 async fn system_http_detection_returns_live_geo_through_the_same_authenticated_hop() {
@@ -914,81 +1568,229 @@ async fn system_geo_failure_preserves_connectivity_and_never_returns_provider_de
 
 #[tokio::test]
 async fn explicit_geo_failure_preserves_verified_connectivity_and_keeps_start_fail_closed() {
-    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing};
-    let _root=crate::store::test_root("explicit-geo-partial-result");
-    let service=http_proxy(None,false).await;
-    let entry=assigned(service.addr,"http");
-    let original=serde_json::to_value(&entry).unwrap();
-    crate::settings::save(&crate::settings::Settings{proxy_chain:ProxyChainSettings{enabled:true,invalid:true,..Default::default()},..Default::default()}).unwrap();
-    for route in [R::Proxy,R::Chain{first:FirstHop::Direct,second:SecondHop::Proxy}] {
-        let result=routing::test_resolved_route(Some(&route),super::policy::ChainPolicy::Enabled,Some(&entry),None).await.unwrap();
-        assert_eq!(result.profile_proxy.state,"ok","a Geo lookup failure must not erase the successful proxy CONNECT");
+    use super::{
+        route::{FirstHop, ProfileProxyRoute as R, SecondHop},
+        routing,
+    };
+    let _root = crate::store::test_root("explicit-geo-partial-result");
+    let service = http_proxy(None, false).await;
+    let entry = assigned(service.addr, "http");
+    let original = serde_json::to_value(&entry).unwrap();
+    crate::settings::save(&crate::settings::Settings {
+        proxy_chain: ProxyChainSettings {
+            enabled: true,
+            invalid: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    })
+    .unwrap();
+    for route in [
+        R::Proxy,
+        R::Chain {
+            first: FirstHop::Direct,
+            second: SecondHop::Proxy,
+        },
+    ] {
+        let result = routing::test_resolved_route(
+            Some(&route),
+            super::policy::ChainPolicy::Enabled,
+            Some(&entry),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result.profile_proxy.state, "ok",
+            "a Geo lookup failure must not erase the successful proxy CONNECT"
+        );
         assert!(result.profile_proxy.latency_ms.is_some());
-        assert_eq!(result.system_proxy.state,"not_tested");
-        assert_eq!(result.route,Some(super::Route::ExplicitProxy));
-        assert_eq!(result.source,Some("explicit_proxy"));
-        assert_eq!(result.exit_error_code,Some("proxy_chain_profile_geo_failed"));
-        assert!(result.exit_error.is_some()&&result.exit_ip.is_none()&&result.exit_geo.is_none());
-        let failures=result.exit_error_details.as_ref().expect("fixed provider failure stages survive the strict preparation error");
-        assert_eq!(failures.len(),3);
-        assert!(failures.iter().any(|failure|failure.provider=="ip-api.com"&&failure.phase=="provider_refused"&&failure.http_status.is_none()));
-        assert_eq!(serde_json::to_value(&entry).unwrap(),original);
-        assert!(!serde_json::to_string(&result).unwrap().contains("fixture-private-detail"));
-        let error=routing::prepare_route(&route,Some(&entry),None,false).await.err().expect("launch must still reject the missing live exit");
-        assert_eq!(error.downcast_ref::<super::error::ChainError>().unwrap().code,"proxy_chain_profile_geo_failed");
+        assert_eq!(result.system_proxy.state, "not_tested");
+        assert_eq!(result.route, Some(super::Route::ExplicitProxy));
+        assert_eq!(result.source, Some("explicit_proxy"));
+        assert_eq!(
+            result.exit_error_code,
+            Some("proxy_chain_profile_geo_failed")
+        );
+        assert!(
+            result.exit_error.is_some() && result.exit_ip.is_none() && result.exit_geo.is_none()
+        );
+        let failures = result
+            .exit_error_details
+            .as_ref()
+            .expect("fixed provider failure stages survive the strict preparation error");
+        assert_eq!(failures.len(), 3);
+        assert!(failures
+            .iter()
+            .any(|failure| failure.provider == "ip-api.com"
+                && failure.phase == "provider_refused"
+                && failure.http_status.is_none()));
+        assert_eq!(serde_json::to_value(&entry).unwrap(), original);
+        assert!(!serde_json::to_string(&result)
+            .unwrap()
+            .contains("fixture-private-detail"));
+        let error = routing::prepare_route(&route, Some(&entry), None, false)
+            .await
+            .err()
+            .expect("launch must still reject the missing live exit");
+        assert_eq!(
+            error
+                .downcast_ref::<super::error::ChainError>()
+                .unwrap()
+                .code,
+            "proxy_chain_profile_geo_failed"
+        );
     }
-    assert!(service.requests.lock().unwrap().iter().any(|request|request.starts_with("CONNECT example.com:443 ")));
-    assert!(service.requests.lock().unwrap().iter().any(|request|request.starts_with("CONNECT ip-api.com:80 ")));
+    assert!(service
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|request| request.starts_with("CONNECT example.com:443 ")));
+    assert!(service
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|request| request.starts_with("CONNECT ip-api.com:80 ")));
 }
 
 #[tokio::test]
 async fn explicit_geo_partial_results_preserve_used_skipped_and_failed_first_hops() {
-    use super::{route::{FirstHop,ProfileProxyRoute as R,SecondHop},routing,policy::ChainPolicy,Route};
-    let _root=crate::store::test_root("explicit-geo-partial-first-hop");
-    let second=http_proxy(None,false).await;
-    let entry=assigned(second.addr,"http");
-    let same_route=R::Chain{first:FirstHop::Proxy{proxy_id:entry.id.clone()},second:SecondHop::Proxy};
-    let same=routing::test_resolved_route(Some(&same_route),ChainPolicy::Enabled,Some(&entry),Some(&entry)).await.unwrap();
-    assert_eq!(same.route,Some(Route::SameProxyEndpoint));
-    assert_eq!(same.system_proxy.state,"not_tested","a duplicate hop was skipped rather than connected");
-    assert_eq!(same.profile_proxy.state,"ok");
-    assert_eq!(same.exit_error_code,Some("proxy_chain_profile_geo_failed"));
-    assert!(same.exit_ip.is_none()&&same.exit_geo.is_none()&&same.exit_error_details.is_some());
-    assert!(routing::prepare_route(&same_route,Some(&entry),Some(&entry),false).await.is_err());
+    use super::{
+        policy::ChainPolicy,
+        route::{FirstHop, ProfileProxyRoute as R, SecondHop},
+        routing, Route,
+    };
+    let _root = crate::store::test_root("explicit-geo-partial-first-hop");
+    let second = http_proxy(None, false).await;
+    let entry = assigned(second.addr, "http");
+    let same_route = R::Chain {
+        first: FirstHop::Proxy {
+            proxy_id: entry.id.clone(),
+        },
+        second: SecondHop::Proxy,
+    };
+    let same = routing::test_resolved_route(
+        Some(&same_route),
+        ChainPolicy::Enabled,
+        Some(&entry),
+        Some(&entry),
+    )
+    .await
+    .unwrap();
+    assert_eq!(same.route, Some(Route::SameProxyEndpoint));
+    assert_eq!(
+        same.system_proxy.state, "not_tested",
+        "a duplicate hop was skipped rather than connected"
+    );
+    assert_eq!(same.profile_proxy.state, "ok");
+    assert_eq!(same.exit_error_code, Some("proxy_chain_profile_geo_failed"));
+    assert!(same.exit_ip.is_none() && same.exit_geo.is_none() && same.exit_error_details.is_some());
+    assert!(
+        routing::prepare_route(&same_route, Some(&entry), Some(&entry), false)
+            .await
+            .is_err()
+    );
 
-    let first=http_proxy(Some(second.addr),true).await;
-    let first_entry=assigned(first.addr,"http");
-    let chain=R::Chain{first:FirstHop::Proxy{proxy_id:first_entry.id.clone()},second:SecondHop::Proxy};
-    let chained=routing::test_resolved_route(Some(&chain),ChainPolicy::Enabled,Some(&entry),Some(&first_entry)).await.unwrap();
-    assert_eq!(chained.route,Some(Route::ExplicitChain));
-    assert_eq!(chained.system_proxy.state,"ok");
-    assert_eq!(chained.profile_proxy.state,"ok");
-    assert_eq!(chained.exit_error_code,Some("proxy_chain_profile_geo_failed"));
-    assert!(chained.exit_ip.is_none()&&chained.exit_geo.is_none()&&chained.exit_error_details.is_some());
-    assert!(routing::prepare_route(&chain,Some(&entry),Some(&first_entry),false).await.is_err());
+    let first = http_proxy(Some(second.addr), true).await;
+    let first_entry = assigned(first.addr, "http");
+    let chain = R::Chain {
+        first: FirstHop::Proxy {
+            proxy_id: first_entry.id.clone(),
+        },
+        second: SecondHop::Proxy,
+    };
+    let chained = routing::test_resolved_route(
+        Some(&chain),
+        ChainPolicy::Enabled,
+        Some(&entry),
+        Some(&first_entry),
+    )
+    .await
+    .unwrap();
+    assert_eq!(chained.route, Some(Route::ExplicitChain));
+    assert_eq!(chained.system_proxy.state, "ok");
+    assert_eq!(chained.profile_proxy.state, "ok");
+    assert_eq!(
+        chained.exit_error_code,
+        Some("proxy_chain_profile_geo_failed")
+    );
+    assert!(
+        chained.exit_ip.is_none()
+            && chained.exit_geo.is_none()
+            && chained.exit_error_details.is_some()
+    );
+    assert!(
+        routing::prepare_route(&chain, Some(&entry), Some(&first_entry), false)
+            .await
+            .is_err()
+    );
 
-    let refused=http_proxy(None,true).await;
-    let refused_entry=assigned(refused.addr,"http");
-    let fallback=routing::test_resolved_route(Some(&chain),ChainPolicy::PreferFirstHop,Some(&entry),Some(&refused_entry)).await.unwrap();
-    assert_eq!(fallback.route,Some(Route::AssignedProxyFallback));
-    assert_eq!(fallback.system_proxy.state,"failed");
+    let refused = http_proxy(None, true).await;
+    let refused_entry = assigned(refused.addr, "http");
+    let fallback = routing::test_resolved_route(
+        Some(&chain),
+        ChainPolicy::PreferFirstHop,
+        Some(&entry),
+        Some(&refused_entry),
+    )
+    .await
+    .unwrap();
+    assert_eq!(fallback.route, Some(Route::AssignedProxyFallback));
+    assert_eq!(fallback.system_proxy.state, "failed");
     assert!(fallback.first_hop_error_code.is_some());
-    assert_eq!(fallback.profile_proxy.state,"ok");
-    assert_eq!(fallback.exit_error_code,Some("proxy_chain_profile_geo_failed"));
-    assert!(fallback.exit_ip.is_none()&&fallback.exit_geo.is_none()&&fallback.exit_error_details.is_some());
-    assert!(routing::prepare_route(&chain,Some(&entry),Some(&refused_entry),true).await.is_err());
+    assert_eq!(fallback.profile_proxy.state, "ok");
+    assert_eq!(
+        fallback.exit_error_code,
+        Some("proxy_chain_profile_geo_failed")
+    );
+    assert!(
+        fallback.exit_ip.is_none()
+            && fallback.exit_geo.is_none()
+            && fallback.exit_error_details.is_some()
+    );
+    assert!(
+        routing::prepare_route(&chain, Some(&entry), Some(&refused_entry), true)
+            .await
+            .is_err()
+    );
 
-    let first_only=R::Chain{first:FirstHop::Proxy{proxy_id:entry.id.clone()},second:SecondHop::Direct};
-    let mut inactive=entry.clone();inactive.id="inactive-assigned".into();inactive.host="inactive-assigned.invalid".into();
-    let result=routing::test_resolved_route(Some(&first_only),ChainPolicy::Enabled,Some(&inactive),Some(&entry)).await.unwrap();
-    let expected_address=format!("{}:{}",entry.host,entry.port);
-    assert_eq!(result.system_proxy.state,"not_tested");
-    assert_eq!(result.profile_proxy.state,"ok");
-    assert_eq!(result.profile_proxy_address.as_deref(),Some(expected_address.as_str()));
-    assert_eq!(result.proxy_address.as_deref(),Some(expected_address.as_str()));
-    assert_eq!(result.proxy_kind,Some("http"));
-    assert!(result.exit_ip.is_none()&&result.exit_geo.is_none()&&result.exit_error.is_some());
-    assert!(routing::prepare_route(&first_only,Some(&inactive),Some(&entry),false).await.is_err());
+    let first_only = R::Chain {
+        first: FirstHop::Proxy {
+            proxy_id: entry.id.clone(),
+        },
+        second: SecondHop::Direct,
+    };
+    let mut inactive = entry.clone();
+    inactive.id = "inactive-assigned".into();
+    inactive.host = "inactive-assigned.invalid".into();
+    let result = routing::test_resolved_route(
+        Some(&first_only),
+        ChainPolicy::Enabled,
+        Some(&inactive),
+        Some(&entry),
+    )
+    .await
+    .unwrap();
+    let expected_address = format!("{}:{}", entry.host, entry.port);
+    assert_eq!(result.system_proxy.state, "not_tested");
+    assert_eq!(result.profile_proxy.state, "ok");
+    assert_eq!(
+        result.profile_proxy_address.as_deref(),
+        Some(expected_address.as_str())
+    );
+    assert_eq!(
+        result.proxy_address.as_deref(),
+        Some(expected_address.as_str())
+    );
+    assert_eq!(result.proxy_kind, Some("http"));
+    assert!(result.exit_ip.is_none() && result.exit_geo.is_none() && result.exit_error.is_some());
+    assert!(
+        routing::prepare_route(&first_only, Some(&inactive), Some(&entry), false)
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]
@@ -1036,7 +1838,14 @@ async fn profile_geo_is_the_second_hop_exit_and_original_binding_is_unchanged() 
         .iter()
         .all(|r| r.starts_with("CONNECT second-proxy.invalid:1080 ")));
     let requests = second.requests.lock().unwrap();
-    assert_eq!(requests.iter().filter(|r| *r == "SOCKS example.com:443").count(),0,"fresh Geo succeeds without a separate probe");
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| *r == "SOCKS example.com:443")
+            .count(),
+        0,
+        "fresh Geo succeeds without a separate probe"
+    );
     assert!(requests.iter().any(|r| r == "SOCKS ip-api.com:80"));
     assert!(!requests
         .iter()
@@ -1188,21 +1997,42 @@ async fn proxy_list_first_hop_auth_refusal_cannot_be_hidden_by_later_geo_success
         proxy_chain: stored,
         geo_checker: Some("ip-api.com".into()),
         ..Default::default()
-    }).unwrap();
+    })
+    .unwrap();
 
     let snapshot = crate::space::proxy::full_test(&entry).await.unwrap();
-    assert_eq!(snapshot.chain_error.as_ref().map(|error| error.code.as_str()), Some("system_proxy_auth_failed"));
+    assert_eq!(
+        snapshot
+            .chain_error
+            .as_ref()
+            .map(|error| error.code.as_str()),
+        Some("system_proxy_auth_failed")
+    );
     assert!(snapshot.ip.is_empty() && snapshot.tcp_ms.is_none());
-    assert_eq!(first.requests.lock().unwrap().len(), 1, "an authentication refusal must stop before any Geo connection");
-    assert!(second.requests.lock().unwrap().is_empty(), "the refused first-hop connection must never reach the assigned proxy");
+    assert_eq!(
+        first.requests.lock().unwrap().len(),
+        1,
+        "an authentication refusal must stop before any Geo connection"
+    );
+    assert!(
+        second.requests.lock().unwrap().is_empty(),
+        "the refused first-hop connection must never reach the assigned proxy"
+    );
     assert_eq!(serde_json::to_value(&entry).unwrap(), original);
-    assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), stored_before);
+    assert_eq!(
+        std::fs::read(crate::store::proxies_path().unwrap()).unwrap(),
+        stored_before
+    );
 }
 
 #[tokio::test]
 async fn system_geolocation_proves_route_when_probe_target_refused() {
     let _root = crate::store::test_root("system-probe-target-refused-with-live-exit");
-    crate::settings::save(&crate::settings::Settings { geo_checker: Some("ip-api.com".into()), ..Default::default() }).unwrap();
+    crate::settings::save(&crate::settings::Settings {
+        geo_checker: Some("ip-api.com".into()),
+        ..Default::default()
+    })
+    .unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -1236,14 +2066,32 @@ async fn system_geolocation_proves_route_when_probe_target_refused() {
         }),
     };
     for _ in 0..2 {
-        let result = super::test("system".into(), config(first.addr, "http"), None).await.unwrap();
-        assert_eq!(result.system_proxy.state, "ok", "live traffic on this route proves connectivity despite one blocked probe target");
+        let result = super::test("system".into(), config(first.addr, "http"), None)
+            .await
+            .unwrap();
+        assert_eq!(
+            result.system_proxy.state, "ok",
+            "live traffic on this route proves connectivity despite one blocked probe target"
+        );
         assert_eq!(result.profile_proxy.state, "not_tested");
         assert_eq!(result.exit_ip.as_deref(), Some("198.51.100.92"));
         assert_eq!(result.exit_geo.as_ref().unwrap().provider, "ip-api.com");
         assert!(result.exit_error.is_none() && result.exit_error_code.is_none());
     }
     let requests = first.requests.lock().unwrap();
-    assert_eq!(requests.iter().filter(|head| head.starts_with("CONNECT example.com:443 ")).count(), 2);
-    assert_eq!(requests.iter().filter(|head| head.starts_with("GET http://ip-api.com/")).count(), 2, "each system test must obtain its own live Geo response");
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|head| head.starts_with("CONNECT example.com:443 "))
+            .count(),
+        2
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|head| head.starts_with("GET http://ip-api.com/"))
+            .count(),
+        2,
+        "each system test must obtain its own live Geo response"
+    );
 }

@@ -64,7 +64,7 @@ test("the admin's Trash in a team holds what was deleted there; Restore brings a
   await trashItem(page).click();
   await expect(page.locator("main")).toHaveAttribute("data-section", "trash");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Team Trash");
-  await expect(page).toHaveTitle("Team Trash – ShardBrowser");
+  await expect(page).toHaveTitle("Team Trash – ShyShard");
   await expect(page.locator("main")).toContainText("The team’s Trash is empty");
   await expect(page.locator("main")).toContainText("Anything deleted in the team waits here for 30 days.");
 

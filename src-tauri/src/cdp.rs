@@ -174,7 +174,9 @@ where
                     Message::Close(_) => break,
                     _ => continue,
                 };
-                let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
+                let Ok(v) = serde_json::from_str::<Value>(&text) else {
+                    continue;
+                };
 
                 if let Some(id) = v.get("id").and_then(|x| x.as_u64()) {
                     let slot = pending.lock().ok().and_then(|mut p| p.remove(&id));
@@ -230,7 +232,11 @@ where
                             offset_top: num("offsetTop"),
                             page_scale: {
                                 let s = num("pageScaleFactor");
-                                if s > 0.0 { s } else { 1.0 }
+                                if s > 0.0 {
+                                    s
+                                } else {
+                                    1.0
+                                }
                             },
                             scroll_x: num("scrollOffsetX"),
                             scroll_y: num("scrollOffsetY"),
@@ -406,8 +412,7 @@ fn path_within(root: &Value, target: i64) -> Vec<String> {
             .get("children")
             .and_then(|c| c.as_array())
             .unwrap_or(&empty);
-        let mut seen: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
+        let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for kid in kids {
             let Some(tag) = kid.get("localName").and_then(|l| l.as_str()) else {
                 continue;
@@ -419,7 +424,8 @@ fn path_within(root: &Value, target: i64) -> Vec<String> {
             *n += 1;
             let step = format!("{tag}:nth-of-type({n})");
             trail.push(step);
-            if kid.get("nodeId").and_then(|i| i.as_i64()) == Some(target) || find(kid, target, trail)
+            if kid.get("nodeId").and_then(|i| i.as_i64()) == Some(target)
+                || find(kid, target, trail)
             {
                 return true;
             }
@@ -433,7 +439,8 @@ fn path_within(root: &Value, target: i64) -> Vec<String> {
             .unwrap_or(&empty);
         for sr in roots {
             trail.push(PIERCE.trim().to_string());
-            if sr.get("nodeId").and_then(|i| i.as_i64()) == Some(target) || find(sr, target, trail) {
+            if sr.get("nodeId").and_then(|i| i.as_i64()) == Some(target) || find(sr, target, trail)
+            {
                 return true;
             }
             trail.pop();
@@ -529,11 +536,7 @@ pub async fn query_piercing(profile_id: &str, selector: &str) -> Result<Vec<i64>
 /// against a node it found earlier must therefore search in that same id space,
 /// or every match comes back as "unique, but a different node" — which is
 /// exactly what happened when this fetched its own root.
-pub async fn query_piercing_in(
-    profile_id: &str,
-    root_id: i64,
-    selector: &str,
-) -> Result<Vec<i64>> {
+pub async fn query_piercing_in(profile_id: &str, root_id: i64, selector: &str) -> Result<Vec<i64>> {
     let mut scope = vec![root_id];
 
     let hops: Vec<&str> = selector.split(">>>").map(|h| h.trim()).collect();
@@ -669,7 +672,14 @@ pub async fn pick_element(profile_id: &str, x: f64, y: f64) -> Result<Picked> {
     if let Some(v) = attr(attrs, "id") {
         candidates.push(format!("{prefix}#{v}"));
     }
-    for name in ["data-testid", "data-test", "data-qa", "data-id", "name", "jsname"] {
+    for name in [
+        "data-testid",
+        "data-test",
+        "data-qa",
+        "data-id",
+        "name",
+        "jsname",
+    ] {
         if let Some(v) = attr(attrs, name) {
             candidates.push(format!("{prefix}[{name}=\"{}\"]", css_escape(v)));
         }
@@ -751,7 +761,14 @@ pub async fn pick_element(profile_id: &str, x: f64, y: f64) -> Result<Picked> {
         .or_else(|| attr(attrs, "name").map(str::to_string))
         .unwrap_or_default();
 
-    Ok(Picked { selector, tag, label, x, y, tried })
+    Ok(Picked {
+        selector,
+        tag,
+        label,
+        x,
+        y,
+        tried,
+    })
 }
 
 /// Waits for one occurrence of a CDP event, or gives up.
@@ -765,7 +782,9 @@ pub struct EventWait {
 
 pub fn watch(profile_id: &str) -> Option<EventWait> {
     let s = get(profile_id)?;
-    Some(EventWait { rx: s.events.subscribe() })
+    Some(EventWait {
+        rx: s.events.subscribe(),
+    })
 }
 
 impl EventWait {

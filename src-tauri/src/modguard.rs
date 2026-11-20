@@ -107,7 +107,11 @@ pub fn check(
         "db.open" => {
             let driver = {
                 let d = get("driver");
-                if d.trim().is_empty() { "sqlite".to_string() } else { d.to_ascii_lowercase() }
+                if d.trim().is_empty() {
+                    "sqlite".to_string()
+                } else {
+                    d.to_ascii_lowercase()
+                }
             };
             if driver != "sqlite" {
                 return Err(anyhow!(
@@ -117,7 +121,11 @@ pub fn check(
             }
             let target = {
                 let t = get("target");
-                if t.trim().is_empty() { get("path") } else { t }
+                if t.trim().is_empty() {
+                    get("path")
+                } else {
+                    t
+                }
             };
             confine(module, &target, data_dir, "database")?;
         }
@@ -220,7 +228,12 @@ mod tests {
     #[test]
     fn only_http_and_https_are_navigable() {
         let d = dir();
-        for ok in ["https://example.com/x", "http://example.com", "about:blank", "ABOUT:BLANK"] {
+        for ok in [
+            "https://example.com/x",
+            "http://example.com",
+            "about:blank",
+            "ABOUT:BLANK",
+        ] {
             assert!(
                 check("m", "goto", &json!({ "url": ok }), &no_vars(), &d).is_ok(),
                 "{ok} should be allowed"
@@ -253,17 +266,33 @@ mod tests {
         let d = dir();
         std::fs::create_dir_all(&d).ok();
         let inside = d.join("accounts.txt");
-        assert!(check("m", "file.append",
-                      &json!({ "path": inside.to_string_lossy(), "line": "x" }),
-                      &no_vars(), &d).is_ok());
+        assert!(check(
+            "m",
+            "file.append",
+            &json!({ "path": inside.to_string_lossy(), "line": "x" }),
+            &no_vars(),
+            &d
+        )
+        .is_ok());
         // Straight out.
-        assert!(check("m", "file.readLine",
-                      &json!({ "path": "/etc/hosts", "into": "v" }), &no_vars(), &d).is_err());
+        assert!(check(
+            "m",
+            "file.readLine",
+            &json!({ "path": "/etc/hosts", "into": "v" }),
+            &no_vars(),
+            &d
+        )
+        .is_err());
         // And out the back way.
         let sneaky = d.join("..").join("..").join("settings.json");
-        let err = check("m", "file.readLine",
-                        &json!({ "path": sneaky.to_string_lossy(), "into": "v" }),
-                        &no_vars(), &d).unwrap_err();
+        let err = check(
+            "m",
+            "file.readLine",
+            &json!({ "path": sneaky.to_string_lossy(), "into": "v" }),
+            &no_vars(),
+            &d,
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("own folder"), "{err}");
     }
 
@@ -284,12 +313,22 @@ mod tests {
         let d = dir();
         std::fs::create_dir_all(&d).ok();
         let mine = d.join("notes.sqlite");
-        assert!(check("m", "db.open",
-                      &json!({ "driver": "sqlite", "path": mine.to_string_lossy() }),
-                      &no_vars(), &d).is_ok());
-        let outbound = check("m", "db.open",
-                             &json!({ "driver": "postgres", "target": "host=elsewhere user=x" }),
-                             &no_vars(), &d).unwrap_err();
+        assert!(check(
+            "m",
+            "db.open",
+            &json!({ "driver": "sqlite", "path": mine.to_string_lossy() }),
+            &no_vars(),
+            &d
+        )
+        .is_ok());
+        let outbound = check(
+            "m",
+            "db.open",
+            &json!({ "driver": "postgres", "target": "host=elsewhere user=x" }),
+            &no_vars(),
+            &d,
+        )
+        .unwrap_err();
         assert!(outbound.to_string().contains("outbound"), "{outbound}");
         // The default driver is sqlite, and the path still has to be ours.
         assert!(check("m", "db.open",
@@ -300,18 +339,49 @@ mod tests {
     #[test]
     fn a_request_leaves_through_the_profiles_proxy() {
         let d = dir();
-        assert!(check("m", "http.request", &json!({ "url": "https://x/" }), &no_vars(), &d).is_ok());
-        assert!(check("m", "http.request",
-                      &json!({ "url": "https://x/", "via": "profile" }), &no_vars(), &d).is_ok());
-        assert!(check("m", "http.request",
-                      &json!({ "url": "https://x/", "via": "host" }), &no_vars(), &d).is_err());
+        assert!(check(
+            "m",
+            "http.request",
+            &json!({ "url": "https://x/" }),
+            &no_vars(),
+            &d
+        )
+        .is_ok());
+        assert!(check(
+            "m",
+            "http.request",
+            &json!({ "url": "https://x/", "via": "profile" }),
+            &no_vars(),
+            &d
+        )
+        .is_ok());
+        assert!(check(
+            "m",
+            "http.request",
+            &json!({ "url": "https://x/", "via": "host" }),
+            &no_vars(),
+            &d
+        )
+        .is_err());
     }
 
     #[test]
     fn everything_else_is_untouched() {
         let d = dir();
-        for kind in ["click", "type", "readText", "count", "waitFor", "var.set", "if.exists", "touch.tap"] {
-            assert!(check("m", kind, &json!({}), &no_vars(), &d).is_ok(), "{kind}");
+        for kind in [
+            "click",
+            "type",
+            "readText",
+            "count",
+            "waitFor",
+            "var.set",
+            "if.exists",
+            "touch.tap",
+        ] {
+            assert!(
+                check("m", kind, &json!({}), &no_vars(), &d).is_ok(),
+                "{kind}"
+            );
         }
     }
 }

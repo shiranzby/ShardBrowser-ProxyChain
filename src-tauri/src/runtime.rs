@@ -32,10 +32,9 @@ const MANIFEST_URL: &str =
 /// check, while waiting costs the operator a launcher that looks stuck.
 const MANIFEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
 const LAUNCHER_RELEASE_REPO: &str = "shiranzby/ShardBrowser-X";
-pub const PATCH_REVISION: &str = match option_env!("SHARDBROWSER_PATCH_REVISION") {
-    Some(value) => value,
-    None => "pc3",
-};
+const FIRST_LAUNCHER_RELEASE_TAG: &str = "1.0-based2.1.5";
+const FIRST_LAUNCHER_RELEASE_BUILD: &str = "2.1.5-pc17";
+const PATCH_REVISION: Option<&str> = option_env!("SHARDBROWSER_PATCH_REVISION");
 /// Chromium version baked into the current bundle (used for Mac Framework path).
 pub const CHROMIUM_VERSION: &str = "157.0.8103.39";
 
@@ -82,6 +81,10 @@ pub fn runtime_dir() -> Result<PathBuf> {
     // A test gets an empty one under its own root, never the installed engine.
     #[cfg(test)]
     return Ok(crate::store::test_config_or_panic("runtime dir").join("runtime"));
+    #[allow(unreachable_code)]
+    if let Some(root) = crate::portable::root()? {
+        return Ok(root.join("shardx-launcher").join("runtime"));
+    }
     #[allow(unreachable_code)]
     Ok(dirs::data_dir()
         .context("platform data dir not available")?
@@ -181,7 +184,10 @@ fn installed_engine_version() -> Option<String> {
 
 /// The engine folder beside its staging folder and backup (swap.rs).
 fn host_layout() -> Option<swap::Layout> {
-    Some(swap::Layout::host(runtime_dir().ok()?, &host_spec()?.browser.key))
+    Some(swap::Layout::host(
+        runtime_dir().ok()?,
+        &host_spec()?.browser.key,
+    ))
 }
 
 /// Read-held while the GPU probe runs the engine, write-held while an install
@@ -213,10 +219,7 @@ pub const UPDATING: &str = "The ShardBrowser engine is being updated. Try again 
 
 /// Profiles started by this launcher run the bundled engine (no Browser path set).
 fn bundled_engine_in_use() -> bool {
-    crate::settings::load()
-        .ok()
-        .and_then(|s| s.browser_path)
-        .is_none_or(|p| !Path::new(&p).exists())
+    crate::launch::configured_binary().ok().flatten().is_none()
 }
 
 /// Before the window asks anything: the engine put back if the launcher died
@@ -230,7 +233,9 @@ pub fn recover_at_start() {
     }
     tauri::async_runtime::spawn(async move {
         let _one = install_lock().lock().await;
-        let _ = tokio::task::spawn_blocking(move || swap::sweep(&layout, &swap::Ops::real(&layout))).await;
+        let _ =
+            tokio::task::spawn_blocking(move || swap::sweep(&layout, &swap::Ops::real(&layout)))
+                .await;
     });
 }
 
@@ -241,7 +246,9 @@ fn recover_swap(layout: &swap::Layout) {
     }
     // Stopped between the swap and its record: the record the journal carries
     // is saved now, or the engine on disk would be downloaded again.
-    let Some(record) = swap::finished(layout) else { return };
+    let Some(record) = swap::finished(layout) else {
+        return;
+    };
     let mut m = load_manifest();
     apply_record(&mut m, &record);
     if save_manifest(&m).is_ok() {
@@ -314,10 +321,21 @@ mod install_error_tests {
         let old = r#"{"stage":"busy","message":"m","running_browsers":2,"engine_kept":true,"target":"e1","at_ms":1}"#;
         let err: InstallError = serde_json::from_str(old).unwrap();
         assert_eq!((err.running_browsers, err.starting), (2, 0));
-        let starting = InstallError { starting: 1, running_browsers: 0, ..err };
-        let told = serde_json::to_value(Failed { err: &starting, update_staged: true }).unwrap();
+        let starting = InstallError {
+            starting: 1,
+            running_browsers: 0,
+            ..err
+        };
+        let told = serde_json::to_value(Failed {
+            err: &starting,
+            update_staged: true,
+        })
+        .unwrap();
         assert_eq!(told["stage"], "busy");
-        assert_eq!((told["starting"].as_u64(), told["running_browsers"].as_u64()), (Some(1), Some(0)));
+        assert_eq!(
+            (told["starting"].as_u64(), told["running_browsers"].as_u64()),
+            (Some(1), Some(0))
+        );
         assert_eq!(told["update_staged"], true);
     }
 }
@@ -331,15 +349,23 @@ mod gate_tests {
     #[tokio::test]
     async fn a_probe_and_an_install_never_overlap() {
         let install = super::engine_gate().write().await;
-        assert!(super::engine_use().is_none(), "a probe started during an install");
+        assert!(
+            super::engine_use().is_none(),
+            "a probe started during an install"
+        );
         drop(install);
 
         let probe = super::engine_use().expect("no install under way");
-        let waited = tokio::time::timeout(Duration::from_millis(200), super::engine_gate().write()).await;
+        let waited =
+            tokio::time::timeout(Duration::from_millis(200), super::engine_gate().write()).await;
         assert!(waited.is_err(), "the install did not wait for the probe");
         drop(probe);
-        let install = tokio::time::timeout(Duration::from_secs(5), super::engine_gate().write()).await;
-        assert!(install.is_ok(), "the install did not get the engine once the probe ended");
+        let install =
+            tokio::time::timeout(Duration::from_secs(5), super::engine_gate().write()).await;
+        assert!(
+            install.is_ok(),
+            "the install did not get the engine once the probe ended"
+        );
     }
 }
 
@@ -375,7 +401,9 @@ fn effective_installed_version(local: &Manifest) -> Option<String> {
 }
 
 fn load_manifest() -> Manifest {
-    let Ok(p) = manifest_path() else { return Manifest::default() };
+    let Ok(p) = manifest_path() else {
+        return Manifest::default();
+    };
     fs::read_to_string(p)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -463,7 +491,12 @@ async fn fetch_manifest_at(url: &str, budget: std::time::Duration) -> RemoteMani
     async fn inner(url: &str, budget: std::time::Duration) -> Option<RemoteManifest> {
         // One budget for connect + headers + body: reqwest hands the deadline on
         // to the response, so a server that stalls mid-answer is bounded too.
-        let resp = reqwest::Client::new().get(url).timeout(budget).send().await.ok()?;
+        let resp = reqwest::Client::new()
+            .get(url)
+            .timeout(budget)
+            .send()
+            .await
+            .ok()?;
         if !resp.status().is_success() {
             return None;
         }
@@ -517,9 +550,15 @@ mod manifest_fetch_tests {
         let waited = started.elapsed();
         held.abort();
 
-        assert!(m.archives.is_empty(), "a silent server must not yield archives");
+        assert!(
+            m.archives.is_empty(),
+            "a silent server must not yield archives"
+        );
         assert!(m.chromium_version.is_none());
-        assert!(waited < budget * 10, "the fetch waited {waited:?} on a silent server");
+        assert!(
+            waited < budget * 10,
+            "the fetch waited {waited:?} on a silent server"
+        );
     }
 }
 
@@ -544,13 +583,24 @@ fn migrate_dir_to(
         if p.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
-        let Ok(text) = fs::read_to_string(&p) else { continue };
-        let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        let Ok(text) = fs::read_to_string(&p) else {
+            continue;
+        };
+        let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
         // A protected profile's fingerprint is sealed: it is migrated when it is unlocked.
         if cfg.pointer("/_meta/lock").is_some() {
             continue;
         }
-        if migrate_value(&mut cfg, chromium_version, grease_brand, grease_version, tls, android_version) {
+        if migrate_value(
+            &mut cfg,
+            chromium_version,
+            grease_brand,
+            grease_version,
+            tls,
+            android_version,
+        ) {
             fs::write(&p, serde_json::to_string_pretty(&cfg)?)?;
             n += 1;
         }
@@ -575,7 +625,10 @@ fn migrate_value(
     // A phone reports the Android build of this major, when the manifest names one.
     let chromium_version = android_version
         .filter(|v| v.split('.').count() == 4 && v.split('.').next() == Some(major))
-        .filter(|_| cfg.as_object().is_some_and(crate::space::profile::claims_mobile))
+        .filter(|_| {
+            cfg.as_object()
+                .is_some_and(crate::space::profile::claims_mobile)
+        })
         .unwrap_or(chromium_version);
     let parts: Vec<&str> = chromium_version.split('.').collect();
     let build: i64 = parts[2].parse().unwrap_or(0);
@@ -615,7 +668,10 @@ fn migrate_value(
             }
             if let Some(gv) = grease_version {
                 wants.push(("grease_version", serde_json::json!(gv)));
-                wants.push(("grease_full_version", serde_json::json!(format!("{gv}.0.0.0"))));
+                wants.push((
+                    "grease_full_version",
+                    serde_json::json!(format!("{gv}.0.0.0")),
+                ));
             }
             for (k, want) in wants {
                 if ch.get(k) != Some(&want) {
@@ -657,13 +713,20 @@ const CHROME_BRAND: &str = "Google Chrome";
 /// Names the brand on a phone profile that names none: Android templates lacked it, and the
 /// brand list then held only "Chromium" and GREASE. A brand the profile names stays.
 fn add_chrome_brand(cfg: &mut serde_json::Value) -> bool {
-    if !cfg.as_object().is_some_and(crate::space::profile::claims_mobile) {
+    if !cfg
+        .as_object()
+        .is_some_and(crate::space::profile::claims_mobile)
+    {
         return false;
     }
     let Some(ch) = cfg.get_mut("client_hints").and_then(|v| v.as_object_mut()) else {
         return false;
     };
-    if ch.get("brand").and_then(|v| v.as_str()).is_some_and(|b| !b.is_empty()) {
+    if ch
+        .get("brand")
+        .and_then(|v| v.as_str())
+        .is_some_and(|b| !b.is_empty())
+    {
         return false;
     }
     ch.insert("brand".into(), CHROME_BRAND.into());
@@ -682,18 +745,30 @@ fn add_apple_webgpu_features(cfg: &mut serde_json::Value) -> bool {
         .pointer("/webgl/renderer")
         .and_then(|v| v.as_str())
         .and_then(|r| r.find("Apple M").map(|i| &r[i + 7..]))
-        .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok());
+        .and_then(|rest| {
+            rest.split(|c: char| !c.is_ascii_digit())
+                .next()?
+                .parse()
+                .ok()
+        });
     let apple_adapter = cfg.pointer("/webgpu/vendor").and_then(|v| v.as_str()) == Some("apple");
     let Some(generation) = generation.filter(|_| apple_adapter) else {
         return false;
     };
-    let Some(list) = cfg.pointer_mut("/webgpu/features").and_then(|v| v.as_array_mut()) else {
+    let Some(list) = cfg
+        .pointer_mut("/webgpu/features")
+        .and_then(|v| v.as_array_mut())
+    else {
         return false;
     };
     if list.is_empty() {
         return false;
     }
-    let m2: &[&str] = if generation >= 2 { APPLE_M2_WEBGPU_ADDED } else { &[] };
+    let m2: &[&str] = if generation >= 2 {
+        APPLE_M2_WEBGPU_ADDED
+    } else {
+        &[]
+    };
     let mut changed = false;
     for &feat in APPLE_WEBGPU_ADDED.iter().chain(m2) {
         if list.iter().any(|v| v.as_str() == Some(feat)) {
@@ -723,16 +798,52 @@ mod android_version_tests {
     #[test]
     fn a_phone_reports_the_android_build_and_a_desktop_the_engine_one() {
         let mut p = phone();
-        assert!(migrate_value(&mut p, "157.0.8103.39", None, None, None, Some("157.0.8103.38")));
+        assert!(migrate_value(
+            &mut p,
+            "157.0.8103.39",
+            None,
+            None,
+            None,
+            Some("157.0.8103.38")
+        ));
         let ch = &p["client_hints"];
-        assert_eq!((ch["brand_version"].as_str(), ch["brand_full_version"].as_str()), (Some("157"), Some("157.0.8103.38")));
-        assert_eq!((ch["chrome_build"].as_i64(), ch["chrome_patch"].as_i64()), (Some(8103), Some(38)));
-        assert!(p["navigator"]["user_agent"].as_str().unwrap().contains("Chrome/157.0.0.0 Mobile"));
-        assert!(!migrate_value(&mut p, "157.0.8103.39", None, None, None, Some("157.0.8103.38")), "once");
+        assert_eq!(
+            (
+                ch["brand_version"].as_str(),
+                ch["brand_full_version"].as_str()
+            ),
+            (Some("157"), Some("157.0.8103.38"))
+        );
+        assert_eq!(
+            (ch["chrome_build"].as_i64(), ch["chrome_patch"].as_i64()),
+            (Some(8103), Some(38))
+        );
+        assert!(p["navigator"]["user_agent"]
+            .as_str()
+            .unwrap()
+            .contains("Chrome/157.0.0.0 Mobile"));
+        assert!(
+            !migrate_value(
+                &mut p,
+                "157.0.8103.39",
+                None,
+                None,
+                None,
+                Some("157.0.8103.38")
+            ),
+            "once"
+        );
 
         let mut desk = json!({ "navigator": { "platform": "Win32", "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/156.0.0.0 Safari/537.36" },
             "client_hints": { "mobile": false, "brand_full_version": "156.0.8078.48" } });
-        migrate_value(&mut desk, "157.0.8103.39", None, None, None, Some("157.0.8103.38"));
+        migrate_value(
+            &mut desk,
+            "157.0.8103.39",
+            None,
+            None,
+            None,
+            Some("157.0.8103.38"),
+        );
         assert_eq!(desk["client_hints"]["brand_full_version"], "157.0.8103.39");
     }
 
@@ -741,7 +852,10 @@ mod android_version_tests {
         for android in [None, Some("156.0.8078.81"), Some("157.0.8103"), Some("")] {
             let mut p = phone();
             migrate_value(&mut p, "157.0.8103.39", None, None, None, android);
-            assert_eq!(p["client_hints"]["brand_full_version"], "157.0.8103.39", "{android:?}");
+            assert_eq!(
+                p["client_hints"]["brand_full_version"], "157.0.8103.39",
+                "{android:?}"
+            );
         }
     }
 }
@@ -790,42 +904,93 @@ mod apple_webgpu_tests {
 
     #[test]
     fn an_apple_m_list_gains_the_feature_in_place_and_only_once() {
-        let mut cfg = mac(M1, "apple", json!(["shader-f16", "texture-compression-etc2", "texture-formats-tier1", "timestamp-query"]));
+        let mut cfg = mac(
+            M1,
+            "apple",
+            json!([
+                "shader-f16",
+                "texture-compression-etc2",
+                "texture-formats-tier1",
+                "timestamp-query"
+            ]),
+        );
         let before = cfg.clone();
         assert!(add_apple_webgpu_features(&mut cfg));
         assert_eq!(
             cfg["webgpu"]["features"],
-            json!(["shader-f16", "texture-compression-etc2", "texture-compression-unaligned", "texture-formats-tier1", "timestamp-query"])
+            json!([
+                "shader-f16",
+                "texture-compression-etc2",
+                "texture-compression-unaligned",
+                "texture-formats-tier1",
+                "timestamp-query"
+            ])
         );
         let mut rest = cfg.clone();
         rest["webgpu"]["features"] = before["webgpu"]["features"].clone();
         assert_eq!(rest, before, "only webgpu.features may change");
 
         let once = cfg.clone();
-        assert!(!add_apple_webgpu_features(&mut cfg), "a second pass must change nothing");
+        assert!(
+            !add_apple_webgpu_features(&mut cfg),
+            "a second pass must change nothing"
+        );
         assert_eq!(cfg, once);
     }
 
     #[test]
     fn m2_and_later_also_gain_the_157_feature_and_m1_does_not() {
         let m3 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)";
-        let mut cfg = mac(m3, "apple", json!(["shader-f16", "texture-compression-unaligned"]));
+        let mut cfg = mac(
+            m3,
+            "apple",
+            json!(["shader-f16", "texture-compression-unaligned"]),
+        );
         assert!(add_apple_webgpu_features(&mut cfg));
-        assert_eq!(cfg["webgpu"]["features"], json!(["atomic-vec2u-min-max", "shader-f16", "texture-compression-unaligned"]));
-        let mut m1 = mac(M1, "apple", json!(["shader-f16", "texture-compression-unaligned"]));
-        assert!(!add_apple_webgpu_features(&mut m1), "M1 has no atomic-vec2u-min-max");
+        assert_eq!(
+            cfg["webgpu"]["features"],
+            json!([
+                "atomic-vec2u-min-max",
+                "shader-f16",
+                "texture-compression-unaligned"
+            ])
+        );
+        let mut m1 = mac(
+            M1,
+            "apple",
+            json!(["shader-f16", "texture-compression-unaligned"]),
+        );
+        assert!(
+            !add_apple_webgpu_features(&mut m1),
+            "M1 has no atomic-vec2u-min-max"
+        );
     }
 
     #[test]
     fn other_gpus_and_host_lists_are_left_alone() {
         let feats = json!(["shader-f16", "texture-compression-bc"]);
-        let intel_mac = mac("ANGLE (Intel, ANGLE Metal Renderer: Intel(R) UHD Graphics 630, Unspecified Version)", "intel", feats.clone());
+        let intel_mac = mac(
+            "ANGLE (Intel, ANGLE Metal Renderer: Intel(R) UHD Graphics 630, Unspecified Version)",
+            "intel",
+            feats.clone(),
+        );
         let windows = json!({ "webgl": { "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3070 Direct3D11 vs_5_0 ps_5_0, D3D11)" }, "webgpu": { "vendor": "nvidia", "features": feats.clone() } });
         let mismatched = mac(M1, "intel", feats.clone());
-        let apple_gpu_not_m = mac("ANGLE (Apple, ANGLE Metal Renderer: Apple GPU, Unspecified Version)", "apple", feats.clone());
+        let apple_gpu_not_m = mac(
+            "ANGLE (Apple, ANGLE Metal Renderer: Apple GPU, Unspecified Version)",
+            "apple",
+            feats.clone(),
+        );
         let no_list = json!({ "webgl": { "renderer": M1 }, "webgpu": { "vendor": "apple" } });
         let empty_list = mac(M1, "apple", json!([]));
-        for mut cfg in [intel_mac, windows, mismatched, apple_gpu_not_m, no_list, empty_list] {
+        for mut cfg in [
+            intel_mac,
+            windows,
+            mismatched,
+            apple_gpu_not_m,
+            no_list,
+            empty_list,
+        ] {
             let before = cfg.clone();
             assert!(!add_apple_webgpu_features(&mut cfg));
             assert_eq!(cfg, before);
@@ -838,12 +1003,36 @@ mod apple_webgpu_tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("p.json");
-        std::fs::write(&file, mac(M1, "apple", json!(["texture-compression-etc2", "timestamp-query"])).to_string()).unwrap();
+        std::fs::write(
+            &file,
+            mac(
+                M1,
+                "apple",
+                json!(["texture-compression-etc2", "timestamp-query"]),
+            )
+            .to_string(),
+        )
+        .unwrap();
 
-        assert_eq!(migrate_dir_to(&dir, "156.0.8078.48", None, None, None, None).unwrap(), 1);
-        let got: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
-        assert_eq!(got["webgpu"]["features"], json!(["texture-compression-etc2", "texture-compression-unaligned", "timestamp-query"]));
-        assert_eq!(migrate_dir_to(&dir, "156.0.8078.48", None, None, None, None).unwrap(), 0, "a second run must write nothing");
+        assert_eq!(
+            migrate_dir_to(&dir, "156.0.8078.48", None, None, None, None).unwrap(),
+            1
+        );
+        let got: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(
+            got["webgpu"]["features"],
+            json!([
+                "texture-compression-etc2",
+                "texture-compression-unaligned",
+                "timestamp-query"
+            ])
+        );
+        assert_eq!(
+            migrate_dir_to(&dir, "156.0.8078.48", None, None, None, None).unwrap(),
+            0,
+            "a second run must write nothing"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
@@ -864,8 +1053,12 @@ fn adopt_library_fields(dir: &Path) -> Result<usize> {
         if p.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
-        let Ok(text) = fs::read_to_string(&p) else { continue };
-        let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        let Ok(text) = fs::read_to_string(&p) else {
+            continue;
+        };
+        let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
         // Sealed: matched by its name alone it would gain readable keys; done when it is unlocked.
         if cfg.pointer("/_meta/lock").is_some() {
             continue;
@@ -891,7 +1084,10 @@ fn library_by_key() -> std::collections::HashMap<String, serde_json::Value> {
 }
 
 /// The library's newer keys put into one profile's config; whether it changed.
-fn adopt_value(cfg: &mut serde_json::Value, lib: &std::collections::HashMap<String, serde_json::Value>) -> bool {
+fn adopt_value(
+    cfg: &mut serde_json::Value,
+    lib: &std::collections::HashMap<String, serde_json::Value>,
+) -> bool {
     {
         let key = cfg
             .pointer("/_meta/gpu_preset_id")
@@ -899,7 +1095,9 @@ fn adopt_value(cfg: &mut serde_json::Value, lib: &std::collections::HashMap<Stri
             .filter(|s| !s.is_empty())
             .or_else(|| cfg.get("name").and_then(|v| v.as_str()))
             .map(String::from);
-        let Some(src) = key.as_deref().and_then(|k| lib.get(k)) else { return false };
+        let Some(src) = key.as_deref().and_then(|k| lib.get(k)) else {
+            return false;
+        };
         let mut changed = false;
         for key in ["fonts", "fonts_local"] {
             if cfg.get(key).is_none() {
@@ -961,23 +1159,44 @@ mod adopt_tests {
     #[test]
     fn adopt_matches_by_preset_id_then_name() {
         let mut lib = std::collections::HashMap::new();
-        lib.insert("android-oppo-a6-5g".to_string(), json!({"fonts": [["sans-serif"]]}));
+        lib.insert(
+            "android-oppo-a6-5g".to_string(),
+            json!({"fonts": [["sans-serif"]]}),
+        );
         let renamed = json!({"name": "shop 4", "_meta": {"gpu_preset_id": "android-oppo-a6-5g"}});
-        assert!(pick(&renamed, &lib).is_some(), "a renamed profile still matches by id");
+        assert!(
+            pick(&renamed, &lib).is_some(),
+            "a renamed profile still matches by id"
+        );
         let by_name = json!({"name": "android-oppo-a6-5g"});
-        assert!(pick(&by_name, &lib).is_some(), "an older profile matches by name");
+        assert!(
+            pick(&by_name, &lib).is_some(),
+            "an older profile matches by name"
+        );
     }
 
     #[test]
     fn adopt_takes_subgroup_sizes_only_for_the_same_gpu() {
         let mut lib = std::collections::HashMap::new();
-        lib.insert("win-rtx3060".to_string(), json!({"webgpu": {"vendor": "nvidia", "architecture": "ampere",
-            "features": ["shader-f16"], "subgroupMinSize": 32, "subgroupMaxSize": 32}}));
-        lib.insert("android-x".to_string(), json!({"webgpu": {"vendor": "arm", "architecture": "valhall",
-            "features": ["shader-f16"], "subgroupMinSize": null, "subgroupMaxSize": null}}));
+        lib.insert(
+            "win-rtx3060".to_string(),
+            json!({"webgpu": {"vendor": "nvidia", "architecture": "ampere",
+            "features": ["shader-f16"], "subgroupMinSize": 32, "subgroupMaxSize": 32}}),
+        );
+        lib.insert(
+            "android-x".to_string(),
+            json!({"webgpu": {"vendor": "arm", "architecture": "valhall",
+            "features": ["shader-f16"], "subgroupMinSize": null, "subgroupMaxSize": null}}),
+        );
         let mut same = json!({"name": "win-rtx3060", "webgpu": {"vendor": "nvidia", "architecture": "ampere", "features": ["shader-f16"]}});
         assert!(super::adopt_value(&mut same, &lib));
-        assert_eq!((same["webgpu"]["subgroupMinSize"].clone(), same["webgpu"]["subgroupMaxSize"].clone()), (json!(32), json!(32)));
+        assert_eq!(
+            (
+                same["webgpu"]["subgroupMinSize"].clone(),
+                same["webgpu"]["subgroupMaxSize"].clone()
+            ),
+            (json!(32), json!(32))
+        );
         assert!(!super::adopt_value(&mut same, &lib), "once");
         // A pre-157 capture (D3D12 max 128) and a stored null both give way to the template.
         let mut stale = json!({"name": "win-rtx3060", "webgpu": {"vendor": "nvidia", "architecture": "ampere",
@@ -1015,11 +1234,27 @@ fn migrate_all_to(
 ) -> usize {
     let mut n = 0;
     if let Ok(d) = crate::store::profiles_dir() {
-        n += migrate_dir_to(&d, chromium_version, grease_brand, grease_version, tls, android_version).unwrap_or(0);
+        n += migrate_dir_to(
+            &d,
+            chromium_version,
+            grease_brand,
+            grease_version,
+            tls,
+            android_version,
+        )
+        .unwrap_or(0);
         n += adopt_library_fields(&d).unwrap_or(0);
     }
     if let Ok(d) = crate::store::fingerprints_dir() {
-        n += migrate_dir_to(&d, chromium_version, grease_brand, grease_version, tls, android_version).unwrap_or(0);
+        n += migrate_dir_to(
+            &d,
+            chromium_version,
+            grease_brand,
+            grease_version,
+            tls,
+            android_version,
+        )
+        .unwrap_or(0);
     }
     n
 }
@@ -1027,7 +1262,9 @@ fn migrate_all_to(
 /// A protected profile's config, unlocked for a start, brought to the engine its file could not be
 /// migrated to while sealed. Whether it changed; the caller seals it again.
 pub fn migrate_unlocked(cfg: &mut serde_json::Value) -> bool {
-    let Some(t) = load_manifest().applied_target else { return false };
+    let Some(t) = load_manifest().applied_target else {
+        return false;
+    };
     let moved = migrate_value(
         cfg,
         &t.chromium_version,
@@ -1068,7 +1305,9 @@ fn migration_signature(target: &str, m: &RemoteManifest) -> String {
 /// engine auto-updated via the etag path without an explicit install.
 pub async fn ensure_profiles_migrated() {
     let m = fetch_manifest().await;
-    let Some(target) = m.chromium_version.clone() else { return };
+    let Some(target) = m.chromium_version.clone() else {
+        return;
+    };
     // TLS is part of the signature: without it a manifest that changes only
     // the ClientHello shape would be a no-op for anyone already on this
     // version, and their profiles would keep the previous release's JA4.
@@ -1117,7 +1356,10 @@ fn version_lt(a: &str, b: &str) -> bool {
     };
     let (va, vb) = (part(a), part(b));
     for i in 0..va.len().max(vb.len()) {
-        let (x, y) = (va.get(i).copied().unwrap_or(0), vb.get(i).copied().unwrap_or(0));
+        let (x, y) = (
+            va.get(i).copied().unwrap_or(0),
+            vb.get(i).copied().unwrap_or(0),
+        );
         if x != y {
             return x < y;
         }
@@ -1150,7 +1392,10 @@ fn engine_outdated(local: &Manifest, remote: &RemoteManifest, browser_key: &str)
         (Some(h), Some(w)) => !h.is_empty() && h != w,
         _ => false,
     };
-    let build_moved = differs(installed_engine_build(local), remote.engine_build.as_deref());
+    let build_moved = differs(
+        installed_engine_build(local),
+        remote.engine_build.as_deref(),
+    );
     let hash_moved = differs(
         local.browser_etag.clone(),
         remote.archives.get(browser_key).map(|s| s.as_str()),
@@ -1201,9 +1446,8 @@ pub async fn runtime_status() -> Result<RuntimeStatus, String> {
             .map(|d| {
                 fs::read_dir(&d)
                     .map(|it| {
-                        it.flatten().any(|e| {
-                            e.path().extension().and_then(|s| s.to_str()) == Some("json")
-                        })
+                        it.flatten()
+                            .any(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
                     })
                     .unwrap_or(false)
             })
@@ -1272,7 +1516,9 @@ pub async fn runtime_install(window: Window, force: bool) -> Result<RuntimeStatu
                 match save_manifest(&local) {
                     Ok(()) => swap::settle(&layout),
                     // The journal keeps it for the next start.
-                    Err(e) => eprintln!("[runtime] the engine is in, but its record could not be saved yet: {e}"),
+                    Err(e) => eprintln!(
+                        "[runtime] the engine is in, but its record could not be saved yet: {e}"
+                    ),
                 }
                 clear_install_error();
             }
@@ -1311,11 +1557,19 @@ pub async fn runtime_install(window: Window, force: bool) -> Result<RuntimeStatu
 
     // Fingerprint seed: overwrites bundled templates, leaves user-added files;
     // skipped when the etag matches. User-added FP get version-migrated below.
-    let fp_remote = manifest.archives.get(FINGERPRINTS_ARCHIVE_KEY).map(|s| s.as_str());
-    let fp_etag = install_fingerprints(&window, force, local.fingerprints_etag.as_deref(), fp_remote)
-        .await
-        .map_err(|e| e.to_string())?
-        .or(local.fingerprints_etag.clone());
+    let fp_remote = manifest
+        .archives
+        .get(FINGERPRINTS_ARCHIVE_KEY)
+        .map(|s| s.as_str());
+    let fp_etag = install_fingerprints(
+        &window,
+        force,
+        local.fingerprints_etag.as_deref(),
+        fp_remote,
+    )
+    .await
+    .map_err(|e| e.to_string())?
+    .or(local.fingerprints_etag.clone());
 
     // Migrate already-created profiles AND the fingerprint library (incl.
     // user-added) to the new engine descriptor (UA + client_hints incl. grease).
@@ -1350,7 +1604,10 @@ pub async fn runtime_install(window: Window, force: bool) -> Result<RuntimeStatu
         // Recorded at the swap, never re-read off disk (a leftover
         // `<old>.manifest` once kept the version "stuck"); an engine from
         // before the record adopts the manifest's.
-        installed_chromium_version: local.installed_chromium_version.clone().or(Some(target_ver)),
+        installed_chromium_version: local
+            .installed_chromium_version
+            .clone()
+            .or(Some(target_ver)),
         installed_engine_build: local.installed_engine_build.clone(),
     })
     .map_err(|e| e.to_string())?;
@@ -1375,16 +1632,30 @@ async fn engine_failed(
         running_browsers: f.browsers,
         starting: f.starting,
         engine_kept: kept,
-        target: manifest.archives.get(key).cloned().or_else(|| manifest.chromium_version.clone()),
+        target: manifest
+            .archives
+            .get(key)
+            .cloned()
+            .or_else(|| manifest.chromium_version.clone()),
         at_ms: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_millis() as u64),
     };
-    eprintln!("[runtime] engine install stopped at {}: {}", err.stage, err.message);
+    eprintln!(
+        "[runtime] engine install stopped at {}: {}",
+        err.stage, err.message
+    );
     save_install_error(&err);
     let etag = manifest.archives.get(key);
-    let update_staged = swap::staged_note(layout).is_some_and(|s| etag.is_none_or(|e| *e == s.etag));
-    let _ = window.emit("runtime:failed", Failed { err: &err, update_staged });
+    let update_staged =
+        swap::staged_note(layout).is_some_and(|s| etag.is_none_or(|e| *e == s.etag));
+    let _ = window.emit(
+        "runtime:failed",
+        Failed {
+            err: &err,
+            update_staged,
+        },
+    );
     if kept {
         runtime_status().await
     } else {
@@ -1397,7 +1668,10 @@ async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, swap::Failure> {
     tokio::task::spawn_blocking(f).await.map_err(|e| {
-        swap::Failure::new(swap::Stage::Extract, format!("The engine install stopped: {e}"))
+        swap::Failure::new(
+            swap::Stage::Extract,
+            format!("The engine install stopped: {e}"),
+        )
     })
 }
 
@@ -1444,7 +1718,12 @@ async fn install_engine(
             let l = layout.clone();
             blocking(move || swap::drop_staging(&l, &swap::Ops::real(&l))).await??;
             let l = layout.clone();
-            let dl = match blocking(move || swap::downloaded(&l)).await.ok().flatten().filter(|d| fits(&d.etag)) {
+            let dl = match blocking(move || swap::downloaded(&l))
+                .await
+                .ok()
+                .flatten()
+                .filter(|d| fits(&d.etag))
+            {
                 Some(d) => d,
                 None => download_engine(window, spec, layout).await?,
             };
@@ -1481,7 +1760,9 @@ async fn download_engine(
     swap::drop_download(layout);
     let ops = swap::Ops::real(layout);
     let room = |total: u64| {
-        let need = total.saturating_mul(1 + swap::UNPACK_GUESS).saturating_add(swap::SPACE_MARGIN);
+        let need = total
+            .saturating_mul(1 + swap::UNPACK_GUESS)
+            .saturating_add(swap::SPACE_MARGIN);
         swap::room(&ops, &layout.base, need)
     };
     let etag = match fetch(window, spec, &layout.part(), room).await {
@@ -1498,11 +1779,21 @@ async fn download_engine(
         }
     };
     swap::keep_download(layout, &etag).map_err(|e| {
-        swap::Failure::new(swap::Stage::Download, format!("Could not keep the downloaded engine: {e}"))
+        swap::Failure::new(
+            swap::Stage::Download,
+            format!("Could not keep the downloaded engine: {e}"),
+        )
     })
 }
 
-fn progress(window: &Window, spec: &ArchiveSpec, phase: &str, received: u64, total: u64, percent: u64) {
+fn progress(
+    window: &Window,
+    spec: &ArchiveSpec,
+    phase: &str,
+    received: u64,
+    total: u64,
+    percent: u64,
+) {
     let _ = window.emit(
         "runtime:progress",
         serde_json::json!({
@@ -1563,7 +1854,11 @@ async fn install_fingerprints(
         let dst = dir.join(p.file_name().unwrap());
         let existed = dst.exists();
         fs::copy(&p, &dst)?;
-        if existed { overwritten += 1; } else { added += 1; }
+        if existed {
+            overwritten += 1;
+        } else {
+            added += 1;
+        }
     }
     let _ = fs::remove_dir_all(&staging);
     eprintln!("[runtime] fingerprints sync: added={added} overwritten={overwritten}");
@@ -1579,7 +1874,11 @@ async fn fetch(
     room: impl Fn(u64) -> Result<(), swap::Failure>,
 ) -> Result<String> {
     let url = format!("{PUB_BASE}/{}", spec.key);
-    let mut resp = reqwest::Client::new().get(&url).send().await?.error_for_status()?;
+    let mut resp = reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?;
     let total = resp.content_length().unwrap_or(0);
     if total > 0 {
         room(total)?;
@@ -1619,23 +1918,41 @@ fn fix_unix_exec_bits(root: &Path) {
     use std::io::Read;
     use std::os::unix::fs::PermissionsExt;
     const MAGIC: &[[u8; 4]] = &[
-        [0x7f, b'E', b'L', b'F'],                              // ELF
-        [0xfe, 0xed, 0xfa, 0xcf], [0xcf, 0xfa, 0xed, 0xfe],   // Mach-O 64 BE/LE
-        [0xfe, 0xed, 0xfa, 0xce], [0xce, 0xfa, 0xed, 0xfe],   // Mach-O 32 BE/LE
-        [0xca, 0xfe, 0xba, 0xbe], [0xbe, 0xba, 0xfe, 0xca],   // Mach-O universal
+        [0x7f, b'E', b'L', b'F'], // ELF
+        [0xfe, 0xed, 0xfa, 0xcf],
+        [0xcf, 0xfa, 0xed, 0xfe], // Mach-O 64 BE/LE
+        [0xfe, 0xed, 0xfa, 0xce],
+        [0xce, 0xfa, 0xed, 0xfe], // Mach-O 32 BE/LE
+        [0xca, 0xfe, 0xba, 0xbe],
+        [0xbe, 0xba, 0xfe, 0xca], // Mach-O universal
     ];
     fn walk(dir: &Path, magic: &[[u8; 4]]) {
-        let Ok(entries) = fs::read_dir(dir) else { return };
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
         for ent in entries.flatten() {
             let p = ent.path();
             let Ok(ft) = ent.file_type() else { continue };
-            if ft.is_symlink() { continue; }
-            if ft.is_dir() { walk(&p, magic); continue; }
-            if !ft.is_file() { continue; }
+            if ft.is_symlink() {
+                continue;
+            }
+            if ft.is_dir() {
+                walk(&p, magic);
+                continue;
+            }
+            if !ft.is_file() {
+                continue;
+            }
             let mut head = [0u8; 4];
-            let Ok(mut f) = fs::File::open(&p) else { continue };
-            if f.read_exact(&mut head).is_err() { continue; }
-            if !magic.iter().any(|m| *m == head) { continue; }
+            let Ok(mut f) = fs::File::open(&p) else {
+                continue;
+            };
+            if f.read_exact(&mut head).is_err() {
+                continue;
+            }
+            if !magic.iter().any(|m| *m == head) {
+                continue;
+            }
             if let Ok(meta) = fs::metadata(&p) {
                 let mut perm = meta.permissions();
                 perm.set_mode(perm.mode() | 0o111);
@@ -1652,6 +1969,7 @@ fn fix_unix_exec_bits(root: &Path) {
 pub struct LauncherVersionInfo {
     pub current: String,
     pub latest: Option<String>,
+    pub comparable: bool,
     pub update_available: bool,
     pub release_url: Option<String>,
 }
@@ -1660,34 +1978,53 @@ fn norm_ver(v: &str) -> &str {
     v.strip_prefix('v').unwrap_or(v)
 }
 
-/// Best-effort SemVer compare, lex fallback per component.
-fn is_newer(latest: &str, current: &str) -> bool {
+/// Compare published builds only when their build identity is known.
+fn compare_launcher_builds(latest: &str, current: &str) -> Option<std::cmp::Ordering> {
     fn version(value: &str) -> Option<([u64; 3], u64)> {
         let value = norm_ver(value);
+        let value = match value {
+            FIRST_LAUNCHER_RELEASE_TAG => FIRST_LAUNCHER_RELEASE_BUILD,
+            value => value,
+        };
         let (base, patch) = match value.split_once("-pc") {
             Some((base, patch)) => (base, patch.parse::<u64>().ok()?),
             None => (value, 0),
         };
-        let parts: Vec<_> = base.split('.').map(str::parse::<u64>).collect::<Result<_, _>>().ok()?;
+        let parts: Vec<_> = base
+            .split('.')
+            .map(str::parse::<u64>)
+            .collect::<Result<_, _>>()
+            .ok()?;
         let base: [u64; 3] = parts.try_into().ok()?;
         Some((base, patch))
     }
-    match (version(latest), version(current)) { (Some(a), Some(b)) => a > b, _ => false }
+    Some(version(latest)?.cmp(&version(current)?))
 }
 
 #[tauri::command]
 pub async fn launcher_update_check(app: tauri::AppHandle) -> Result<LauncherVersionInfo, String> {
-    let current = format!("{}-{PATCH_REVISION}", app.package_info().version);
+    let base = &app.package_info().version;
+    let current = match PATCH_REVISION {
+        Some(revision) => format!("{base}-{revision}"),
+        None => base.to_string(),
+    };
 
     let url = format!("https://api.github.com/repos/{LAUNCHER_RELEASE_REPO}/releases/latest");
     let client = match reqwest::Client::builder()
-        .user_agent(format!("shardx-launcher/{current}"))
+        .user_agent(format!("shyshard-launcher/{current}"))
         .build()
     {
         Ok(c) => c,
-        Err(e) => return Ok(LauncherVersionInfo {
-            current, latest: None, update_available: false, release_url: None,
-        }).map_err(|_: String| e.to_string()),
+        Err(e) => {
+            return Ok(LauncherVersionInfo {
+                current,
+                latest: None,
+                comparable: false,
+                update_available: false,
+                release_url: None,
+            })
+            .map_err(|_: String| e.to_string())
+        }
     };
 
     let resp = client
@@ -1697,38 +2034,77 @@ pub async fn launcher_update_check(app: tauri::AppHandle) -> Result<LauncherVers
         .await;
     let Ok(resp) = resp else {
         return Ok(LauncherVersionInfo {
-            current, latest: None, update_available: false, release_url: None,
+            current,
+            latest: None,
+            comparable: false,
+            update_available: false,
+            release_url: None,
         });
     };
     if !resp.status().is_success() {
         // 404/403 etc → report unknown rather than scare the user.
         return Ok(LauncherVersionInfo {
-            current, latest: None, update_available: false, release_url: None,
+            current,
+            latest: None,
+            comparable: false,
+            update_available: false,
+            release_url: None,
         });
     }
     let body: serde_json::Value = match resp.json().await {
         Ok(v) => v,
-        Err(_) => return Ok(LauncherVersionInfo {
-            current, latest: None, update_available: false, release_url: None,
-        }),
+        Err(_) => {
+            return Ok(LauncherVersionInfo {
+                current,
+                latest: None,
+                comparable: false,
+                update_available: false,
+                release_url: None,
+            })
+        }
     };
-    let latest = body.get("tag_name").and_then(|v| v.as_str()).map(String::from);
-    let release_url = body.get("html_url").and_then(|v| v.as_str()).map(String::from);
-    let update_available = match &latest {
-        Some(l) => is_newer(l, &current),
-        None => false,
-    };
-    Ok(LauncherVersionInfo { current, latest, update_available, release_url })
+    let latest = body
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let release_url = body
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let comparison = PATCH_REVISION
+        .and(latest.as_deref())
+        .and_then(|tag| compare_launcher_builds(tag, &current));
+    Ok(LauncherVersionInfo {
+        current,
+        latest,
+        comparable: comparison.is_some(),
+        update_available: comparison == Some(std::cmp::Ordering::Greater),
+        release_url,
+    })
 }
 
 #[cfg(test)]
 mod proxy_chain_update_tests {
+    fn is_newer(latest: &str, current: &str) -> bool {
+        super::compare_launcher_builds(latest, current) == Some(std::cmp::Ordering::Greater)
+    }
+
     #[test]
     fn patch_revisions_compare_numerically_and_upstream_remains_primary() {
-        assert!(super::is_newer("v2.1.2-pc10", "2.1.2-pc9"));
-        assert!(super::is_newer("v2.2.0-pc1", "2.1.2-pc99"));
-        assert!(!super::is_newer("v2.1.2", "2.1.2-pc1"));
-        assert!(!super::is_newer("v2.1.2-pc1", "2.1.2-pc1"));
-        assert!(!super::is_newer("v2.2.0-beta", "2.1.2-pc1"));
+        assert!(is_newer("v2.1.2-pc10", "2.1.2-pc9"));
+        assert!(is_newer("v2.2.0-pc1", "2.1.2-pc99"));
+        assert!(!is_newer("v2.1.2", "2.1.2-pc1"));
+        assert!(!is_newer("v2.1.2-pc1", "2.1.2-pc1"));
+        assert!(!is_newer("v2.2.0-beta", "2.1.2-pc1"));
+    }
+
+    #[test]
+    fn first_release_maps_to_its_published_build() {
+        use std::cmp::Ordering::{Equal, Greater, Less};
+        let compare = super::compare_launcher_builds;
+        assert_eq!(compare("v1.0-based2.1.5", "2.1.5-pc16"), Some(Greater));
+        assert_eq!(compare("v1.0-based2.1.5", "2.1.5-pc17"), Some(Equal));
+        assert_eq!(compare("v1.0-based2.1.5", "2.1.5-pc18"), Some(Less));
+        assert_eq!(compare("v1.1-based2.1.5", "2.1.5-pc18"), None);
     }
 }

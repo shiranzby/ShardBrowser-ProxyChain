@@ -131,7 +131,8 @@ pub enum Layout {
 /// A mirrored action: a JSON object naming its type in "t". A control never does, which is how
 /// the engine tells them apart.
 fn is_action(line: &str) -> bool {
-    serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(line).is_ok_and(|m| m.contains_key("t"))
+    serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(line)
+        .is_ok_and(|m| m.contains_key("t"))
 }
 
 impl Bus {
@@ -209,13 +210,7 @@ impl Bus {
         };
 
         // Re-place every member, not just the newcomer: slots depend on the count.
-        let replay = self
-            .state
-            .lock()
-            .unwrap()
-            .arranged
-            .get(&group)
-            .copied();
+        let replay = self.state.lock().unwrap().arranged.get(&group).copied();
         if let Some((layout, area)) = replay {
             self.arrange(&group, layout, area);
         }
@@ -261,7 +256,12 @@ impl Bus {
             }
             // The window is gone, so its offer goes with it; unless the browser is still here on
             // a newer connection, as after it greeted again for a new group.
-            if !st.groups.values().flatten().any(|m| m.profile == hello.profile) {
+            if !st
+                .groups
+                .values()
+                .flatten()
+                .any(|m| m.profile == hello.profile)
+            {
                 st.helper.remove(&hello.profile);
             }
         }
@@ -311,8 +311,16 @@ impl Bus {
         let level_h = flexible
             .iter()
             .map(|m| {
-                let ceil = if m.win.max_h > 0 { m.win.max_h } else { m.win.h };
-                if ceil > 0 { ceil } else { ah }
+                let ceil = if m.win.max_h > 0 {
+                    m.win.max_h
+                } else {
+                    m.win.h
+                };
+                if ceil > 0 {
+                    ceil
+                } else {
+                    ah
+                }
             })
             .min()
             .unwrap_or(ah)
@@ -422,7 +430,11 @@ impl Bus {
     /// The operator closed the panel. Remember what it was offering.
     pub fn helper_dismiss(&self, profile: &str) {
         let mut st = self.state.lock().unwrap();
-        let key = st.helper.get(profile).map(Self::helper_key).unwrap_or_default();
+        let key = st
+            .helper
+            .get(profile)
+            .map(Self::helper_key)
+            .unwrap_or_default();
         st.helper_dismissed.insert(profile.to_string(), key);
     }
 
@@ -483,7 +495,12 @@ impl Bus {
     pub fn close(&self, profile: &str) -> bool {
         let st = self.state.lock().unwrap();
         let mut sent = false;
-        for m in st.groups.values().flatten().filter(|m| m.profile == profile) {
+        for m in st
+            .groups
+            .values()
+            .flatten()
+            .filter(|m| m.profile == profile)
+        {
             sent |= m.tx.send("{\"close\":true}\n".to_string()).is_ok();
         }
         sent
@@ -492,7 +509,10 @@ impl Bus {
     /// Whether one profile's browser is on the bus and said it knows `{"quit":true}`.
     pub fn quits(&self, profile: &str) -> bool {
         let st = self.state.lock().unwrap();
-        st.groups.values().flatten().any(|m| m.profile == profile && m.quits)
+        st.groups
+            .values()
+            .flatten()
+            .any(|m| m.profile == profile && m.quits)
     }
 
     /// Stop's ask: quits one profile's browser as `close` does, but past a "Leave site?"
@@ -500,7 +520,12 @@ impl Bus {
     pub fn quit(&self, profile: &str) -> bool {
         let st = self.state.lock().unwrap();
         let mut sent = false;
-        for m in st.groups.values().flatten().filter(|m| m.profile == profile && m.quits) {
+        for m in st
+            .groups
+            .values()
+            .flatten()
+            .filter(|m| m.profile == profile && m.quits)
+        {
             sent |= m.tx.send("{\"quit\":true}\n".to_string()).is_ok();
         }
         sent
@@ -595,7 +620,13 @@ mod tests {
     #[test]
     fn only_an_object_naming_its_type_is_an_action() {
         assert!(is_action(r#"{"t":"mouse","n":1}"#));
-        for line in [r#"{"quit":true}"#, r#"{"close":true,"x":"\"t\":1"}"#, r#"["t"]"#, "t", ""] {
+        for line in [
+            r#"{"quit":true}"#,
+            r#"{"close":true,"x":"\"t\":1"}"#,
+            r#"["t"]"#,
+            "t",
+            "",
+        ] {
             assert!(!is_action(line), "{line}");
         }
     }

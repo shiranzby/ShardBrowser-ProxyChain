@@ -31,14 +31,14 @@ export function proxySummaryLabel(proxy: ProxyEntry) {
 export function proxyOptionLabel(proxy: ProxyEntry, snapshot?: ProxyTestSnapshot, unknownLocation = "Unknown location") {
   const location = proxyLocation(proxy, snapshot);
   const summary = proxySummaryLabel(proxy);
-  return location ? `${location.code} ${location.label} · ${summary}` : `${unknownLocation} · ${summary}`;
+  return location ? `${location.code} ${location.label} ${summary}` : `${unknownLocation} ${summary}`;
 }
 
 export function ProxySummary({ proxy, snapshot }: { proxy: ProxyEntry; snapshot?: ProxyTestSnapshot }) {
   const t = useT();
   const location = proxyLocation(proxy, snapshot);
   const label = proxySummaryLabel(proxy);
-  return <span className="flex min-w-0 items-center gap-1.5" title={`${location?.label ?? t("proxyRow.unknownLocation")} · ${label}`}>
+  return <span className="flex min-w-0 items-center gap-1.5" title={`${location?.label ?? t("proxyRow.unknownLocation")} ${label}`}>
     <ProxyLocation location={location} unknown={t("proxyRow.unknownLocation")} />
     <span className="min-w-0 truncate">{label}</span>
   </span>;

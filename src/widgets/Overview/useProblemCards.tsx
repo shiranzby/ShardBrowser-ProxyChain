@@ -11,6 +11,7 @@ import { countryWord } from "../../shared/lib/geo";
 import { proxyChainErrorFromText, proxyChainErrorText } from "../../shared/lib/proxyChainError";
 import { useNav } from "../../shared/model/navigation";
 import { toast } from "../../shared/model/toast";
+import { useProxyShardVisibility } from "../../shared/model/proxyShardVisibility";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -116,9 +117,10 @@ function retest(ids: string[]) {
  *  dialog for a plan. */
 export function useProblemCards(signals: Signal[], input: SignalInput, scopeKey: string, topUp: (plan: PlanUsage) => void): CardModel[] {
   const { t, lang } = useLangT();
+  const hideProxyShard = useProxyShardVisibility((s) => s.hidden);
   return useMemo(
-    () => signals.map((s) => cardOf(s, input, t, lang, () => hideSignal(s, scopeKey), topUp)),
-    [signals, input, scopeKey, t, lang, topUp],
+    () => signals.filter((s) => !(hideProxyShard && s.kind === "proxyBalance")).map((s) => cardOf(s, input, t, lang, () => hideSignal(s, scopeKey), topUp)),
+    [signals, input, scopeKey, t, lang, topUp, hideProxyShard],
   );
 }
 

@@ -3,27 +3,37 @@
 
 use super::super::client::{Code, Method, TeamClient};
 use super::super::local::cookies;
+use super::super::reap::tests::{reaper_of, spawn_reapers};
 use super::*;
 use crate::team;
 use serde_json::Value;
 use shardbrowser_team_server::{Action, Grant, NewMember, Scope, TestServer};
 use std::time::Instant;
-use super::super::reap::tests::{reaper_of, spawn_reapers};
 
 static OUTCOMES: Mutex<Vec<(String, Outcome)>> = Mutex::new(Vec::new());
 
 pub(super) fn record(id: &str, outcome: Outcome) {
-    OUTCOMES.lock().unwrap_or_else(|e| e.into_inner()).push((id.to_string(), outcome));
+    OUTCOMES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push((id.to_string(), outcome));
 }
 
 /// How each close of this profile ended, in order.
 fn outcomes(id: &str) -> Vec<Outcome> {
     let all = OUTCOMES.lock().unwrap_or_else(|e| e.into_inner());
-    all.iter().filter(|(i, _)| i == id).map(|(_, o)| o.clone()).collect()
+    all.iter()
+        .filter(|(i, _)| i == id)
+        .map(|(_, o)| o.clone())
+        .collect()
 }
 
 fn on(scope: Scope, action: Action) -> Grant {
-    Grant { scope, action, allow: true }
+    Grant {
+        scope,
+        action,
+        allow: true,
+    }
 }
 
 fn team_wide(actions: &[Action]) -> Vec<Grant> {
@@ -31,7 +41,14 @@ fn team_wide(actions: &[Action]) -> Vec<Grant> {
 }
 
 fn everything() -> Vec<Grant> {
-    team_wide(&[Action::See, Action::Start, Action::Edit, Action::Create, Action::Delete, Action::Cookies])
+    team_wide(&[
+        Action::See,
+        Action::Start,
+        Action::Edit,
+        Action::Create,
+        Action::Delete,
+        Action::Cookies,
+    ])
 }
 
 fn b64(bytes: &[u8]) -> String {
@@ -59,7 +76,10 @@ fn alive(pid: u32) -> bool {
 #[cfg(unix)]
 fn stray_sleep() -> u32 {
     let out = std::process::Command::new("sh")
-        .args(["-c", "set -m; sleep 60 </dev/null >/dev/null 2>&1 & echo $!"])
+        .args([
+            "-c",
+            "set -m; sleep 60 </dev/null >/dev/null 2>&1 & echo $!",
+        ])
         .output()
         .unwrap();
     String::from_utf8_lossy(&out.stdout).trim().parse().unwrap()
@@ -106,7 +126,14 @@ impl Team {
             fs::write(&engine, script).unwrap();
             fs::set_permissions(&engine, fs::Permissions::from_mode(0o755)).unwrap();
         }
-        Team { srv, root, team_id, vera, engine, _serial: serial }
+        Team {
+            srv,
+            root,
+            team_id,
+            vera,
+            engine,
+            _serial: serial,
+        }
     }
 
     fn admin(&self) -> TeamClient {
@@ -122,7 +149,10 @@ impl Team {
     async fn profile_with(&self, folder: &str, card: Value) -> String {
         let id = format!("p-{}", uuid::Uuid::new_v4().simple());
         let body = json!({ "name": format!("Shop {}", &id[2..8]), "folder": folder, "data": b64(b"{}"), "card": card });
-        self.admin().call(Method::PUT, &format!("/profiles/{id}"), Some(&body)).await.unwrap();
+        self.admin()
+            .call(Method::PUT, &format!("/profiles/{id}"), Some(&body))
+            .await
+            .unwrap();
         id
     }
 
@@ -139,12 +169,19 @@ impl Team {
     async fn launch(&self, id: &str) -> Result<crate::launch::LaunchOutcome> {
         let before = self.started().len();
         let out = crate::launch::launch_with(self.engine.clone(), id, false).await?;
-        until("the browser up", Duration::from_secs(30), || self.started().len() > before).await;
+        until("the browser up", Duration::from_secs(30), || {
+            self.started().len() > before
+        })
+        .await;
         Ok(out)
     }
 
     fn copy(&self, id: &str) -> PathBuf {
-        self.root.path.join("team-open").join(&self.team_id).join(id)
+        self.root
+            .path
+            .join("team-open")
+            .join(&self.team_id)
+            .join(id)
     }
 
     fn udd(&self, id: &str) -> PathBuf {
@@ -153,16 +190,28 @@ impl Team {
 
     /// The folders the fake browser was started on.
     fn started(&self) -> Vec<String> {
-        fs::read_to_string(self.root.path.join("started")).unwrap_or_default().lines().map(String::from).collect()
+        fs::read_to_string(self.root.path.join("started"))
+            .unwrap_or_default()
+            .lines()
+            .map(String::from)
+            .collect()
     }
 
     /// Each start's command line, as one line.
     fn argv(&self) -> Vec<String> {
-        fs::read_to_string(self.root.path.join("argv")).unwrap_or_default().lines().map(String::from).collect()
+        fs::read_to_string(self.root.path.join("argv"))
+            .unwrap_or_default()
+            .lines()
+            .map(String::from)
+            .collect()
     }
 
     async fn row(&self, id: &str) -> Value {
-        let (_, body) = self.admin().call(Method::GET, &format!("/profiles/{id}"), None).await.unwrap();
+        let (_, body) = self
+            .admin()
+            .call(Method::GET, &format!("/profiles/{id}"), None)
+            .await
+            .unwrap();
         serde_json::from_slice(&body).unwrap()
     }
 
@@ -180,19 +229,26 @@ impl Team {
     }
 
     async fn stop(&self, id: &str) {
-        assert!(crate::process::Tracker::shared().kill(id).await.unwrap(), "nothing to stop");
+        assert!(
+            crate::process::Tracker::shared().kill(id).await.unwrap(),
+            "nothing to stop"
+        );
         self.closed(id).await;
     }
 
     fn nudge(&self, id: &str) {
-        find(&Home::team(&self.team_id), id).unwrap().nudge.notify_one();
+        find(&Home::team(&self.team_id), id)
+            .unwrap()
+            .nudge
+            .notify_one();
     }
 
     /// As if this device slept past its lease.
     fn lease_runs_out(&self, id: &str) {
         let db = rusqlite::Connection::open(self.srv.server.db_path()).unwrap();
         db.busy_timeout(Duration::from_secs(5)).unwrap();
-        db.execute("UPDATE leases SET expires_at = 1 WHERE item_id = ?1", [id]).unwrap();
+        db.execute("UPDATE leases SET expires_at = 1 WHERE item_id = ?1", [id])
+            .unwrap();
     }
 
     fn lease_path(id: &str) -> String {
@@ -201,7 +257,10 @@ impl Team {
 
     async fn set_grants(&self, grants: &[Grant]) {
         let path = format!("/admin/members/{}/grants", self.vera.id);
-        self.admin().call(Method::PUT, &path, Some(&json!({ "grants": grants }))).await.unwrap();
+        self.admin()
+            .call(Method::PUT, &path, Some(&json!({ "grants": grants })))
+            .await
+            .unwrap();
     }
 
     fn follow(&self) {
@@ -209,18 +268,30 @@ impl Team {
     }
 
     fn browser(&self, id: &str) -> u32 {
-        crate::process::Tracker::shared().running().into_iter().find(|r| r.profile_id == id).unwrap().pid
+        crate::process::Tracker::shared()
+            .running()
+            .into_iter()
+            .find(|r| r.profile_id == id)
+            .unwrap()
+            .pid
     }
 
     fn assert_nothing_here(&self, id: &str) {
-        assert!(!self.copy(id).exists(), "{} is still there", self.copy(id).display());
+        assert!(
+            !self.copy(id).exists(),
+            "{} is still there",
+            self.copy(id).display()
+        );
         assert!(!self.is_open(id));
         assert!(!crate::process::Tracker::shared().is_running(id));
     }
 }
 
 fn a_cookie(domain: &str, name: &str, value: &str) -> cookies::Cookie {
-    serde_json::from_value(json!({ "domain": domain, "name": name, "value": value, "expires": 4_000_000_000.0 })).unwrap()
+    serde_json::from_value(
+        json!({ "domain": domain, "name": name, "value": value, "expires": 4_000_000_000.0 }),
+    )
+    .unwrap()
 }
 
 #[cfg(unix)]
@@ -231,13 +302,24 @@ async fn a_closed_profile_is_sent_back_and_nothing_of_it_stays() {
     t.read().await;
     t.launch(&id).await.unwrap();
     let udd = t.udd(&id);
-    assert_eq!(t.started(), [udd.display().to_string()], "started on the copy in team-open");
-    assert!(!crate::store::user_data_root().unwrap().join(&id).exists(), "nothing under user-data");
+    assert_eq!(
+        t.started(),
+        [udd.display().to_string()],
+        "started on the copy in team-open"
+    );
+    assert!(
+        !crate::store::user_data_root().unwrap().join(&id).exists(),
+        "nothing under user-data"
+    );
     assert_eq!(t.row(&id).await["open_on"]["device_id"], team::device_id());
     // Marked with what it was made from only once the copy is whole.
     let m: Marker = serde_json::from_slice(&fs::read(t.copy(&id).join(MARKER)).unwrap()).unwrap();
     assert_eq!((m.id.as_str(), m.base), (id.as_str(), Some(0)));
-    assert_eq!(m.browser.map(|b| b.pid), Some(t.browser(&id)), "its browser named for a reaper");
+    assert_eq!(
+        m.browser.map(|b| b.pid),
+        Some(t.browser(&id)),
+        "its browser named for a reaper"
+    );
 
     // The browser keeps a site's storage and a cookie.
     let store = udd.join("Default/Local Storage/leveldb");
@@ -250,16 +332,27 @@ async fn a_closed_profile_is_sent_back_and_nothing_of_it_stays() {
     t.stop(&id).await;
     assert_eq!(outcomes(&id), [Outcome::Saved(1)]);
     t.assert_nothing_here(&id);
-    assert!(!t.root.path.join("team-open").exists(), "team-open itself goes once empty");
+    assert!(
+        !t.root.path.join("team-open").exists(),
+        "team-open itself goes once empty"
+    );
     let row = t.row(&id).await;
-    assert_eq!((row["session_rev"].as_u64(), row["open_on"].is_null()), (Some(1), true));
+    assert_eq!(
+        (row["session_rev"].as_u64(), row["open_on"].is_null()),
+        (Some(1), true)
+    );
 
     // Opened again, it has what it had; caches stayed behind.
     t.launch(&id).await.unwrap();
     assert_eq!(fs::read(store.join("000003.log")).unwrap(), b"remembered");
     assert!(!udd.join("Default/Cache").exists());
     let jar = cookies::export(&udd).unwrap();
-    assert_eq!(jar.iter().map(|c| (c.name.as_str(), c.value.as_str())).collect::<Vec<_>>(), [("sid", "s3cret")]);
+    assert_eq!(
+        jar.iter()
+            .map(|c| (c.name.as_str(), c.value.as_str()))
+            .collect::<Vec<_>>(),
+        [("sid", "s3cret")]
+    );
     t.stop(&id).await;
     assert_eq!(outcomes(&id), [Outcome::Saved(1), Outcome::Saved(2)]);
     t.assert_nothing_here(&id);
@@ -273,24 +366,48 @@ async fn a_second_device_is_told_where_the_profile_is_open() {
     t.read().await;
     t.launch(&id).await.unwrap();
 
-    let err = t.pc().call(Method::POST, &Team::lease_path(&id), None).await.unwrap_err();
+    let err = t
+        .pc()
+        .call(Method::POST, &Team::lease_path(&id), None)
+        .await
+        .unwrap_err();
     assert_eq!(err.code(), Some(&Code::Leased));
     assert_eq!(err.to_string(), format!("open on {}", team::device_name()));
     // Its settings cannot be saved from there either.
     let body = json!({ "name": "x", "folder": "Ads", "data": "", "base_revision": 1 });
-    let err = t.pc().call(Method::PUT, &format!("/profiles/{id}"), Some(&body)).await.unwrap_err();
+    let err = t
+        .pc()
+        .call(Method::PUT, &format!("/profiles/{id}"), Some(&body))
+        .await
+        .unwrap_err();
     assert_eq!(err.code(), Some(&Code::Leased));
     t.stop(&id).await;
 
     // The other way round: open on the PC, refused here before anything is made.
-    t.pc().call(Method::POST, &Team::lease_path(&id), None).await.unwrap();
+    t.pc()
+        .call(Method::POST, &Team::lease_path(&id), None)
+        .await
+        .unwrap();
     let err = t.launch(&id).await.err().unwrap();
-    assert_eq!(err.to_string(), format!("this profile is open on {}: close it there first", team::device_name()));
-    assert_eq!(super::super::error::find(&err).map(|e| e.code()), Some("leased"));
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "this profile is open on {}: close it there first",
+            team::device_name()
+        )
+    );
+    assert_eq!(
+        super::super::error::find(&err).map(|e| e.code()),
+        Some("leased")
+    );
     t.closed(&id).await;
     t.assert_nothing_here(&id);
     assert_eq!(t.started().len(), 1, "no second browser");
-    assert_eq!(t.row(&id).await["open_on"]["device_id"], "vera-pc", "the PC keeps it");
+    assert_eq!(
+        t.row(&id).await["open_on"]["device_id"],
+        "vera-pc",
+        "the PC keeps it"
+    );
 }
 
 #[cfg(unix)]
@@ -301,12 +418,21 @@ async fn saving_its_settings_while_it_is_open_does_not_stale_its_session() {
     t.read().await;
     t.launch(&id).await.unwrap();
     let tk = super::super::Ticket::now();
-    let mut stored = super::super::profile::fetch_for_edit(&tk, &id).await.unwrap();
-    stored.config.insert("notes".into(), json!("edited while open"));
+    let mut stored = super::super::profile::fetch_for_edit(&tk, &id)
+        .await
+        .unwrap();
+    stored
+        .config
+        .insert("notes".into(), json!("edited while open"));
     let door = super::super::Door("profile_save");
-    super::super::profile::save(door, &tk, stored, Default::default()).await.unwrap();
+    super::super::profile::save(door, &tk, stored, Default::default())
+        .await
+        .unwrap();
     let row = t.row(&id).await;
-    assert_eq!((row["revision"].as_u64(), row["session_rev"].as_u64()), (Some(2), Some(0)));
+    assert_eq!(
+        (row["revision"].as_u64(), row["session_rev"].as_u64()),
+        (Some(2), Some(0))
+    );
     t.stop(&id).await;
     assert_eq!(outcomes(&id), [Outcome::Saved(1)]);
     assert_eq!(t.row(&id).await["card"]["notes"], "edited while open");
@@ -314,7 +440,7 @@ async fn saving_its_settings_while_it_is_open_does_not_stale_its_session() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn a_laptop_that_wakes_up_late_keeps_the_newer_work_and_drops_its_own() {
+async fn a_laptop_that_wakes_up_late_keeps_the_server_revision_and_retains_its_conflict() {
     let t = Team::new(&everything()).await;
     // Free when it wakes: the lease is taken again, and the newer session wins.
     let id = t.profile().await;
@@ -322,12 +448,19 @@ async fn a_laptop_that_wakes_up_late_keeps_the_newer_work_and_drops_its_own() {
     t.launch(&id).await.unwrap();
     t.lease_runs_out(&id);
     let pc = t.pc();
-    pc.call(Method::POST, &Team::lease_path(&id), None).await.unwrap();
+    pc.call(Method::POST, &Team::lease_path(&id), None)
+        .await
+        .unwrap();
     let zip = t.root.path.join("from-the-pc.zip");
     fs::write(&zip, b"the PC's session").unwrap();
-    let saved = pc.upload(&format!("/profiles/{id}/session?base_session_rev=0"), &zip).await.unwrap();
+    let saved = pc
+        .upload(&format!("/profiles/{id}/session?base_session_rev=0"), &zip)
+        .await
+        .unwrap();
     assert_eq!(saved.session_rev, 1);
-    pc.call(Method::DELETE, &Team::lease_path(&id), None).await.unwrap();
+    pc.call(Method::DELETE, &Team::lease_path(&id), None)
+        .await
+        .unwrap();
     t.nudge(&id);
     let here = team::device_id();
     let mut taken = false;
@@ -339,10 +472,18 @@ async fn a_laptop_that_wakes_up_late_keeps_the_newer_work_and_drops_its_own() {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     assert!(taken, "the lease was not taken again");
+    fs::write(t.udd(&id).join("conflict-sentinel"), b"local changes").unwrap();
     t.stop(&id).await;
     assert_eq!(outcomes(&id), [Outcome::Stale]);
     assert_eq!(t.session_rev(&id).await, 1, "the PC's work stays");
     t.assert_nothing_here(&id);
+    let saved = fs::read_dir(recovery_root(&t.team_id).unwrap().join(&id)).unwrap();
+    let paths: Vec<_> = saved.map(|entry| entry.unwrap().path()).collect();
+    assert_eq!(paths.len(), 1);
+    assert_eq!(
+        fs::read(paths[0].join("udd/conflict-sentinel")).unwrap(),
+        b"local changes"
+    );
     assert!(t.row(&id).await["open_on"].is_null());
 
     // Still held by the PC when it wakes: closed unsent at once.
@@ -351,14 +492,22 @@ async fn a_laptop_that_wakes_up_late_keeps_the_newer_work_and_drops_its_own() {
     t.launch(&id).await.unwrap();
     let pid = t.browser(&id);
     t.lease_runs_out(&id);
-    pc.call(Method::POST, &Team::lease_path(&id), None).await.unwrap();
+    pc.call(Method::POST, &Team::lease_path(&id), None)
+        .await
+        .unwrap();
     t.nudge(&id);
     t.closed(&id).await;
     assert_eq!(outcomes(&id), [Outcome::Discarded]);
     assert!(!alive(pid), "the browser is closed");
     t.assert_nothing_here(&id);
     let row = t.row(&id).await;
-    assert_eq!((row["session_rev"].as_u64(), row["open_on"]["device_id"].as_str()), (Some(0), Some("vera-pc")));
+    assert_eq!(
+        (
+            row["session_rev"].as_u64(),
+            row["open_on"]["device_id"].as_str()
+        ),
+        (Some(0), Some("vera-pc"))
+    );
 }
 
 #[cfg(unix)]
@@ -391,7 +540,15 @@ fn left_behind(t: &Team, id: &str, base: Option<u64>) -> u32 {
     let store = dir.join("udd/Default/Local Storage/leveldb");
     fs::create_dir_all(&store).unwrap();
     fs::write(store.join("000003.log"), id.as_bytes()).unwrap();
-    let m = Marker { home: Home::team(&t.team_id), id: id.to_string(), name: id.to_string(), base, nonce: format!("n-{id}"), own: None, browser: None };
+    let m = Marker {
+        home: Home::team(&t.team_id),
+        id: id.to_string(),
+        name: id.to_string(),
+        base,
+        nonce: format!("n-{id}"),
+        own: None,
+        browser: None,
+    };
     fs::write(dir.join(MARKER), serde_json::to_vec(&m).unwrap()).unwrap();
     let pid = stray_sleep();
     let host = crate::reset::this_host().unwrap();
@@ -406,20 +563,40 @@ async fn the_sweep_closes_and_wipes_what_a_dead_launcher_left() {
     let me = TeamClient::for_team(&t.team_id).unwrap();
     // Nobody saved since: sent back. Held when the launcher died, as it would be.
     let kept = t.profile().await;
-    me.call(Method::POST, &Team::lease_path(&kept), None).await.unwrap();
+    me.call(Method::POST, &Team::lease_path(&kept), None)
+        .await
+        .unwrap();
     // Saved from the PC meanwhile: not sent over it.
     let newer = t.profile().await;
     let pc = t.pc();
-    pc.call(Method::POST, &Team::lease_path(&newer), None).await.unwrap();
+    pc.call(Method::POST, &Team::lease_path(&newer), None)
+        .await
+        .unwrap();
     let zip = t.root.path.join("pc.zip");
     fs::write(&zip, b"newer").unwrap();
-    pc.upload(&format!("/profiles/{newer}/session?base_session_rev=0"), &zip).await.unwrap();
-    pc.call(Method::DELETE, &Team::lease_path(&newer), None).await.unwrap();
+    pc.upload(
+        &format!("/profiles/{newer}/session?base_session_rev=0"),
+        &zip,
+    )
+    .await
+    .unwrap();
+    pc.call(Method::DELETE, &Team::lease_path(&newer), None)
+        .await
+        .unwrap();
     // Died mid-download: nothing to send.
     let half = t.profile().await;
 
-    let pids = [left_behind(&t, &kept, Some(0)), left_behind(&t, &newer, Some(0)), left_behind(&t, &half, None)];
-    let junk = t.root.path.join("team-open").join(&t.team_id).join("no-marker");
+    let pids = [
+        left_behind(&t, &kept, Some(0)),
+        left_behind(&t, &newer, Some(0)),
+        left_behind(&t, &half, None),
+    ];
+    let junk = t
+        .root
+        .path
+        .join("team-open")
+        .join(&t.team_id)
+        .join("no-marker");
     fs::create_dir_all(junk.join("udd")).unwrap();
 
     sweep();
@@ -428,15 +605,31 @@ async fn the_sweep_closes_and_wipes_what_a_dead_launcher_left() {
         t.assert_nothing_here(id);
     }
     for pid in pids {
-        until("the browser closed", Duration::from_secs(10), || !alive(pid)).await;
+        until("the browser closed", Duration::from_secs(10), || {
+            !alive(pid)
+        })
+        .await;
     }
-    assert!(!t.root.path.join("team-open").exists(), "everything there went");
+    assert!(
+        !t.root.path.join("team-open").exists(),
+        "everything there went"
+    );
     assert_eq!(outcomes(&kept), [Outcome::Saved(1)]);
     assert_eq!(outcomes(&newer), [Outcome::Stale]);
+    let saved = fs::read_dir(recovery_root(&t.team_id).unwrap().join(&newer)).unwrap();
+    let paths: Vec<_> = saved.map(|entry| entry.unwrap().path()).collect();
+    assert_eq!(paths.len(), 1);
+    assert!(paths[0].join("udd").is_dir());
     assert_eq!(outcomes(&half), [Outcome::Discarded]);
-    assert_eq!((t.session_rev(&kept).await, t.session_rev(&newer).await), (1, 1));
+    assert_eq!(
+        (t.session_rev(&kept).await, t.session_rev(&newer).await),
+        (1, 1)
+    );
     for id in [&kept, &newer, &half] {
-        assert!(t.row(id).await["open_on"].is_null(), "the lease of {id} went back");
+        assert!(
+            t.row(id).await["open_on"].is_null(),
+            "the lease of {id} went back"
+        );
     }
 }
 
@@ -447,7 +640,10 @@ async fn taking_start_back_closes_the_profile_within_two_seconds_and_sends_it_ba
     let id = t.profile().await;
     t.read().await;
     t.follow();
-    until("the permission", Duration::from_secs(5), || perm::held_epoch(&t.team_id).is_some()).await;
+    until("the permission", Duration::from_secs(5), || {
+        perm::held_epoch(&t.team_id).is_some()
+    })
+    .await;
     t.launch(&id).await.unwrap();
     let pid = t.browser(&id);
 
@@ -455,7 +651,11 @@ async fn taking_start_back_closes_the_profile_within_two_seconds_and_sends_it_ba
     let took = until("the browser closed", Duration::from_secs(2), || !alive(pid)).await;
     assert!(took < Duration::from_secs(2), "{took:?}");
     t.closed(&id).await;
-    assert_eq!(outcomes(&id), [Outcome::Saved(1)], "she worked on it rightfully");
+    assert_eq!(
+        outcomes(&id),
+        [Outcome::Saved(1)],
+        "she worked on it rightfully"
+    );
     t.assert_nothing_here(&id);
 }
 
@@ -466,25 +666,50 @@ async fn a_removed_member_loses_the_open_copy_unsent_and_a_plain_refusal_closes_
     let id = t.profile().await;
     t.read().await;
     t.follow();
-    until("the permission", Duration::from_secs(5), || perm::held_epoch(&t.team_id).is_some()).await;
+    until("the permission", Duration::from_secs(5), || {
+        perm::held_epoch(&t.team_id).is_some()
+    })
+    .await;
     t.launch(&id).await.unwrap();
     let pid = t.browser(&id);
 
     // No Create: refused, and that is all it is.
     let me = TeamClient::for_team(&t.team_id).unwrap();
     let body = json!({ "name": "New", "data": "" });
-    let err = me.call(Method::PUT, "/profiles/p-new", Some(&body)).await.unwrap_err();
+    let err = me
+        .call(Method::PUT, "/profiles/p-new", Some(&body))
+        .await
+        .unwrap_err();
     assert_eq!(err.code(), Some(&Code::Forbidden));
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(alive(pid) && t.is_open(&id) && t.udd(&id).is_dir());
 
-    t.admin().call(Method::DELETE, &format!("/admin/members/{}", t.vera.id), None).await.unwrap();
-    until("the copy wiped", Duration::from_secs(5), || !t.copy(&id).exists()).await;
+    let recovery = recovery_root(&t.team_id).unwrap();
+    let other_recovery = recovery_root("another-team").unwrap();
+    fs::create_dir_all(recovery.join("p-old/attempt/udd")).unwrap();
+    fs::create_dir_all(other_recovery.join("p-other/attempt/udd")).unwrap();
+    t.admin()
+        .call(
+            Method::DELETE,
+            &format!("/admin/members/{}", t.vera.id),
+            None,
+        )
+        .await
+        .unwrap();
+    until("the copy wiped", Duration::from_secs(5), || {
+        !t.copy(&id).exists()
+    })
+    .await;
     t.closed(&id).await;
     assert!(!alive(pid));
     assert_eq!(outcomes(&id), [Outcome::Discarded]);
     assert_eq!(t.session_rev(&id).await, 0, "nothing sent");
     assert!(team::link(&t.team_id).unwrap().unwrap().revoked);
+    until("the conflict wiped", Duration::from_secs(5), || {
+        !recovery.exists()
+    })
+    .await;
+    assert!(other_recovery.join("p-other/attempt/udd").is_dir());
 }
 
 #[cfg(unix)]
@@ -537,7 +762,11 @@ async fn with_the_server_gone_a_team_profile_does_not_start() {
     t.read().await;
     team::set_server(&t.team_id, "http://127.0.0.1:1");
     let err = t.launch(&id).await.err().unwrap();
-    assert_eq!(super::super::error::find(&err).map(|e| e.code()), Some("offline"), "{err:#}");
+    assert_eq!(
+        super::super::error::find(&err).map(|e| e.code()),
+        Some("offline"),
+        "{err:#}"
+    );
     t.assert_nothing_here(&id);
     assert!(t.started().is_empty());
 }
@@ -550,15 +779,26 @@ async fn the_bound_proxy_comes_with_the_session_and_one_that_is_gone_stops_the_s
     let t = Team::new(&[ads(Action::See), ads(Action::Start)]).await;
     let login = json!({ "name": "DE", "kind": "http", "host": "203.0.113.9", "port": 3128, "username": "u", "password": "p" });
     let proxy = json!({ "name": "DE", "kind": "http", "country": "DE", "data": b64(login.to_string().as_bytes()) });
-    t.admin().call(Method::PUT, "/proxies/x1", Some(&proxy)).await.unwrap();
+    t.admin()
+        .call(Method::PUT, "/proxies/x1", Some(&proxy))
+        .await
+        .unwrap();
     let id = t.profile_with("Ads", json!({ "proxy_id": "x1" })).await;
     t.read().await;
-    assert!(super::super::proxy::get("x1").unwrap().is_none_or(|p| p.host.is_empty()), "not hers to see");
+    assert!(
+        super::super::proxy::get("x1")
+            .unwrap()
+            .is_none_or(|p| p.host.is_empty()),
+        "not hers to see"
+    );
 
     let (start, _) = passes(&t.team_id, &id, false).await.unwrap();
     let opened = open_team(&t.team_id, &start, false).await.unwrap();
     let p = opened.proxy.as_ref().unwrap();
-    assert_eq!((p.host.as_str(), p.port, p.username.as_str()), ("203.0.113.9", 3128, "u"));
+    assert_eq!(
+        (p.host.as_str(), p.port, p.username.as_str()),
+        ("203.0.113.9", 3128, "u")
+    );
     // A start that stops short gives it all back.
     drop(opened);
     t.closed(&id).await;
@@ -566,7 +806,10 @@ async fn the_bound_proxy_comes_with_the_session_and_one_that_is_gone_stops_the_s
     assert_eq!(outcomes(&id), [Outcome::Discarded]);
     assert!(t.row(&id).await["open_on"].is_null());
 
-    t.admin().call(Method::DELETE, "/proxies/x1?base_revision=1", None).await.unwrap();
+    t.admin()
+        .call(Method::DELETE, "/proxies/x1?base_revision=1", None)
+        .await
+        .unwrap();
     let err = t.launch(&id).await.err().unwrap().to_string();
     assert!(err.contains("no longer exists (x1)"), "{err}");
     t.closed(&id).await;
@@ -640,24 +883,45 @@ async fn a_200_mb_session_goes_and_comes_back_without_being_held_in_memory() {
     let before = peak_rss();
 
     let (out, src2) = (t.root.path.join("big/session.zip"), src.clone());
-    let packed = tokio::task::spawn_blocking(move || pack::pack(&src2, &out, BUDGET)).await.unwrap().unwrap();
+    let packed = tokio::task::spawn_blocking(move || pack::pack(&src2, &out, BUDGET))
+        .await
+        .unwrap()
+        .unwrap();
     assert!(packed.size > 200 << 20, "{}", packed.size);
     let me = TeamClient::for_team(&t.team_id).unwrap();
-    me.call(Method::POST, &Team::lease_path(&id), None).await.unwrap();
+    me.call(Method::POST, &Team::lease_path(&id), None)
+        .await
+        .unwrap();
     let path = format!("/profiles/{id}/session");
     let up = t.root.path.join("big/session.zip");
-    assert_eq!(me.upload(&format!("{path}?base_session_rev=0"), &up).await.unwrap().session_rev, 1);
+    assert_eq!(
+        me.upload(&format!("{path}?base_session_rev=0"), &up)
+            .await
+            .unwrap()
+            .session_rev,
+        1
+    );
     fs::remove_file(&up).unwrap();
     let down = t.root.path.join("big/back.zip");
     let front = me.download(&path, &down).await.unwrap();
     assert_eq!((front.session_rev, front.size), (1, packed.size));
     let dst = t.root.path.join("big/udd2");
     let (down2, dst2) = (down.clone(), dst.clone());
-    tokio::task::spawn_blocking(move || pack::unpack(&down2, &dst2)).await.unwrap().unwrap();
+    tokio::task::spawn_blocking(move || pack::unpack(&down2, &dst2))
+        .await
+        .unwrap()
+        .unwrap();
 
     let grew = peak_rss().saturating_sub(before);
-    assert!(same_file(&blob, &dst.join("Default/IndexedDB/https_big.example_0.indexeddb.blob/1/00/1")));
-    assert!(grew < 100 << 20, "the round trip held {} MB at once", grew >> 20);
+    assert!(same_file(
+        &blob,
+        &dst.join("Default/IndexedDB/https_big.example_0.indexeddb.blob/1/00/1")
+    ));
+    assert!(
+        grew < 100 << 20,
+        "the round trip held {} MB at once",
+        grew >> 20
+    );
 }
 
 #[cfg(unix)]
@@ -666,8 +930,14 @@ async fn debugging_a_team_profile_needs_its_cookies_right() {
     let t = Team::new(&team_wide(&[Action::See, Action::Start])).await;
     let id = t.profile().await;
     t.read().await;
-    let err = crate::launch::launch_with(t.engine.clone(), &id, true).await.err().unwrap();
-    assert_eq!(err.to_string(), "not allowed in this team: needs cookies on the profile");
+    let err = crate::launch::launch_with(t.engine.clone(), &id, true)
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(
+        err.to_string(),
+        "not allowed in this team: needs cookies on the profile"
+    );
     t.assert_nothing_here(&id);
     assert!(t.row(&id).await["open_on"].is_null(), "no lease was taken");
     assert!(t.started().is_empty());
@@ -680,7 +950,10 @@ async fn a_replaced_token_keeps_the_copy_until_the_new_invite_sends_it_back() {
     let id = t.profile().await;
     t.read().await;
     t.follow();
-    until("the permission", Duration::from_secs(5), || perm::held_epoch(&t.team_id).is_some()).await;
+    until("the permission", Duration::from_secs(5), || {
+        perm::held_epoch(&t.team_id).is_some()
+    })
+    .await;
     t.launch(&id).await.unwrap();
     let pid = t.browser(&id);
     let store = t.udd(&id).join("Default/Local Storage/leveldb");
@@ -689,11 +962,17 @@ async fn a_replaced_token_keeps_the_copy_until_the_new_invite_sends_it_back() {
 
     let path = format!("/admin/members/{}/token", t.vera.id);
     let (_, body) = t.admin().call(Method::POST, &path, None).await.unwrap();
-    let token = serde_json::from_slice::<Value>(&body).unwrap()["token"].as_str().unwrap().to_string();
+    let token = serde_json::from_slice::<Value>(&body).unwrap()["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
     t.closed(&id).await;
     assert!(!alive(pid));
     assert_eq!(outcomes(&id), [Outcome::Kept]);
-    assert!(t.copy(&id).join(MARKER).is_file(), "kept for the new invite");
+    assert!(
+        t.copy(&id).join(MARKER).is_file(),
+        "kept for the new invite"
+    );
 
     // The launcher quits or dies before the invite comes: its reaper, then the
     // next start's sweep, leave the copy for the invite.
@@ -701,17 +980,39 @@ async fn a_replaced_token_keeps_the_copy_until_the_new_invite_sends_it_back() {
     assert!(reap(t.copy(&id), &nonce).await);
     assert!(retry_left());
     sweep();
-    until("the sweep done", Duration::from_secs(10), || outcomes(&id).len() == 3).await;
+    until("the sweep done", Duration::from_secs(10), || {
+        outcomes(&id).len() == 3
+    })
+    .await;
     t.closed(&id).await;
     assert_eq!(outcomes(&id), [Outcome::Kept, Outcome::Kept, Outcome::Kept]);
-    assert_eq!(fs::read(store.join("000003.log")).unwrap(), b"worked on", "kept whole");
+    assert_eq!(
+        fs::read(store.join("000003.log")).unwrap(),
+        b"worked on",
+        "kept whole"
+    );
     assert!(t.copy(&id).join(MARKER).is_file());
-    assert_eq!(t.session_rev(&id).await, 0, "nothing sent without the invite");
+    assert_eq!(
+        t.session_rev(&id).await,
+        0,
+        "nothing sent without the invite"
+    );
 
     // The new invite: the same member again, and what she did goes back.
     super::super::join(&t.srv.url, &token).await.unwrap();
-    until("sent back", Duration::from_secs(10), || outcomes(&id).len() == 4).await;
-    assert_eq!(outcomes(&id), [Outcome::Kept, Outcome::Kept, Outcome::Kept, Outcome::Saved(1)]);
+    until("sent back", Duration::from_secs(10), || {
+        outcomes(&id).len() == 4
+    })
+    .await;
+    assert_eq!(
+        outcomes(&id),
+        [
+            Outcome::Kept,
+            Outcome::Kept,
+            Outcome::Kept,
+            Outcome::Saved(1)
+        ]
+    );
     t.closed(&id).await;
     t.assert_nothing_here(&id);
     assert!(t.row(&id).await["open_on"].is_null());
@@ -719,15 +1020,24 @@ async fn a_replaced_token_keeps_the_copy_until_the_new_invite_sends_it_back() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn delete_all_data_and_a_data_move_wait_for_an_open_team_profile_and_the_reset_forgets_the_teams() {
+async fn delete_all_data_and_a_data_move_wait_for_an_open_team_profile_and_the_reset_forgets_the_teams(
+) {
     let t = Team::new(&everything()).await;
     let id = t.profile().await;
     t.read().await;
     t.launch(&id).await.unwrap();
 
     // Refused while its copy is here, before anything is read or moved.
-    assert_eq!(crate::reset::app_reset_plan().await.unwrap_err(), STILL_OPEN);
-    assert_eq!(crate::reset::app_reset("2026-10-08-153000.0".into()).await.unwrap_err(), STILL_OPEN);
+    assert_eq!(
+        crate::reset::app_reset_plan().await.unwrap_err(),
+        STILL_OPEN
+    );
+    assert_eq!(
+        crate::reset::app_reset("2026-10-08-153000.0".into())
+            .await
+            .unwrap_err(),
+        STILL_OPEN
+    );
     let elsewhere = t.root.path.join("moved");
     let err = crate::migrate::run_with(&elsewhere, &|_| {}).unwrap_err();
     assert_eq!(err.to_string(), STILL_OPEN);
@@ -741,12 +1051,35 @@ async fn delete_all_data_and_a_data_move_wait_for_an_open_team_profile_and_the_r
     // for a new invite too; none of it is in the backup.
     let kept = t.copy("p-kept");
     fs::create_dir_all(kept.join("udd")).unwrap();
-    let m = Marker { home: Home::team(&t.team_id), id: "p-kept".into(), name: String::new(), base: Some(0), nonce: String::new(), own: None, browser: None };
+    let m = Marker {
+        home: Home::team(&t.team_id),
+        id: "p-kept".into(),
+        name: String::new(),
+        base: Some(0),
+        nonce: String::new(),
+        own: None,
+        browser: None,
+    };
     fs::write(kept.join(MARKER), serde_json::to_vec(&m).unwrap()).unwrap();
+    let recovered = recovery_root(&t.team_id).unwrap();
+    fs::create_dir_all(recovered.join("p-conflict/attempt/udd")).unwrap();
     super::super::forget_teams().unwrap();
-    assert!(!crate::store::local_root().unwrap().join("teams.json").exists(), "the token went");
+    assert!(
+        !crate::store::local_root()
+            .unwrap()
+            .join("teams.json")
+            .exists(),
+        "the token went"
+    );
     assert!(!team::has_token(&t.team_id));
-    assert!(!t.root.path.join("team-open").exists(), "nothing of the team stays");
+    assert!(
+        !t.root.path.join("team-open").exists(),
+        "nothing of the team stays"
+    );
+    assert!(
+        !recovered.exists(),
+        "team conflicts are not kept after reset"
+    );
     assert!(perm::held_epoch(&t.team_id).is_none());
     assert_eq!(team::active_team(), None);
     assert!(team::state().unwrap().teams.is_empty());
@@ -759,32 +1092,85 @@ async fn a_team_profiles_debugging_address_shows_only_with_cookies_and_only_in_i
     let id = t.profile().await;
     t.read().await;
     t.follow();
-    until("the permission", Duration::from_secs(5), || perm::held_epoch(&t.team_id).is_some()).await;
+    until("the permission", Duration::from_secs(5), || {
+        perm::held_epoch(&t.team_id).is_some()
+    })
+    .await;
     t.launch(&id).await.unwrap();
     let ws = "ws://127.0.0.1:9/devtools/browser/x";
-    let info = crate::process::CdpInfo { port: 9, http_url: "http://127.0.0.1:9".into(), web_socket_debugger_url: ws.into() };
+    let info = crate::process::CdpInfo {
+        port: 9,
+        http_url: "http://127.0.0.1:9".into(),
+        web_socket_debugger_url: ws.into(),
+    };
     crate::process::Tracker::shared().set_cdp(&id, info);
-    let shown = || super::super::running().into_iter().find(|r| r.profile_id == id).map(|r| r.cdp.is_some());
+    let shown = || {
+        super::super::running()
+            .into_iter()
+            .find(|r| r.profile_id == id)
+            .map(|r| r.cdp.is_some())
+    };
     assert_eq!(shown(), Some(true));
-    assert_eq!(super::super::cdp_pass(&id).map(|c| c.web_socket_debugger_url).as_deref(), Ok(ws));
+    assert_eq!(
+        super::super::cdp_pass(&id)
+            .map(|c| c.web_socket_debugger_url)
+            .as_deref(),
+        Ok(ws)
+    );
 
     // Cookies taken back, Start kept: still open (started without debugging), the address hidden.
     let before = perm::held_epoch(&t.team_id);
-    t.set_grants(&team_wide(&[Action::See, Action::Start])).await;
-    until("the new permission", Duration::from_secs(5), || perm::held_epoch(&t.team_id) != before).await;
+    t.set_grants(&team_wide(&[Action::See, Action::Start]))
+        .await;
+    until("the new permission", Duration::from_secs(5), || {
+        perm::held_epoch(&t.team_id) != before
+    })
+    .await;
     assert_eq!(shown(), Some(false));
-    assert_eq!(super::super::cdp_pass(&id).unwrap_err(), "not allowed in this team: needs cookies on the profile");
+    assert_eq!(
+        super::super::cdp_pass(&id).unwrap_err(),
+        "not allowed in this team: needs cookies on the profile"
+    );
     assert!(t.is_open(&id));
 
     // In the personal space the team's browser is neither listed nor reachable.
     team::set_space(team::Space::Personal).unwrap();
     assert_eq!(shown(), None);
-    assert!(super::super::cdp_pass(&id).unwrap_err().starts_with("no profile"));
+    assert!(super::super::cdp_pass(&id)
+        .unwrap_err()
+        .starts_with("no profile"));
     t.stop(&id).await;
     t.assert_nothing_here(&id);
 }
 
 // ---- the reaper ----
+
+#[test]
+fn recovery_copies_lists_only_udd_and_sorts_by_identity() {
+    let root = crate::store::test_root("recovery-copies");
+    let base = root.path.join("team-recovery");
+    let first = base.join("team-a").join("profile-2").join("attempt-b");
+    let second = base.join("team-a").join("profile-1").join("attempt-a");
+    let ignored = base
+        .join("team-a")
+        .join("profile-1")
+        .join("attempt-a")
+        .join("other");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second.join("udd")).unwrap();
+    std::fs::create_dir_all(&ignored).unwrap();
+    std::fs::write(first.join("udd"), b"not a directory").unwrap();
+    std::fs::write(second.join("udd").join("Cookies"), b"12345").unwrap();
+    std::fs::write(ignored.join("ignored.txt"), b"ignored").unwrap();
+
+    let rows = recovery_copies().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].team, "team-a");
+    assert_eq!(rows[0].profile_id, "profile-1");
+    assert_eq!(rows[0].attempt, "attempt-a");
+    assert_eq!(rows[0].path, second.join("udd").display().to_string());
+    assert_eq!(rows[0].bytes, 5);
+}
 
 /// What a test launcher of its own process is to open, as JSON.
 const LAUNCHER: &str = "SHARDX_TEST_LAUNCHER";
@@ -794,22 +1180,37 @@ const LAUNCHER: &str = "SHARDX_TEST_LAUNCHER";
 #[test]
 #[ignore = "started by a_killed_launcher_leaves_no_browser_and_no_copy_behind"]
 fn as_launcher() {
-    let Ok(job) = std::env::var(LAUNCHER) else { return };
+    let Ok(job) = std::env::var(LAUNCHER) else {
+        return;
+    };
     let job: Value = serde_json::from_str(&job).unwrap();
     let s = |k: &str| job[k].as_str().unwrap().to_string();
     let root = PathBuf::from(s("root"));
     crate::store::set_test_config(Some(s("config").into()));
     crate::store::set_data_root(Some(root.clone()));
     spawn_reapers(true);
-    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     rt.block_on(async {
         let (team, id) = (s("team"), s("id"));
         cache::reload(&team, super::super::live::default_tell()).await;
-        crate::launch::launch_with(PathBuf::from(s("engine")), &id, false).await.unwrap();
+        crate::launch::launch_with(PathBuf::from(s("engine")), &id, false)
+            .await
+            .unwrap();
         let copy = root.join("team-open").join(&team).join(&id);
-        until("the browser up", Duration::from_secs(30), || crate::reset::lock_is_live(&copy.join("udd"))).await;
+        until("the browser up", Duration::from_secs(30), || {
+            crate::reset::lock_is_live(&copy.join("udd"))
+        })
+        .await;
         let reaper = reaper_of(&copy).expect("a reaper for the copy");
-        let browser = crate::process::Tracker::shared().running().into_iter().find(|r| r.profile_id == id).unwrap().pid;
+        let browser = crate::process::Tracker::shared()
+            .running()
+            .into_iter()
+            .find(|r| r.profile_id == id)
+            .unwrap()
+            .pid;
         println!("READY {reaper} {browser}");
         std::future::pending::<()>().await;
     });
@@ -826,7 +1227,14 @@ async fn a_killed_launcher_leaves_no_browser_and_no_copy_behind() {
         "id": id, "engine": t.engine,
     });
     let mut launcher = tokio::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "--ignored", "--nocapture", "--test-threads=1", "-q", "space::open::tests::as_launcher"])
+        .args([
+            "--exact",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+            "-q",
+            "space::open::tests::as_launcher",
+        ])
         .env(LAUNCHER, job.to_string())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -853,14 +1261,28 @@ async fn a_killed_launcher_leaves_no_browser_and_no_copy_behind() {
     assert_eq!(t.row(&id).await["open_on"]["device_id"], team::device_id());
 
     // The reaper's own command line: which launcher, which copy, and no token.
-    let ps = std::process::Command::new("ps").args(["-ww", "-o", "command=", "-p", &reaper.to_string()]).output().unwrap();
+    let ps = std::process::Command::new("ps")
+        .args(["-ww", "-o", "command=", "-p", &reaper.to_string()])
+        .output()
+        .unwrap();
     let line = String::from_utf8_lossy(&ps.stdout).trim().to_string();
-    assert!(line.ends_with(&format!(" --reap {launcher_pid} {}", copy.display())), "{line}");
+    assert!(
+        line.ends_with(&format!(" --reap {launcher_pid} {}", copy.display())),
+        "{line}"
+    );
     assert!(!line.contains(&t.vera.token), "{line}");
 
     // SAFETY: a signal to our own child.
-    assert_eq!(unsafe { libc::kill(launcher_pid as libc::pid_t, libc::SIGKILL) }, 0);
-    let took = until("the browser and the copy gone", Duration::from_secs(25), || !alive(browser) && !copy.exists()).await;
+    assert_eq!(
+        unsafe { libc::kill(launcher_pid as libc::pid_t, libc::SIGKILL) },
+        0
+    );
+    let took = until(
+        "the browser and the copy gone",
+        Duration::from_secs(25),
+        || !alive(browser) && !copy.exists(),
+    )
+    .await;
     eprintln!("[test] reaped in {took:?}");
     until("the reaper gone", Duration::from_secs(5), || !alive(reaper)).await;
     assert_eq!(t.session_rev(&id).await, 1, "sent back before it was wiped");
@@ -893,7 +1315,11 @@ async fn a_normal_close_leaves_no_reaper_behind() {
 async fn a_copy_being_reaped_is_left_to_its_reaper_and_an_old_reaper_leaves_a_new_copy() {
     let t = Team::new(&everything()).await;
     let id = t.profile().await;
-    TeamClient::for_team(&t.team_id).unwrap().call(Method::POST, &Team::lease_path(&id), None).await.unwrap();
+    TeamClient::for_team(&t.team_id)
+        .unwrap()
+        .call(Method::POST, &Team::lease_path(&id), None)
+        .await
+        .unwrap();
     let pid = left_behind(&t, &id, Some(0));
     let copy = t.copy(&id);
 
@@ -923,20 +1349,42 @@ async fn a_reaper_stops_sending_at_its_limit_and_keeps_the_copy_for_the_next_sta
     let t = Team::new(&everything()).await;
     let id = t.profile().await;
     let pid = left_behind(&t, &id, Some(0));
-    TeamClient::for_team(&t.team_id).unwrap().call(Method::POST, &Team::lease_path(&id), None).await.unwrap();
+    TeamClient::for_team(&t.team_id)
+        .unwrap()
+        .call(Method::POST, &Team::lease_path(&id), None)
+        .await
+        .unwrap();
     // A server that takes the connection and never answers.
     let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    team::set_server(&t.team_id, &format!("http://{}", silent.local_addr().unwrap()));
+    team::set_server(
+        &t.team_id,
+        &format!("http://{}", silent.local_addr().unwrap()),
+    );
     let copy = t.copy(&id);
-    let s = Session::adopt(read_marker(&copy).unwrap(), copy.clone(), take_reaping(&copy).unwrap());
+    let s = Session::adopt(
+        read_marker(&copy).unwrap(),
+        copy.clone(),
+        take_reaping(&copy).unwrap(),
+    );
     let started = Instant::now();
     let outcome = s.close_orphan(Some(Duration::from_secs(1))).await;
     let took = started.elapsed();
-    assert_eq!(outcome, Outcome::Unsent("the team server did not take it in time".into()));
-    assert!(took < Duration::from_secs(1) + Duration::from_secs(3), "{took:?}");
+    assert_eq!(
+        outcome,
+        Outcome::Unsent("the team server did not take it in time".into())
+    );
+    assert!(
+        took < Duration::from_secs(1) + Duration::from_secs(3),
+        "{took:?}"
+    );
     assert!(!alive(pid));
-    assert!(read_marker(&copy).is_some_and(|m| m.base == Some(0)), "kept, marked as it was");
-    assert!(copy.join("udd/Default/Local Storage/leveldb/000003.log").exists());
+    assert!(
+        read_marker(&copy).is_some_and(|m| m.base == Some(0)),
+        "kept, marked as it was"
+    );
+    assert!(copy
+        .join("udd/Default/Local Storage/leveldb/000003.log")
+        .exists());
     assert!(!t.is_open(&id));
     drop(silent);
 
@@ -944,7 +1392,13 @@ async fn a_reaper_stops_sending_at_its_limit_and_keeps_the_copy_for_the_next_sta
     team::set_server(&t.team_id, &t.srv.url);
     sweep();
     t.closed(&id).await;
-    assert_eq!(outcomes(&id), [Outcome::Unsent("the team server did not take it in time".into()), Outcome::Saved(1)]);
+    assert_eq!(
+        outcomes(&id),
+        [
+            Outcome::Unsent("the team server did not take it in time".into()),
+            Outcome::Saved(1)
+        ]
+    );
     t.assert_nothing_here(&id);
     assert!(t.row(&id).await["open_on"].is_null());
 }
@@ -962,14 +1416,24 @@ async fn a_session_the_server_did_not_take_is_sent_again() {
     fs::create_dir_all(&store).unwrap();
     fs::write(store.join("000003.log"), b"made here").unwrap();
     let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    team::set_server(&t.team_id, &format!("http://{}", closed.local_addr().unwrap()));
+    team::set_server(
+        &t.team_id,
+        &format!("http://{}", closed.local_addr().unwrap()),
+    );
     drop(closed);
     assert!(crate::process::Tracker::shared().kill(&id).await.unwrap());
-    until("the browser closed", Duration::from_secs(10), || !crate::process::Tracker::shared().is_running(&id)).await;
+    until("the browser closed", Duration::from_secs(10), || {
+        !crate::process::Tracker::shared().is_running(&id)
+    })
+    .await;
     tokio::time::sleep(Duration::from_secs(3)).await;
     assert!(t.is_open(&id), "still being saved");
     assert!(outcomes(&id).is_empty());
-    assert_eq!(t.row(&id).await["open_on"]["device_id"], team::device_id(), "the lease is still this device's");
+    assert_eq!(
+        t.row(&id).await["open_on"]["device_id"],
+        team::device_id(),
+        "the lease is still this device's"
+    );
 
     team::set_server(&t.team_id, &t.srv.url);
     let busy = t.launch(&id).await.err().map(|e| e.to_string());
@@ -992,11 +1456,17 @@ async fn a_quit_out_of_time_keeps_the_copy_for_the_next_start() {
     t.read().await;
     t.launch(&id).await.unwrap();
     let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    team::set_server(&t.team_id, &format!("http://{}", silent.local_addr().unwrap()));
+    team::set_server(
+        &t.team_id,
+        &format!("http://{}", silent.local_addr().unwrap()),
+    );
     close_all(Duration::from_secs(2)).await;
     assert!(!any_open());
     let copy = t.copy(&id);
-    assert!(read_marker(&copy).is_some_and(|m| m.base == Some(0)), "kept, marked");
+    assert!(
+        read_marker(&copy).is_some_and(|m| m.base == Some(0)),
+        "kept, marked"
+    );
     assert!(t.udd(&id).exists());
 
     team::set_server(&t.team_id, &t.srv.url);
@@ -1021,7 +1491,10 @@ async fn a_start_sends_a_copy_left_unsent_first() {
     assert!(!alive(pid));
     assert_eq!(outcomes(&id), [Outcome::Saved(1)]);
     t.launch(&id).await.unwrap();
-    assert_eq!(fs::read(t.udd(&id).join("Default/Local Storage/leveldb/000003.log")).unwrap(), id.as_bytes());
+    assert_eq!(
+        fs::read(t.udd(&id).join("Default/Local Storage/leveldb/000003.log")).unwrap(),
+        id.as_bytes()
+    );
     t.stop(&id).await;
 }
 
@@ -1029,8 +1502,12 @@ async fn a_start_sends_a_copy_left_unsent_first() {
 async fn profile_with_extensions(t: &Team, folder: &str, ext: &[&str]) -> String {
     let id = format!("p-{}", uuid::Uuid::new_v4().simple());
     let data = json!({ "_meta": { "extensions": ext } }).to_string();
-    let body = json!({ "name": "Shop", "folder": folder, "data": b64(data.as_bytes()), "card": {} });
-    t.admin().call(Method::PUT, &format!("/profiles/{id}"), Some(&body)).await.unwrap();
+    let body =
+        json!({ "name": "Shop", "folder": folder, "data": b64(data.as_bytes()), "card": {} });
+    t.admin()
+        .call(Method::PUT, &format!("/profiles/{id}"), Some(&body))
+        .await
+        .unwrap();
     id
 }
 
@@ -1057,10 +1534,21 @@ async fn a_team_extension_is_unpacked_into_the_open_copy_and_goes_with_it() {
     t.read().await;
     let src_dir = t.root.path.join("src");
     let src = super::super::items::tests::an_extension(&src_dir);
-    let e = extensions::import(Door("extension_import"), &Ticket::now(), &src).await.unwrap();
+    let e = extensions::import(Door("extension_import"), &Ticket::now(), &src)
+        .await
+        .unwrap();
     // The team's bookmark for the folder goes in; this machine's own does not.
-    let mark = bookmarks::Bookmark { id: String::new(), title: "Team mail".into(), url: "https://team-mail.example".into(), folder: "Ads".into(), root: String::new(), path: Vec::new() };
-    bookmarks::save(Door("bookmark_save"), &Ticket::now(), mark).await.unwrap();
+    let mark = bookmarks::Bookmark {
+        id: String::new(),
+        title: "Team mail".into(),
+        url: "https://team-mail.example".into(),
+        folder: "Ads".into(),
+        root: String::new(),
+        path: Vec::new(),
+    };
+    bookmarks::save(Door("bookmark_save"), &Ticket::now(), mark)
+        .await
+        .unwrap();
     let mine = json!({ "bookmarks": [{ "id": "m1", "title": "Mine", "url": "https://mine.example", "folder": "" }] });
     fs::write(crate::store::bookmarks_path().unwrap(), mine.to_string()).unwrap();
     let id = profile_with_extensions(&t, "Ads", &[&e.id, "no-such-extension"]).await;
@@ -1068,21 +1556,42 @@ async fn a_team_extension_is_unpacked_into_the_open_copy_and_goes_with_it() {
 
     t.launch(&id).await.unwrap();
     let ext = t.copy(&id).join("ext").join(&e.id);
-    assert_eq!(fs::read_to_string(ext.join("js/bg.js")).unwrap(), "console.log('bg')");
+    assert_eq!(
+        fs::read_to_string(ext.join("js/bg.js")).unwrap(),
+        "console.log('bg')"
+    );
     let argv = t.argv().pop().unwrap();
-    assert!(argv.contains(&format!("--load-extension={}", ext.display())), "{argv}");
-    assert!(!argv.contains("no-such-extension"), "one it cannot read is left out: {argv}");
+    assert!(
+        argv.contains(&format!("--load-extension={}", ext.display())),
+        "{argv}"
+    );
+    assert!(
+        !argv.contains("no-such-extension"),
+        "one it cannot read is left out: {argv}"
+    );
     let marks = fs::read_to_string(t.udd(&id).join("Default/Bookmarks")).unwrap();
-    assert!(marks.contains("team-mail.example") && !marks.contains("mine.example"), "{marks}");
+    assert!(
+        marks.contains("team-mail.example") && !marks.contains("mine.example"),
+        "{marks}"
+    );
     let library = crate::store::extensions_dir().unwrap();
-    assert_eq!(fs::read_dir(&library).unwrap().count(), 0, "never in this machine's library");
+    assert_eq!(
+        fs::read_dir(&library).unwrap().count(),
+        0,
+        "never in this machine's library"
+    );
 
     t.stop(&id).await;
     assert_eq!(outcomes(&id), [Outcome::Saved(1)]);
     t.assert_nothing_here(&id);
     assert!(!ext.exists());
     let mut left = Vec::new();
-    named(&t.root.path, &[src_dir, t.root.path.join("server")], "bg.js", &mut left);
+    named(
+        &t.root.path,
+        &[src_dir, t.root.path.join("server")],
+        "bg.js",
+        &mut left,
+    );
     assert!(left.is_empty(), "its files stayed: {left:?}");
 }
 
@@ -1096,24 +1605,52 @@ async fn a_folder_member_starts_a_profile_with_its_extensions_and_bookmarks() {
     t.read().await;
     let src_dir = t.root.path.join("src");
     let src = super::super::items::tests::an_extension(&src_dir);
-    let e = extensions::import(Door("extension_import"), &Ticket::now(), &src).await.unwrap();
-    for (title, folder) in [("ads.example", "Ads"), ("other.example", "Other"), ("all.example", "")] {
-        let mark = bookmarks::Bookmark { id: String::new(), title: title.into(), url: format!("https://{title}"), folder: folder.into(), root: String::new(), path: Vec::new() };
-        bookmarks::save(Door("bookmark_save"), &Ticket::now(), mark).await.unwrap();
+    let e = extensions::import(Door("extension_import"), &Ticket::now(), &src)
+        .await
+        .unwrap();
+    for (title, folder) in [
+        ("ads.example", "Ads"),
+        ("other.example", "Other"),
+        ("all.example", ""),
+    ] {
+        let mark = bookmarks::Bookmark {
+            id: String::new(),
+            title: title.into(),
+            url: format!("https://{title}"),
+            folder: folder.into(),
+            root: String::new(),
+            path: Vec::new(),
+        };
+        bookmarks::save(Door("bookmark_save"), &Ticket::now(), mark)
+            .await
+            .unwrap();
     }
     let id = profile_with_extensions(&t, "Ads", &[&e.id]).await;
     let ads = |action| on(Scope::Folder { name: "Ads".into() }, action);
     t.set_grants(&[ads(Action::See), ads(Action::Start)]).await;
     perm::forget(&t.team_id);
     t.read().await;
-    assert!(extensions::list().unwrap().is_empty() && bookmarks::list().unwrap().is_empty(), "the team's lists are hidden");
+    assert!(
+        extensions::list().unwrap().is_empty() && bookmarks::list().unwrap().is_empty(),
+        "the team's lists are hidden"
+    );
 
     t.launch(&id).await.unwrap();
     let ext = t.copy(&id).join("ext").join(&e.id);
-    assert_eq!(fs::read_to_string(ext.join("js/bg.js")).unwrap(), "console.log('bg')");
-    assert!(t.argv().pop().unwrap().contains(&format!("--load-extension={}", ext.display())));
+    assert_eq!(
+        fs::read_to_string(ext.join("js/bg.js")).unwrap(),
+        "console.log('bg')"
+    );
+    assert!(t
+        .argv()
+        .pop()
+        .unwrap()
+        .contains(&format!("--load-extension={}", ext.display())));
     let marks = fs::read_to_string(t.udd(&id).join("Default/Bookmarks")).unwrap();
-    assert!(marks.contains("ads.example") && marks.contains("all.example"), "{marks}");
+    assert!(
+        marks.contains("ads.example") && marks.contains("all.example"),
+        "{marks}"
+    );
     assert!(!marks.contains("other.example"), "{marks}");
     t.stop(&id).await;
     t.assert_nothing_here(&id);
@@ -1135,27 +1672,46 @@ async fn a_run_starts_a_team_profile_only_with_start_and_cookies() {
         ]
     });
     let body = json!({ "name": "Warm up", "data": b64(project.to_string().as_bytes()) });
-    t.admin().call(Method::PUT, "/items/automation/run-1", Some(&body)).await.unwrap();
+    t.admin()
+        .call(Method::PUT, "/items/automation/run-1", Some(&body))
+        .await
+        .unwrap();
     t.read().await;
 
     async fn run_to_its_end() -> Vec<String> {
         crate::runner::start("run-1").await.unwrap();
-        until("the run's end", Duration::from_secs(60), || crate::runner::status("run-1").is_some_and(|s| !s.running)).await;
+        until("the run's end", Duration::from_secs(60), || {
+            crate::runner::status("run-1").is_some_and(|s| !s.running)
+        })
+        .await;
         crate::runner::status("run-1").unwrap().log
     }
     let log = run_to_its_end().await;
-    assert!(log.iter().any(|l| l.contains("needs cookies on the profile")), "{log:?}");
+    assert!(
+        log.iter()
+            .any(|l| l.contains("needs cookies on the profile")),
+        "{log:?}"
+    );
     assert!(t.started().is_empty(), "no browser");
     assert!(t.row(&id).await["open_on"].is_null(), "no lease taken");
     t.assert_nothing_here(&id);
 
     // With Cookies too it starts, debugging on; the port answers nothing, so the run closes it.
-    t.set_grants(&team_wide(&[Action::See, Action::Start, Action::Cookies])).await;
-    let issued = TeamClient::for_team(&t.team_id).unwrap().permission().await.unwrap();
+    t.set_grants(&team_wide(&[Action::See, Action::Start, Action::Cookies]))
+        .await;
+    let issued = TeamClient::for_team(&t.team_id)
+        .unwrap()
+        .permission()
+        .await
+        .unwrap();
     perm::accept(&t.team_id, &issued.permission).unwrap();
     let log = run_to_its_end().await;
     assert_eq!(t.started(), [t.udd(&id).display().to_string()], "{log:?}");
-    assert!(t.argv()[0].contains("--remote-debugging-port=0"), "{:?}", t.argv());
+    assert!(
+        t.argv()[0].contains("--remote-debugging-port=0"),
+        "{:?}",
+        t.argv()
+    );
     t.closed(&id).await;
     t.assert_nothing_here(&id);
     assert_eq!(outcomes(&id), [Outcome::Saved(1)]);
@@ -1163,8 +1719,15 @@ async fn a_run_starts_a_team_profile_only_with_start_and_cookies() {
     // A run keeps to the space it started in: once the launcher moved, it starts nothing.
     let started_in = super::super::Ticket::now();
     crate::space::switch(team::Space::Personal).await.unwrap();
-    crate::space::switch(team::Space::Team { team_id: t.team_id.clone() }).await.unwrap();
-    let err = crate::launch::launch_for_run(&started_in, &id, 0, "").await.err().unwrap();
+    crate::space::switch(team::Space::Team {
+        team_id: t.team_id.clone(),
+    })
+    .await
+    .unwrap();
+    let err = crate::launch::launch_for_run(&started_in, &id, 0, "")
+        .await
+        .err()
+        .unwrap();
     assert_eq!(err.to_string(), super::super::error::SPACE_CHANGED);
     assert_eq!(t.started().len(), 1);
 }
@@ -1184,7 +1747,11 @@ async fn a_wipe_tried_again_never_touches_a_copy_made_again_in_its_folder() {
     fs::set_permissions(&held, fs::Permissions::from_mode(0o500)).unwrap();
     wipe(&dir);
     assert!(!dir.exists(), "moved aside at once");
-    let aside: Vec<PathBuf> = fs::read_dir(dir.parent().unwrap()).unwrap().flatten().map(|e| e.path()).collect();
+    let aside: Vec<PathBuf> = fs::read_dir(dir.parent().unwrap())
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .collect();
     assert_eq!(aside.len(), 1, "{aside:?}");
 
     // A copy made again in the same folder: the next try leaves it be.
@@ -1218,7 +1785,11 @@ async fn a_copy_saved_just_before_the_launcher_died_is_not_taken_for_stale() {
     let mut opened = open_team(&t.team_id, &start, false).await.unwrap();
     let s = opened.hand.0.take().unwrap();
     assert_eq!(s.send_back(None).await, Outcome::Saved(1));
-    assert_eq!(read_marker(&t.copy(&id)).unwrap().base, Some(1), "marked as saved");
+    assert_eq!(
+        read_marker(&t.copy(&id)).unwrap().base,
+        Some(1),
+        "marked as saved"
+    );
 
     // The launcher dies here, before the lease goes back and the copy is wiped.
     assert!(reap(t.copy(&id), &s.nonce).await);
@@ -1230,6 +1801,9 @@ async fn a_copy_saved_just_before_the_launcher_died_is_not_taken_for_stale() {
     // Its watcher holds the last handle: it ends while the test's root is still here.
     let watched = std::sync::Arc::downgrade(&s);
     drop(s);
-    until("the watcher let go", Duration::from_secs(10), || watched.strong_count() == 0).await;
+    until("the watcher let go", Duration::from_secs(10), || {
+        watched.strong_count() == 0
+    })
+    .await;
     t.assert_nothing_here(&id);
 }

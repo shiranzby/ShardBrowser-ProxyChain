@@ -7,7 +7,7 @@ import { appModule, openApp, reloadApp, seed } from "./support/app";
 // a first install; every other test starts with the welcome answered.
 
 const KEY = "shardx.onboarding";
-const welcome = (page: Page) => page.getByRole("dialog", { name: "Welcome to ShardBrowser" });
+const welcome = (page: Page) => page.getByRole("dialog", { name: "Welcome to ShyShard" });
 const stored = (page: Page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? "null"), KEY);
 const tourCard = (page: Page) => page.locator("[data-tour-card]");
 const empty = (page: Page) => page.addInitScript(() => { (window as unknown as { __shardxMockEmpty: boolean }).__shardxMockEmpty = true; });
@@ -234,7 +234,7 @@ for (const lang of ["en", "zh"] as const) {
     await page.setViewportSize({ width: 1024, height: 700 });
     await page.addInitScript((l) => localStorage.setItem("shardx.lang", l), lang);
     await openApp(page, { onboarding: "fresh" });
-    const dialog = page.getByRole("dialog", { name: lang === "en" ? "Welcome to ShardBrowser" : "欢迎使用 ShardBrowser" });
+    const dialog = page.getByRole("dialog", { name: lang === "en" ? "Welcome to ShyShard" : "欢迎使用 ShyShard" });
     await expect(dialog).toBeVisible();
     for (let screen = 0; screen < 3; screen++) {
       await expect(dialog.locator("[data-welcome-count]")).toHaveText(lang === "en" ? `Screen ${screen + 1} of 3` : `第 ${screen + 1} 页，共 3 页`);

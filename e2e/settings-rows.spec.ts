@@ -54,7 +54,7 @@ test("labels say what ON does (WRITE-24)", async ({ page }) => {
   await openApp(page, { section: "settings" });
   await expect(page.getByRole("switch", { name: "Keep running in the tray when the window closes" })).toBeVisible();
   await page.getByRole("tab", { name: "Profile defaults" }).click();
-  await expect(page.getByRole("switch", { name: "Use a ShardBrowser camera in profiles" })).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Use a ShyShard camera in profiles" })).toBeVisible();
   await expect(panel(page).locator("[data-setting='screen']")).toContainText("Screen size shown to sites");
 });
 

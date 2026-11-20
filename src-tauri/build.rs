@@ -5,9 +5,11 @@ fn main() {
         // Embed one common manifest at link time for both the launcher and
         // Rust unit-test executables. The default resource manifest would
         // otherwise collide with the linker's manifest in a release build.
-        tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(
-            tauri_build::WindowsAttributes::new_without_app_manifest(),
-        )).expect("failed to build Tauri resources");
+        tauri_build::try_build(
+            tauri_build::Attributes::new()
+                .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest()),
+        )
+        .expect("failed to build Tauri resources");
     } else {
         tauri_build::build();
     }

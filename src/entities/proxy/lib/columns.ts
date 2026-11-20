@@ -7,7 +7,7 @@ import {
 import { SELECT_TRACK } from "../../../shared/lib/selectionMode";
 
 /** The Proxies list's data columns. */
-export type ProxyColumnId = "name" | "type" | "address" | "country" | "profiles" | "test";
+export type ProxyColumnId = "name" | "type" | "address" | "country" | "folder" | "profiles" | "test";
 /** Which Proxies columns show, and in what order. */
 export type ProxyColumns = ColumnSet<ProxyColumnId>;
 
@@ -25,6 +25,7 @@ export const PROXY_COLUMNS: readonly ColumnDef<ProxyColumnId>[] = [
   { id: "type", title: (t) => t("proxyTable.colType"), need: 64, min: 60, max: 160, shown: true, hideable: true, movable: true },
   { id: "address", title: (t) => t("proxyTable.colHostPort"), need: 150, min: 120, max: 480, shown: true, hideable: true, movable: true },
   { id: "country", title: (t) => t("proxyTable.colCountry"), need: 120, min: 72, max: 240, shown: true, hideable: true, movable: true },
+  { id: "folder", title: (t) => t("proxyTable.colFolder"), need: 120, min: 80, max: 240, shown: true, hideable: true, movable: true },
   { id: "profiles", title: (t) => t("proxyTable.colProfiles"), need: 64, min: 56, max: 160, shown: true, hideable: true, movable: true },
   { id: "test", title: (t) => t("proxyTable.colTestResult"), need: 120, min: 96, max: 320, shown: true, hideable: true, movable: true },
 ];

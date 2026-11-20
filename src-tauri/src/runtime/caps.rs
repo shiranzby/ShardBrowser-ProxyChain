@@ -33,7 +33,10 @@ fn has_marker(bin: &Path, marker: &[u8]) -> bool {
         })
         .collect();
     // Held through the read, so launches started together read the engine once.
-    let mut seen = SEEN.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+    let mut seen = SEEN
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let key = (bin.to_path_buf(), marker.to_vec());
     if let Some((s, found)) = seen.get(&key) {
         if *s == stamp {
@@ -41,7 +44,10 @@ fn has_marker(bin: &Path, marker: &[u8]) -> bool {
         }
     }
     // Every copy the stub might load must have it: a stale one without it may be the one in use.
-    let found = !files.is_empty() && files.iter().all(|f| file_contains(f, marker).unwrap_or(false));
+    let found = !files.is_empty()
+        && files
+            .iter()
+            .all(|f| file_contains(f, marker).unwrap_or(false));
     seen.insert(key, (stamp, found));
     found
 }
@@ -50,10 +56,19 @@ fn has_marker(bin: &Path, marker: &[u8]) -> bool {
 /// after the stub, each Windows chrome.dll beside chrome.exe or in a version folder, else `bin`.
 fn code_files(bin: &Path) -> Vec<PathBuf> {
     let dir = bin.parent().unwrap_or(Path::new(""));
-    if let (Some(contents), Some(stub)) = (dir.parent().filter(|_| dir.file_name().is_some_and(|n| n == "MacOS")), bin.file_name()) {
+    if let (Some(contents), Some(stub)) = (
+        dir.parent()
+            .filter(|_| dir.file_name().is_some_and(|n| n == "MacOS")),
+        bin.file_name(),
+    ) {
         let name = format!("{} Framework", stub.to_string_lossy());
-        let fw = contents.join("Frameworks").join(format!("{name}.framework"));
-        let mut out: Vec<PathBuf> = read_dir(&fw.join("Versions")).into_iter().map(|v| v.join(&name)).collect();
+        let fw = contents
+            .join("Frameworks")
+            .join(format!("{name}.framework"));
+        let mut out: Vec<PathBuf> = read_dir(&fw.join("Versions"))
+            .into_iter()
+            .map(|v| v.join(&name))
+            .collect();
         if out.is_empty() {
             out.push(fw.join(&name));
         }
@@ -74,9 +89,14 @@ fn code_files(bin: &Path) -> Vec<PathBuf> {
 
 /// Real subfolders only: a symlink such as the framework's Versions/Current is not followed.
 fn read_dir(dir: &Path) -> Vec<PathBuf> {
-    let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
-    let mut v: Vec<PathBuf> =
-        rd.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()).collect();
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut v: Vec<PathBuf> = rd
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| e.path())
+        .collect();
     v.sort();
     v
 }
@@ -173,8 +193,14 @@ mod tests {
     #[test]
     fn a_single_binary_engine_is_read_whole() {
         let d = dir("linux");
-        assert!(loads_extensions_alone(&write(&d.join("new/chrome"), &code(true))));
-        assert!(!loads_extensions_alone(&write(&d.join("old/chrome"), &code(false))));
+        assert!(loads_extensions_alone(&write(
+            &d.join("new/chrome"),
+            &code(true)
+        )));
+        assert!(!loads_extensions_alone(&write(
+            &d.join("old/chrome"),
+            &code(false)
+        )));
     }
 
     #[test]
@@ -183,17 +209,26 @@ mod tests {
         let app = d.join("ShardX-Mac-arm64/ShardX.app/Contents");
         let stub = write(&app.join("MacOS/ShardX"), &code(false));
         let fw = app.join("Frameworks/ShardX Framework.framework");
-        let v1 = write(&fw.join("Versions/156.0.8078.48/ShardX Framework"), &code(false));
+        let v1 = write(
+            &fw.join("Versions/156.0.8078.48/ShardX Framework"),
+            &code(false),
+        );
         #[cfg(unix)]
         std::os::unix::fs::symlink("156.0.8078.48", fw.join("Versions/Current")).unwrap();
         // Another framework of the app is not the engine's.
-        write(&app.join("Frameworks/Other.framework/Versions/A/Other"), &code(false));
+        write(
+            &app.join("Frameworks/Other.framework/Versions/A/Other"),
+            &code(false),
+        );
         assert!(!loads_extensions_alone(&stub));
         // A new framework copied over the old one (size changes): read again.
         write(&v1, &code(true));
         assert!(loads_extensions_alone(&stub));
         // An old version left beside it: the stub may be the one that loads it.
-        write(&fw.join("Versions/155.0.7000.1/ShardX Framework"), &code(false));
+        write(
+            &fw.join("Versions/155.0.7000.1/ShardX Framework"),
+            &code(false),
+        );
         assert!(!loads_extensions_alone(&stub));
     }
 
@@ -229,10 +264,19 @@ mod tests {
             bytes.extend_from_slice(LOAD_EXTENSION_MARKER);
             bytes.extend_from_slice(b"tail");
             let p = write(&d.join(format!("f{split}")), &bytes);
-            assert!(file_contains_with(&p, LOAD_EXTENSION_MARKER, 64).unwrap(), "split {split}");
+            assert!(
+                file_contains_with(&p, LOAD_EXTENSION_MARKER, 64).unwrap(),
+                "split {split}"
+            );
             // One byte short of the whole marker is not the marker.
-            let cut = write(&d.join(format!("c{split}")), &bytes[..64 - split + LOAD_EXTENSION_MARKER.len() - 1]);
-            assert!(!file_contains_with(&cut, LOAD_EXTENSION_MARKER, 64).unwrap(), "cut {split}");
+            let cut = write(
+                &d.join(format!("c{split}")),
+                &bytes[..64 - split + LOAD_EXTENSION_MARKER.len() - 1],
+            );
+            assert!(
+                !file_contains_with(&cut, LOAD_EXTENSION_MARKER, 64).unwrap(),
+                "cut {split}"
+            );
         }
     }
 }

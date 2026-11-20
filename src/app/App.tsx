@@ -9,10 +9,13 @@ import { EngineUpdateBanner } from "../widgets/FirstRunGate/EngineUpdateBanner";
 import { ToastHost } from "../widgets/ToastHost/ToastHost";
 import { LiveAnnouncer } from "../widgets/LiveAnnouncer/LiveAnnouncer";
 import { ConfirmHost } from "../widgets/ConfirmHost/ConfirmHost";
+import { SafeClose } from "../widgets/SafeClose/SafeClose";
 import { PasswordHost } from "../widgets/PasswordHost/PasswordHost";
 import { UnsavedGuard } from "../widgets/UnsavedGuard/UnsavedGuard";
 import { StarModal } from "../widgets/StarModal/StarModal";
 import { HelperWatcher } from "../widgets/HelperWatcher";
+import { PsTrialModal } from "../features/proxyshard/ui/PsTrialModal";
+import { useProxyShardVisibility } from "../shared/model/proxyShardVisibility";
 import { WhatsNewGate } from "../widgets/WhatsNewGate";
 import { ProfilesPage } from "../pages/profiles";
 import { ShellWindowControls } from "../widgets/WindowControls/WindowControls";
@@ -102,7 +105,7 @@ const PRELOAD = [loadProxies, loadFingerprints, loadExtensions, loadBookmarks, l
  *  look, cards or rows, at its own width. */
 const LOADING: Partial<Record<Section, { title: (t: ReturnType<typeof useT>) => string; look: "rows" | "cards" | "form"; width?: "form" }>> = {
   proxies: { title: (t) => t("proxies.title"), look: "rows" },
-  proxyshard: { title: () => "ProxyShard", look: "rows" },
+  proxyshard: { title: (t) => t("sidebar.navAccountShop"), look: "rows" },
   fingerprints: { title: (t) => t("fingerprints.title"), look: "cards" },
   extensions: { title: (t) => t("extensions.title"), look: "cards" },
   bookmarks: { title: (t) => t("bookmarks.heading"), look: "rows" },
@@ -148,6 +151,11 @@ function KeepKeyboard({ section }: { section: Section }) {
 }
 
 /** What's new, mounted once first opened and kept from then on, so it closes with its animation. */
+function TrialOfferHost() {
+  const hidden = useProxyShardVisibility((s) => s.trialHidden);
+  return hidden ? null : <PsTrialModal />;
+}
+
 function WhatsNewHost() {
   const open = useWhatsNew((s) => s.open);
   const [wanted, setWanted] = useState(open);
@@ -233,6 +241,7 @@ export function App() {
       <FirstRunGate>
         <Shell />
       </FirstRunGate>
+      <SafeClose />
     </>
   );
 }
@@ -348,6 +357,7 @@ function Shell() {
       <UnsavedGuard />
       <StarModal />
       <WhatsNewHost />
+      <TrialOfferHost />
       <FolderDialog />
       <AssignProxiesHost />
       <ViewDialog />

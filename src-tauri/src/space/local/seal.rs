@@ -58,7 +58,9 @@ pub struct DataKey(Zeroizing<[u8; 32]>);
 
 fn random<const N: usize>() -> Result<[u8; N]> {
     let mut b = [0u8; N];
-    SystemRandom::new().fill(&mut b).map_err(|_| anyhow!("no system randomness"))?;
+    SystemRandom::new()
+        .fill(&mut b)
+        .map_err(|_| anyhow!("no system randomness"))?;
     Ok(b)
 }
 
@@ -67,7 +69,8 @@ fn kek(password: &str, kdf: &Kdf) -> Result<Zeroizing<[u8; 32]>> {
         bail!("unknown key derivation {}", kdf.alg);
     }
     let salt = B64.decode(&kdf.salt).context("salt")?;
-    let params = argon2::Params::new(kdf.m_kib, kdf.t, kdf.p, Some(32)).map_err(|e| anyhow!("{e}"))?;
+    let params =
+        argon2::Params::new(kdf.m_kib, kdf.t, kdf.p, Some(32)).map_err(|e| anyhow!("{e}"))?;
     let mut out = Zeroizing::new([0u8; 32]);
     argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
         .hash_password_into(password.as_bytes(), &salt, out.as_mut())
@@ -84,7 +87,11 @@ fn seal_with(key: &[u8; 32], aad: &[u8], plain: &[u8]) -> Result<String> {
     let nonce: [u8; NONCE_LEN] = random()?;
     let mut buf = plain.to_vec();
     aead(key)
-        .seal_in_place_append_tag(Nonce::assume_unique_for_key(nonce), Aad::from(aad), &mut buf)
+        .seal_in_place_append_tag(
+            Nonce::assume_unique_for_key(nonce),
+            Aad::from(aad),
+            &mut buf,
+        )
         .map_err(|_| anyhow!("seal failed"))?;
     let mut out = nonce.to_vec();
     out.extend_from_slice(&buf);
@@ -118,9 +125,19 @@ pub fn new_lock(id: &str, password: &str) -> Result<(Lock, DataKey)> {
 
 /// The same data key under a new password: nothing else is sealed again.
 pub fn wrap(id: &str, key: &DataKey, password: &str) -> Result<Lock> {
-    let kdf = Kdf { alg: "argon2id".into(), m_kib: M_KIB, t: T_COST, p: P_COST, salt: B64.encode(random::<16>()?) };
+    let kdf = Kdf {
+        alg: "argon2id".into(),
+        m_kib: M_KIB,
+        t: T_COST,
+        p: P_COST,
+        salt: B64.encode(random::<16>()?),
+    };
     let wrapping = kek(password, &kdf)?;
-    Ok(Lock { v: FORMAT, kdf, key: seal_with(&wrapping, &key_aad(id), key.0.as_ref())? })
+    Ok(Lock {
+        v: FORMAT,
+        kdf,
+        key: seal_with(&wrapping, &key_aad(id), key.0.as_ref())?,
+    })
 }
 
 /// The data key of profile `id`; `WRONG_PASSWORD` when `password` does not open it.
@@ -130,7 +147,10 @@ pub fn unlock(id: &str, lock: &Lock, password: &str) -> Result<DataKey> {
     }
     let wrapping = kek(password, &lock.kdf)?;
     let raw = Zeroizing::new(open_with(&wrapping, &key_aad(id), &lock.key)?);
-    let bytes: [u8; 32] = raw.as_slice().try_into().map_err(|_| anyhow!(WRONG_PASSWORD))?;
+    let bytes: [u8; 32] = raw
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow!(WRONG_PASSWORD))?;
     Ok(DataKey(Zeroizing::new(bytes)))
 }
 
@@ -172,13 +192,24 @@ impl<W: Write> SealWriter<W> {
         let prefix: [u8; 4] = random()?;
         out.write_all(MAGIC)?;
         out.write_all(&prefix)?;
-        Ok(SealWriter { out, key: aead(&key.0), id: id.to_string(), prefix, seq: 0, buf: Vec::with_capacity(CHUNK) })
+        Ok(SealWriter {
+            out,
+            key: aead(&key.0),
+            id: id.to_string(),
+            prefix,
+            seq: 0,
+            buf: Vec::with_capacity(CHUNK),
+        })
     }
 
     fn emit(&mut self, last: bool) -> io::Result<()> {
         let mut chunk = std::mem::take(&mut self.buf);
         self.key
-            .seal_in_place_append_tag(chunk_nonce(&self.prefix, self.seq), Aad::from(chunk_aad(&self.id, self.seq, last)), &mut chunk)
+            .seal_in_place_append_tag(
+                chunk_nonce(&self.prefix, self.seq),
+                Aad::from(chunk_aad(&self.id, self.seq, last)),
+                &mut chunk,
+            )
             .map_err(|_| io::Error::other("seal failed"))?;
         self.out.write_all(&[last as u8])?;
         self.out.write_all(&(chunk.len() as u32).to_be_bytes())?;
@@ -226,17 +257,29 @@ pub struct OpenReader<R: Read> {
 impl<R: Read> OpenReader<R> {
     pub fn new(mut src: R, id: &str, key: &DataKey) -> Result<Self> {
         let mut head = [0u8; 12];
-        src.read_exact(&mut head).map_err(|_| anyhow!("not a sealed profile archive"))?;
+        src.read_exact(&mut head)
+            .map_err(|_| anyhow!("not a sealed profile archive"))?;
         if &head[..8] != MAGIC {
             bail!("not a sealed profile archive");
         }
         let prefix = head[8..].try_into().expect("4 bytes");
-        Ok(OpenReader { src, key: aead(&key.0), id: id.to_string(), prefix, seq: 0, plain: Vec::new(), at: 0, ended: false })
+        Ok(OpenReader {
+            src,
+            key: aead(&key.0),
+            id: id.to_string(),
+            prefix,
+            seq: 0,
+            plain: Vec::new(),
+            at: 0,
+            ended: false,
+        })
     }
 
     fn next_chunk(&mut self) -> io::Result<()> {
         let mut frame = [0u8; 5];
-        self.src.read_exact(&mut frame).map_err(|_| io::Error::other("sealed archive is cut off"))?;
+        self.src
+            .read_exact(&mut frame)
+            .map_err(|_| io::Error::other("sealed archive is cut off"))?;
         let last = match frame[0] {
             0 => false,
             1 => true,
@@ -247,10 +290,16 @@ impl<R: Read> OpenReader<R> {
             return Err(io::Error::other(WRONG_PASSWORD));
         }
         let mut chunk = vec![0u8; len];
-        self.src.read_exact(&mut chunk).map_err(|_| io::Error::other("sealed archive is cut off"))?;
+        self.src
+            .read_exact(&mut chunk)
+            .map_err(|_| io::Error::other("sealed archive is cut off"))?;
         let plain = self
             .key
-            .open_in_place(chunk_nonce(&self.prefix, self.seq), Aad::from(chunk_aad(&self.id, self.seq, last)), &mut chunk)
+            .open_in_place(
+                chunk_nonce(&self.prefix, self.seq),
+                Aad::from(chunk_aad(&self.id, self.seq, last)),
+                &mut chunk,
+            )
             .map_err(|_| io::Error::other(WRONG_PASSWORD))?;
         self.plain = plain.to_vec();
         self.at = 0;
@@ -325,7 +374,11 @@ pub fn seal_dir(dir: &Path, out: &Path, id: &str, key: &DataKey) -> Result<()> {
     let mut tar = tar::Builder::new(SealWriter::new(BufWriter::new(file), id, key)?);
     tar.follow_symlinks(false);
     add_dir(&mut tar, dir, dir)?;
-    let file = tar.into_inner()?.finish()?.into_inner().map_err(|e| e.into_error())?;
+    let file = tar
+        .into_inner()?
+        .finish()?
+        .into_inner()
+        .map_err(|e| e.into_error())?;
     file.sync_all()?;
     drop(file);
     fs::rename(&tmp, out).with_context(|| format!("place {}", out.display()))?;
@@ -353,9 +406,19 @@ mod tests {
     fn cheap(id: &str, password: &str) -> (Lock, DataKey) {
         // The real cost makes a test run slow; the format is the same.
         let key = DataKey(Zeroizing::new(random().unwrap()));
-        let kdf = Kdf { alg: "argon2id".into(), m_kib: 64, t: 1, p: 1, salt: B64.encode(random::<16>().unwrap()) };
+        let kdf = Kdf {
+            alg: "argon2id".into(),
+            m_kib: 64,
+            t: 1,
+            p: 1,
+            salt: B64.encode(random::<16>().unwrap()),
+        };
         let wrapping = kek(password, &kdf).unwrap();
-        let lock = Lock { v: FORMAT, kdf, key: seal_with(&wrapping, &key_aad(id), key.0.as_ref()).unwrap() };
+        let lock = Lock {
+            v: FORMAT,
+            kdf,
+            key: seal_with(&wrapping, &key_aad(id), key.0.as_ref()).unwrap(),
+        };
         (lock, key)
     }
 
@@ -367,7 +430,9 @@ mod tests {
 
     fn open_stream(id: &str, key: &DataKey, sealed: &[u8]) -> io::Result<Vec<u8>> {
         let mut out = Vec::new();
-        OpenReader::new(sealed, id, key).map_err(io::Error::other)?.read_to_end(&mut out)?;
+        OpenReader::new(sealed, id, key)
+            .map_err(io::Error::other)?
+            .read_to_end(&mut out)?;
         Ok(out)
     }
 
@@ -382,7 +447,11 @@ mod tests {
         fs::create_dir_all(src.join("Default/Empty")).unwrap();
         fs::write(src.join("Local State"), b"{}").unwrap();
         fs::write(src.join("Default/Cookies"), vec![9u8; 3 * CHUNK]).unwrap();
-        fs::write(src.join("Default/Local Storage/leveldb/000003.log"), b"site").unwrap();
+        fs::write(
+            src.join("Default/Local Storage/leveldb/000003.log"),
+            b"site",
+        )
+        .unwrap();
         fs::write(src.join("Default/Cache/Cache_Data/f_000001"), b"cache").unwrap();
         fs::write(src.join("fingerprint.json"), b"{}").unwrap();
         #[cfg(unix)]
@@ -394,8 +463,14 @@ mod tests {
         assert!(!out.with_extension("sealing").exists());
         open_dir(&out, &dst, "p1", &key).unwrap();
 
-        assert_eq!(fs::read(dst.join("Default/Cookies")).unwrap(), vec![9u8; 3 * CHUNK]);
-        assert_eq!(fs::read(dst.join("Default/Local Storage/leveldb/000003.log")).unwrap(), b"site");
+        assert_eq!(
+            fs::read(dst.join("Default/Cookies")).unwrap(),
+            vec![9u8; 3 * CHUNK]
+        );
+        assert_eq!(
+            fs::read(dst.join("Default/Local Storage/leveldb/000003.log")).unwrap(),
+            b"site"
+        );
         assert!(dst.join("Default/Empty").is_dir());
         assert!(!dst.join("Default/Cache").exists());
         assert!(!dst.join("fingerprint.json").exists());
@@ -404,7 +479,12 @@ mod tests {
         // The wrong key opens nothing and writes nothing.
         let (_, other) = cheap("p1", "pw");
         assert!(open_dir(&out, &root.join("dst2"), "p1", &other).is_err());
-        assert!(fs::read_dir(root.join("dst2")).map(|d| d.count()).unwrap_or(0) == 0);
+        assert!(
+            fs::read_dir(root.join("dst2"))
+                .map(|d| d.count())
+                .unwrap_or(0)
+                == 0
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -413,7 +493,10 @@ mod tests {
         let (lock, key) = cheap("p1", "correct horse");
         let again = unlock("p1", &lock, "correct horse").unwrap();
         assert_eq!(again.0.as_ref(), key.0.as_ref());
-        assert_eq!(unlock("p1", &lock, "wrong").err().unwrap().to_string(), WRONG_PASSWORD);
+        assert_eq!(
+            unlock("p1", &lock, "wrong").err().unwrap().to_string(),
+            WRONG_PASSWORD
+        );
         // Bound to its profile: the same lock does not open under another id.
         assert!(unlock("p2", &lock, "correct horse").is_err());
     }
@@ -423,7 +506,10 @@ mod tests {
         let (_, key) = cheap("p1", "old");
         let lock = wrap("p1", &key, "new").unwrap();
         assert_eq!(lock.kdf.m_kib, M_KIB);
-        assert_eq!(unlock("p1", &lock, "new").unwrap().0.as_ref(), key.0.as_ref());
+        assert_eq!(
+            unlock("p1", &lock, "new").unwrap().0.as_ref(),
+            key.0.as_ref()
+        );
     }
 
     #[test]

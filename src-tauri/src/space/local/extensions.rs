@@ -49,14 +49,22 @@ pub struct ExtensionEntry {
     /// "@<unix_secs>", same marker profiles use.
     pub added_at: String,
     /// Where it came from, when known; travels with the item.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "source::lenient")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "source::lenient"
+    )]
     pub source: Option<SourceRef>,
 }
 
 /// A library folder's name: letters, digits, `-` and `_`, so never a dot-named
 /// file of the launcher's, a path or a drive (`D:`).
 pub(in crate::space) fn valid_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 fn dir_for(id: &str) -> Result<PathBuf> {
@@ -148,14 +156,24 @@ pub(in crate::space) fn read_at(dir: &Path, id: &str) -> Result<ExtensionEntry> 
         )
     };
     let added = dir.join(source::ADDED);
-    let added_at = fs::read_to_string(&added).ok().map(|s| s.trim().to_string()).unwrap_or_default();
+    let added_at = fs::read_to_string(&added)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
     // The extension's own files: the same size before and after `.added` moves out.
-    let marker = fs::metadata(&added).ok().filter(|m| m.is_file()).map_or(0, |m| m.len());
+    let marker = fs::metadata(&added)
+        .ok()
+        .filter(|m| m.is_file())
+        .map_or(0, |m| m.len());
     Ok(ExtensionEntry {
         id: id.to_string(),
         name: {
             let n = sv("name");
-            if n.is_empty() { id.to_string() } else { n }
+            if n.is_empty() {
+                id.to_string()
+            } else {
+                n
+            }
         },
         version: sv("version"),
         description: sv("description"),
@@ -174,11 +192,15 @@ fn locale_messages(root: &Path, manifest: &serde_json::Value) -> serde_json::Val
     let Some(loc) = manifest.get("default_locale").and_then(|v| v.as_str()) else {
         return serde_json::Value::Null;
     };
-    manifest_edit::read_json(&root.join("_locales").join(loc).join("messages.json")).unwrap_or(serde_json::Value::Null)
+    manifest_edit::read_json(&root.join("_locales").join(loc).join("messages.json"))
+        .unwrap_or(serde_json::Value::Null)
 }
 
 fn resolve_msg(raw: &str, msgs: &serde_json::Value) -> String {
-    let Some(key) = raw.strip_prefix("__MSG_").and_then(|r| r.strip_suffix("__")) else {
+    let Some(key) = raw
+        .strip_prefix("__MSG_")
+        .and_then(|r| r.strip_suffix("__"))
+    else {
         return raw.to_string();
     };
     msgs.get(key)
@@ -208,7 +230,9 @@ fn best_icon(root: &Path, manifest: &serde_json::Value) -> Option<String> {
     }
     if best.is_none() {
         for key in ["action", "browser_action", "page_action"] {
-            let Some(v) = manifest.get(key).and_then(|a| a.get("default_icon")) else { continue };
+            let Some(v) = manifest.get(key).and_then(|a| a.get("default_icon")) else {
+                continue;
+            };
             match v.as_str() {
                 Some(s) => best = Some((0, s.to_string())),
                 None => largest(v, &mut best),
@@ -255,12 +279,18 @@ pub(in crate::space) struct Want {
 impl Want {
     /// A file picked here, or one from a direct link.
     pub fn file() -> Want {
-        Want { link: None, publisher: crx::publisher() }
+        Want {
+            link: None,
+            publisher: crx::publisher(),
+        }
     }
 
     /// What a pasted link names, read as strictly as the front reads it (SEC-08).
     pub fn of_link(raw: &str) -> Want {
-        Want { link: store_link::store_id(raw), ..Want::file() }
+        Want {
+            link: store_link::store_id(raw),
+            ..Want::file()
+        }
     }
 }
 
@@ -269,9 +299,18 @@ pub(in crate::space) const ALREADY_IN_LIBRARY: &str = "already_in_library";
 
 /// `already_in_library {"entry_id":…,"installed":…,"separate":…}`: `separate` says
 /// whether a copy beside it would get an id of its own.
-pub(in crate::space) fn already_in_library(entry_id: &str, installed: &str, separate: bool) -> CmdError {
-    let detail = serde_json::json!({ "entry_id": entry_id, "installed": installed, "separate": separate });
-    CmdError::Refused { status: 409, code: ALREADY_IN_LIBRARY.into(), message: format!("{ALREADY_IN_LIBRARY} {detail}") }
+pub(in crate::space) fn already_in_library(
+    entry_id: &str,
+    installed: &str,
+    separate: bool,
+) -> CmdError {
+    let detail =
+        serde_json::json!({ "entry_id": entry_id, "installed": installed, "separate": separate });
+    CmdError::Refused {
+        status: 409,
+        code: ALREADY_IN_LIBRARY.into(),
+        message: format!("{ALREADY_IN_LIBRARY} {detail}"),
+    }
 }
 
 /// What several files came to: each one refused, with its file and why.
@@ -297,14 +336,20 @@ where
     for p in paths {
         match one(PathBuf::from(p)).await {
             Ok(e) => out.added.push(e),
-            Err(e) => out.refused.push(ImportRefused { path: p.clone(), error: format!("{e:#}") }),
+            Err(e) => out.refused.push(ImportRefused {
+                path: p.clone(),
+                error: format!("{e:#}"),
+            }),
         }
     }
     out
 }
 
 fn stamp() -> String {
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     format!("@{secs}")
 }
 
@@ -322,7 +367,13 @@ pub(in crate::space) fn import_as(src: &Path, separate: bool) -> Result<Extensio
 }
 
 /// Unpacked in a stage beside the library, then moved in whole with its side file.
-fn install(lib: &Path, id: &str, src: &Path, want: &Want, separate: bool) -> Result<ExtensionEntry> {
+fn install(
+    lib: &Path,
+    id: &str,
+    src: &Path,
+    want: &Want,
+    separate: bool,
+) -> Result<ExtensionEntry> {
     let stage = lib.join(format!(".{id}.staging"));
     let tree = stage.join("tree");
     let _ = fs::remove_dir_all(&stage);
@@ -330,7 +381,12 @@ fn install(lib: &Path, id: &str, src: &Path, want: &Want, separate: bool) -> Res
         let origin = unpack_into(src, &tree, want)?;
         // Never a folder the library could not show.
         read_at(&tree, id).context("its manifest.json cannot be read")?;
-        refuse_duplicate(lib, origin.source.as_ref(), key_id(&manifest_root(&tree)).as_deref(), separate)?;
+        refuse_duplicate(
+            lib,
+            origin.source.as_ref(),
+            key_id(&manifest_root(&tree)).as_deref(),
+            separate,
+        )?;
         source::write(lib, id, &SourceLocal::installed(origin, stamp()))?;
         fs::rename(&tree, lib.join(id)).context("move the extension into the library")
     })();
@@ -352,7 +408,12 @@ fn key_id(root: &Path) -> Option<String> {
 
 /// Refused when the library holds the same store item or the same id from a key;
 /// the latter even as a separate copy, since Chrome would load only one.
-fn refuse_duplicate(lib: &Path, src: Option<&SourceRef>, key: Option<&str>, separate: bool) -> Result<()> {
+fn refuse_duplicate(
+    lib: &Path,
+    src: Option<&SourceRef>,
+    key: Option<&str>,
+    separate: bool,
+) -> Result<()> {
     if src.is_none() && key.is_none() {
         return Ok(());
     }
@@ -380,13 +441,19 @@ fn refuse_duplicate(lib: &Path, src: Option<&SourceRef>, key: Option<&str>, sepa
             hit = Some((id, root, same_id));
         }
     }
-    let Some((entry_id, root, same_id)) = hit else { return Ok(()) };
+    let Some((entry_id, root, same_id)) = hit else {
+        return Ok(());
+    };
     if separate && !same_id {
         return Ok(());
     }
     let installed = manifest_edit::read_manifest(&root)
         .ok()
-        .and_then(|m| m.get("version").and_then(|v| v.as_str()).map(str::to_string))
+        .and_then(|m| {
+            m.get("version")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        })
         .unwrap_or_default();
     Err(already_in_library(&entry_id, &installed, !same_id).into())
 }
@@ -395,7 +462,11 @@ fn refuse_duplicate(lib: &Path, src: Option<&SourceRef>, key: Option<&str>, sepa
 /// extension; on failure nothing is left there.
 pub(in crate::space) fn unpack_into(src: &Path, dst: &Path, want: &Want) -> Result<Origin> {
     fs::create_dir_all(dst)?;
-    let res = if src.is_dir() { copy_dir(src, dst).map(|_| None) } else { unpack_file(src, dst, want) };
+    let res = if src.is_dir() {
+        copy_dir(src, dst).map(|_| None)
+    } else {
+        unpack_file(src, dst, want)
+    };
     let origin = match res {
         Ok(o) => o,
         Err(e) => {
@@ -416,7 +487,11 @@ pub(in crate::space) fn unpack_into(src: &Path, dst: &Path, want: &Want) -> Resu
 fn unpack_file(src: &Path, dst: &Path, want: &Want) -> Result<Option<Origin>> {
     let bytes = fs::read(src).with_context(|| format!("read {}", src.display()))?;
     if bytes.len() >= 8 && bytes[..4] == *b"Cr24" && bytes[4..8] == 3u32.to_le_bytes() {
-        let expect = crx::Expect { id: want.link.as_deref(), publisher: want.link.as_ref().map(|_| want.publisher), ..Default::default() };
+        let expect = crx::Expect {
+            id: want.link.as_deref(),
+            publisher: want.link.as_ref().map(|_| want.publisher),
+            ..Default::default()
+        };
         match crx::verify(&bytes, &expect) {
             Ok(v) => {
                 unzip(&bytes[v.archive_offset..], dst)?;
@@ -426,17 +501,28 @@ fn unpack_file(src: &Path, dst: &Path, want: &Want) -> Result<Option<Origin>> {
                     manifest_edit::set_key(&manifest_root(dst), &v.developer_key)
                         .context("the Web Store's package names a key other than its signer's, and it could not be put right")?;
                 }
-                let item = v.verified_contents.as_deref().and_then(crx::verified_item).filter(|i| i.id == v.crx_id);
+                let item = v
+                    .verified_contents
+                    .as_deref()
+                    .and_then(crx::verified_item)
+                    .filter(|i| i.id == v.crx_id);
                 return Ok(Some(Origin {
                     source: store.then(|| SourceRef::webstore(&v.crx_id)),
-                    how: store.then_some(if want.link.is_some() { How::Link } else { How::CrxHeader }),
+                    how: store.then_some(if want.link.is_some() {
+                        How::Link
+                    } else {
+                        How::CrxHeader
+                    }),
                     store_item: item.filter(|_| store),
                     crx_id: Some(v.crx_id),
                 }));
             }
             Err(r) if want.link.is_some() => bail!("the Web Store's package failed its check: {r}"),
             // A file picked here unpacks as before, but proves nothing.
-            Err(r) => eprintln!("[extensions] {}: {r}; unpacked as a plain archive", src.display()),
+            Err(r) => eprintln!(
+                "[extensions] {}: {r}; unpacked as a plain archive",
+                src.display()
+            ),
         }
     } else if want.link.is_some() {
         bail!("the Web Store did not send a CRX3 package");
@@ -454,7 +540,12 @@ pub(in crate::space) async fn import_url_as(raw: &str, separate: bool) -> Result
     let want = Want::of_link(raw);
     if let Some(store_id) = &want.link {
         // Its package gets the store's key, so the store's id.
-        refuse_duplicate(&lib, Some(&SourceRef::webstore(store_id)), Some(store_id), separate)?;
+        refuse_duplicate(
+            &lib,
+            Some(&SourceRef::webstore(store_id)),
+            Some(store_id),
+            separate,
+        )?;
     }
     let id = uuid::Uuid::new_v4().simple().to_string();
     let part = lib.join(format!(".{id}.part"));
@@ -501,12 +592,16 @@ pub(in crate::space) async fn fetch(
     if status == reqwest::StatusCode::NO_CONTENT {
         anyhow::bail!("the Web Store has no extension with that id");
     }
-    let mut resp = resp.error_for_status().with_context(|| format!("fetch {url}"))?;
+    let mut resp = resp
+        .error_for_status()
+        .with_context(|| format!("fetch {url}"))?;
     let too_big = || anyhow::anyhow!("the file is over {} MB", cap >> 20);
     if resp.content_length().is_some_and(|n| n > cap) {
         return Err(too_big());
     }
-    let mut file = tokio::fs::File::create(to).await.with_context(|| format!("create {}", to.display()))?;
+    let mut file = tokio::fs::File::create(to)
+        .await
+        .with_context(|| format!("create {}", to.display()))?;
     let (mut got, mut first) = (0u64, None);
     loop {
         let chunk = tokio::time::timeout(STALL, resp.chunk())
@@ -538,7 +633,11 @@ const SMALL_MAX: usize = 1 << 20;
 
 /// A small GET to the Web Store (the update check): its body, within `timeout`
 /// start to end and `SMALL_MAX` bytes. Straight from this computer, no cookies.
-pub(in crate::space) async fn get_small(url: &str, ua: &str, timeout: std::time::Duration) -> std::result::Result<Vec<u8>, String> {
+pub(in crate::space) async fn get_small(
+    url: &str,
+    ua: &str,
+    timeout: std::time::Duration,
+) -> std::result::Result<Vec<u8>, String> {
     let said = |e: reqwest::Error| {
         if e.is_timeout() {
             "the Web Store did not answer in time".to_string()
@@ -624,7 +723,10 @@ pub(in crate::space) fn at_launch() {
             settle_library(&lib);
         }
     };
-    if let Err(e) = std::thread::Builder::new().name("extensions-at-launch".into()).spawn(job) {
+    if let Err(e) = std::thread::Builder::new()
+        .name("extensions-at-launch".into())
+        .spawn(job)
+    {
         eprintln!("[extensions] settled in the foreground: {e}");
         settle_library(&lib);
     }
@@ -641,7 +743,10 @@ fn settle_library(lib: &Path) {
     }
     let p = source::pass(lib);
     if p != source::Pass::default() {
-        eprintln!("[extensions] sources: {} recorded, {} .added moved, {} failed", p.written, p.moved, p.failed);
+        eprintln!(
+            "[extensions] sources: {} recorded, {} .added moved, {} failed",
+            p.written, p.moved, p.failed
+        );
     }
     usage::report(&usage::retry(&usage::System, lib, &ops), "at launch");
 }
@@ -650,11 +755,14 @@ fn settle_library(lib: &Path) {
 pub(in crate::space) fn delete(id: &str) -> Result<()> {
     let dir = dir_for(id)?;
     // Never in the middle of a swap of the same folder.
-    let _alone = usage::exclusive(id, usage::SWAP_WAIT).context("the extension is being updated; try again in a minute")?;
+    let _alone = usage::exclusive(id, usage::SWAP_WAIT)
+        .context("the extension is being updated; try again in a minute")?;
     if dir.exists() {
         fs::remove_dir_all(&dir)?;
     }
-    let Some(lib) = dir.parent() else { return Ok(()) };
+    let Some(lib) = dir.parent() else {
+        return Ok(());
+    };
     let _ = fs::remove_file(source::side_path(lib, id));
     if let Ok(root) = store::data_root() {
         updates::forget(&root.join(updates::BOOK), id);
@@ -664,7 +772,11 @@ pub(in crate::space) fn delete(id: &str) -> Result<()> {
         if !e.file_name().to_string_lossy().starts_with(&prefix) {
             continue;
         }
-        let _ = if e.path().is_dir() { fs::remove_dir_all(e.path()) } else { fs::remove_file(e.path()) };
+        let _ = if e.path().is_dir() {
+            fs::remove_dir_all(e.path())
+        } else {
+            fs::remove_file(e.path())
+        };
     }
     Ok(())
 }
@@ -687,22 +799,31 @@ fn unzip(archive: &[u8], dst: &Path) -> Result<()> {
 /// Each file streamed to disk; held to `max` bytes and `most` files, and to
 /// the room here for what the archive says it holds.
 fn unzip_within(archive: &[u8], dst: &Path, max: u64, most: usize) -> Result<()> {
-    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive)).context("not a zip/crx archive")?;
+    let mut zip =
+        zip::ZipArchive::new(std::io::Cursor::new(archive)).context("not a zip/crx archive")?;
     if zip.len() > most {
         bail!("the archive holds more than {most} files");
     }
     let too_big = || anyhow::anyhow!("the extension unpacks to more than {} MB", max >> 20);
-    let said = (0..zip.len()).filter_map(|i| zip.by_index_raw(i).ok().map(|f| f.size())).fold(0u64, u64::saturating_add);
+    let said = (0..zip.len())
+        .filter_map(|i| zip.by_index_raw(i).ok().map(|f| f.size()))
+        .fold(0u64, u64::saturating_add);
     if said > max {
         return Err(too_big());
     }
     if let Some(free) = crate::runtime::free_bytes(dst).filter(|free| said > *free) {
-        bail!("not enough free disk space to unpack it: it needs {} MB, {} MB is free", said.div_ceil(1 << 20), free >> 20);
+        bail!(
+            "not enough free disk space to unpack it: it needs {} MB, {} MB is free",
+            said.div_ceil(1 << 20),
+            free >> 20
+        );
     }
     let mut total = 0u64;
     for i in 0..zip.len() {
         let f = zip.by_index(i)?;
-        let Some(rel) = f.enclosed_name() else { continue };
+        let Some(rel) = f.enclosed_name() else {
+            continue;
+        };
         let out = dst.join(rel);
         if f.is_dir() {
             fs::create_dir_all(&out)?;
@@ -711,7 +832,8 @@ fn unzip_within(archive: &[u8], dst: &Path, max: u64, most: usize) -> Result<()>
         if let Some(parent) = out.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut file = fs::File::create(&out).with_context(|| format!("create {}", out.display()))?;
+        let mut file =
+            fs::File::create(&out).with_context(|| format!("create {}", out.display()))?;
         // What it really holds, whatever its header said.
         total += std::io::copy(&mut f.take(max - total + 1), &mut file)?;
         if total > max {
@@ -731,7 +853,8 @@ pub(in crate::space) fn zip_dir(dir: &Path, out: &Path) -> Result<u64> {
     use std::io::Write as _;
     let file = fs::File::create(out).with_context(|| format!("create {}", out.display()))?;
     let mut zip = zip::ZipWriter::new(std::io::BufWriter::new(file));
-    let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
     let mut stack = vec![(dir.to_path_buf(), String::new())];
     while let Some((at, rel)) = stack.pop() {
         let mut entries: Vec<_> = fs::read_dir(&at)?.flatten().collect();
@@ -780,7 +903,11 @@ pub(in crate::space) fn files_digest(dir: &Path) -> Result<String> {
         }
     }
     files.sort();
-    let version = manifest_edit::read_manifest(&root)?.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let version = manifest_edit::read_manifest(&root)?
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let mut h = Sha256::new();
     for (path, size) in &files {
         h.update(format!("{path}\0{size}\n"));

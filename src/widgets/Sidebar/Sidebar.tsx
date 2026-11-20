@@ -34,7 +34,6 @@ import type { RtUpdate, Section } from "../../shared/types";
 import { useNav } from "../../shared/model/navigation";
 import { useKeyPrefs } from "../../shared/model/keyPrefs";
 import { COLLAPSIBLE_PAGES, useSimpleNavigation, type CollapsiblePage } from "../../shared/model/simpleNavigation";
-import { useProxyShardVisibility } from "../../shared/model/proxyShardVisibility";
 import { useWhatsNew } from "../../shared/model/whatsNew";
 import { useLang, useT } from "../../shared/i18n";
 import {
@@ -257,14 +256,12 @@ function SecondaryPages({ compact }: { compact: boolean }) {
   const t = useT();
   const simple = useSimpleNavigation((s) => s.enabled);
   const items = useSimpleNavigation((s) => s.items);
-  const hideProxyShard = useProxyShardVisibility((s) => s.hidden);
   const current = useNav((s) => s.section);
   const updates = useExtensionUpdates((s) => updatableCount(s.byId));
   const [open, setOpen] = useState(false);
   const controls = useId();
   useEffect(() => { setOpen(false); }, [simple, items]);
-  const visible = (id: CollapsiblePage) => id !== "proxyshard" || !hideProxyShard;
-  const folded = (id: CollapsiblePage) => visible(id) && simple && items.includes(id);
+  const folded = (id: CollapsiblePage) => simple && items.includes(id);
   const showUpdates = folded("extensions") && !open && current !== "extensions" && updates > 0;
   const label = open ? t("sidebar.fewerPages") : t("sidebar.morePages");
   const updateLabel = t(updates === 1 ? "sidebar.extensionUpdatesOne" : "sidebar.extensionUpdatesMany", { n: updates });
@@ -280,7 +277,7 @@ function SecondaryPages({ compact }: { compact: boolean }) {
     return <PageItem key={id} id={id} {...pages[id]} compact={compact} />;
   };
   return <>
-    {COLLAPSIBLE_PAGES.filter((id) => visible(id) && !folded(id)).map(renderPage)}
+    {COLLAPSIBLE_PAGES.filter((id) => !folded(id)).map(renderPage)}
     {simple && items.length > 0 && <NavItem
       size="small" data-nav="more" icon={compact && showUpdates ? <span className="relative flex">
         <MoreIcon className="size-3.5" />
@@ -292,7 +289,7 @@ function SecondaryPages({ compact }: { compact: boolean }) {
       badgeLabel={showUpdates ? updateLabel : undefined}
     />}
     <div id={controls} data-secondary-pages className="flex flex-col gap-0.5">
-      {COLLAPSIBLE_PAGES.filter((id) => visible(id) && folded(id) && (open || current === id)).map(renderPage)}
+      {COLLAPSIBLE_PAGES.filter((id) => folded(id) && (open || current === id)).map(renderPage)}
     </div>
   </>;
 }

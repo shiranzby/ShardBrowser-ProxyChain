@@ -126,7 +126,12 @@ impl ProxyChainSettings {
         Ok(())
     }
     pub fn validate(&self) -> Result<(), ChainError> {
-        if self.invalid || !matches!(self.mode.as_str(), "auto" | "selected" | "http" | "https" | "socks5") {
+        if self.invalid
+            || !matches!(
+                self.mode.as_str(),
+                "auto" | "selected" | "http" | "https" | "socks5"
+            )
+        {
             return Err(ChainError::new(
                 "proxy_chain_invalid_config",
                 "configuration",
@@ -154,16 +159,31 @@ impl ProxyChainSettings {
         Ok(())
     }
     fn selected_hop(&self) -> Result<ProxyHop, ChainError> {
-        let missing = || ChainError::new("proxy_chain_invalid_config", "configuration", "Select an existing first-layer proxy in this space before connecting.");
-        let id = self.selected_proxy_id.as_deref().filter(|id| !id.trim().is_empty()).ok_or_else(missing)?;
-        let entry = crate::space::proxy::get(id).map_err(|_| missing())?.ok_or_else(missing)?;
+        let missing = || {
+            ChainError::new(
+                "proxy_chain_invalid_config",
+                "configuration",
+                "Select an existing first-layer proxy in this space before connecting.",
+            )
+        };
+        let id = self
+            .selected_proxy_id
+            .as_deref()
+            .filter(|id| !id.trim().is_empty())
+            .ok_or_else(missing)?;
+        let entry = crate::space::proxy::get(id)
+            .map_err(|_| missing())?
+            .ok_or_else(missing)?;
         let hop = ProxyHop {
             kind: match entry.kind {
                 crate::space::proxy::ProxyKind::Http => ProxyKind::Http,
                 crate::space::proxy::ProxyKind::Https => ProxyKind::Https,
                 crate::space::proxy::ProxyKind::Socks5 => ProxyKind::Socks5,
             },
-            host: entry.host, port: entry.port, username: entry.username, password: entry.password,
+            host: entry.host,
+            port: entry.port,
+            username: entry.username,
+            password: entry.password,
         };
         connector::validate(&hop, &Target::new("example.com", 443)?)?;
         Ok(hop)
@@ -173,7 +193,9 @@ impl ProxyChainSettings {
         if self.mode == "auto" {
             return detect_windows::resolve();
         }
-        if self.mode == "selected" { return self.selected_hop(); }
+        if self.mode == "selected" {
+            return self.selected_hop();
+        }
         let password = match &self.password {
             PasswordUpdate::Replace(p) => p.clone(),
             PasswordUpdate::Clear => String::new(),
@@ -231,11 +253,30 @@ mod tests {
     }
     #[test]
     fn global_selected_proxy_requires_a_binding_and_https_stays_tls() {
-        let missing = ProxyChainSettings { enabled: true, mode: "selected".into(), ..Default::default() };
-        assert_eq!(missing.validate().unwrap_err().code, "proxy_chain_invalid_config");
-        let manual = ProxyChainSettings { enabled: true, mode: "https".into(), host: "proxy.example".into(), port: 443, ..Default::default() };
-        assert!(matches!(manual.hop(&manual).unwrap().kind, ProxyKind::Https));
-        let old: ProxyChainSettings = serde_json::from_str(r#"{"enabled":true,"mode":"http","host":"127.0.0.1","port":7890}"#).unwrap();
+        let missing = ProxyChainSettings {
+            enabled: true,
+            mode: "selected".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            missing.validate().unwrap_err().code,
+            "proxy_chain_invalid_config"
+        );
+        let manual = ProxyChainSettings {
+            enabled: true,
+            mode: "https".into(),
+            host: "proxy.example".into(),
+            port: 443,
+            ..Default::default()
+        };
+        assert!(matches!(
+            manual.hop(&manual).unwrap().kind,
+            ProxyKind::Https
+        ));
+        let old: ProxyChainSettings = serde_json::from_str(
+            r#"{"enabled":true,"mode":"http","host":"127.0.0.1","port":7890}"#,
+        )
+        .unwrap();
         assert!(old.selected_proxy_id.is_none());
         assert!(matches!(old.hop(&old).unwrap().kind, ProxyKind::Http));
     }
@@ -244,8 +285,12 @@ mod tests {
     fn fallback_permission_cannot_be_injected_through_settings_json() {
         let config: ProxyChainSettings = serde_json::from_str(r#"{"enabled":true,"mode":"http","host":"127.0.0.1","port":7890,"allow_assigned_fallback":true}"#).unwrap();
         assert!(!config.allow_assigned_fallback);
-        let mut runtime = config.clone(); runtime.allow_assigned_fallback = true;
-        assert!(serde_json::to_value(runtime).unwrap().get("allow_assigned_fallback").is_none());
+        let mut runtime = config.clone();
+        runtime.allow_assigned_fallback = true;
+        assert!(serde_json::to_value(runtime)
+            .unwrap()
+            .get("allow_assigned_fallback")
+            .is_none());
     }
 
     #[test]

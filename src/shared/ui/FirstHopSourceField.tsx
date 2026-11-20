@@ -1,4 +1,4 @@
-import { useProxy } from "../../entities/proxy";
+import { useProfileCountByProxy, useProxy } from "../../entities/proxy";
 import { useEffect } from "react";
 import type { ProxyChainSettings } from "../../entities/settings";
 import { useT } from "../i18n";
@@ -13,6 +13,7 @@ export function FirstHopSourceField({ config, onChange, disabled = false }: {
   const proxies = useProxy((s) => s.proxies);
   const snapshots = useProxy((s) => s.snapshots);
   const proxyStatus = useProxy((s) => s.status);
+  const bindingCounts = useProfileCountByProxy();
   useEffect(() => { void useProxy.getState().init(); }, []);
   return <div className="flex min-w-0 flex-col gap-2" data-global-first-hop>
     <p className="m-0 text-help text-text-sub-600">{t("proxyChain.firstSource")}</p>
@@ -29,11 +30,16 @@ export function FirstHopSourceField({ config, onChange, disabled = false }: {
     {config.mode === "selected" && proxyStatus === "loading" && <p className="m-0 text-help text-text-sub-600">{t("proxyChain.loadingFirst")}</p>}
     {config.mode === "selected" && proxyStatus !== "loading" && <SelectField aria-label={t("proxyChain.selectedFirst")}
       disabled={disabled} value={config.selected_proxy_id ?? ""}
-      options={[{ value: "", label: t("proxyChain.selectFirst") }, ...proxies.map((p) => ({
-        value: p.id,
-        label: proxyOptionLabel(p, snapshots[p.id], t("proxyRow.unknownLocation")),
-        content: <ProxySummary proxy={p} snapshot={snapshots[p.id]} />,
-      }))]}
+      isSearchable searchPlaceholder={t("proxySelect.searchPlaceholder")}
+      options={[{ value: "", label: t("proxyChain.selectFirst") }, ...proxies.map((p) => {
+        const count = bindingCounts[p.id] ?? 0;
+        return {
+          value: p.id,
+          label: proxyOptionLabel(p, snapshots[p.id], t("proxyRow.unknownLocation")),
+          content: <ProxySummary proxy={p} snapshot={snapshots[p.id]} />,
+          hint: count === 1 ? t("proxyRow.usedByOne") : count > 1 ? t("proxyRow.usedByMany", { n: count }) : undefined,
+        };
+      })]}
       onChange={(selected_proxy_id: string) => onChange({ selected_proxy_id })} />}
     {config.mode === "selected" && proxyStatus === "ready" && proxies.length === 0 && <p className="m-0 text-help text-warning-text">{t("proxyChain.noFirstProxy")}</p>}
     <p className="m-0 text-help text-text-sub-600">{t("proxyChain.defaultFirstHelp")}</p>

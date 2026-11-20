@@ -36,9 +36,9 @@ test("a sentence with a bold word renders as one sentence", async ({ page }) => 
   const row = page.locator("[role='row'][data-profile-id]", { hasText: "Etsy craft shop" });
   await row.hover();
   await row.getByRole("button", { name: "Start" }).click();
-  const dialog = page.getByRole("dialog", { name: /Enjoying ShardBrowser/ });
+  const dialog = page.getByRole("dialog", { name: /Enjoying ShyShard/ });
   await expect(dialog.locator("strong", { hasText: "completely free" })).toBeVisible();
-  await expect(dialog).toContainText("ShardBrowser is provided and supported completely free. If it’s useful to you");
+  await expect(dialog).toContainText("ShyShard is provided and supported completely free. If it’s useful to you");
 });
 
 type Fmt = {

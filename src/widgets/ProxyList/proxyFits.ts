@@ -51,6 +51,7 @@ export function proxyFits({ snapshotOf, countOf }: {
       // CountryFlag draws only a two-letter code.
       return (/^[a-zA-Z]{2}$/.test(cc) ? FLAG : 0) + m(snap?.city || cc, "secondary");
     },
+    folder: (p, m) => m(p.folder?.trim() || p.provider_options?.folder?.trim() || t("proxyTable.noFolder"), "secondary"),
     profiles: (p, m) => m(String(countOf(p.id)), "tabular"),
     // The pill ("OK 164 ms", "Failed", "Not tested"), then the IP in the
     // mono face after the cell's gap.

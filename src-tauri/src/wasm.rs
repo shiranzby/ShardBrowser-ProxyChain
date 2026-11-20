@@ -28,13 +28,16 @@ use crate::store;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
-use wasmtime::{Caller, Config, Engine, Extern, Instance, Linker, Module, Store, StoreLimits, StoreLimitsBuilder};
+use wasmtime::{
+    Caller, Config, Engine, Extern, Instance, Linker, Module, Store, StoreLimits,
+    StoreLimitsBuilder,
+};
 
 /// One module on disk, with the blocks it says it provides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,22 +173,24 @@ fn linker() -> Result<Linker<HostState>> {
     // for by returning an action.
     linker
         .func_wrap(
-        "shardx",
-        "log",
-        |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| {
-            let Some(Extern::Memory(mem)) = caller.get_export("memory") else { return };
-            let mut buf = vec![0u8; len.max(0) as usize];
-            if mem.read(&mut caller, ptr.max(0) as usize, &mut buf).is_ok() {
-                if let Ok(s) = String::from_utf8(buf) {
-                    // Bounded: a module in a loop must not fill memory with its
-                    // own diagnostics.
-                    let log = &mut caller.data_mut().log;
-                    if log.len() < 500 {
-                        log.push(s);
+            "shardx",
+            "log",
+            |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| {
+                let Some(Extern::Memory(mem)) = caller.get_export("memory") else {
+                    return;
+                };
+                let mut buf = vec![0u8; len.max(0) as usize];
+                if mem.read(&mut caller, ptr.max(0) as usize, &mut buf).is_ok() {
+                    if let Ok(s) = String::from_utf8(buf) {
+                        // Bounded: a module in a loop must not fill memory with its
+                        // own diagnostics.
+                        let log = &mut caller.data_mut().log;
+                        if log.len() < 500 {
+                            log.push(s);
+                        }
                     }
                 }
-            }
-        },
+            },
         )
         .map_err(|e| anyhow!("link log(): {e}"))?;
 
@@ -210,8 +215,12 @@ fn linker() -> Result<Linker<HostState>> {
             "shardx",
             "do_action",
             |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| -> i64 {
-                let Some(text) = read_string(&mut caller, ptr, len) else { return 0 };
-                let Ok(action) = serde_json::from_str::<Value>(&text) else { return 0 };
+                let Some(text) = read_string(&mut caller, ptr, len) else {
+                    return 0;
+                };
+                let Ok(action) = serde_json::from_str::<Value>(&text) else {
+                    return 0;
+                };
                 let (tx, pending) = {
                     let st = caller.data_mut();
                     // Whatever this action writes into is the module's own, so
@@ -221,7 +230,14 @@ fn linker() -> Result<Linker<HostState>> {
                 };
                 let Some(tx) = tx else { return 0 };
                 let (rtx, rrx) = std::sync::mpsc::channel();
-                if tx.send(ActionRequest { action, vars: pending, reply: rtx }).is_err() {
+                if tx
+                    .send(ActionRequest {
+                        action,
+                        vars: pending,
+                        reply: rtx,
+                    })
+                    .is_err()
+                {
                     return 0;
                 }
                 // Blocking is correct here: this thread is a blocking one, the
@@ -251,7 +267,9 @@ fn linker() -> Result<Linker<HostState>> {
             "shardx",
             "get_var",
             |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| -> i64 {
-                let Some(name) = read_string(&mut caller, ptr, len) else { return 0 };
+                let Some(name) = read_string(&mut caller, ptr, len) else {
+                    return 0;
+                };
                 let st = caller.data();
                 // A name it may not see reads empty, the same as an unset one:
                 // a module asking for something it does not have is not an
@@ -273,7 +291,11 @@ fn linker() -> Result<Linker<HostState>> {
             "shardx",
             "set_var",
             |mut caller: Caller<'_, HostState>,
-             kptr: i32, klen: i32, vptr: i32, vlen: i32| -> i32 {
+             kptr: i32,
+             klen: i32,
+             vptr: i32,
+             vlen: i32|
+             -> i32 {
                 let (Some(name), Some(value)) = (
                     read_string(&mut caller, kptr, klen),
                     read_string(&mut caller, vptr, vlen),
@@ -299,7 +321,9 @@ fn linker() -> Result<Linker<HostState>> {
             "shardx",
             "state_get",
             |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| -> i64 {
-                let Some(key) = read_string(&mut caller, ptr, len) else { return 0 };
+                let Some(key) = read_string(&mut caller, ptr, len) else {
+                    return 0;
+                };
                 let id = caller.data().module_id.clone();
                 let value = state_get(&id, &key);
                 write_string(&mut caller, &value)
@@ -312,7 +336,11 @@ fn linker() -> Result<Linker<HostState>> {
             "shardx",
             "state_set",
             |mut caller: Caller<'_, HostState>,
-             kptr: i32, klen: i32, vptr: i32, vlen: i32| -> i32 {
+             kptr: i32,
+             klen: i32,
+             vptr: i32,
+             vlen: i32|
+             -> i32 {
                 let (Some(key), Some(value)) = (
                     read_string(&mut caller, kptr, klen),
                     read_string(&mut caller, vptr, vlen),
@@ -366,7 +394,9 @@ fn linker() -> Result<Linker<HostState>> {
                     let take = chunk.len().min(16);
                     chunk[..take].copy_from_slice(&bytes[..take]);
                 }
-                let Some(Extern::Memory(mem)) = caller.get_export("memory") else { return 1 };
+                let Some(Extern::Memory(mem)) = caller.get_export("memory") else {
+                    return 1;
+                };
                 if mem.write(&mut caller, ptr.max(0) as usize, &buf).is_err() {
                     return 1;
                 }
@@ -388,12 +418,14 @@ fn linker() -> Result<Linker<HostState>> {
     // check this and leave; one that does not is killed by the fuel ceiling,
     // which is a worse way to end.
     linker
-        .func_wrap("shardx", "should_stop", |caller: Caller<'_, HostState>| -> i32 {
-            let st = caller.data();
-            i32::from(
-                st.stop.load(Ordering::Relaxed) || st.abort.load(Ordering::Relaxed),
-            )
-        })
+        .func_wrap(
+            "shardx",
+            "should_stop",
+            |caller: Caller<'_, HostState>| -> i32 {
+                let st = caller.data();
+                i32::from(st.stop.load(Ordering::Relaxed) || st.abort.load(Ordering::Relaxed))
+            },
+        )
         .map_err(|e| anyhow!("link should_stop(): {e}"))?;
 
     Ok(linker)
@@ -401,7 +433,9 @@ fn linker() -> Result<Linker<HostState>> {
 
 /// Reads a string out of the module's memory.
 fn read_string(caller: &mut Caller<'_, HostState>, ptr: i32, len: i32) -> Option<String> {
-    let Some(Extern::Memory(mem)) = caller.get_export("memory") else { return None };
+    let Some(Extern::Memory(mem)) = caller.get_export("memory") else {
+        return None;
+    };
     let n = len.max(0) as usize;
     if n > (8 << 20) {
         return None;
@@ -416,10 +450,18 @@ fn read_string(caller: &mut Caller<'_, HostState>, ptr: i32, len: i32) -> Option
 /// Zero means it did not fit; a module must treat that as an empty answer.
 fn write_string(caller: &mut Caller<'_, HostState>, text: &str) -> i64 {
     let bytes = text.as_bytes();
-    let Some(Extern::Func(alloc)) = caller.get_export("alloc") else { return 0 };
-    let Ok(alloc) = alloc.typed::<i32, i32>(&*caller) else { return 0 };
-    let Ok(ptr) = alloc.call(&mut *caller, bytes.len() as i32) else { return 0 };
-    let Some(Extern::Memory(mem)) = caller.get_export("memory") else { return 0 };
+    let Some(Extern::Func(alloc)) = caller.get_export("alloc") else {
+        return 0;
+    };
+    let Ok(alloc) = alloc.typed::<i32, i32>(&*caller) else {
+        return 0;
+    };
+    let Ok(ptr) = alloc.call(&mut *caller, bytes.len() as i32) else {
+        return 0;
+    };
+    let Some(Extern::Memory(mem)) = caller.get_export("memory") else {
+        return 0;
+    };
     if mem.write(&mut *caller, ptr as usize, bytes).is_err() {
         return 0;
     }
@@ -439,8 +481,7 @@ struct Loaded {
 /// key so replacing a module on disk takes effect without restarting the
 /// launcher, which is how one is developed.
 fn compiled() -> &'static Mutex<HashMap<PathBuf, (std::time::SystemTime, Module)>> {
-    static C: OnceLock<Mutex<HashMap<PathBuf, (std::time::SystemTime, Module)>>> =
-        OnceLock::new();
+    static C: OnceLock<Mutex<HashMap<PathBuf, (std::time::SystemTime, Module)>>> = OnceLock::new();
     C.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -455,8 +496,8 @@ fn compile(path: &PathBuf) -> Result<Module> {
     }
     // wasmtime carries its own anyhow, so its Result does not take ours;
     // every wasmtime error crosses the boundary as text.
-    let module = Module::from_file(engine(), path)
-        .map_err(|e| anyhow!("read {}: {e}", path.display()))?;
+    let module =
+        Module::from_file(engine(), path).map_err(|e| anyhow!("read {}: {e}", path.display()))?;
     if let (Some(stamp), Ok(mut cache)) = (stamp, compiled().lock()) {
         cache.insert(path.clone(), (stamp, module.clone()));
     }
@@ -539,7 +580,9 @@ fn write_input(loaded: &mut Loaded, text: &str) -> Result<(i32, i32)> {
         .get_typed_func::<i32, i32>(&mut loaded.store, "alloc")
         .map_err(|_| anyhow!("the module exports no alloc"))?;
     let len = text.len() as i32;
-    let ptr = alloc.call(&mut loaded.store, len).map_err(|e| anyhow!("alloc: {e}"))?;
+    let ptr = alloc
+        .call(&mut loaded.store, len)
+        .map_err(|e| anyhow!("alloc: {e}"))?;
     let mem = loaded
         .instance
         .get_memory(&mut loaded.store, "memory")
@@ -556,7 +599,9 @@ pub fn list() -> Result<Vec<ModuleInfo>> {
     for entry in fs::read_dir(&dir)? {
         let Ok(entry) = entry else { continue };
         let path = entry.path();
-        if crate::store::is_os_litter(&entry.file_name()) || path.extension().and_then(|e| e.to_str()) != Some("wasm") {
+        if crate::store::is_os_litter(&entry.file_name())
+            || path.extension().and_then(|e| e.to_str()) != Some("wasm")
+        {
             continue;
         }
         let id = path
@@ -587,7 +632,9 @@ fn describe(path: &PathBuf) -> Result<Vec<Value>> {
         .instance
         .get_typed_func::<(), i64>(&mut loaded.store, "blocks")
         .map_err(|_| anyhow!("the module exports no blocks()"))?;
-    let packed = f.call(&mut loaded.store, ()).map_err(|e| anyhow!("blocks(): {e}"))?;
+    let packed = f
+        .call(&mut loaded.store, ())
+        .map_err(|e| anyhow!("blocks(): {e}"))?;
     let json = read_packed(&mut loaded, packed)?;
     let blocks: Vec<Value> = serde_json::from_str(&json).context("blocks() did not return JSON")?;
     Ok(blocks)
@@ -622,7 +669,10 @@ pub fn run_block(module_id: &str, input: &Value) -> Result<ModuleResult> {
     // Narrowed the same way the driving path narrows it: which contract a module
     // speaks does not change whose variables those are.
     let declared = read_manifest(&path).map(|m| m.vars).unwrap_or_default();
-    let mut view = VarView { declared, own: Vec::new() };
+    let mut view = VarView {
+        declared,
+        own: Vec::new(),
+    };
     if let Some(params) = input.get("params") {
         view.note_targets(params);
     }
@@ -640,7 +690,13 @@ pub fn run_block(module_id: &str, input: &Value) -> Result<ModuleResult> {
         }
     }
 
-    let mut loaded = instantiate(&path, HostState { view, ..HostState::plain() })?;
+    let mut loaded = instantiate(
+        &path,
+        HostState {
+            view,
+            ..HostState::plain()
+        },
+    )?;
     let text = serde_json::to_string(&input)?;
     let (ptr, len) = write_input(&mut loaded, &text)?;
     let f = loaded
@@ -660,8 +716,7 @@ pub fn run_block(module_id: &str, input: &Value) -> Result<ModuleResult> {
             logs,
         });
     }
-    let mut out: ModuleResult =
-        serde_json::from_str(&json).context("run() did not return JSON")?;
+    let mut out: ModuleResult = serde_json::from_str(&json).context("run() did not return JSON")?;
     out.logs = logs;
     Ok(out)
 }
@@ -690,7 +745,10 @@ pub fn run_step(
     // What the module declared, if anything. Read before the call so the input
     // it is handed is already narrowed.
     let declared = read_manifest(&path).map(|m| m.vars).unwrap_or_default();
-    let view = VarView { declared, own: Vec::new() };
+    let view = VarView {
+        declared,
+        own: Vec::new(),
+    };
 
     // The step's own parameters name where its results go, the same way an
     // action's do — a module must be able to read back what its own block wrote.
@@ -764,7 +822,6 @@ pub fn is_v2(module_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-
 /// What a module says it needs, read from an optional `manifest()` export.
 ///
 /// Absence is the compatibility signal — no version field, no probe: a module
@@ -832,10 +889,13 @@ pub struct VarView {
 
 impl VarView {
     fn sees(&self, name: &str) -> bool {
-        self.declared.iter().any(|pattern| match pattern.strip_suffix('*') {
-            Some(prefix) => name.starts_with(prefix),
-            None => pattern == name,
-        }) || self.own.iter().any(|o| name.starts_with(o.as_str()))
+        self.declared
+            .iter()
+            .any(|pattern| match pattern.strip_suffix('*') {
+                Some(prefix) => name.starts_with(prefix),
+                None => pattern == name,
+            })
+            || self.own.iter().any(|o| name.starts_with(o.as_str()))
     }
 
     fn filter(&self, vars: &HashMap<String, String>) -> HashMap<String, String> {
@@ -882,7 +942,6 @@ pub struct Grant {
     pub call_flows: Vec<String>,
 }
 
-
 // ---- state a module keeps ----
 //
 // Variables live for a run. A module often needs the other thing: a cursor into
@@ -923,8 +982,12 @@ fn load_state(module_id: &str, cell: &mut StateCell) {
         return;
     }
     cell.loaded = true;
-    let Ok(path) = state_path(module_id) else { return };
-    let Ok(raw) = fs::read_to_string(&path) else { return };
+    let Ok(path) = state_path(module_id) else {
+        return;
+    };
+    let Ok(raw) = fs::read_to_string(&path) else {
+        return;
+    };
     match serde_json::from_str::<HashMap<String, String>>(&raw) {
         Ok(map) => cell.map = map,
         Err(_) => {
@@ -934,10 +997,15 @@ fn load_state(module_id: &str, cell: &mut StateCell) {
 }
 
 fn state_get(module_id: &str, key: &str) -> String {
-    let Ok(mut all) = states().lock() else { return String::new() };
+    let Ok(mut all) = states().lock() else {
+        return String::new();
+    };
     let cell = all
         .entry(module_id.to_string())
-        .or_insert_with(|| StateCell { map: HashMap::new(), loaded: false });
+        .or_insert_with(|| StateCell {
+            map: HashMap::new(),
+            loaded: false,
+        });
     load_state(module_id, cell);
     cell.map.get(key).cloned().unwrap_or_default()
 }
@@ -949,17 +1017,24 @@ fn state_get(module_id: &str, key: &str) -> String {
 /// first, silently, which is the worst way for remembered state to be wrong.
 /// The lock is what makes the merge a merge.
 fn state_set(module_id: &str, key: &str, value: &str) -> Result<()> {
-    let mut all = states().lock().map_err(|_| anyhow!("state lock poisoned"))?;
+    let mut all = states()
+        .lock()
+        .map_err(|_| anyhow!("state lock poisoned"))?;
     let cell = all
         .entry(module_id.to_string())
-        .or_insert_with(|| StateCell { map: HashMap::new(), loaded: false });
+        .or_insert_with(|| StateCell {
+            map: HashMap::new(),
+            loaded: false,
+        });
     load_state(module_id, cell);
 
     if value.is_empty() {
         cell.map.remove(key);
     } else {
         if !cell.map.contains_key(key) && cell.map.len() >= MAX_STATE_KEYS {
-            return Err(anyhow!("a module may remember {MAX_STATE_KEYS} things at once"));
+            return Err(anyhow!(
+                "a module may remember {MAX_STATE_KEYS} things at once"
+            ));
         }
         cell.map.insert(key.to_string(), value.to_string());
     }
@@ -1015,8 +1090,12 @@ pub fn digest(path: &PathBuf) -> String {
 /// longer matches the binary all yield an empty grant. `unwrap_or_default()` is
 /// right here for exactly that reason — for the state store it would be wrong.
 pub fn grant_for(module_id: &str) -> Grant {
-    let Ok(path) = grant_path(module_id) else { return Grant::default() };
-    let Ok(raw) = fs::read_to_string(&path) else { return Grant::default() };
+    let Ok(path) = grant_path(module_id) else {
+        return Grant::default();
+    };
+    let Ok(raw) = fs::read_to_string(&path) else {
+        return Grant::default();
+    };
     let grant: Grant = serde_json::from_str(&raw).unwrap_or_default();
     let Ok(wasm_path) = modules_dir().map(|d| d.join(format!("{module_id}.wasm"))) else {
         return Grant::default();
@@ -1028,7 +1107,11 @@ pub fn grant_for(module_id: &str) -> Grant {
 }
 
 /// Records what the operator allowed, against the file as it stands now.
-pub fn set_grant(module_id: &str, call_modules: Vec<String>, call_flows: Vec<String>) -> Result<Grant> {
+pub fn set_grant(
+    module_id: &str,
+    call_modules: Vec<String>,
+    call_flows: Vec<String>,
+) -> Result<Grant> {
     let wasm_path = modules_dir()?.join(format!("{module_id}.wasm"));
     if !wasm_path.exists() {
         return Err(anyhow!("module \"{module_id}\" is not installed"));
@@ -1095,10 +1178,15 @@ fn read_manifest(path: &PathBuf) -> Result<Manifest> {
 fn read_manifest_uncached(path: &PathBuf) -> Result<Manifest> {
     let mut loaded = instantiate(path, HostState::plain())?;
     // No export means no request. That is the whole compatibility story.
-    let Ok(f) = loaded.instance.get_typed_func::<(), i64>(&mut loaded.store, "manifest") else {
+    let Ok(f) = loaded
+        .instance
+        .get_typed_func::<(), i64>(&mut loaded.store, "manifest")
+    else {
         return Ok(Manifest::default());
     };
-    let packed = f.call(&mut loaded.store, ()).map_err(|e| anyhow!("manifest(): {e}"))?;
+    let packed = f
+        .call(&mut loaded.store, ())
+        .map_err(|e| anyhow!("manifest(): {e}"))?;
     let json = read_packed(&mut loaded, packed)?;
     if json.trim().is_empty() {
         return Ok(Manifest::default());
@@ -1114,8 +1202,13 @@ pub fn install(from: &str) -> Result<ModuleInfo> {
         .and_then(|s| s.to_str())
         .ok_or_else(|| anyhow!("that file has no name"))?
         .to_string();
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-        return Err(anyhow!("a module's file name may only use letters, digits, - and _"));
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(anyhow!(
+            "a module's file name may only use letters, digits, - and _"
+        ));
     }
     // Checked before it is installed, so a broken module never reaches the
     // library and cannot break the picker for everything else.
@@ -1157,7 +1250,10 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("password".to_string(), "hunter2".to_string());
         map.insert("account".to_string(), "kit".to_string());
-        assert!(v.filter(&map).is_empty(), "the run's variables are the operator's");
+        assert!(
+            v.filter(&map).is_empty(),
+            "the run's variables are the operator's"
+        );
 
         // Its own are still its own, or it could not read back its own action.
         let mut v = v;
@@ -1222,7 +1318,11 @@ mod tests {
 
         // It is on disk, not only in memory: forget the cache and read again.
         states().lock().unwrap().remove(id);
-        assert_eq!(state_get(id, "cursor"), "page-3", "it must survive the cache");
+        assert_eq!(
+            state_get(id, "cursor"),
+            "page-3",
+            "it must survive the cache"
+        );
 
         // Empty means forget.
         state_set(id, "cursor", "").unwrap();
@@ -1244,7 +1344,11 @@ mod tests {
         let big = "x".repeat(MAX_STATE_BYTES + 16);
         let err = state_set(id, "huge", &big).unwrap_err().to_string();
         assert!(err.contains("1 MB"), "{err}");
-        assert_eq!(state_get(id, "huge"), "", "the refused value must not stick");
+        assert_eq!(
+            state_get(id, "huge"),
+            "",
+            "the refused value must not stick"
+        );
 
         let _ = fs::remove_dir_all(&dir);
         states().lock().unwrap().remove(id);
@@ -1254,7 +1358,11 @@ mod tests {
     fn what_a_module_asks_for_is_clamped_not_refused() {
         // Nothing declared: the defaults.
         assert_eq!(ceilings(None), (DEFAULT_FUEL, DEFAULT_MEMORY_MB));
-        let ask = |fuel, mb| Manifest { fuel, memory_mb: mb, ..Manifest::default() };
+        let ask = |fuel, mb| Manifest {
+            fuel,
+            memory_mb: mb,
+            ..Manifest::default()
+        };
         // A modest ask is honoured.
         assert_eq!(ceilings(Some(&ask(Some(1_000), Some(64)))), (1_000, 64));
         // A greedy one gets the ceiling rather than an error: refusing to run
@@ -1282,7 +1390,8 @@ mod tests {
     #[test]
     fn a_signal_on_any_thread_does_not_abort_once_the_engine_is_up() {
         const CHILD: &str = "SHARDX_WASM_SIGNAL_CHILD";
-        const NAME: &str = "wasm::tests::a_signal_on_any_thread_does_not_abort_once_the_engine_is_up";
+        const NAME: &str =
+            "wasm::tests::a_signal_on_any_thread_does_not_abort_once_the_engine_is_up";
         if std::env::var_os(CHILD).is_some() {
             extern "C" fn nothing(_: libc::c_int) {}
             // SAFETY: a handler that does nothing, then a signal to each thread of this process.
@@ -1310,8 +1419,13 @@ mod tests {
             .env(CHILD, "1")
             .output()
             .unwrap();
-        let said = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
-        assert!(out.status.success(), "the child ended with {:?}:\n{said}", out.status);
+        let said = String::from_utf8_lossy(&out.stdout).to_string()
+            + &String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.status.success(),
+            "the child ended with {:?}:\n{said}",
+            out.status
+        );
         assert!(said.contains("1 passed"), "the child ran nothing:\n{said}");
     }
 }

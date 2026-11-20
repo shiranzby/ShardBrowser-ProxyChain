@@ -35,8 +35,13 @@ export function FingerprintFilterBar() {
     };
     const byDevice = countBy({ device: "all" }, deviceTypeOf);
     const byVendor = countBy({ vendor: "all" }, gpuVendorOf);
+    const byTag = new Map<string, number>();
+    for (const e of filterFingerprints(items, search, { ...filters, tag: "" })) {
+      for (const tag of e.tags ?? []) byTag.set(tag, (byTag.get(tag) ?? 0) + 1);
+    }
     // Only the vendors the library has.
     const present = new Set(items.map(gpuVendorOf));
+    const tags = [...new Set(items.flatMap((e) => e.tags ?? []))].sort((a, b) => a.localeCompare(b));
     return [
       {
         id: "device",
@@ -52,6 +57,13 @@ export function FingerprintFilterBar() {
         set: (v) => setFilters({ vendor: (v ?? "all") as FingerprintFilters["vendor"] }),
         values: VENDORS.filter((v) => present.has(v)).map((v) => ({ value: v, label: vendorLabel(t, v), count: byVendor.get(v) ?? 0 })),
       },
+      {
+        id: "tag",
+        label: t("fingerprintFilters.tag"),
+        current: filters.tag || null,
+        set: (v) => setFilters({ tag: v ?? "" }),
+        values: tags.map((tag) => ({ value: tag, label: tag, count: byTag.get(tag) ?? 0 })),
+      },
     ];
   }, [open, items, filters, search, setFilters, t]);
 
@@ -65,6 +77,11 @@ export function FingerprintFilterBar() {
       id: "vendor",
       label: t("filters.chip", { field: t("fingerprintFilters.vendor"), value: vendorLabel(t, filters.vendor) }),
       onRemove: () => setFilters({ vendor: "all" }),
+    }] : []),
+    ...(filters.tag ? [{
+      id: "tag",
+      label: t("filters.chip", { field: t("fingerprintFilters.tag"), value: filters.tag }),
+      onRemove: () => setFilters({ tag: "" }),
     }] : []),
   ];
 
@@ -81,7 +98,7 @@ export function FingerprintFilterBar() {
         />
         <FilterMenu open={open} onOpenChange={setOpen} fields={fields} activeCount={chips.length} label={t("profileFilterBar.filters")} />
       </div>
-      <FilterChips chips={chips} onClear={() => setFilters({ device: "all", vendor: "all" })} />
+      <FilterChips chips={chips} onClear={() => setFilters({ device: "all", vendor: "all", tag: "" })} />
     </>
   );
 }

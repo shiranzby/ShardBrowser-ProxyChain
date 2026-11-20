@@ -4,7 +4,9 @@
 use super::*;
 use crate::space::local::extensions::chrome_id::chrome_id;
 use crate::space::local::extensions::source::{How, SourceLocal};
-use crate::space::local::extensions::testkit::{crx3, manifest, stand_in, verified_contents, write_tree, zip, Key, Tmp};
+use crate::space::local::extensions::testkit::{
+    crx3, manifest, stand_in, verified_contents, write_tree, zip, Key, Tmp,
+};
 use base64::Engine;
 use serde_json::json;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -28,7 +30,12 @@ impl Lib {
     fn live(&self, id: &str, root: &str, files: &[(&str, &[u8])], link: Option<(&str, How)>) {
         write_tree(&at_root(&self.lib.join(id), root), files);
         if let Some((store_id, how)) = link {
-            let side = SourceLocal { source: Some(SourceRef::webstore(store_id)), how: Some(how), recovered: true, ..SourceLocal::default() };
+            let side = SourceLocal {
+                source: Some(SourceRef::webstore(store_id)),
+                how: Some(how),
+                recovered: true,
+                ..SourceLocal::default()
+            };
             source::write(&self.lib, id, &side).unwrap();
         }
     }
@@ -49,7 +56,11 @@ impl Lib {
     }
 
     fn names(&self) -> Vec<String> {
-        let mut v: Vec<String> = fs::read_dir(&self.lib).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        let mut v: Vec<String> = fs::read_dir(&self.lib)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
         v.sort();
         v
     }
@@ -82,7 +93,11 @@ fn assert_tidy(l: &Lib, id: &str) {
         .names()
         .into_iter()
         .filter(|n| n.starts_with(&format!(".{id}.")) || n.starts_with(&format!("{id}.")))
-        .filter(|n| *n != format!("{id}.source.json") && *n != format!(".{id}.prev") && *n != format!(".{id}.prev.json"))
+        .filter(|n| {
+            *n != format!("{id}.source.json")
+                && *n != format!(".{id}.prev")
+                && *n != format!(".{id}.prev.json")
+        })
         .collect();
     assert!(extra.is_empty(), "left behind: {extra:?}");
 }
@@ -93,21 +108,46 @@ fn a_store_update_keeps_the_id_its_key_gives() {
     let l = Lib::new();
     let (dev, st) = (Key::new(), Key::new());
     let _store = stand_in(&st);
-    l.live("e1", "", &[("manifest.json", &m_with("1.0", json!({ "key": b64(&dev.spki) }))), ("bg.js", b"1;")], Some((&dev.id(), How::Link)));
+    l.live(
+        "e1",
+        "",
+        &[
+            (
+                "manifest.json",
+                &m_with("1.0", json!({ "key": b64(&dev.spki) })),
+            ),
+            ("bg.js", b"1;"),
+        ],
+        Some((&dev.id(), How::Link)),
+    );
     let before = chrome_id(&l.root("e1")).unwrap();
     assert_eq!(before, dev.id());
 
-    let pkg = crx3(&dev, Some(&st), &zip(&[("manifest.json", &m("1.1")), ("bg.js", b"2;")]));
+    let pkg = crx3(
+        &dev,
+        Some(&st),
+        &zip(&[("manifest.json", &m("1.1")), ("bg.js", b"2;")]),
+    );
     let staged = l.stage("e1", &pkg, &store(&dev.id())).unwrap();
-    assert_eq!((staged.key, staged.ready(), staged.root.as_str()), (KeyAction::Inserted, true, ""));
+    assert_eq!(
+        (staged.key, staged.ready(), staged.root.as_str()),
+        (KeyAction::Inserted, true, "")
+    );
     assert!(staged.grown.is_empty() && staged.identity.is_none());
 
     let done = apply(&l.lib, "e1", &Ops::quick()).unwrap();
     assert_eq!((done.from.as_str(), done.to.as_str()), ("1.0", "1.1"));
-    assert_eq!(done.atomic, cfg!(any(target_os = "macos", target_os = "linux")));
+    assert_eq!(
+        done.atomic,
+        cfg!(any(target_os = "macos", target_os = "linux"))
+    );
     assert_eq!(chrome_id(&l.root("e1")).unwrap(), before);
     assert_eq!(fs::read(l.lib.join("e1/bg.js")).unwrap(), b"2;");
-    assert_eq!(l.version(&l.lib.join(".e1.prev")), "1.0", "the tree before is kept");
+    assert_eq!(
+        l.version(&l.lib.join(".e1.prev")),
+        "1.0",
+        "the tree before is kept"
+    );
     assert!(l.lib.join(".e1.prev.json").is_file());
     assert_tidy(&l, "e1");
 }
@@ -119,17 +159,43 @@ fn a_store_update_keeps_the_id_its_path_gives() {
     let (dev, st) = (Key::new(), Key::new());
     let _store = stand_in(&st);
     // Linked by hand: the files must show the same extension.
-    l.live("e2", "", &[("manifest.json", &m("2.0")), ("bg.js", b"1;"), ("lib.js", b"same")], Some((&dev.id(), How::User)));
+    l.live(
+        "e2",
+        "",
+        &[
+            ("manifest.json", &m("2.0")),
+            ("bg.js", b"1;"),
+            ("lib.js", b"same"),
+        ],
+        Some((&dev.id(), How::User)),
+    );
     let before = chrome_id(&l.root("e2")).unwrap();
 
-    let pkg = crx3(&dev, Some(&st), &zip(&[("manifest.json", &m_with("2.1", json!({ "key": b64(&dev.spki) }))), ("bg.js", b"2;"), ("lib.js", b"same")]));
+    let pkg = crx3(
+        &dev,
+        Some(&st),
+        &zip(&[
+            (
+                "manifest.json",
+                &m_with("2.1", json!({ "key": b64(&dev.spki) })),
+            ),
+            ("bg.js", b"2;"),
+            ("lib.js", b"same"),
+        ]),
+    );
     let staged = l.stage("e2", &pkg, &store(&dev.id())).unwrap();
     assert_eq!(staged.key, KeyAction::Removed);
-    assert!(staged.identity.is_none() && staged.ready(), "half its files unchanged: the same extension");
+    assert!(
+        staged.identity.is_none() && staged.ready(),
+        "half its files unchanged: the same extension"
+    );
 
     apply(&l.lib, "e2", &Ops::quick()).unwrap();
     assert_eq!(chrome_id(&l.root("e2")).unwrap(), before);
-    assert!(manifest_edit::read_manifest(&l.root("e2")).unwrap().get("key").is_none());
+    assert!(manifest_edit::read_manifest(&l.root("e2"))
+        .unwrap()
+        .get("key")
+        .is_none());
 }
 
 /// Design п.7: the new tree goes where the live manifest was, whatever its zip did.
@@ -140,19 +206,43 @@ fn the_new_tree_takes_the_live_trees_layout() {
     let _store = stand_in(&st);
 
     // Flat live, a wrapped zip: flat.
-    l.live("flat", "", &[("manifest.json", &m("1.0")), ("a.js", b"1")], Some((&dev.id(), How::Link)));
+    l.live(
+        "flat",
+        "",
+        &[("manifest.json", &m("1.0")), ("a.js", b"1")],
+        Some((&dev.id(), How::Link)),
+    );
     let id_flat = chrome_id(&l.root("flat")).unwrap();
-    let wrapped = crx3(&dev, Some(&st), &zip(&[("pkg/manifest.json", &m("1.1")), ("pkg/a.js", b"2")]));
-    assert_eq!(l.stage("flat", &wrapped, &store(&dev.id())).unwrap().root, "");
+    let wrapped = crx3(
+        &dev,
+        Some(&st),
+        &zip(&[("pkg/manifest.json", &m("1.1")), ("pkg/a.js", b"2")]),
+    );
+    assert_eq!(
+        l.stage("flat", &wrapped, &store(&dev.id())).unwrap().root,
+        ""
+    );
     apply(&l.lib, "flat", &Ops::quick()).unwrap();
     assert!(l.lib.join("flat/manifest.json").is_file() && !l.lib.join("flat/pkg").exists());
     assert_eq!(chrome_id(&l.root("flat")).unwrap(), id_flat);
 
     // Nested live, a flat zip: nested in the same folder.
-    l.live("nest", "inner", &[("manifest.json", &m("1.0")), ("a.js", b"1")], Some((&dev.id(), How::Link)));
+    l.live(
+        "nest",
+        "inner",
+        &[("manifest.json", &m("1.0")), ("a.js", b"1")],
+        Some((&dev.id(), How::Link)),
+    );
     let id_nest = chrome_id(&l.root("nest")).unwrap();
-    let plain = crx3(&dev, Some(&st), &zip(&[("manifest.json", &m("1.1")), ("a.js", b"2")]));
-    assert_eq!(l.stage("nest", &plain, &store(&dev.id())).unwrap().root, "inner");
+    let plain = crx3(
+        &dev,
+        Some(&st),
+        &zip(&[("manifest.json", &m("1.1")), ("a.js", b"2")]),
+    );
+    assert_eq!(
+        l.stage("nest", &plain, &store(&dev.id())).unwrap().root,
+        "inner"
+    );
     apply(&l.lib, "nest", &Ops::quick()).unwrap();
     assert_eq!(l.root("nest"), l.lib.join("nest/inner"));
     assert_eq!(l.version(&l.lib.join("nest")), "1.1");
@@ -165,29 +255,84 @@ fn staging_refuses_what_is_not_the_next_version_of_this_item() {
     let l = Lib::new();
     let (dev, st, other) = (Key::new(), Key::new(), Key::new());
     let _store = stand_in(&st);
-    l.live("e3", "", &[("manifest.json", &m_with("3.0", json!({ "key": b64(&dev.spki) }))), ("bg.js", b"1;")], Some((&dev.id(), How::Link)));
+    l.live(
+        "e3",
+        "",
+        &[
+            (
+                "manifest.json",
+                &m_with("3.0", json!({ "key": b64(&dev.spki) })),
+            ),
+            ("bg.js", b"1;"),
+        ],
+        Some((&dev.id(), How::Link)),
+    );
     let body = |v: &str| zip(&[("manifest.json", &m(v)), ("bg.js", b"2;")]);
     let vc = verified_contents(&dev.id(), "3.0");
     let cases: Vec<(Vec<u8>, Order, Kind, &str)> = vec![
-        (crx3(&dev, Some(&st), &body("3.0")), store(&dev.id()), Kind::NotNewer, "not newer"),
-        (crx3(&dev, Some(&st), &body("2.9")), store(&dev.id()), Kind::NotNewer, "not newer"),
-        (crx3(&other, Some(&st), &body("3.1")), store(&dev.id()), Kind::Package, "not "),
-        (crx3(&dev, None, &body("3.1")), store(&dev.id()), Kind::Package, "not signed by the Web Store"),
-        (crx3(&dev, Some(&st), &body("3.1")), Order::store(&dev.id(), Some(&"0".repeat(64)), None, None), Kind::Package, "hash"),
+        (
+            crx3(&dev, Some(&st), &body("3.0")),
+            store(&dev.id()),
+            Kind::NotNewer,
+            "not newer",
+        ),
+        (
+            crx3(&dev, Some(&st), &body("2.9")),
+            store(&dev.id()),
+            Kind::NotNewer,
+            "not newer",
+        ),
+        (
+            crx3(&other, Some(&st), &body("3.1")),
+            store(&dev.id()),
+            Kind::Package,
+            "not ",
+        ),
+        (
+            crx3(&dev, None, &body("3.1")),
+            store(&dev.id()),
+            Kind::Package,
+            "not signed by the Web Store",
+        ),
+        (
+            crx3(&dev, Some(&st), &body("3.1")),
+            Order::store(&dev.id(), Some(&"0".repeat(64)), None, None),
+            Kind::Package,
+            "hash",
+        ),
         (body("3.1"), store(&dev.id()), Kind::Package, "not a CRX3"),
         (
-            crx3(&dev, Some(&st), &zip(&[("manifest.json", &m("3.1")), ("_metadata/verified_contents.json", vc.as_bytes())])),
+            crx3(
+                &dev,
+                Some(&st),
+                &zip(&[
+                    ("manifest.json", &m("3.1")),
+                    ("_metadata/verified_contents.json", vc.as_bytes()),
+                ]),
+            ),
             store(&dev.id()),
             Kind::Package,
             "signed contents",
         ),
         (
-            crx3(&dev, Some(&st), &zip(&[("manifest.json", &m_with("3.1", json!({ "key": b64(&other.spki) })))])),
+            crx3(
+                &dev,
+                Some(&st),
+                &zip(&[(
+                    "manifest.json",
+                    &m_with("3.1", json!({ "key": b64(&other.spki) })),
+                )]),
+            ),
             store(&dev.id()),
             Kind::Manifest,
             "another key",
         ),
-        (crx3(&dev, Some(&st), &body("3.1")), store(&other.id()), Kind::Stale, "another Web Store item"),
+        (
+            crx3(&dev, Some(&st), &body("3.1")),
+            store(&other.id()),
+            Kind::Stale,
+            "another Web Store item",
+        ),
     ];
     for (pkg, order, kind, why) in cases {
         let f = l.stage("e3", &pkg, &order).unwrap_err();
@@ -205,9 +350,23 @@ fn what_the_person_must_see_waits_for_their_yes() {
     let l = Lib::new();
     let (dev, st) = (Key::new(), Key::new());
     let _store = stand_in(&st);
-    l.live("e4", "", &[("manifest.json", &m("4.0")), ("bg.js", b"1;")], Some((&dev.id(), How::Link)));
-    let grows = m_with("4.1", json!({ "permissions": ["tabs"], "host_permissions": ["https://*/*"] }));
-    let staged = l.stage("e4", &crx3(&dev, Some(&st), &zip(&[("manifest.json", &grows)])), &store(&dev.id())).unwrap();
+    l.live(
+        "e4",
+        "",
+        &[("manifest.json", &m("4.0")), ("bg.js", b"1;")],
+        Some((&dev.id(), How::Link)),
+    );
+    let grows = m_with(
+        "4.1",
+        json!({ "permissions": ["tabs"], "host_permissions": ["https://*/*"] }),
+    );
+    let staged = l
+        .stage(
+            "e4",
+            &crx3(&dev, Some(&st), &zip(&[("manifest.json", &grows)])),
+            &store(&dev.id()),
+        )
+        .unwrap();
     assert_eq!(staged.grown.len(), 2);
     assert!(!staged.ready());
     assert!(waiting(&l.lib).is_empty());
@@ -215,23 +374,78 @@ fn what_the_person_must_see_waits_for_their_yes() {
     assert_eq!(waiting(&l.lib), ["e4"]);
 
     // Linked by hand, and nothing in common.
-    l.live("e5", "", &[("manifest.json", &m("5.0")), ("a.js", b"mine"), ("b.js", b"mine")], Some((&dev.id(), How::User)));
+    l.live(
+        "e5",
+        "",
+        &[
+            ("manifest.json", &m("5.0")),
+            ("a.js", b"mine"),
+            ("b.js", b"mine"),
+        ],
+        Some((&dev.id(), How::User)),
+    );
     let renamed = m_with("5.1", json!({ "name": "Other" }));
-    let staged = l.stage("e5", &crx3(&dev, Some(&st), &zip(&[("manifest.json", &renamed), ("a.js", b"theirs")])), &store(&dev.id())).unwrap();
+    let staged = l
+        .stage(
+            "e5",
+            &crx3(
+                &dev,
+                Some(&st),
+                &zip(&[("manifest.json", &renamed), ("a.js", b"theirs")]),
+            ),
+            &store(&dev.id()),
+        )
+        .unwrap();
     let who = staged.identity.clone().expect("asked");
-    assert_eq!((who.overlap, who.names.old.as_str(), who.names.new.as_str()), (0.0, "Wallet", "Other"));
+    assert_eq!(
+        (who.overlap, who.names.old.as_str(), who.names.new.as_str()),
+        (0.0, "Wallet", "Other")
+    );
     assert!(!staged.ready());
 
     // Not linked yet: weighed the same way.
-    l.live("e8", "", &[("manifest.json", &m("8.0")), ("a.js", b"same"), ("b.js", b"old")], None);
-    let staged = l.stage("e8", &crx3(&dev, Some(&st), &zip(&[("manifest.json", &m("8.1")), ("a.js", b"same")])), &store(&dev.id())).unwrap();
-    assert!(staged.identity.is_none() && staged.ready(), "half its files and its name: the same");
+    l.live(
+        "e8",
+        "",
+        &[
+            ("manifest.json", &m("8.0")),
+            ("a.js", b"same"),
+            ("b.js", b"old"),
+        ],
+        None,
+    );
+    let staged = l
+        .stage(
+            "e8",
+            &crx3(
+                &dev,
+                Some(&st),
+                &zip(&[("manifest.json", &m("8.1")), ("a.js", b"same")]),
+            ),
+            &store(&dev.id()),
+        )
+        .unwrap();
+    assert!(
+        staged.identity.is_none() && staged.ready(),
+        "half its files and its name: the same"
+    );
 
     // An engine older than it asks for: kept, not applied.
-    l.live("e6", "", &[("manifest.json", &m("6.0"))], Some((&dev.id(), How::Link)));
+    l.live(
+        "e6",
+        "",
+        &[("manifest.json", &m("6.0"))],
+        Some((&dev.id(), How::Link)),
+    );
     let needs = m_with("6.1", json!({ "minimum_chrome_version": "200" }));
     let order = Order::store(&dev.id(), None, None, Some("156.0.8078.48"));
-    let staged = l.stage("e6", &crx3(&dev, Some(&st), &zip(&[("manifest.json", &needs)])), &order).unwrap();
+    let staged = l
+        .stage(
+            "e6",
+            &crx3(&dev, Some(&st), &zip(&[("manifest.json", &needs)])),
+            &order,
+        )
+        .unwrap();
     assert_eq!(staged.needs_engine.as_deref(), Some("200"));
     assert!(!staged.ready() && !approve(&l.lib, "e6").unwrap().ready());
 }
@@ -241,9 +455,20 @@ fn a_full_disk_stages_nothing() {
     let l = Lib::new();
     let (dev, st) = (Key::new(), Key::new());
     let _store = stand_in(&st);
-    l.live("e7", "", &[("manifest.json", &m("1.0"))], Some((&dev.id(), How::Link)));
-    let file = l.file("u.crx", &crx3(&dev, Some(&st), &zip(&[("manifest.json", &m("1.1"))])));
-    let ops = Ops { free_bytes: Box::new(|_| Some(10 << 20)), ..Ops::quick() };
+    l.live(
+        "e7",
+        "",
+        &[("manifest.json", &m("1.0"))],
+        Some((&dev.id(), How::Link)),
+    );
+    let file = l.file(
+        "u.crx",
+        &crx3(&dev, Some(&st), &zip(&[("manifest.json", &m("1.1"))])),
+    );
+    let ops = Ops {
+        free_bytes: Box::new(|_| Some(10 << 20)),
+        ..Ops::quick()
+    };
     let f = stage_file(&l.lib, "e7", &file, &store(&dev.id()), &ops, &quiet()).unwrap_err();
     assert_eq!(f.kind, Kind::Space, "{f}");
     assert_tidy(&l, "e7");
@@ -254,29 +479,79 @@ fn a_full_disk_stages_nothing() {
 fn a_sync_package_never_changes_the_id_basis() {
     let l = Lib::new();
     let dev = Key::new();
-    l.live("s1", "", &[("manifest.json", &m_with("1.0", json!({ "key": b64(&dev.spki) })))], None);
-    let same = zip(&[("manifest.json", &m_with("1.1", json!({ "key": b64(&dev.spki) }))), ("x.js", b"1")]);
-    let grows = zip(&[("manifest.json", &m_with("1.1", json!({ "key": b64(&dev.spki), "permissions": ["tabs"] })))]);
+    l.live(
+        "s1",
+        "",
+        &[(
+            "manifest.json",
+            &m_with("1.0", json!({ "key": b64(&dev.spki) })),
+        )],
+        None,
+    );
+    let same = zip(&[
+        (
+            "manifest.json",
+            &m_with("1.1", json!({ "key": b64(&dev.spki) })),
+        ),
+        ("x.js", b"1"),
+    ]);
+    let grows = zip(&[(
+        "manifest.json",
+        &m_with(
+            "1.1",
+            json!({ "key": b64(&dev.spki), "permissions": ["tabs"] }),
+        ),
+    )]);
     let keyless = zip(&[("manifest.json", &m("1.1"))]);
-    let older = zip(&[("manifest.json", &m_with("0.9", json!({ "key": b64(&dev.spki) })))]);
+    let older = zip(&[(
+        "manifest.json",
+        &m_with("0.9", json!({ "key": b64(&dev.spki) })),
+    )]);
 
-    assert_eq!(l.stage("s1", &keyless, &Order::sync(3, None)).unwrap_err().kind, Kind::IdConflict);
-    assert_eq!(l.stage("s1", &older, &Order::sync(3, None)).unwrap_err().kind, Kind::NotNewer);
+    assert_eq!(
+        l.stage("s1", &keyless, &Order::sync(3, None))
+            .unwrap_err()
+            .kind,
+        Kind::IdConflict
+    );
+    assert_eq!(
+        l.stage("s1", &older, &Order::sync(3, None))
+            .unwrap_err()
+            .kind,
+        Kind::NotNewer
+    );
     assert_tidy(&l, "s1");
     // Its builder confirmed the access on the other computer.
     let staged = l.stage("s1", &grows, &Order::sync(3, None)).unwrap();
-    assert_eq!((staged.key, staged.grown.len(), staged.ready()), (KeyAction::Kept, 1, true));
+    assert_eq!(
+        (staged.key, staged.grown.len(), staged.ready()),
+        (KeyAction::Kept, 1, true)
+    );
     let staged = l.stage("s1", &same, &Order::sync(4, None)).unwrap();
     assert_eq!(staged.origin, Origin::Sync(4));
     apply(&l.lib, "s1", &Ops::quick()).unwrap();
-    assert_eq!(source::read(&l.lib, "s1").unwrap().applied_package_rev, Some(4));
+    assert_eq!(
+        source::read(&l.lib, "s1").unwrap().applied_package_rev,
+        Some(4)
+    );
     assert_eq!(chrome_id(&l.root("s1")).unwrap(), dev.id());
 }
 
 /// A plain update of `id` from 1.0 to 1.1, staged.
 fn staged_update(l: &Lib, id: &str) {
-    l.live(id, "", &[("manifest.json", &m("1.0")), ("a.js", b"1")], None);
-    let staged = l.stage(id, &zip(&[("manifest.json", &m("1.1")), ("a.js", b"2")]), &Order::sync(1, None)).unwrap();
+    l.live(
+        id,
+        "",
+        &[("manifest.json", &m("1.0")), ("a.js", b"1")],
+        None,
+    );
+    let staged = l
+        .stage(
+            id,
+            &zip(&[("manifest.json", &m("1.1")), ("a.js", b"2")]),
+            &Order::sync(1, None),
+        )
+        .unwrap();
     assert!(staged.ready());
 }
 
@@ -290,10 +565,19 @@ fn without_a_one_step_swap_two_renames_do_it() {
     let l = Lib::new();
     staged_update(&l, "f1");
     let before = chrome_id(&l.root("f1")).unwrap();
-    let ops = Ops { exchange: Box::new(|_, _| refuse(io::ErrorKind::Unsupported)), ..Ops::quick() };
+    let ops = Ops {
+        exchange: Box::new(|_, _| refuse(io::ErrorKind::Unsupported)),
+        ..Ops::quick()
+    };
     let done = apply(&l.lib, "f1", &ops).unwrap();
     assert!(!done.atomic);
-    assert_eq!((l.version(&l.lib.join("f1")), l.version(&l.lib.join(".f1.prev"))), ("1.1".into(), "1.0".into()));
+    assert_eq!(
+        (
+            l.version(&l.lib.join("f1")),
+            l.version(&l.lib.join(".f1.prev"))
+        ),
+        ("1.1".into(), "1.0".into())
+    );
     assert_eq!(chrome_id(&l.root("f1")).unwrap(), before);
     assert_tidy(&l, "f1");
 }
@@ -321,7 +605,13 @@ fn a_failed_second_rename_puts_the_first_back() {
     staged_update(&l, "f3");
     let ops = Ops {
         exchange: Box::new(|_, _| refuse(io::ErrorKind::Unsupported)),
-        rename: Box::new(|a, b| if a.ends_with("tree") { refuse(io::ErrorKind::PermissionDenied) } else { fs::rename(a, b) }),
+        rename: Box::new(|a, b| {
+            if a.ends_with("tree") {
+                refuse(io::ErrorKind::PermissionDenied)
+            } else {
+                fs::rename(a, b)
+            }
+        }),
         ..Ops::quick()
     };
     assert_eq!(apply(&l.lib, "f3", &ops).unwrap_err().kind, Kind::Swap);
@@ -337,7 +627,13 @@ fn what_a_failed_put_back_leaves_the_next_start_restores() {
     staged_update(&l, "f4");
     let ops = Ops {
         exchange: Box::new(|_, _| refuse(io::ErrorKind::Unsupported)),
-        rename: Box::new(|a, b| if a.ends_with("f4") { fs::rename(a, b) } else { refuse(io::ErrorKind::PermissionDenied) }),
+        rename: Box::new(|a, b| {
+            if a.ends_with("f4") {
+                fs::rename(a, b)
+            } else {
+                refuse(io::ErrorKind::PermissionDenied)
+            }
+        }),
         ..Ops::quick()
     };
     let f = apply(&l.lib, "f4", &ops).unwrap_err();
@@ -394,7 +690,11 @@ fn a_start_after_a_death_mid_swap_finishes_or_undoes_it() {
     fs::rename(&tmp, l.lib.join(".d3.staging/tree")).unwrap();
 
     let swept = sweep(&l.lib, &Ops::quick());
-    assert_eq!((swept.restored, swept.finished, swept.kept), (1, 2, 1), "{swept:?}");
+    assert_eq!(
+        (swept.restored, swept.finished, swept.kept),
+        (1, 2, 1),
+        "{swept:?}"
+    );
     assert_eq!(l.version(&l.lib.join("d1")), "1.0");
     assert_eq!(waiting(&l.lib), ["d1"]);
     for id in ["d2", "d3"] {
@@ -402,7 +702,10 @@ fn a_start_after_a_death_mid_swap_finishes_or_undoes_it() {
         assert_eq!(l.version(&l.lib.join(format!(".{id}.prev"))), "1.0");
         assert_tidy(&l, id);
     }
-    assert!(staged(&l.lib, "d3").is_none(), "the tree before is never applied again");
+    assert!(
+        staged(&l.lib, "d3").is_none(),
+        "the tree before is never applied again"
+    );
 }
 
 #[test]
@@ -417,7 +720,16 @@ fn a_start_removes_what_is_incomplete_or_nobodys() {
     // Complete: stays.
     staged_update(&l, "c3");
     // Leftovers of downloads, sync, side-file writes and cleanups.
-    for name in [".c3.part", ".c3.zip", ".c3.source.tmp", ".c3.weigh/manifest.json", ".c3.trash-1/x", ".c3.new/manifest.json", ".gone.staging/tree/manifest.json", ".gone.prev/manifest.json"] {
+    for name in [
+        ".c3.part",
+        ".c3.zip",
+        ".c3.source.tmp",
+        ".c3.weigh/manifest.json",
+        ".c3.trash-1/x",
+        ".c3.new/manifest.json",
+        ".gone.staging/tree/manifest.json",
+        ".gone.prev/manifest.json",
+    ] {
         write_tree(&l.lib, &[(name, b"{}")]);
     }
     write_tree(&l.lib, &[(".c3.unknown", b"kept")]);
@@ -440,7 +752,11 @@ fn the_tree_before_is_kept_for_a_week() {
         l.live(id, "", &[("manifest.json", &m("2.0"))], None);
         write_tree(&l.lib, &[(&format!(".{id}.prev/manifest.json"), &m("1.0"))]);
         let at = now_secs() - age_days * 24 * 3600;
-        fs::write(l.lib.join(format!(".{id}.prev.json")), json!({ "at": at, "version": "1.0" }).to_string()).unwrap();
+        fs::write(
+            l.lib.join(format!(".{id}.prev.json")),
+            json!({ "at": at, "version": "1.0" }).to_string(),
+        )
+        .unwrap();
     }
     l.live("p3", "", &[("manifest.json", &m("2.0"))], None);
     write_tree(&l.lib, &[(".p3.prev/manifest.json", &m("1.0"))]);
@@ -448,8 +764,12 @@ fn the_tree_before_is_kept_for_a_week() {
     sweep(&l.lib, &Ops::quick());
     assert!(!l.lib.join(".p1.prev").exists() && !l.lib.join(".p1.prev.json").exists());
     assert!(l.lib.join(".p2.prev").is_dir());
-    let note: serde_json::Value = serde_json::from_slice(&fs::read(l.lib.join(".p3.prev.json")).unwrap()).unwrap();
-    assert!(now_secs() - note["at"].as_u64().unwrap() < 60, "its week starts at the first start that sees it");
+    let note: serde_json::Value =
+        serde_json::from_slice(&fs::read(l.lib.join(".p3.prev.json")).unwrap()).unwrap();
+    assert!(
+        now_secs() - note["at"].as_u64().unwrap() < 60,
+        "its week starts at the first start that sees it"
+    );
     assert_eq!(note["version"], "1.0");
 }
 
@@ -458,12 +778,25 @@ fn the_tree_before_is_kept_for_a_week() {
 fn the_digest_is_the_files_not_chromes_additions() {
     let t = Tmp::new("ext-digest");
     let dir = t.0.join("x");
-    write_tree(&dir, &[("inner/manifest.json", &m("1.0")), ("inner/a.js", b"1")]);
+    write_tree(
+        &dir,
+        &[("inner/manifest.json", &m("1.0")), ("inner/a.js", b"1")],
+    );
     let d = tree_digest(&dir).unwrap();
-    write_tree(&dir, &[("inner/_metadata/generated_indexed_rulesets/_ruleset1", b"x"), ("inner/.added", b"@1")]);
+    write_tree(
+        &dir,
+        &[
+            ("inner/_metadata/generated_indexed_rulesets/_ruleset1", b"x"),
+            ("inner/.added", b"@1"),
+        ],
+    );
     assert_eq!(tree_digest(&dir).unwrap(), d);
     write_tree(&dir, &[("inner/a.js", b"2")]);
-    assert_ne!(tree_digest(&dir).unwrap(), d, "the bytes count, not only the sizes");
+    assert_ne!(
+        tree_digest(&dir).unwrap(),
+        d,
+        "the bytes count, not only the sizes"
+    );
 }
 
 /// A server that answers every GET with `body`.
@@ -481,7 +814,10 @@ async fn serve(body: Vec<u8>) -> String {
                     Ok(n) => req.extend_from_slice(&buf[..n]),
                 }
             }
-            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
             let _ = conn.write_all(head.as_bytes()).await;
             let _ = conn.write_all(&body).await;
         }
@@ -495,11 +831,25 @@ async fn a_download_is_held_to_what_update2_said() {
     let l = Lib::new();
     let (dev, st) = (Key::new(), Key::new());
     let _store = stand_in(&st);
-    l.live("n1", "", &[("manifest.json", &m("1.0"))], Some((&dev.id(), How::Link)));
+    l.live(
+        "n1",
+        "",
+        &[("manifest.json", &m("1.0"))],
+        Some((&dev.id(), How::Link)),
+    );
     // Bytes zip cannot shrink.
-    let noise: Vec<u8> = (0u32..(3 << 20) / 32).flat_map(|i| Sha256::digest(i.to_le_bytes()).to_vec()).collect();
-    let pkg = crx3(&dev, Some(&st), &zip(&[("manifest.json", &m("1.1")), ("big.bin", &noise)]));
-    let sha: String = Sha256::digest(&pkg).iter().map(|b| format!("{b:02x}")).collect();
+    let noise: Vec<u8> = (0u32..(3 << 20) / 32)
+        .flat_map(|i| Sha256::digest(i.to_le_bytes()).to_vec())
+        .collect();
+    let pkg = crx3(
+        &dev,
+        Some(&st),
+        &zip(&[("manifest.json", &m("1.1")), ("big.bin", &noise)]),
+    );
+    let sha: String = Sha256::digest(&pkg)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     let url = serve(pkg.clone()).await;
     let ops = Arc::new(Ops::quick());
     let heard = Arc::new(AtomicUsize::new(0));
@@ -511,18 +861,36 @@ async fn a_download_is_held_to_what_update2_said() {
     });
 
     let order = Order::store(&dev.id(), Some(&sha), Some(1 << 20), None);
-    let f = stage(&l.lib, "n1", &url, order, ops.clone(), progress.clone()).await.unwrap_err();
+    let f = stage(&l.lib, "n1", &url, order, ops.clone(), progress.clone())
+        .await
+        .unwrap_err();
     assert_eq!(f.kind, Kind::Download, "{f}");
     assert!(f.message.contains("over 2 MB"), "{f}");
     assert_tidy(&l, "n1");
 
-    let order = Order::store(&dev.id(), Some(&"0".repeat(64)), Some(pkg.len() as u64), None);
-    assert_eq!(stage(&l.lib, "n1", &url, order, ops.clone(), progress.clone()).await.unwrap_err().kind, Kind::Package);
+    let order = Order::store(
+        &dev.id(),
+        Some(&"0".repeat(64)),
+        Some(pkg.len() as u64),
+        None,
+    );
+    assert_eq!(
+        stage(&l.lib, "n1", &url, order, ops.clone(), progress.clone())
+            .await
+            .unwrap_err()
+            .kind,
+        Kind::Package
+    );
     assert_tidy(&l, "n1");
 
     let order = Order::store(&dev.id(), Some(&sha), Some(pkg.len() as u64), None);
-    let staged = stage(&l.lib, "n1", &url, order, ops, progress).await.unwrap();
-    assert_eq!((staged.sha256.as_str(), staged.to.as_str()), (sha.as_str(), "1.1"));
+    let staged = stage(&l.lib, "n1", &url, order, ops, progress)
+        .await
+        .unwrap();
+    assert_eq!(
+        (staged.sha256.as_str(), staged.to.as_str()),
+        (sha.as_str(), "1.1")
+    );
     assert_eq!(heard.load(Ordering::SeqCst), pkg.len());
     assert!(!l.lib.join(".n1.part").exists());
 }
@@ -533,14 +901,38 @@ fn weighing_leaves_nothing_behind() {
     let l = Lib::new();
     let (dev, st) = (Key::new(), Key::new());
     let _store = stand_in(&st);
-    l.live("w1", "", &[("manifest.json", &m("1.0")), ("a.js", b"a"), ("b.js", b"b")], None);
-    let pkg = l.file("w.crx", &crx3(&dev, Some(&st), &zip(&[("manifest.json", &m_with("1.2", json!({ "name": "Other" }))), ("a.js", b"a")])));
+    l.live(
+        "w1",
+        "",
+        &[("manifest.json", &m("1.0")), ("a.js", b"a"), ("b.js", b"b")],
+        None,
+    );
+    let pkg = l.file(
+        "w.crx",
+        &crx3(
+            &dev,
+            Some(&st),
+            &zip(&[
+                ("manifest.json", &m_with("1.2", json!({ "name": "Other" }))),
+                ("a.js", b"a"),
+            ]),
+        ),
+    );
     let w = weigh(&l.lib, "w1", &pkg, &store(&dev.id()), &Ops::quick()).unwrap();
-    assert_eq!((w.overlap, w.same_name, w.version.as_str()), (0.5, false, "1.2"));
-    assert_eq!((w.names.old.as_str(), w.names.new.as_str()), ("Wallet", "Other"));
+    assert_eq!(
+        (w.overlap, w.same_name, w.version.as_str()),
+        (0.5, false, "1.2")
+    );
+    assert_eq!(
+        (w.names.old.as_str(), w.names.new.as_str()),
+        ("Wallet", "Other")
+    );
     assert_tidy(&l, "w1");
 
-    let unsigned = l.file("u.crx", &crx3(&dev, None, &zip(&[("manifest.json", &m("1.2"))])));
+    let unsigned = l.file(
+        "u.crx",
+        &crx3(&dev, None, &zip(&[("manifest.json", &m("1.2"))])),
+    );
     let f = weigh(&l.lib, "w1", &unsigned, &store(&dev.id()), &Ops::quick()).unwrap_err();
     assert_eq!(f.kind, Kind::Package, "{f}");
     assert_tidy(&l, "w1");
@@ -561,29 +953,47 @@ fn a_failed_put_back_is_retried_in_the_same_session() {
         let live = l.lib.join(id);
         Ops {
             exchange: Box::new(|_, _| refuse(io::ErrorKind::Unsupported)),
-            rename: Box::new(move |a, b| if a == live { fs::rename(a, b) } else { refuse(io::ErrorKind::PermissionDenied) }),
+            rename: Box::new(move |a, b| {
+                if a == live {
+                    fs::rename(a, b)
+                } else {
+                    refuse(io::ErrorKind::PermissionDenied)
+                }
+            }),
             ..Ops::quick()
         }
     };
     let (a, b) = (uid("pa"), uid("pb"));
     for id in [&a, &b] {
         staged_update(&l, id);
-        assert!(apply(&l.lib, id, &failing(id)).unwrap_err().message.contains("could not be put back"));
+        assert!(apply(&l.lib, id, &failing(id))
+            .unwrap_err()
+            .message
+            .contains("could not be put back"));
         assert!(!l.lib.join(id).exists() && l.lib.join(format!(".{id}.prev.new")).is_dir());
     }
 
     // The update tried again puts the folder back first, then goes in.
     assert_eq!(apply(&l.lib, &a, &Ops::quick()).unwrap().to, "1.1");
-    assert_eq!(l.version(&l.lib.join(format!(".{a}.prev"))), "1.0", "the one put back is the one kept aside");
+    assert_eq!(
+        l.version(&l.lib.join(format!(".{a}.prev"))),
+        "1.0",
+        "the one put back is the one kept aside"
+    );
 
     // The retry leaves one being swapped to its swap, then puts it back.
     {
-        let _swapping = crate::space::local::extensions::usage::exclusive(&b, Duration::ZERO).unwrap();
+        let _swapping =
+            crate::space::local::extensions::usage::exclusive(&b, Duration::ZERO).unwrap();
         assert_eq!(put_back_all(&l.lib, &Ops::quick()), 0);
     }
     assert_eq!(put_back_all(&l.lib, &Ops::quick()), 1);
     assert_eq!(l.version(&l.lib.join(&b)), "1.0");
-    assert_eq!(waiting(&l.lib), std::slice::from_ref(&b), "its update still waits");
+    assert_eq!(
+        waiting(&l.lib),
+        std::slice::from_ref(&b),
+        "its update still waits"
+    );
 }
 
 /// The store's package goes only over a folder whose key gives the store's
@@ -595,7 +1005,15 @@ fn a_store_package_goes_only_where_its_id_and_version_fit() {
     let _store = stand_in(&st);
     let id = uid("k");
     // Taken as the store's item (from a sync record), though its key says otherwise.
-    l.live(&id, "", &[("manifest.json", &m_with("1.0", json!({ "key": b64(&other.spki) })))], Some((&dev.id(), How::User)));
+    l.live(
+        &id,
+        "",
+        &[(
+            "manifest.json",
+            &m_with("1.0", json!({ "key": b64(&other.spki) })),
+        )],
+        Some((&dev.id(), How::User)),
+    );
     let pkg = crx3(&dev, Some(&st), &zip(&[("manifest.json", &m("1.1"))]));
     let f = l.stage(&id, &pkg, &store(&dev.id())).unwrap_err();
     assert_eq!(f.kind, Kind::IdConflict, "{f}");
@@ -603,10 +1021,21 @@ fn a_store_package_goes_only_where_its_id_and_version_fit() {
     assert_tidy(&l, &id);
 
     let id = uid("v");
-    l.live(&id, "", &[("manifest.json", &m("1.0"))], Some((&dev.id(), How::Link)));
-    let f = l.stage(&id, &pkg, &store(&dev.id()).expecting("1.2")).unwrap_err();
+    l.live(
+        &id,
+        "",
+        &[("manifest.json", &m("1.0"))],
+        Some((&dev.id(), How::Link)),
+    );
+    let f = l
+        .stage(&id, &pkg, &store(&dev.id()).expecting("1.2"))
+        .unwrap_err();
     assert_eq!(f.kind, Kind::Package);
     assert!(f.message.contains("named version 1.2 but sent 1.1"), "{f}");
     assert_tidy(&l, &id);
-    assert!(l.stage(&id, &pkg, &store(&dev.id()).expecting("1.1.0")).is_ok(), "1.1 and 1.1.0 are one version");
+    assert!(
+        l.stage(&id, &pkg, &store(&dev.id()).expecting("1.1.0"))
+            .is_ok(),
+        "1.1 and 1.1.0 are one version"
+    );
 }

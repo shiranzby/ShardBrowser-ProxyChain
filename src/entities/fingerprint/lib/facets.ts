@@ -28,8 +28,8 @@ export function gpuVendorOf(e: FingerprintEntry): GpuVendor {
   return "Other";
 }
 
-export type FingerprintFilters = { os: string; device: "all" | DeviceType; vendor: "all" | GpuVendor };
-export const noFingerprintFilters = (): FingerprintFilters => ({ os: "all", device: "all", vendor: "all" });
+export type FingerprintFilters = { os: string; device: "all" | DeviceType; vendor: "all" | GpuVendor; tag: string };
+export const noFingerprintFilters = (): FingerprintFilters => ({ os: "all", device: "all", vendor: "all", tag: "" });
 
 /** The library entries a search and the filters keep. */
 export function filterFingerprints(items: FingerprintEntry[], search: string, f: FingerprintFilters): FingerprintEntry[] {
@@ -38,5 +38,6 @@ export function filterFingerprints(items: FingerprintEntry[], search: string, f:
     (f.os === "all" || fingerprintOs(e) === f.os)
     && (f.device === "all" || deviceTypeOf(e) === f.device)
     && (f.vendor === "all" || gpuVendorOf(e) === f.vendor)
-    && (!q || [e.label, e.gpu, e.platform, e.chrome].some((s) => (s || "").toLowerCase().includes(q))));
+    && (!f.tag || (e.tags ?? []).includes(f.tag))
+    && (!q || [e.label, e.gpu, e.platform, e.chrome, ...(e.tags ?? [])].some((s) => (s || "").toLowerCase().includes(q))));
 }

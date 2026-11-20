@@ -44,7 +44,7 @@ test("Delete all data counts what goes, asks twice, keeps a backup and starts ov
     folders: { registry: ["Empty1"], meta: { Empty1: { color: "green", icon: "cart" } } },
   }));
   const row = page.locator("[data-setting='delete-all-data']");
-  await expect(row).toContainText("Moves every profile, proxy and setting out of ShardBrowser into a backup folder. The browser engine stays installed.");
+  await expect(row).toContainText("Moves every profile, proxy and setting out of ShyShard into a backup folder. The browser engine stays installed.");
   // No reset yet: no backup to show.
   await expect(page.locator("[data-setting='reset-backup']")).toHaveCount(0);
   const n = await counts(page);
@@ -90,7 +90,7 @@ test("Delete all data counts what goes, asks twice, keeps a backup and starts ov
   // The end says where the old data is, and waits for Restart.
   await expect(whole).toHaveAttribute("data-deleting-all", "done", { timeout: 10_000 });
   await expect(whole.locator("[data-delete-all-backup]")).toHaveText(`Your old data is kept in ${BACKUP}. Delete that folder when you no longer need it.`);
-  const restart = whole.getByRole("button", { name: "Restart ShardBrowser" });
+  const restart = whole.getByRole("button", { name: "Restart ShyShard" });
   await expect(restart).toBeFocused();
 
   const reloaded = page.waitForEvent("load", { timeout: 15_000 });
@@ -280,7 +280,7 @@ async function corrupt(page: Page) {
 
 test("notes that can't be read still name their file and offer a way out", async ({ page }) => {
   const screen = await corrupt(page);
-  await expect(screen).toContainText("ShardBrowser can’t read its notes on this reset.");
+  await expect(screen).toContainText("ShyShard can’t read its notes on this reset.");
   await expect(screen.locator("[data-reset-pending-notes]")).toHaveText(`Its notes are in ${NOTES}.`);
   await expect(screen).toContainText("When you’ve put back what you need (RECOVERY.txt lists it), choose “Set these notes aside”.");
   await expect(screen.getByRole("button", { name: "Show folder" })).toBeVisible();

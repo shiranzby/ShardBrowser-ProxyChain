@@ -245,7 +245,7 @@ test("a change to the API server says it needs a restart once it is saved (O6)",
   // Unsaved, nothing differs from the running server yet.
   await expect(page.locator("[data-restart-note]")).toHaveCount(0);
   await saveButton(page).click();
-  await expect(page.locator("[data-restart-note]")).toHaveText("Restart ShardBrowser to apply.");
+  await expect(page.locator("[data-restart-note]")).toHaveText("Restart ShyShard to apply.");
 });
 
 test("a save that fails keeps the draft, says why beside Save and toasts", async ({ page }) => {

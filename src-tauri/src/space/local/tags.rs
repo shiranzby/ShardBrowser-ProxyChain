@@ -43,7 +43,12 @@ struct Stored {
 
 /// Trimmed, inner runs of whitespace as one space, at most `NAME_MAX` characters.
 fn clean(name: &str) -> String {
-    name.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(NAME_MAX).collect()
+    name.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(NAME_MAX)
+        .collect()
 }
 
 fn same(a: &str, b: &str) -> bool {
@@ -69,7 +74,11 @@ impl TagState {
         } else {
             tag.id
         };
-        let tag = Tag { id, name, color: tag.color.trim().to_string() };
+        let tag = Tag {
+            id,
+            name,
+            color: tag.color.trim().to_string(),
+        };
         match self.tags.iter_mut().find(|t| t.id == tag.id) {
             Some(slot) => *slot = tag.clone(),
             None => {
@@ -83,7 +92,9 @@ impl TagState {
     /// Another tag than `id` with this name, as names are told apart here.
     pub(in crate::space) fn named(&self, name: &str, id: &str) -> Option<&Tag> {
         let name = clean(name);
-        self.tags.iter().find(|t| t.id != id && same(&t.name, &name))
+        self.tags
+            .iter()
+            .find(|t| t.id != id && same(&t.name, &name))
     }
 
     /// Deletes the tag and takes it off every profile.
@@ -101,8 +112,10 @@ impl TagState {
         let mut kept = Vec::new();
         for (profile, ids) in changes {
             let mut seen = HashSet::new();
-            let ids: Vec<String> =
-                ids.into_iter().filter(|id| known.contains(id.as_str()) && seen.insert(id.clone())).collect();
+            let ids: Vec<String> = ids
+                .into_iter()
+                .filter(|id| known.contains(id.as_str()) && seen.insert(id.clone()))
+                .collect();
             kept.push((profile, ids));
         }
         for (profile, ids) in kept {
@@ -119,7 +132,10 @@ impl TagState {
     fn tidy(mut self) -> Self {
         let mut ids = HashSet::new();
         self.tags.retain(|t| {
-            !t.id.trim().is_empty() && !t.name.trim().is_empty() && !t.color.trim().is_empty() && ids.insert(t.id.clone())
+            !t.id.trim().is_empty()
+                && !t.name.trim().is_empty()
+                && !t.color.trim().is_empty()
+                && ids.insert(t.id.clone())
         });
         let by_profile = std::mem::take(&mut self.by_profile);
         self.assign(by_profile);
@@ -137,8 +153,8 @@ fn read(path: &Path) -> Result<Option<TagState>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e).with_context(|| format!("read {}", path.display())),
     };
-    let stored: Stored =
-        serde_json::from_slice(&raw).with_context(|| format!("{} is not readable as tags", path.display()))?;
+    let stored: Stored = serde_json::from_slice(&raw)
+        .with_context(|| format!("{} is not readable as tags", path.display()))?;
     if stored.version > VERSION {
         bail!("{} was written by a newer launcher", path.display());
     }
@@ -146,7 +162,10 @@ fn read(path: &Path) -> Result<Option<TagState>> {
 }
 
 fn write(path: &Path, state: &TagState) -> Result<()> {
-    let body = serde_json::to_vec_pretty(&Stored { version: VERSION, state: state.clone() })?;
+    let body = serde_json::to_vec_pretty(&Stored {
+        version: VERSION,
+        state: state.clone(),
+    })?;
     let tmp = path.with_extension("json.tmp");
     {
         let mut f = fs::File::create(&tmp).with_context(|| format!("write {}", tmp.display()))?;
@@ -226,10 +245,17 @@ mod tests {
         Dir(d)
     }
     fn tag(id: &str, name: &str, color: &str) -> Tag {
-        Tag { id: id.into(), name: name.into(), color: color.into() }
+        Tag {
+            id: id.into(),
+            name: name.into(),
+            color: color.into(),
+        }
     }
     fn on(pairs: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
-        pairs.iter().map(|(p, ids)| (p.to_string(), ids.iter().map(|s| s.to_string()).collect())).collect()
+        pairs
+            .iter()
+            .map(|(p, ids)| (p.to_string(), ids.iter().map(|s| s.to_string()).collect()))
+            .collect()
     }
 
     #[test]
@@ -245,8 +271,17 @@ mod tests {
         })
         .unwrap();
         let back = read(&path).unwrap().unwrap();
-        assert_eq!(back.tags, vec![tag("t-vip", "VIP", "violet"), tag("t-warm", "Warm-up", "orange")]);
-        assert_eq!(back.by_profile, on(&[("p1", &["t-vip", "t-warm"]), ("p2", &["t-warm"])]));
+        assert_eq!(
+            back.tags,
+            vec![
+                tag("t-vip", "VIP", "violet"),
+                tag("t-warm", "Warm-up", "orange")
+            ]
+        );
+        assert_eq!(
+            back.by_profile,
+            on(&[("p1", &["t-vip", "t-warm"]), ("p2", &["t-warm"])])
+        );
         let raw: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(raw["version"], 1);
         assert!(!path.with_extension("json.tmp").exists());
@@ -256,18 +291,30 @@ mod tests {
     fn a_second_import_changes_nothing() {
         let d = dir();
         let path = d.0.join("tags.json");
-        let first = TagState { tags: vec![tag("t-a", "A", "blue")], by_profile: on(&[("p1", &["t-a"])]) };
+        let first = TagState {
+            tags: vec![tag("t-a", "A", "blue")],
+            by_profile: on(&[("p1", &["t-a"])]),
+        };
         assert!(import_at(&path, first.clone()).unwrap());
-        let other = TagState { tags: vec![tag("t-b", "B", "red")], by_profile: BTreeMap::new() };
+        let other = TagState {
+            tags: vec![tag("t-b", "B", "red")],
+            by_profile: BTreeMap::new(),
+        };
         assert!(!import_at(&path, other.clone()).unwrap());
         assert_eq!(read(&path).unwrap().unwrap(), first);
 
         // Nor after the tags were changed here first.
         let d2 = dir();
         let path2 = d2.0.join("tags.json");
-        change_at(&path2, |s| s.upsert(tag("t-c", "C", "green"), None).map(|_| ())).unwrap();
+        change_at(&path2, |s| {
+            s.upsert(tag("t-c", "C", "green"), None).map(|_| ())
+        })
+        .unwrap();
         assert!(!import_at(&path2, other).unwrap());
-        assert_eq!(read(&path2).unwrap().unwrap().tags, vec![tag("t-c", "C", "green")]);
+        assert_eq!(
+            read(&path2).unwrap().unwrap().tags,
+            vec![tag("t-c", "C", "green")]
+        );
     }
 
     #[test]
@@ -275,7 +322,11 @@ mod tests {
         let d = dir();
         let path = d.0.join("tags.json");
         let messy = TagState {
-            tags: vec![tag("t-a", "A", "blue"), tag("t-a", "A again", "red"), tag("", "No id", "red")],
+            tags: vec![
+                tag("t-a", "A", "blue"),
+                tag("t-a", "A again", "red"),
+                tag("", "No id", "red"),
+            ],
             by_profile: on(&[("p1", &["t-a", "t-gone", "t-a"]), ("p2", &["t-gone"])]),
         };
         assert!(import_at(&path, messy).unwrap());
@@ -293,7 +344,12 @@ mod tests {
         assert!(s.upsert(tag("t-other", "vip CLUB", "red"), None).is_err());
         assert!(s.upsert(tag("t-other", "   ", "red"), None).is_err());
         // Renaming a tag to its own name in another case is fine.
-        assert_eq!(s.upsert(tag(&made.id, "Vip Club", "blue"), None).unwrap().name, "Vip Club");
+        assert_eq!(
+            s.upsert(tag(&made.id, "Vip Club", "blue"), None)
+                .unwrap()
+                .name,
+            "Vip Club"
+        );
         assert_eq!(s.tags.len(), 1);
         assert_eq!(clean(&"x".repeat(40)).len(), NAME_MAX);
     }
@@ -306,10 +362,16 @@ mod tests {
         }
         s.assign(on(&[("p1", &["t-b"]), ("p2", &["t-a", "t-b"])]));
         s.remove("t-b");
-        assert_eq!(s.tags.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["t-a", "t-c"]);
+        assert_eq!(
+            s.tags.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+            ["t-a", "t-c"]
+        );
         assert_eq!(s.by_profile, on(&[("p2", &["t-a"])]));
         s.upsert(tag("t-b", "B", "blue"), Some(1)).unwrap();
-        assert_eq!(s.tags.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["t-a", "t-b", "t-c"]);
+        assert_eq!(
+            s.tags.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+            ["t-a", "t-b", "t-c"]
+        );
     }
 
     #[test]
@@ -333,7 +395,14 @@ mod tests {
         })
         .unwrap();
         assert!(!path.exists());
-        assert!(import_at(&path, TagState { tags: vec![tag("t-a", "A", "blue")], by_profile: BTreeMap::new() }).unwrap());
+        assert!(import_at(
+            &path,
+            TagState {
+                tags: vec![tag("t-a", "A", "blue")],
+                by_profile: BTreeMap::new()
+            }
+        )
+        .unwrap());
     }
 
     #[test]

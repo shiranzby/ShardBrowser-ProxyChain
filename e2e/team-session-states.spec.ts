@@ -31,7 +31,7 @@ const BUSY = "It’s still opening or being saved here. Start it again in a mome
 const peek = (page: Page) => page.locator("aside[data-peek]");
 const status = (page: Page, name: string) => row(page, name).locator("[data-cell='status']");
 const requestQuit = (page: Page) => page.evaluate(() => (window as unknown as M).__shardxMock.emit("app://quit-requested"));
-const question = (page: Page) => page.getByRole("dialog", { name: "Quit ShardBrowser?" });
+const question = (page: Page) => page.getByRole("dialog", { name: "Quit ShyShard?" });
 /** A command sent straight to the mock's backend: "done", or its refusal as text. */
 const call = (page: Page, cmd: string, args: Record<string, unknown>) =>
   page.evaluate(([c, a]) => {
@@ -117,7 +117,7 @@ test("a session kept here for the next start says so in its own words", async ({
   await inAdsTeam(page, ["tp-ads-3"]);
   await ends(page, "tp-ads-3", "not_saved", "the team server did not take it in time", true);
   const kept = toast(page, "“Google Ads 01” is saved on this computer");
-  await expect(kept).toContainText("It goes to the team when ShardBrowser starts next.");
+  await expect(kept).toContainText("It goes to the team when ShyShard starts next.");
   await expect(toast(page, "wasn’t saved to the team")).toHaveCount(0);
 });
 
@@ -137,7 +137,7 @@ test("in Russian the new team warnings read as Russian", async ({ page }) => {
   await warn(page, "FB Ads 02 started without 2 of its extensions: the team server did not give them to this launcher.");
   await expect(toast(page, "«FB Ads 02» запущен без 2 расширений")).toContainText("Сервер команды не передал их на этот компьютер.");
   await warn(page, "FB Ads 01 closed, and its session was not saved to the team: the team server did not take it in time; it is kept on this computer and sent when the launcher starts next");
-  await expect(toast(page, "«FB Ads 01» сохранён на этом компьютере")).toContainText("Он уйдёт в команду при следующем запуске ShardBrowser.");
+  await expect(toast(page, "«FB Ads 01» сохранён на этом компьютере")).toContainText("Он уйдёт в команду при следующем запуске ShyShard.");
 });
 
 test("a second start of a personal profile while one is under way is refused in words", async ({ page }) => {

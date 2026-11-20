@@ -45,7 +45,8 @@ pub(crate) async fn connect_assigned(
     config: Arc<rustls::ClientConfig>,
     deadline: Duration,
 ) -> Result<TlsStream<TcpStream>, ChainError> {
-    let name = rustls::pki_types::ServerName::try_from(target.host.clone()).map_err(|_| failed())?;
+    let name =
+        rustls::pki_types::ServerName::try_from(target.host.clone()).map_err(|_| failed())?;
     tokio::time::timeout(deadline, async {
         let raw = connector::connect_assigned(target, deadline).await?;
         TlsConnector::from(config).connect(name, raw).await.map_err(|_| failed())

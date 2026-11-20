@@ -90,7 +90,7 @@ test("a write sent after the launcher moved on is refused whole, said plainly, a
   await expect(space(page)).toHaveText("Ads team");
   await page.getByRole("menuitem", { name: "Remove from folder", exact: true }).click();
   const said = toast(page, "Couldn’t move “Etsy main”");
-  await expect(said).toContainText("ShardBrowser switched to another space before this was saved, so nothing was written.");
+  await expect(said).toContainText("ShyShard switched to another space before this was saved, so nothing was written.");
   // The space is read again: the personal one, its own list, nothing of the team's.
   await expect(space(page)).toHaveText("Personal");
   await expect(row(page, AMAZON)).toBeVisible();
@@ -115,7 +115,7 @@ test("the backend's refusal of a team write without the edition is taken for a b
   // Were the app ever to send one: one plain sentence, and a line for whoever fixes it.
   await page.evaluate((text) => { (window as unknown as M).__shardxMockFailWith = { profile_set_folder: text }; }, NO_EPOCH);
   await unfile(page, ETSY_MAIN);
-  await expect(toast(page, "Couldn’t move “Etsy main”")).toContainText("Nothing was saved: ShardBrowser couldn’t tell which space this was for.");
+  await expect(toast(page, "Couldn’t move “Etsy main”")).toContainText("Nothing was saved: ShyShard couldn’t tell which space this was for.");
   await expect.poll(() => errors.some((e) => e.includes("profile_set_folder") && e.includes("(a bug)"))).toBe(true);
   await expect(space(page)).toHaveText("Ads team");
 });

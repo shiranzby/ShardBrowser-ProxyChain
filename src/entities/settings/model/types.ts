@@ -142,6 +142,49 @@ export type DataRootInfo = {
   /** False while the data still sits in the config dir. */
   custom: boolean;
   migrating: boolean;
+  portable: boolean;
+};
+
+export type RecoveryCopy = {
+  team: string;
+  profile_id: string;
+  attempt: string;
+  path: string;
+  bytes: number;
+};
+
+export type SnapshotEntry = {
+  root: "config" | "data" | string;
+  path: string;
+  bytes: number;
+  sha256: string;
+};
+
+export type SnapshotManifest = {
+  format: number;
+  product: string;
+  created_at: number;
+  config_root: string;
+  data_root: string;
+  entries: SnapshotEntry[];
+  warnings: string[];
+};
+
+export type SnapshotResult = {
+  path: string;
+  files: number;
+  bytes: number;
+  manifest: SnapshotManifest;
+};
+
+export type SnapshotInspection = {
+  path: string;
+  files: number;
+  verified: number;
+  missing: number;
+  changed: number;
+  bytes: number;
+  warnings: string[];
 };
 
 /** Progress of a data-root move, as `data-migration` events carry it. */

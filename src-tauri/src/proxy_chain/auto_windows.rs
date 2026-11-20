@@ -381,7 +381,13 @@ mod tests {
         let mut bypass = proxy("127.0.0.1");
         bypass.bypass = true;
         assert!(select(vec![bypass]).is_ok());
-        let bypass = Candidate { proxy: false, bypass: true, scheme: 0, host: String::new(), port: 0 };
+        let bypass = Candidate {
+            proxy: false,
+            bypass: true,
+            scheme: 0,
+            host: String::new(),
+            port: 0,
+        };
         assert_eq!(
             select(vec![bypass]).err().unwrap().code,
             "proxy_chain_auto_direct_refused"

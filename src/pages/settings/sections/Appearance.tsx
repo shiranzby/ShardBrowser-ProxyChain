@@ -80,6 +80,12 @@ export function AppearanceSection({ p, setP, saving }: SettingsProps) {
         help={t("settings.hideProxyShardHelp")}
         control={({ labelId, helpId }) => <Switch aria-labelledby={labelId} aria-describedby={helpId} disabled={saving} checked={p.hideProxyShard} onChange={(on) => setP("hideProxyShard", on)} />}
       />
+      <SettingRow
+        id="hide-proxyshard-trial"
+        title={t("settings.hideProxyShardTrial")}
+        help={t("settings.hideProxyShardTrialHelp")}
+        control={({ labelId, helpId }) => <Switch aria-labelledby={labelId} aria-describedby={helpId} disabled={saving} checked={p.hideProxyShardTrial} onChange={(on) => setP("hideProxyShardTrial", on)} />}
+      />
     </SettingsGroup>
   );
 }

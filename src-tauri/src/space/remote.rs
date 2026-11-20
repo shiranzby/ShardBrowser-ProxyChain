@@ -141,10 +141,17 @@ fn open_on(lease: &Lease, device_id: &str) -> OpenOn {
 }
 
 /// A row as the profile list shows it; the settings fill in what only they know.
-pub fn meta(team: &str, row: &ProfileRow, detail: Option<&StoredProfile>, device_id: &str) -> ProfileMeta {
+pub fn meta(
+    team: &str,
+    row: &ProfileRow,
+    detail: Option<&StoredProfile>,
+    device_id: &str,
+) -> ProfileMeta {
     ProfileMeta {
         proxy_route: detail.and_then(|p| p.meta.proxy_route.clone()),
-        proxy_chain_policy: detail.map(|p| p.meta.proxy_chain_policy).unwrap_or_default(),
+        proxy_chain_policy: detail
+            .map(|p| p.meta.proxy_chain_policy)
+            .unwrap_or_default(),
         id: row.id.clone(),
         name: row.name.clone(),
         notes: row.card.notes.clone(),
@@ -152,12 +159,17 @@ pub fn meta(team: &str, row: &ProfileRow, detail: Option<&StoredProfile>, device
         // Last launched is the lease: no count is kept for a team's profile.
         last_launched_at: row.open_on.as_ref().map(|l| format!("@{}", l.acquired_at)),
         // The server's date, else what this device read in the settings.
-        created_at: row.created_at.map(|t| format!("@{t}")).or_else(|| detail.and_then(|d| d.meta.created_at.clone())),
+        created_at: row
+            .created_at
+            .map(|t| format!("@{t}"))
+            .or_else(|| detail.and_then(|d| d.meta.created_at.clone())),
         pinned: false,
         folder: row.folder.clone(),
         total_runtime_ms: 0,
         color: some_text(&row.card.color),
-        extensions: detail.map(|d| d.meta.extensions.clone()).unwrap_or_default(),
+        extensions: detail
+            .map(|d| d.meta.extensions.clone())
+            .unwrap_or_default(),
         mobile: detail.is_some_and(|d| claims_mobile(&d.config)),
         android_media: detail.is_some_and(|d| d.meta.android_media),
         origin: Origin::Team,
@@ -186,8 +198,10 @@ pub fn stored(row: &ProfileRow, data: Option<&str>) -> StoredProfile {
     s.meta.total_runtime_ms = 0;
     s.meta.inline_proxy = None;
     s.meta.temporary = false;
-    s.config.insert("name".into(), Value::String(row.name.clone()));
-    s.config.insert("notes".into(), Value::String(row.card.notes.clone()));
+    s.config
+        .insert("name".into(), Value::String(row.name.clone()));
+    s.config
+        .insert("notes".into(), Value::String(row.card.notes.clone()));
     s
 }
 
@@ -204,14 +218,22 @@ fn kind(raw: &str) -> Option<ProxyKind> {
 pub fn proxy(row: &ProxyRow, login: Option<&str>) -> ProxyEntry {
     let read: Option<ProxyEntry> = login.and_then(opened).and_then(|mut v| {
         let obj = v.as_object_mut()?;
-        for (k, d) in [("name", json!("")), ("kind", json!("socks5")), ("host", json!("")), ("port", json!(0))] {
+        for (k, d) in [
+            ("name", json!("")),
+            ("kind", json!("socks5")),
+            ("host", json!("")),
+            ("port", json!(0)),
+        ] {
             obj.entry(k).or_insert(d);
         }
         serde_json::from_value(v).ok()
     });
     let mut e = read.unwrap_or_else(|| ProxyEntry {
         proxy_chain_policy: Default::default(),
-        provider_id: String::new(), credential_ref: String::new(), provider_options: Default::default(), capabilities: Default::default(),
+        provider_id: String::new(),
+        credential_ref: String::new(),
+        provider_options: Default::default(),
+        capabilities: Default::default(),
         id: String::new(),
         name: String::new(),
         kind: ProxyKind::Socks5,
@@ -220,6 +242,7 @@ pub fn proxy(row: &ProxyRow, login: Option<&str>) -> ProxyEntry {
         username: String::new(),
         password: String::new(),
         country: String::new(),
+        folder: String::new(),
         notes: String::new(),
     });
     e.id = row.id.clone();
@@ -238,7 +261,15 @@ pub fn folders(rows: &[FolderRow]) -> FolderState {
         meta: rows
             .iter()
             .filter(|f| !f.color.is_empty())
-            .map(|f| (f.name.clone(), FolderMeta { color: Some(f.color.clone()), icon: "folder".into() }))
+            .map(|f| {
+                (
+                    f.name.clone(),
+                    FolderMeta {
+                        color: Some(f.color.clone()),
+                        icon: "folder".into(),
+                    },
+                )
+            })
             .collect(),
     }
 }
@@ -285,12 +316,18 @@ fn extension(r: &ItemRow) -> Option<ExtensionEntry> {
         "size_bytes": size, "added_at": format!("@{}", r.updated_at),
     });
     // Its files are not on this computer.
-    item(r, fill).map(|e: ExtensionEntry| ExtensionEntry { path: String::new(), ..e })
+    item(r, fill).map(|e: ExtensionEntry| ExtensionEntry {
+        path: String::new(),
+        ..e
+    })
 }
 
 fn project(r: &ItemRow) -> Option<Project> {
     let fill = json!({ "name": r.name, "created_at": r.updated_at, "updated_at": r.updated_at });
-    item(r, fill).map(|p: Project| Project { revision: Some(r.revision), ..p })
+    item(r, fill).map(|p: Project| Project {
+        revision: Some(r.revision),
+        ..p
+    })
 }
 
 /// The team's tags, and which profile carries which by its card. A tag deleted
@@ -300,7 +337,17 @@ pub fn tags(rows: &[ItemRow], profiles: &[ProfileRow]) -> TagState {
     let known = |id: &String| tags.iter().any(|t| &t.id == id);
     let by_profile = profiles
         .iter()
-        .map(|p| (p.id.clone(), p.card.tags.iter().filter(|t| known(t)).cloned().collect::<Vec<_>>()))
+        .map(|p| {
+            (
+                p.id.clone(),
+                p.card
+                    .tags
+                    .iter()
+                    .filter(|t| known(t))
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )
+        })
         .filter(|(_, ids)| !ids.is_empty())
         .collect();
     TagState { tags, by_profile }
@@ -352,7 +399,12 @@ pub fn profile_data(stored: &StoredProfile) -> String {
 
 /// The name the server lists; it refuses a blank one.
 pub fn name_of(stored: &StoredProfile) -> String {
-    let name = stored.config.get("name").and_then(Value::as_str).unwrap_or("").trim();
+    let name = stored
+        .config
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
     if name.is_empty() {
         "(unnamed)".into()
     } else {
@@ -363,23 +415,39 @@ pub fn name_of(stored: &StoredProfile) -> String {
 /// What lists show beside the name; the binding lives here.
 pub fn card(stored: &StoredProfile, tags: Vec<String>) -> Card {
     Card {
-        proxy_id: stored.meta.proxy_id.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(str::to_owned),
+        proxy_id: stored
+            .meta
+            .proxy_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(str::to_owned),
         color: stored.meta.color.clone().unwrap_or_default(),
-        notes: stored.config.get("notes").and_then(Value::as_str).unwrap_or("").to_string(),
+        notes: stored
+            .config
+            .get("notes")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
         tags,
     }
 }
 
 /// The row after a write from here: the server's fields, the card sent, the rest as it was.
 pub fn row_after(w: &Written, card: Option<Card>, before: Option<&ProfileRow>) -> ProfileRow {
-    let card = card.or_else(|| before.map(|b| b.card.clone())).unwrap_or_default();
+    let card = card
+        .or_else(|| before.map(|b| b.card.clone()))
+        .unwrap_or_default();
     ProfileRow {
         id: w.id.clone(),
         name: w.name.clone(),
         folder: w.folder.clone(),
         revision: w.revision,
         updated_at: w.updated_at,
-        card: Card { proxy_id: card.bound_proxy().map(str::to_owned), ..card },
+        card: Card {
+            proxy_id: card.bound_proxy().map(str::to_owned),
+            ..card
+        },
         session_rev: before.map_or(0, |b| b.session_rev),
         open_on: before.and_then(|b| b.open_on.clone()),
         created_at: w.created_at.or_else(|| before.and_then(|b| b.created_at)),
@@ -398,7 +466,8 @@ pub fn stamp_secs(stamp: Option<&str>) -> Option<u64> {
 
 /// When a profile was made: the row's date, else the one its settings carry.
 pub fn made_at(row: &ProfileRow, data: &str) -> Option<u64> {
-    row.created_at.or_else(|| stamp_secs(opened(data)?.get("_meta")?.get("created_at")?.as_str()))
+    row.created_at
+        .or_else(|| stamp_secs(opened(data)?.get("_meta")?.get("created_at")?.as_str()))
 }
 
 pub fn proxy_row_after(w: &Written) -> ProxyRow {
@@ -452,15 +521,23 @@ pub async fn read_proxy(c: &TeamClient, id: &str) -> Result<ProxyWithData, TeamE
     c.get(&path_of("proxies", id)?).await
 }
 
-async fn put_profile(c: &TeamClient, id: &str, folder: &str, f: &ProfileFields<'_>, base: u64) -> Result<Written, TeamError> {
-    let mut body = json!({ "name": f.name, "folder": folder, "data": f.data, "base_revision": base });
+async fn put_profile(
+    c: &TeamClient,
+    id: &str,
+    folder: &str,
+    f: &ProfileFields<'_>,
+    base: u64,
+) -> Result<Written, TeamError> {
+    let mut body =
+        json!({ "name": f.name, "folder": folder, "data": f.data, "base_revision": base });
     if let Some(card) = f.card {
         body["card"] = serde_json::to_value(card).unwrap_or_default();
     }
     if let Some(t) = f.created_at {
         body["created_at"] = t.into();
     }
-    c.json(Method::PUT, &path_of("profiles", id)?, Some(&body)).await
+    c.json(Method::PUT, &path_of("profiles", id)?, Some(&body))
+        .await
 }
 
 fn wrong(what: &str) -> TeamError {
@@ -468,8 +545,15 @@ fn wrong(what: &str) -> TeamError {
 }
 
 /// A new profile, in the folder its pass is for; refused if the id is taken.
-pub async fn create_profile(c: &TeamClient, pass: &Granted<Create>, id: &str, f: &ProfileFields<'_>) -> Result<Written, TeamError> {
-    let On::Folder(folder) = pass.on() else { return Err(wrong("a folder")) };
+pub async fn create_profile(
+    c: &TeamClient,
+    pass: &Granted<Create>,
+    id: &str,
+    f: &ProfileFields<'_>,
+) -> Result<Written, TeamError> {
+    let On::Folder(folder) = pass.on() else {
+        return Err(wrong("a folder"));
+    };
     put_profile(c, id, folder, f, 0).await
 }
 
@@ -481,7 +565,9 @@ pub async fn edit_profile(
     f: &ProfileFields<'_>,
     base: u64,
 ) -> Result<Written, TeamError> {
-    let On::Profile { id, folder } = pass.on() else { return Err(wrong("a profile")) };
+    let On::Profile { id, folder } = pass.on() else {
+        return Err(wrong("a profile"));
+    };
     let folder = match to.map(|t| t.on()) {
         Some(On::Folder(dest)) => dest,
         Some(_) => return Err(wrong("a folder")),
@@ -491,35 +577,68 @@ pub async fn edit_profile(
 }
 
 /// To the team's trash; refused once the profile moved past `base`.
-pub async fn delete_profile(c: &TeamClient, pass: &Granted<Delete>, base: u64) -> Result<(), TeamError> {
-    let On::Profile { id, .. } = pass.on() else { return Err(wrong("a profile")) };
+pub async fn delete_profile(
+    c: &TeamClient,
+    pass: &Granted<Delete>,
+    base: u64,
+) -> Result<(), TeamError> {
+    let On::Profile { id, .. } = pass.on() else {
+        return Err(wrong("a profile"));
+    };
     let path = format!("{}?base_revision={base}", path_of("profiles", id)?);
     c.call(Method::DELETE, &path, None).await.map(|_| ())
 }
 
-async fn put_proxy(c: &TeamClient, id: &str, e: &ProxyEntry, base: u64) -> Result<Written, TeamError> {
-    let kind = serde_json::to_value(&e.kind).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
+async fn put_proxy(
+    c: &TeamClient,
+    id: &str,
+    e: &ProxyEntry,
+    base: u64,
+) -> Result<Written, TeamError> {
+    let kind = serde_json::to_value(&e.kind)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default();
     let body = json!({
         "name": proxy_name(e), "kind": kind, "country": e.country, "data": proxy_data(e), "base_revision": base,
     });
-    c.json(Method::PUT, &path_of("proxies", id)?, Some(&body)).await
+    c.json(Method::PUT, &path_of("proxies", id)?, Some(&body))
+        .await
 }
 
 /// A new team proxy; refused if the id is taken.
-pub async fn create_proxy(c: &TeamClient, pass: &Granted<Create>, id: &str, e: &ProxyEntry) -> Result<Written, TeamError> {
+pub async fn create_proxy(
+    c: &TeamClient,
+    pass: &Granted<Create>,
+    id: &str,
+    e: &ProxyEntry,
+) -> Result<Written, TeamError> {
     if pass.on() != &On::Team {
         return Err(wrong("the team"));
     }
     put_proxy(c, id, e, 0).await
 }
 
-pub async fn edit_proxy(c: &TeamClient, pass: &Granted<Edit>, e: &ProxyEntry, base: u64) -> Result<Written, TeamError> {
-    let On::Proxy(id) = pass.on() else { return Err(wrong("a proxy")) };
+pub async fn edit_proxy(
+    c: &TeamClient,
+    pass: &Granted<Edit>,
+    e: &ProxyEntry,
+    base: u64,
+) -> Result<Written, TeamError> {
+    let On::Proxy(id) = pass.on() else {
+        return Err(wrong("a proxy"));
+    };
     put_proxy(c, id, e, base).await
 }
 
-pub async fn delete_proxy(c: &TeamClient, pass: &Granted<Delete>, base: u64) -> Result<(), TeamError> {
-    let On::Proxy(id) = pass.on() else { return Err(wrong("a proxy")) };
+pub async fn delete_proxy(
+    c: &TeamClient,
+    pass: &Granted<Delete>,
+    base: u64,
+) -> Result<(), TeamError> {
+    let On::Proxy(id) = pass.on() else {
+        return Err(wrong("a proxy"));
+    };
     let path = format!("{}?base_revision={base}", path_of("proxies", id)?);
     c.call(Method::DELETE, &path, None).await.map(|_| ())
 }
@@ -562,9 +681,17 @@ fn item_path(kind: &str, id: &str) -> Result<String, TeamError> {
     Ok(format!("/items/{kind}/{seg}"))
 }
 
-async fn put_item(c: &TeamClient, kind: &str, id: &str, name: &str, data: &str, base: u64) -> Result<ItemWritten, TeamError> {
+async fn put_item(
+    c: &TeamClient,
+    kind: &str,
+    id: &str,
+    name: &str,
+    data: &str,
+    base: u64,
+) -> Result<ItemWritten, TeamError> {
     let body = json!({ "name": name, "data": data, "base_revision": base });
-    c.json(Method::PUT, &item_path(kind, id)?, Some(&body)).await
+    c.json(Method::PUT, &item_path(kind, id)?, Some(&body))
+        .await
 }
 
 /// A new item of the team's; refused if the id is taken.
@@ -599,7 +726,13 @@ pub async fn edit_item(
 }
 
 /// To the team's trash; refused once the item moved past `base`.
-pub async fn delete_item(c: &TeamClient, pass: &Granted<Delete>, kind: &str, id: &str, base: u64) -> Result<(), TeamError> {
+pub async fn delete_item(
+    c: &TeamClient,
+    pass: &Granted<Delete>,
+    kind: &str,
+    id: &str,
+    base: u64,
+) -> Result<(), TeamError> {
     if pass.on() != &On::Team {
         return Err(wrong("the team"));
     }
@@ -608,7 +741,12 @@ pub async fn delete_item(c: &TeamClient, pass: &Granted<Delete>, kind: &str, id:
 }
 
 /// A new extension's files, from the zip at `from`: only while it has none.
-pub async fn put_package(c: &TeamClient, pass: &Granted<Create>, id: &str, from: &std::path::Path) -> Result<PackageWritten, TeamError> {
+pub async fn put_package(
+    c: &TeamClient,
+    pass: &Granted<Create>,
+    id: &str,
+    from: &std::path::Path,
+) -> Result<PackageWritten, TeamError> {
     if pass.on() != &On::Team {
         return Err(wrong("the team"));
     }
@@ -625,13 +763,25 @@ pub async fn fetch_package(
     to: &std::path::Path,
     max: u64,
 ) -> Result<u64, TeamError> {
-    let q = for_start.map(|p| format!("?profile={}", query_arg(p))).unwrap_or_default();
-    c.fetch(&format!("{}/package{q}", item_path("extension", id)?), to, max).await
+    let q = for_start
+        .map(|p| format!("?profile={}", query_arg(p)))
+        .unwrap_or_default();
+    c.fetch(
+        &format!("{}/package{q}", item_path("extension", id)?),
+        to,
+        max,
+    )
+    .await
 }
 
 /// The bookmarks a team profile's start brings: its folder's and those for every profile.
 pub async fn bookmarks_for(c: &TeamClient, profile_id: &str) -> Result<Vec<Bookmark>, TeamError> {
-    let rows: Vec<ItemRow> = c.get(&format!("/items/bookmark?profile={}", query_arg(profile_id))).await?;
+    let rows: Vec<ItemRow> = c
+        .get(&format!(
+            "/items/bookmark?profile={}",
+            query_arg(profile_id)
+        ))
+        .await?;
     Ok(bookmarks(&rows))
 }
 
@@ -641,7 +791,14 @@ fn query_arg(s: &str) -> String {
 
 /// The row after a write from here: the server's fields, the data sent.
 pub fn item_after(id: &str, w: &ItemWritten, data: String, package: Option<Package>) -> ItemRow {
-    ItemRow { id: id.to_string(), name: w.name.clone(), revision: w.revision, updated_at: w.updated_at, package, data }
+    ItemRow {
+        id: id.to_string(),
+        name: w.name.clone(),
+        revision: w.revision,
+        updated_at: w.updated_at,
+        package,
+        data,
+    }
 }
 
 #[cfg(test)]
@@ -669,12 +826,22 @@ mod tests {
     fn a_profile_row_reads_as_the_teams_with_its_lease_and_card() {
         let m = meta("t1", &row("p1"), None, "dev-b");
         assert_eq!(m.origin, Origin::Team);
-        assert_eq!((m.name.as_str(), m.folder.as_str(), m.notes.as_str()), ("Shop 1", "Ads", "card notes"));
+        assert_eq!(
+            (m.name.as_str(), m.folder.as_str(), m.notes.as_str()),
+            ("Shop 1", "Ads", "card notes")
+        );
         assert_eq!(m.proxy_id, None, "a blank binding is none");
         assert_eq!(m.color.as_deref(), Some("#ff0000"));
         assert_eq!(m.tags.as_deref(), Some(&["t1".to_string()][..]));
         let on = m.open_on.unwrap();
-        assert_eq!((on.device_name.as_str(), on.member_name.as_str(), on.this_device), ("Vera's Mac", "Vera", true));
+        assert_eq!(
+            (
+                on.device_name.as_str(),
+                on.member_name.as_str(),
+                on.this_device
+            ),
+            ("Vera's Mac", "Vera", true)
+        );
         assert_eq!((on.since, on.until), (100, 190));
         assert_eq!(m.last_launched_at.as_deref(), Some("@100"));
         // No permission held: no right shown.
@@ -695,7 +862,9 @@ mod tests {
         assert!(public.get("proxy_route").is_none());
         let detailed = serde_json::to_value(meta("t1", &row("route-team"), Some(&s), "")).unwrap();
         assert_eq!(detailed["proxy_route"], route);
-        assert!(!serde_json::to_string(&row("route-team").card).unwrap().contains("private-hop"));
+        assert!(!serde_json::to_string(&row("route-team").card)
+            .unwrap()
+            .contains("private-hop"));
     }
 
     #[test]
@@ -706,7 +875,10 @@ mod tests {
             "name": "old name", "navigator": { "user_agent": "Mozilla/5.0 (Linux; Android 14)" }
         }));
         let s = stored(&row("p1"), Some(&blob));
-        assert_eq!((s.meta.id.as_str(), s.meta.folder.as_str(), s.meta.rev), ("p1", "Ads", 4));
+        assert_eq!(
+            (s.meta.id.as_str(), s.meta.folder.as_str(), s.meta.rev),
+            ("p1", "Ads", 4)
+        );
         assert!(!s.meta.pinned && !s.meta.temporary && s.meta.total_runtime_ms == 0);
         assert_eq!(s.config["name"], "Shop 1");
         assert_eq!(s.meta.extensions, ["e1"]);
@@ -714,7 +886,10 @@ mod tests {
         assert!(m.mobile, "read from the settings");
         // Nothing to read: the row alone.
         let bare = stored(&row("p1"), Some(""));
-        assert_eq!((bare.meta.id.as_str(), bare.config["notes"].as_str()), ("p1", Some("card notes")));
+        assert_eq!(
+            (bare.meta.id.as_str(), bare.config["notes"].as_str()),
+            ("p1", Some("card notes"))
+        );
     }
 
     #[test]
@@ -722,30 +897,56 @@ mod tests {
         let blob = b64(json!({ "_meta": { "created_at": "@1600000000" }, "name": "x" }));
         let s = stored(&row("p1"), Some(&blob));
         // An older server's row: what the settings read here say.
-        assert_eq!(meta("t1", &row("p1"), Some(&s), "").created_at.as_deref(), Some("@1600000000"));
+        assert_eq!(
+            meta("t1", &row("p1"), Some(&s), "").created_at.as_deref(),
+            Some("@1600000000")
+        );
         assert_eq!(meta("t1", &row("p1"), None, "").created_at, None);
         let mut dated = row("p1");
         dated.created_at = Some(1_700_000_000);
         for detail in [Some(&s), None] {
-            assert_eq!(meta("t1", &dated, detail, "").created_at.as_deref(), Some("@1700000000"));
+            assert_eq!(
+                meta("t1", &dated, detail, "").created_at.as_deref(),
+                Some("@1700000000")
+            );
         }
         // What is sent: the row's, else the settings'.
         assert_eq!(made_at(&dated, &blob), Some(1_700_000_000));
         assert_eq!(made_at(&row("p1"), &blob), Some(1_600_000_000));
         assert_eq!(made_at(&row("p1"), ""), None);
         // A write's answer keeps it, or the row's before when an older server says none.
-        let w: Written = serde_json::from_value(json!({ "id": "p1", "name": "x", "revision": 5 })).unwrap();
-        assert_eq!(row_after(&w, None, Some(&dated)).created_at, Some(1_700_000_000));
-        let w: Written = serde_json::from_value(json!({ "id": "p1", "name": "x", "revision": 5, "created_at": 9 })).unwrap();
+        let w: Written =
+            serde_json::from_value(json!({ "id": "p1", "name": "x", "revision": 5 })).unwrap();
+        assert_eq!(
+            row_after(&w, None, Some(&dated)).created_at,
+            Some(1_700_000_000)
+        );
+        let w: Written = serde_json::from_value(
+            json!({ "id": "p1", "name": "x", "revision": 5, "created_at": 9 }),
+        )
+        .unwrap();
         assert_eq!(row_after(&w, None, None).created_at, Some(9));
     }
 
     #[test]
     fn a_launcher_date_reads_as_seconds_whichever_way_it_was_written() {
         assert_eq!(stamp_secs(Some("@1700000000")), Some(1_700_000_000));
-        assert_eq!(stamp_secs(Some("2023-11-14T22:13:20Z")), Some(1_700_000_000));
-        assert_eq!(stamp_secs(Some("2023-11-15T00:13:20+02:00")), Some(1_700_000_000));
-        for junk in [None, Some(""), Some("@"), Some("@-5"), Some("@0"), Some("yesterday")] {
+        assert_eq!(
+            stamp_secs(Some("2023-11-14T22:13:20Z")),
+            Some(1_700_000_000)
+        );
+        assert_eq!(
+            stamp_secs(Some("2023-11-15T00:13:20+02:00")),
+            Some(1_700_000_000)
+        );
+        for junk in [
+            None,
+            Some(""),
+            Some("@"),
+            Some("@-5"),
+            Some("@0"),
+            Some("yesterday"),
+        ] {
             assert_eq!(stamp_secs(junk), None, "{junk:?}");
         }
     }
@@ -761,35 +962,87 @@ mod tests {
             data: b64(data),
         };
         let marks = [
-            r("b1", "Mail", json!({ "url": "https://mail.example", "folder": "Ads" })),
+            r(
+                "b1",
+                "Mail",
+                json!({ "url": "https://mail.example", "folder": "Ads" }),
+            ),
             r("b2", "Broken", json!({ "title": "no address" })),
         ];
         let got = bookmarks(&marks);
         assert_eq!(got.len(), 1);
-        assert_eq!((got[0].id.as_str(), got[0].title.as_str(), got[0].folder.as_str()), ("b1", "Mail", "Ads"));
+        assert_eq!(
+            (
+                got[0].id.as_str(),
+                got[0].title.as_str(),
+                got[0].folder.as_str()
+            ),
+            ("b1", "Mail", "Ads")
+        );
         assert_eq!(unreadable("bookmark", &marks), 1);
 
-        let ext = [r("e1", "Wallet", json!({ "version": "1.2", "path": "/somewhere/else" }))];
+        let ext = [r(
+            "e1",
+            "Wallet",
+            json!({ "version": "1.2", "path": "/somewhere/else" }),
+        )];
         let got = extensions(&ext);
-        assert_eq!((got[0].name.as_str(), got[0].version.as_str(), got[0].path.as_str()), ("Wallet", "1.2", ""));
+        assert_eq!(
+            (
+                got[0].name.as_str(),
+                got[0].version.as_str(),
+                got[0].path.as_str()
+            ),
+            ("Wallet", "1.2", "")
+        );
 
         let tag_rows = [r("t1", "VIP", json!({ "color": "violet" }))];
         let state = tags(&tag_rows, &[row("p1")]);
-        assert_eq!(state.tags[0], Tag { id: "t1".into(), name: "VIP".into(), color: "violet".into() });
+        assert_eq!(
+            state.tags[0],
+            Tag {
+                id: "t1".into(),
+                name: "VIP".into(),
+                color: "violet".into()
+            }
+        );
         assert_eq!(state.by_profile["p1"], ["t1"]);
 
         let got = projects(&[r("a1", "Warm up", json!({ "notes": "x" }))]);
-        assert_eq!((got[0].id.as_str(), got[0].name.as_str(), got[0].created_at), ("a1", "Warm up", 50));
+        assert_eq!(
+            (got[0].id.as_str(), got[0].name.as_str(), got[0].created_at),
+            ("a1", "Warm up", 50)
+        );
     }
 
     #[test]
     fn a_proxy_without_its_login_has_no_address() {
-        let row = ProxyRow { id: "x1".into(), name: "DE".into(), kind: "http".into(), country: "DE".into(), revision: 3, updated_at: 7 };
+        let row = ProxyRow {
+            id: "x1".into(),
+            name: "DE".into(),
+            kind: "http".into(),
+            country: "DE".into(),
+            revision: 3,
+            updated_at: 7,
+        };
         let bare = proxy(&row, None);
-        assert_eq!((bare.host.as_str(), bare.port, bare.kind.clone()), ("", 0, ProxyKind::Http));
-        let login = b64(json!({ "id": "", "name": "old", "kind": "socks5", "host": "203.0.113.9", "port": 1080, "username": "u", "password": "p" }));
+        assert_eq!(
+            (bare.host.as_str(), bare.port, bare.kind.clone()),
+            ("", 0, ProxyKind::Http)
+        );
+        let login = b64(
+            json!({ "id": "", "name": "old", "kind": "socks5", "host": "203.0.113.9", "port": 1080, "username": "u", "password": "p" }),
+        );
         let full = proxy(&row, Some(&login));
-        assert_eq!((full.id.as_str(), full.name.as_str(), full.host.as_str(), full.port), ("x1", "DE", "203.0.113.9", 1080));
+        assert_eq!(
+            (
+                full.id.as_str(),
+                full.name.as_str(),
+                full.host.as_str(),
+                full.port
+            ),
+            ("x1", "DE", "203.0.113.9", 1080)
+        );
         assert_eq!(full.kind, ProxyKind::Http, "the row's kind is the server's");
     }
 }

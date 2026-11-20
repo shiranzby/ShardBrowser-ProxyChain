@@ -42,7 +42,10 @@ pub struct Paths {
 
 impl Paths {
     pub fn new(lib: &Path, id: &str) -> Paths {
-        Paths { lib: lib.to_path_buf(), id: id.to_string() }
+        Paths {
+            lib: lib.to_path_buf(),
+            id: id.to_string(),
+        }
     }
     fn dot(&self, rest: &str) -> PathBuf {
         self.lib.join(format!(".{}.{rest}", self.id))
@@ -75,7 +78,9 @@ impl Paths {
         self.dot("prev.new")
     }
     fn trash(&self) -> PathBuf {
-        let n = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+        let n = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
         self.dot(&format!("trash-{n}"))
     }
 }
@@ -173,7 +178,10 @@ impl Order {
 
     /// Held to the version update2 named for it.
     pub fn expecting(self, version: &str) -> Order {
-        Order { version: Some(version.to_string()), ..self }
+        Order {
+            version: Some(version.to_string()),
+            ..self
+        }
     }
 
     /// The person's own package from another computer: its builder confirmed it there.
@@ -192,8 +200,15 @@ impl Order {
 
     /// What the store's package must be: its id, the publisher's proof, and what update2 said.
     fn expect(&self) -> Option<crx::Expect<'_>> {
-        let Origin::Store(sid) = &self.origin else { return None };
-        Some(crx::Expect { id: Some(sid), publisher: Some(self.publisher), sha256: self.sha256.as_deref(), size: self.size })
+        let Origin::Store(sid) = &self.origin else {
+            return None;
+        };
+        Some(crx::Expect {
+            id: Some(sid),
+            publisher: Some(self.publisher),
+            sha256: self.sha256.as_deref(),
+            size: self.size,
+        })
     }
 }
 
@@ -220,7 +235,10 @@ pub struct Failure {
 
 impl Failure {
     pub fn new(kind: Kind, message: impl Into<String>) -> Failure {
-        Failure { kind, message: message.into() }
+        Failure {
+            kind,
+            message: message.into(),
+        }
     }
 }
 
@@ -304,7 +322,12 @@ impl Ops {
     /// The real file system without waits between tries, on a disk that never fills.
     #[cfg(test)]
     pub fn quick() -> Ops {
-        Ops { tries: 3, pause: Duration::ZERO, free_bytes: Box::new(|_| Some(u64::MAX)), ..Ops::real() }
+        Ops {
+            tries: 3,
+            pause: Duration::ZERO,
+            free_bytes: Box::new(|_| Some(u64::MAX)),
+            ..Ops::real()
+        }
     }
 
     /// Gone, or moved aside to the trash: true once `dir` is free.
@@ -323,7 +346,8 @@ impl Ops {
 fn transient(e: &io::Error) -> bool {
     e.kind() == io::ErrorKind::ResourceBusy
         || (cfg!(windows)
-            && (e.kind() == io::ErrorKind::PermissionDenied || matches!(e.raw_os_error(), Some(5 | 32))))
+            && (e.kind() == io::ErrorKind::PermissionDenied
+                || matches!(e.raw_os_error(), Some(5 | 32))))
 }
 
 fn remove_any(p: &Path) -> io::Result<()> {
@@ -356,7 +380,14 @@ fn exchange(a: &Path, b: &Path) -> io::Result<()> {
     let b = std::ffi::CString::new(b.as_os_str().as_bytes())?;
     // SAFETY: two NUL-terminated paths that outlive the call; nothing else is passed by pointer.
     let rc = unsafe {
-        libc::syscall(libc::SYS_renameat2, libc::AT_FDCWD, a.as_ptr(), libc::AT_FDCWD, b.as_ptr(), libc::RENAME_EXCHANGE)
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            a.as_ptr(),
+            libc::AT_FDCWD,
+            b.as_ptr(),
+            libc::RENAME_EXCHANGE,
+        )
     };
     match rc {
         0 => Ok(()),
@@ -371,7 +402,9 @@ fn exchange(_a: &Path, _b: &Path) -> io::Result<()> {
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// A valid version from a manifest.
@@ -386,7 +419,10 @@ fn same_version(a: &str, b: &str) -> bool {
 
 /// The manifest's folder relative to the extension's: "" or its one subfolder.
 fn root_of(dir: &Path) -> String {
-    manifest_root(dir).strip_prefix(dir).map(|r| r.to_string_lossy().to_string()).unwrap_or_default()
+    manifest_root(dir)
+        .strip_prefix(dir)
+        .map(|r| r.to_string_lossy().to_string())
+        .unwrap_or_default()
 }
 
 /// `dir`'s manifest folder for `root`, with no trailing separator for "".
@@ -472,39 +508,52 @@ fn write_note(p: &Paths, s: &Staged) -> io::Result<()> {
 
 /// What is staged for `id`, without looking at the tree.
 pub fn staged(lib: &Path, id: &str) -> Option<Staged> {
-    valid_id(id).then(|| read_note(&Paths::new(lib, id))).flatten()
+    valid_id(id)
+        .then(|| read_note(&Paths::new(lib, id)))
+        .flatten()
 }
 
 /// The staged tree is all there, as checked.
 fn complete(p: &Paths, n: &Staged) -> bool {
-    at_root(&p.tree(), &n.root).join("manifest.json").is_file() && tree_digest(&p.tree()).is_ok_and(|d| d == n.digest)
+    at_root(&p.tree(), &n.root).join("manifest.json").is_file()
+        && tree_digest(&p.tree()).is_ok_and(|d| d == n.digest)
 }
 
 /// Extensions whose update waits only for nobody to hold them.
 pub fn waiting(lib: &Path) -> Vec<String> {
     dotted_ids(lib)
         .into_iter()
-        .filter(|id| Paths::new(lib, id).live().is_dir() && staged(lib, id).is_some_and(|n| n.ready()))
+        .filter(|id| {
+            Paths::new(lib, id).live().is_dir() && staged(lib, id).is_some_and(|n| n.ready())
+        })
         .collect()
 }
 
 /// The person confirmed what the staged version gains.
 pub fn approve(lib: &Path, id: &str) -> Result<Staged, Failure> {
     let p = Paths::new(lib, id);
-    let mut n = read_note(&p).ok_or_else(|| Failure::new(Kind::Stale, "nothing is staged for this extension"))?;
+    let mut n = read_note(&p)
+        .ok_or_else(|| Failure::new(Kind::Stale, "nothing is staged for this extension"))?;
     n.approved = true;
-    write_note(&p, &n).map_err(|e| Failure::new(Kind::Swap, format!("could not record the confirmation: {e}")))?;
+    write_note(&p, &n).map_err(|e| {
+        Failure::new(
+            Kind::Swap,
+            format!("could not record the confirmation: {e}"),
+        )
+    })?;
     Ok(n)
 }
 
 /// The engine here now meets what the staged version asks for: it may go in.
 pub fn engine_met(lib: &Path, id: &str) -> Result<Staged, Failure> {
     let p = Paths::new(lib, id);
-    let mut n = read_note(&p).ok_or_else(|| Failure::new(Kind::Stale, "nothing is staged for this extension"))?;
+    let mut n = read_note(&p)
+        .ok_or_else(|| Failure::new(Kind::Stale, "nothing is staged for this extension"))?;
     n.needs_engine = None;
     // Sync's own was let in by the computer that built it.
     n.approved |= matches!(n.origin, Origin::Sync(_));
-    write_note(&p, &n).map_err(|e| Failure::new(Kind::Swap, format!("could not record the engine: {e}")))?;
+    write_note(&p, &n)
+        .map_err(|e| Failure::new(Kind::Swap, format!("could not record the engine: {e}")))?;
     Ok(n)
 }
 
@@ -512,7 +561,9 @@ pub fn engine_met(lib: &Path, id: &str) -> Result<Staged, Failure> {
 /// while its stage could not be dropped).
 pub fn withhold(lib: &Path, id: &str) -> bool {
     let p = Paths::new(lib, id);
-    let Some(mut n) = read_note(&p) else { return false };
+    let Some(mut n) = read_note(&p) else {
+        return false;
+    };
     n.approved = false;
     write_note(&p, &n).is_ok()
 }
@@ -520,7 +571,9 @@ pub fn withhold(lib: &Path, id: &str) -> bool {
 /// The staged update dropped (Cancel, or a newer one to fetch).
 pub fn cancel(lib: &Path, id: &str, ops: &Ops) -> bool {
     let p = Paths::new(lib, id);
-    let Some(_alone) = super::usage::exclusive(id, CLEAR_WAIT) else { return false };
+    let Some(_alone) = super::usage::exclusive(id, CLEAR_WAIT) else {
+        return false;
+    };
     forget(&p, ops)
 }
 
@@ -542,7 +595,14 @@ pub fn room(ops: &Ops, lib: &Path, size: u64) -> Result<(), Failure> {
 
 /// Downloads `url` (update2's codebase) and stages it. The live folder is
 /// never touched; any failure leaves nothing but it.
-pub async fn stage(lib: &Path, id: &str, url: &str, order: Order, ops: Arc<Ops>, progress: Progress) -> Result<Staged, Failure> {
+pub async fn stage(
+    lib: &Path,
+    id: &str,
+    url: &str,
+    order: Order,
+    ops: Arc<Ops>,
+    progress: Progress,
+) -> Result<Staged, Failure> {
     if !valid_id(id) {
         return Err(Failure::new(Kind::Stale, "invalid extension id"));
     }
@@ -550,19 +610,30 @@ pub async fn stage(lib: &Path, id: &str, url: &str, order: Order, ops: Arc<Ops>,
     if let Some(size) = order.size {
         room(&ops, lib, size)?;
     }
-    let cap = order.size.map_or(super::DOWNLOAD_MAX, |s| s.saturating_add(MB).min(super::DOWNLOAD_MAX));
+    let cap = order.size.map_or(super::DOWNLOAD_MAX, |s| {
+        s.saturating_add(MB).min(super::DOWNLOAD_MAX)
+    });
     let part = p.part();
     let total = order.size.unwrap_or(0);
     let tell = progress.clone();
-    let got = super::fetch(url, &part, &super::update2::user_agent(), cap, &move |n| tell(Phase::Download, n, total)).await;
+    let got = super::fetch(url, &part, &super::update2::user_agent(), cap, &move |n| {
+        tell(Phase::Download, n, total)
+    })
+    .await;
     if let Err(e) = got {
         let _ = fs::remove_file(&part);
         return Err(Failure::new(Kind::Download, format!("{e:#}")));
     }
     let (lib, id, file) = (lib.to_path_buf(), id.to_string(), part.clone());
-    let out = tokio::task::spawn_blocking(move || stage_file(&lib, &id, &file, &order, &ops, &progress))
-        .await
-        .unwrap_or_else(|e| Err(Failure::new(Kind::Package, format!("the update could not be unpacked: {e}"))));
+    let out =
+        tokio::task::spawn_blocking(move || stage_file(&lib, &id, &file, &order, &ops, &progress))
+            .await
+            .unwrap_or_else(|e| {
+                Err(Failure::new(
+                    Kind::Package,
+                    format!("the update could not be unpacked: {e}"),
+                ))
+            });
     let _ = fs::remove_file(&part);
     out
 }
@@ -570,24 +641,47 @@ pub async fn stage(lib: &Path, id: &str, url: &str, order: Order, ops: Arc<Ops>,
 /// Stages a downloaded package (a store CRX, or sync's zip) over `id`:
 /// checked, unpacked, laid out as the live tree is, its key fitted, and
 /// measured against the live one. Any failure leaves no staging behind.
-pub fn stage_file(lib: &Path, id: &str, file: &Path, order: &Order, ops: &Ops, progress: &Progress) -> Result<Staged, Failure> {
+pub fn stage_file(
+    lib: &Path,
+    id: &str,
+    file: &Path,
+    order: &Order,
+    ops: &Ops,
+    progress: &Progress,
+) -> Result<Staged, Failure> {
     if !valid_id(id) {
         return Err(Failure::new(Kind::Stale, "invalid extension id"));
     }
     let p = Paths::new(lib, id);
     let live = p.live();
     let live_root = manifest_root(&live);
-    let old = manifest_edit::read_manifest(&live_root)
-        .map_err(|e| Failure::new(Kind::Stale, format!("the installed extension cannot be read: {e:#}")))?;
-    let from = version_in(&old).ok_or_else(|| Failure::new(Kind::Manifest, "the installed extension has no valid version"))?;
+    let old = manifest_edit::read_manifest(&live_root).map_err(|e| {
+        Failure::new(
+            Kind::Stale,
+            format!("the installed extension cannot be read: {e:#}"),
+        )
+    })?;
+    let from = version_in(&old).ok_or_else(|| {
+        Failure::new(
+            Kind::Manifest,
+            "the installed extension has no valid version",
+        )
+    })?;
     // An earlier stage goes first, never while it is being applied.
     {
-        let _alone = super::usage::exclusive(id, CLEAR_WAIT)
-            .ok_or_else(|| Failure::new(Kind::Swap, "the extension is being updated right now; try again in a minute"))?;
+        let _alone = super::usage::exclusive(id, CLEAR_WAIT).ok_or_else(|| {
+            Failure::new(
+                Kind::Swap,
+                "the extension is being updated right now; try again in a minute",
+            )
+        })?;
         if !forget(&p, ops) {
             return Err(Failure::new(
                 Kind::Swap,
-                format!("the folder of an earlier update ({}) could not be cleared", p.staging().display()),
+                format!(
+                    "the folder of an earlier update ({}) could not be cleared",
+                    p.staging().display()
+                ),
             ));
         }
     }
@@ -600,63 +694,108 @@ pub fn stage_file(lib: &Path, id: &str, file: &Path, order: &Order, ops: &Ops, p
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build(p: &Paths, file: &Path, order: &Order, ops: &Ops, progress: &Progress, live_root: &Path, old: &Value, from: String) -> Result<Staged, Failure> {
+fn build(
+    p: &Paths,
+    file: &Path,
+    order: &Order,
+    ops: &Ops,
+    progress: &Progress,
+    live_root: &Path,
+    old: &Value,
+    from: String,
+) -> Result<Staged, Failure> {
     let pkg = |m: String| Failure::new(Kind::Package, m);
-    let io_err = |what: &str, e: &dyn std::fmt::Display| Failure::new(Kind::Package, format!("{what}: {e}"));
+    let io_err =
+        |what: &str, e: &dyn std::fmt::Display| Failure::new(Kind::Package, format!("{what}: {e}"));
     progress(Phase::Verify, 0, 0);
     let bytes = fs::read(file).map_err(|e| io_err("the update could not be read", &e))?;
     let side = source::read(&p.lib, &p.id).unwrap_or_default();
     let (offset, signed_item) = match &order.origin {
         Origin::Store(sid) => {
             // Not linked yet (linking by hand stages first): its files are weighed below.
-            if side.source.as_ref().is_some_and(|s| *s != SourceRef::webstore(sid)) {
-                return Err(Failure::new(Kind::Stale, format!("the extension is linked to another Web Store item, not {sid}")));
+            if side
+                .source
+                .as_ref()
+                .is_some_and(|s| *s != SourceRef::webstore(sid))
+            {
+                return Err(Failure::new(
+                    Kind::Stale,
+                    format!("the extension is linked to another Web Store item, not {sid}"),
+                ));
             }
             // A key here gives the id: the store's code never runs under another item's.
             if let Ok(manifest_edit::IdBasis::Key(k)) = manifest_edit::id_basis(live_root) {
                 let kid = id_from_key(&k);
                 if kid != *sid {
-                    return Err(Failure::new(Kind::IdConflict, format!("its key gives it the ID {kid}, not the Web Store item {sid}")));
+                    return Err(Failure::new(
+                        Kind::IdConflict,
+                        format!("its key gives it the ID {kid}, not the Web Store item {sid}"),
+                    ));
                 }
             }
             let expect = order.expect().unwrap_or_default();
-            let v = crx::verify(&bytes, &expect).map_err(|r| pkg(format!("the Web Store's package failed its check: {r}")))?;
-            (v.archive_offset, v.verified_contents.as_deref().and_then(crx::verified_item))
+            let v = crx::verify(&bytes, &expect)
+                .map_err(|r| pkg(format!("the Web Store's package failed its check: {r}")))?;
+            (
+                v.archive_offset,
+                v.verified_contents.as_deref().and_then(crx::verified_item),
+            )
         }
-        Origin::Sync(_) => (super::crx_payload_offset(&bytes).map_err(|e| pkg(format!("{e:#}")))?, None),
+        Origin::Sync(_) => (
+            super::crx_payload_offset(&bytes).map_err(|e| pkg(format!("{e:#}")))?,
+            None,
+        ),
     };
-    let sha256: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+    let sha256: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
 
     progress(Phase::Unpack, 0, 0);
     let unpack = p.unpack();
     fs::create_dir_all(&unpack).map_err(|e| io_err("could not make the update's folder", &e))?;
-    unzip(&bytes[offset..], &unpack).map_err(|e| pkg(format!("the update cannot be unpacked: {e:#}")))?;
+    unzip(&bytes[offset..], &unpack)
+        .map_err(|e| pkg(format!("the update cannot be unpacked: {e:#}")))?;
     drop(bytes);
     let new_root = manifest_root(&unpack);
     if !new_root.join("manifest.json").is_file() {
         return Err(pkg("the update holds no manifest.json".into()));
     }
-    let bad_manifest = |e: anyhow::Error| Failure::new(Kind::Manifest, format!("the new version's manifest.json: {e:#}"));
+    let bad_manifest = |e: anyhow::Error| {
+        Failure::new(
+            Kind::Manifest,
+            format!("the new version's manifest.json: {e:#}"),
+        )
+    };
     let to = version_in(&manifest_edit::read_manifest(&new_root).map_err(bad_manifest)?)
         .ok_or_else(|| Failure::new(Kind::Manifest, "the new version has no valid version"))?;
     if let Some(named) = order.version.as_deref().filter(|v| !same_version(v, &to)) {
-        return Err(pkg(format!("the Web Store named version {named} but sent {to}")));
+        return Err(pkg(format!(
+            "the Web Store named version {named} but sent {to}"
+        )));
     }
 
     // The store's signed contents name the item and version; read before `_metadata/` goes.
     let vc = new_root.join("_metadata").join("verified_contents.json");
     let small = fs::metadata(&vc).is_ok_and(|m| m.is_file() && m.len() <= VERIFIED_CONTENTS_MAX);
-    let meta_item = small.then(|| fs::read(&vc).ok()).flatten().and_then(|b| crx::verified_item(&b));
+    let meta_item = small
+        .then(|| fs::read(&vc).ok())
+        .flatten()
+        .and_then(|b| crx::verified_item(&b));
     if let Origin::Store(sid) = &order.origin {
         for item in [&signed_item, &meta_item].into_iter().flatten() {
             if item.id != *sid || !same_version(&item.version, &to) {
-                return Err(pkg(format!("its signed contents are for {} {}, not {sid} {to}", item.id, item.version)));
+                return Err(pkg(format!(
+                    "its signed contents are for {} {}, not {sid} {to}",
+                    item.id, item.version
+                )));
             }
         }
     }
     let meta = new_root.join("_metadata");
     if meta.exists() {
-        fs::remove_dir_all(&meta).map_err(|e| io_err("could not clear the update's _metadata", &e))?;
+        fs::remove_dir_all(&meta)
+            .map_err(|e| io_err("could not clear the update's _metadata", &e))?;
     }
 
     // Laid out as the live tree is: the path Chrome hashes stays the same.
@@ -666,13 +805,17 @@ fn build(p: &Paths, file: &Path, order: &Order, ops: &Ops, progress: &Progress, 
     if !root.is_empty() {
         fs::create_dir_all(&tree).map_err(|e| io_err("could not lay out the update", &e))?;
     }
-    ops.move_to(&new_root, &staged_root).map_err(|e| io_err("could not lay out the update", &e))?;
+    ops.move_to(&new_root, &staged_root)
+        .map_err(|e| io_err("could not lay out the update", &e))?;
     ops.clear(p, &unpack);
 
-    let old_basis = manifest_edit::id_basis(live_root).map_err(|e| Failure::new(Kind::Manifest, format!("{e:#}")))?;
+    let old_basis = manifest_edit::id_basis(live_root)
+        .map_err(|e| Failure::new(Kind::Manifest, format!("{e:#}")))?;
     let key = match &order.origin {
         // Only the builder fits the key (design §3.3.2).
-        Origin::Store(_) => manifest_edit::fit_manifest(&staged_root, &old_basis).map_err(bad_manifest)?,
+        Origin::Store(_) => {
+            manifest_edit::fit_manifest(&staged_root, &old_basis).map_err(bad_manifest)?
+        }
         Origin::Sync(_) => {
             let new_basis = manifest_edit::id_basis(&staged_root).map_err(bad_manifest)?;
             if new_basis != old_basis {
@@ -690,10 +833,16 @@ fn build(p: &Paths, file: &Path, order: &Order, ops: &Ops, progress: &Progress, 
     let new = manifest_edit::read_manifest(&staged_root).map_err(bad_manifest)?;
     match &order.origin {
         Origin::Store(_) if !newer(&to, &from) => {
-            return Err(Failure::new(Kind::NotNewer, format!("version {to} is not newer than the installed {from}")))
+            return Err(Failure::new(
+                Kind::NotNewer,
+                format!("version {to} is not newer than the installed {from}"),
+            ))
         }
         Origin::Sync(_) if newer(&from, &to) => {
-            return Err(Failure::new(Kind::NotNewer, format!("version {to} from the other computer is older than {from} here")))
+            return Err(Failure::new(
+                Kind::NotNewer,
+                format!("version {to} from the other computer is older than {from} here"),
+            ))
         }
         _ => {}
     }
@@ -721,7 +870,8 @@ fn build(p: &Paths, file: &Path, order: &Order, ops: &Ops, progress: &Progress, 
     };
     let grown = manifest_edit::perm_growth(old, &new);
     let digest = tree_digest(&tree).map_err(|e| io_err("could not read the update back", &e))?;
-    let confirmed = matches!(order.origin, Origin::Sync(_)) || (grown.is_empty() && identity.is_none());
+    let confirmed =
+        matches!(order.origin, Origin::Sync(_)) || (grown.is_empty() && identity.is_none());
     let staged = Staged {
         approved: order.approve && confirmed && needs_engine.is_none(),
         from,
@@ -753,7 +903,13 @@ pub struct Weighed {
 
 /// The store's package for `order`, checked and unpacked beside the live tree
 /// only to be compared with it; nothing of it stays.
-pub fn weigh(lib: &Path, id: &str, file: &Path, order: &Order, ops: &Ops) -> Result<Weighed, Failure> {
+pub fn weigh(
+    lib: &Path,
+    id: &str,
+    file: &Path,
+    order: &Order,
+    ops: &Ops,
+) -> Result<Weighed, Failure> {
     let pkg = |m: String| Failure::new(Kind::Package, m);
     if !valid_id(id) {
         return Err(Failure::new(Kind::Stale, "invalid extension id"));
@@ -761,23 +917,45 @@ pub fn weigh(lib: &Path, id: &str, file: &Path, order: &Order, ops: &Ops) -> Res
     let p = Paths::new(lib, id);
     let live_root = manifest_root(&p.live());
     if !live_root.join("manifest.json").is_file() {
-        return Err(Failure::new(Kind::Stale, "the extension is no longer in the library"));
+        return Err(Failure::new(
+            Kind::Stale,
+            "the extension is no longer in the library",
+        ));
     }
-    let expect = order.expect().ok_or_else(|| pkg("only a Web Store package can be weighed".into()))?;
+    let expect = order
+        .expect()
+        .ok_or_else(|| pkg("only a Web Store package can be weighed".into()))?;
     let bytes = fs::read(file).map_err(|e| pkg(format!("the package could not be read: {e}")))?;
-    let v = crx::verify(&bytes, &expect).map_err(|r| pkg(format!("the Web Store's package failed its check: {r}")))?;
+    let v = crx::verify(&bytes, &expect)
+        .map_err(|r| pkg(format!("the Web Store's package failed its check: {r}")))?;
     let dir = p.dot("weigh");
     if !ops.clear(&p, &dir) {
-        return Err(Failure::new(Kind::Swap, format!("an earlier comparison's folder ({}) could not be cleared", dir.display())));
+        return Err(Failure::new(
+            Kind::Swap,
+            format!(
+                "an earlier comparison's folder ({}) could not be cleared",
+                dir.display()
+            ),
+        ));
     }
     let weighed = (|| {
-        fs::create_dir_all(&dir).map_err(|e| pkg(format!("could not make a folder to compare in: {e}")))?;
-        unzip(&bytes[v.archive_offset..], &dir).map_err(|e| pkg(format!("the package cannot be unpacked: {e:#}")))?;
+        fs::create_dir_all(&dir)
+            .map_err(|e| pkg(format!("could not make a folder to compare in: {e}")))?;
+        unzip(&bytes[v.archive_offset..], &dir)
+            .map_err(|e| pkg(format!("the package cannot be unpacked: {e:#}")))?;
         let new_root = manifest_root(&dir);
-        let m = manifest_edit::read_manifest(&new_root).map_err(|e| Failure::new(Kind::Manifest, format!("its manifest.json: {e:#}")))?;
-        let version = version_in(&m).ok_or_else(|| Failure::new(Kind::Manifest, "the package has no valid version"))?;
-        if let Some(named) = order.version.as_deref().filter(|v| !same_version(v, &version)) {
-            return Err(pkg(format!("the Web Store named version {named} but sent {version}")));
+        let m = manifest_edit::read_manifest(&new_root)
+            .map_err(|e| Failure::new(Kind::Manifest, format!("its manifest.json: {e:#}")))?;
+        let version = version_in(&m)
+            .ok_or_else(|| Failure::new(Kind::Manifest, "the package has no valid version"))?;
+        if let Some(named) = order
+            .version
+            .as_deref()
+            .filter(|v| !same_version(v, &version))
+        {
+            return Err(pkg(format!(
+                "the Web Store named version {named} but sent {version}"
+            )));
         }
         Ok(Weighed {
             overlap: manifest_edit::overlap(&live_root, &new_root).unwrap_or(0.0),
@@ -804,7 +982,8 @@ fn forget(p: &Paths, ops: &Ops) -> bool {
 /// The caller makes sure nothing holds the extension (`usage::try_apply`).
 pub fn apply(lib: &Path, id: &str, ops: &Ops) -> Result<Applied, Failure> {
     let p = Paths::new(lib, id);
-    let note = read_note(&p).ok_or_else(|| Failure::new(Kind::Stale, "nothing is staged for this extension"))?;
+    let note = read_note(&p)
+        .ok_or_else(|| Failure::new(Kind::Stale, "nothing is staged for this extension"))?;
     // A failed swap's folder back first, so the stage still fits it.
     put_back(&p, ops);
     if let Err(f) = fits(&p, &note) {
@@ -822,10 +1001,19 @@ pub fn apply(lib: &Path, id: &str, ops: &Ops) -> Result<Applied, Failure> {
             false
         }
     };
-    keep_prev(&p, &if atomic { p.tree() } else { p.prev_new() }, &note.from, ops);
+    keep_prev(
+        &p,
+        &if atomic { p.tree() } else { p.prev_new() },
+        &note.from,
+        ops,
+    );
     forget(&p, ops);
     record(&p, &note);
-    Ok(Applied { from: note.from, to: note.to, atomic })
+    Ok(Applied {
+        from: note.from,
+        to: note.to,
+        atomic,
+    })
 }
 
 /// The live folder is still what was staged against, and the stage is whole.
@@ -847,7 +1035,10 @@ fn fits(p: &Paths, note: &Staged) -> Result<(), Failure> {
     }
     let basis = |root: &Path| manifest_edit::id_basis(root).ok();
     if basis(&live_root) != basis(&at_root(&p.tree(), &note.root)) {
-        return Err(Failure::new(Kind::IdConflict, "the update would change the extension's ID, so it was not applied"));
+        return Err(Failure::new(
+            Kind::IdConflict,
+            "the update would change the extension's ID, so it was not applied",
+        ));
     }
     Ok(())
 }
@@ -859,7 +1050,13 @@ fn two_renames(p: &Paths, ops: &Ops) -> Result<(), Failure> {
     if aside.exists() {
         keep_prev(p, &aside, "", ops);
         if aside.exists() {
-            return Err(Failure::new(Kind::Swap, format!("an earlier update's folder ({}) could not be cleared", aside.display())));
+            return Err(Failure::new(
+                Kind::Swap,
+                format!(
+                    "an earlier update's folder ({}) could not be cleared",
+                    aside.display()
+                ),
+            ));
         }
     }
     ops.move_to(&live, &aside).map_err(|e| {
@@ -886,11 +1083,17 @@ pub fn put_back(p: &Paths, ops: &Ops) -> bool {
     }
     match ops.move_to(&aside, &live) {
         Ok(()) => {
-            eprintln!("[extensions] {}: the installed version is back in place", p.id);
+            eprintln!(
+                "[extensions] {}: the installed version is back in place",
+                p.id
+            );
             true
         }
         Err(e) => {
-            eprintln!("[extensions] {}: the installed version could not be put back yet: {e}", p.id);
+            eprintln!(
+                "[extensions] {}: the installed version could not be put back yet: {e}",
+                p.id
+            );
             false
         }
     }
@@ -905,7 +1108,10 @@ pub fn put_back_all(lib: &Path, ops: &Ops) -> usize {
             let p = Paths::new(lib, id);
             !p.live().exists() && p.prev_new().is_dir()
         })
-        .filter(|id| super::usage::exclusive(id, Duration::ZERO).is_some_and(|_alone| put_back(&Paths::new(lib, id), ops)))
+        .filter(|id| {
+            super::usage::exclusive(id, Duration::ZERO)
+                .is_some_and(|_alone| put_back(&Paths::new(lib, id), ops))
+        })
         .count()
 }
 
@@ -923,7 +1129,11 @@ fn keep_prev(p: &Paths, old: &Path, version: &str, ops: &Ops) {
         ops.clear(p, old);
         return;
     }
-    let version = if version.is_empty() { tree_version(&p.prev()) } else { version.to_string() };
+    let version = if version.is_empty() {
+        tree_version(&p.prev())
+    } else {
+        version.to_string()
+    };
     write_prev_note(p, &version);
 }
 
@@ -933,7 +1143,11 @@ fn write_prev_note(p: &Paths, version: &str) {
 }
 
 fn tree_version(dir: &Path) -> String {
-    manifest_edit::read_manifest(&manifest_root(dir)).ok().as_ref().and_then(version_in).unwrap_or_default()
+    manifest_edit::read_manifest(&manifest_root(dir))
+        .ok()
+        .as_ref()
+        .and_then(version_in)
+        .unwrap_or_default()
 }
 
 /// The side file learns what sync laid down and what the store's contents named.
@@ -947,7 +1161,9 @@ fn record(p: &Paths, note: &Staged) {
         if side.source.is_none() {
             let found = source::recover(&manifest_root(&p.live()));
             let item = note.store_item.as_ref().filter(|_| found.source.is_none());
-            side.source = found.source.or_else(|| item.map(|i| SourceRef::webstore(&i.id)));
+            side.source = found
+                .source
+                .or_else(|| item.map(|i| SourceRef::webstore(&i.id)));
             side.how = found.how.or(item.map(|_| source::How::VerifiedContents));
         }
     }
@@ -975,7 +1191,9 @@ pub struct Swept {
 
 /// The ids that have anything of ours beside their folder.
 fn dotted_ids(lib: &Path) -> BTreeSet<String> {
-    let Ok(rd) = fs::read_dir(lib) else { return BTreeSet::new() };
+    let Ok(rd) = fs::read_dir(lib) else {
+        return BTreeSet::new();
+    };
     rd.flatten()
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
@@ -986,8 +1204,19 @@ fn dotted_ids(lib: &Path) -> BTreeSet<String> {
 }
 
 fn ours(rest: &str) -> bool {
-    matches!(rest, "part" | "staging" | "weigh" | "prev" | "prev.json" | "prev.tmp" | "prev.new" | "zip" | "new" | "source.tmp")
-        || rest.starts_with("trash-")
+    matches!(
+        rest,
+        "part"
+            | "staging"
+            | "weigh"
+            | "prev"
+            | "prev.json"
+            | "prev.tmp"
+            | "prev.new"
+            | "zip"
+            | "new"
+            | "source.tmp"
+    ) || rest.starts_with("trash-")
 }
 
 /// At start, before any profile can: swaps a dead launcher left half done are
@@ -1018,7 +1247,11 @@ fn sweep_one(p: &Paths, ops: &Ops, s: &mut Swept) {
         match read_note(p) {
             Some(n) if live && complete(p, &n) => s.kept += 1,
             // Exchanged, then the launcher died: staging holds the tree before.
-            Some(n) if live && p.tree().is_dir() && tree_digest(&p.live()).is_ok_and(|d| d == n.digest) => {
+            Some(n)
+                if live
+                    && p.tree().is_dir()
+                    && tree_digest(&p.live()).is_ok_and(|d| d == n.digest) =>
+            {
                 keep_prev(p, &p.tree(), &n.from, ops);
                 forget(p, ops);
                 s.finished += 1;
@@ -1030,7 +1263,9 @@ fn sweep_one(p: &Paths, ops: &Ops, s: &mut Swept) {
         }
     }
     if p.prev().exists() {
-        let note: Option<PrevNote> = fs::read(p.prev_note()).ok().and_then(|b| serde_json::from_slice(&b).ok());
+        let note: Option<PrevNote> = fs::read(p.prev_note())
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok());
         let orphan = !live && !p.prev_new().exists();
         match note {
             _ if orphan => {

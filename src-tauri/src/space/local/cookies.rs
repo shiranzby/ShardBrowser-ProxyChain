@@ -105,7 +105,9 @@ impl Crypt {
     }
 
     fn unseal(&self, encrypted: &[u8]) -> Option<Vec<u8>> {
-        encrypted.strip_prefix(b"v10").and_then(|body| cipher_decrypt(&self.key, body))
+        encrypted
+            .strip_prefix(b"v10")
+            .and_then(|body| cipher_decrypt(&self.key, body))
     }
 }
 
@@ -168,10 +170,10 @@ mod win {
     use anyhow::{anyhow, Context, Result};
     use base64::{engine::general_purpose::STANDARD, Engine};
     use std::path::Path;
+    use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{
         CryptProtectData, CryptUnprotectData, CRYPT_INTEGER_BLOB,
     };
-    use windows_sys::Win32::Foundation::LocalFree;
 
     const DPAPI_TAG: &[u8] = b"DPAPI";
 
@@ -240,8 +242,7 @@ mod win {
                 if protect { "protect" } else { "unprotect" }
             ));
         }
-        let out =
-            std::slice::from_raw_parts(out_blob.pbData, out_blob.cbData as usize).to_vec();
+        let out = std::slice::from_raw_parts(out_blob.pbData, out_blob.cbData as usize).to_vec();
         LocalFree(out_blob.pbData as _);
         Ok(out)
     }
@@ -342,11 +343,9 @@ pub(in crate::space) fn export(udd: &Path) -> Result<Vec<Cookie>> {
     }
     let crypt = Crypt::open(udd)?;
     // Read-only to avoid WAL write-lock fights with a running browser.
-    let conn = rusqlite::Connection::open_with_flags(
-        &path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .with_context(|| format!("open {}", path.display()))?;
+    let conn =
+        rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .with_context(|| format!("open {}", path.display()))?;
 
     let mut stmt = conn.prepare(
         "SELECT host_key, name, value, encrypted_value, path, expires_utc, \
@@ -393,8 +392,8 @@ pub(in crate::space) fn import(udd: &Path, cookies: &[Cookie]) -> Result<usize> 
         std::fs::create_dir_all(parent).ok();
     }
     let crypt = Crypt::open(udd)?;
-    let conn = rusqlite::Connection::open(&path)
-        .with_context(|| format!("open {}", path.display()))?;
+    let conn =
+        rusqlite::Connection::open(&path).with_context(|| format!("open {}", path.display()))?;
     ensure_schema(&conn)?;
 
     let now = now_chromium();
@@ -482,15 +481,24 @@ pub(in crate::space) fn export_logins(udd: &Path) -> Result<Vec<SavedLogin>> {
         if !path.is_file() {
             continue;
         }
-        let conn = rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .with_context(|| format!("open {}", path.display()))?;
-        let Ok(mut stmt) = conn.prepare("SELECT id, password_value FROM logins") else { continue };
+        let conn = rusqlite::Connection::open_with_flags(
+            &path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .with_context(|| format!("open {}", path.display()))?;
+        let Ok(mut stmt) = conn.prepare("SELECT id, password_value FROM logins") else {
+            continue;
+        };
         let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))?;
         for row in rows {
             let (id, enc) = row?;
             if let Some(plain) = crypt.unseal(&enc) {
                 let value = base64::engine::general_purpose::STANDARD.encode(plain);
-                out.push(SavedLogin { db: db.to_string(), id, value });
+                out.push(SavedLogin {
+                    db: db.to_string(),
+                    id,
+                    value,
+                });
             }
         }
     }
@@ -508,11 +516,17 @@ pub(in crate::space) fn reseal_logins(udd: &Path, logins: &[SavedLogin]) -> Resu
         if mine.is_empty() || !path.is_file() {
             continue;
         }
-        let conn = rusqlite::Connection::open(&path).with_context(|| format!("open {}", path.display()))?;
+        let conn = rusqlite::Connection::open(&path)
+            .with_context(|| format!("open {}", path.display()))?;
         let tx = conn.unchecked_transaction()?;
         for l in mine {
-            let Ok(plain) = base64::engine::general_purpose::STANDARD.decode(&l.value) else { continue };
-            n += tx.execute("UPDATE logins SET password_value = ?1 WHERE id = ?2", rusqlite::params![crypt.seal(&plain), l.id])?;
+            let Ok(plain) = base64::engine::general_purpose::STANDARD.decode(&l.value) else {
+                continue;
+            };
+            n += tx.execute(
+                "UPDATE logins SET password_value = ?1 WHERE id = ?2",
+                rusqlite::params![crypt.seal(&plain), l.id],
+            )?;
         }
         tx.commit()?;
     }
@@ -522,7 +536,9 @@ pub(in crate::space) fn reseal_logins(udd: &Path, logins: &[SavedLogin]) -> Resu
 /// Drop the key `Local State` keeps for this data: another machine's is no use here.
 pub(in crate::space) fn forget_key(udd: &Path) -> Result<()> {
     let path = udd.join("Local State");
-    let Ok(body) = std::fs::read(&path) else { return Ok(()) };
+    let Ok(body) = std::fs::read(&path) else {
+        return Ok(());
+    };
     match serde_json::from_slice::<serde_json::Value>(&body) {
         Ok(mut v) => {
             if let Some(o) = v.as_object_mut() {

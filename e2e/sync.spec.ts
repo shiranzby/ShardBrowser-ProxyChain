@@ -49,6 +49,24 @@ async function select(page: Page, names: string[]) {
   for (const name of names) await row(page, name).locator("[data-cell='checkbox'] input").check({ force: true });
 }
 
+test("connected sync shows the active scope and local-only boundary", async ({ page }) => {
+  await startConnected(page);
+  await openApp(page, { section: "settings" });
+  await openSyncTab(page);
+
+  const scope = page.locator("[data-sync-scope]");
+  await expect(scope).toBeVisible();
+  await expect(scope.getByRole("heading", { name: "Sync scope" })).toBeVisible();
+  await expect(scope.getByLabel("Currently synced content")).toBeVisible();
+  await expect(scope).toContainText("Selected profiles");
+  await expect(scope).toContainText("Linked proxies");
+  await expect(scope).toContainText("Proxy passwords, API keys, the fingerprint library, and app settings stay on this computer");
+
+  await setting(page, "sync-proxies").getByRole("switch").click();
+  await expect(scope).toContainText("All proxies");
+  await expect(scope).not.toContainText("Linked proxies");
+});
+
 test("an invite connects sync: the tab names the server, this computer and the status, and says what to pick", async ({ page }) => {
   await openApp(page, { section: "settings" });
   await tab(page, "Sync").click();

@@ -7,3 +7,4 @@ export * from "./lib/status";
 export * from "./lib/labels";
 export * from "./lib/identity";
 export * from "./lib/capabilities";
+export * from "./ui/ProxyFolderSelect";

@@ -442,6 +442,7 @@ export function useSettingsDraft() {
   const simpleNavigation = useSimpleNavigation((st) => st.enabled);
   const collapsedPages = useSimpleNavigation((st) => st.items);
   const hideProxyShard = useProxyShardVisibility((st) => st.hidden);
+  const hideProxyShardTrial = useProxyShardVisibility((st) => st.trialHidden);
   const askDirect = useDirectStart((st) => st.ask);
   const p: LocalPrefs = {
     lang,
@@ -452,6 +453,7 @@ export function useSettingsDraft() {
     simpleNavigation: prefs.simpleNavigation ?? simpleNavigation,
     collapsedPages: prefs.collapsedPages ?? collapsedPages,
     hideProxyShard: prefs.hideProxyShard ?? hideProxyShard,
+    hideProxyShardTrial: prefs.hideProxyShardTrial ?? hideProxyShardTrial,
     askDirect: prefs.askDirect ?? askDirect,
   };
   const dirty = ready && isDirty({ edits, tagOps, viewOps, prefs }, tags, views);

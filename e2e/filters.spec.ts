@@ -89,6 +89,28 @@ test("countries are listed with their flags; there is no separate flag row (CRAF
   await expect(page.getByRole("dialog").getByRole("button", { name: "United States" })).toHaveCount(0);
 });
 
+test("proxy folders are filterable and legacy provider_options folders are included", async ({ page }) => {
+  type Mock = { __shardxMock: { state: { proxies: { id: string; folder?: string; provider_options?: Record<string, string> }[] }; save: () => void } };
+  await openApp(page, { section: "proxies" });
+  await page.evaluate(() => {
+    const mock = (window as unknown as Mock).__shardxMock;
+    mock.state.proxies.find((p) => p.id === "px-jp-1")!.folder = "Japan";
+    mock.state.proxies.find((p) => p.id === "px-us-1")!.provider_options = { folder: "Residential" };
+    mock.save();
+  });
+  await reloadApp(page);
+  const proxyRows = page.locator("[role='row'][data-proxy-id]");
+  await expect(proxyRows).toHaveCount(7);
+  await filtersButton(page).click();
+  await page.getByRole("option", { name: /^Folder/ }).click();
+  await expect(page.getByRole("option", { name: /^Japan/ })).toContainText("1");
+  await expect(page.getByRole("option", { name: /^Residential/ })).toContainText("1");
+  await page.getByRole("option", { name: /^Japan/ }).click();
+  await expect(chips(page)).toHaveText(["Folder: Japan"]);
+  await expect(proxyRows).toHaveCount(1);
+  await expect(proxyRows.first()).toHaveAttribute("data-proxy-id", "px-jp-1");
+});
+
 test("Clear removes every chip; Save as view keeps them under a name", async ({ page }) => {
   await openApp(page);
   await filter(page, "Status", /^Idle/);

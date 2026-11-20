@@ -12,7 +12,9 @@ use futures_util::{SinkExt, StreamExt};
 use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt, Empty, Full};
 use hyper::body::Incoming;
-use hyper::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, UPGRADE};
+use hyper::header::{
+    HeaderMap, HeaderValue, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, UPGRADE,
+};
 use hyper_util::client::legacy::connect::{Connected, Connection};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
@@ -84,7 +86,12 @@ impl TeamClient {
     /// The client for a team this launcher has joined, held to the key kept for it.
     pub fn for_team(team_id: &str) -> anyhow::Result<Self> {
         let reach = crate::team::reach(team_id)?;
-        let mut c = TeamClient::reaching(&reach.server, &reach.token, &reach.device_id, team_wire::key_from_text(&reach.key));
+        let mut c = TeamClient::reaching(
+            &reach.server,
+            &reach.token,
+            &reach.device_id,
+            team_wire::key_from_text(&reach.key),
+        );
         c.team_id = Some(team_id.to_string());
         // A reaper leaves a lost token to the launcher: it writes nothing of the team's.
         c.report_lost = !super::reap::in_reaper();
@@ -95,8 +102,14 @@ impl TeamClient {
     /// lost token is told as sync's error, never as a team's withdrawal.
     pub fn for_sync() -> anyhow::Result<Self> {
         let reach = crate::team::sync_reach()?;
-        let place = crate::team::sync_place().ok_or_else(|| anyhow::anyhow!(super::sync::NOT_CONNECTED))?;
-        let mut c = TeamClient::reaching(&reach.server, &reach.token, &reach.device_id, team_wire::key_from_text(&reach.key));
+        let place =
+            crate::team::sync_place().ok_or_else(|| anyhow::anyhow!(super::sync::NOT_CONNECTED))?;
+        let mut c = TeamClient::reaching(
+            &reach.server,
+            &reach.token,
+            &reach.device_id,
+            team_wire::key_from_text(&reach.key),
+        );
         c.team_id = Some(place.team_id);
         c.for_sync = true;
         Ok(c)
@@ -105,7 +118,12 @@ impl TeamClient {
     /// A client held to `key` from the start, for a test that speaks for another device.
     #[cfg(test)]
     pub fn held_to(base: &str, token: &str, device_id: &str, key: &str) -> Self {
-        TeamClient::reaching(base, token, device_id, Some(team_wire::key_from_text(key).expect("a team key")))
+        TeamClient::reaching(
+            base,
+            token,
+            device_id,
+            Some(team_wire::key_from_text(key).expect("a team key")),
+        )
     }
 
     /// Lost access is the caller's to confirm: the live channel's own client.
@@ -121,12 +139,17 @@ impl TeamClient {
 
     /// The key the server proved itself with, as a launcher keeps it; None before the first answer.
     pub fn server_key(&self) -> Option<String> {
-        self.trust.initialized().then(|| self.link.pin.key().map(|k| team_wire::key_text(&k))).flatten()
+        self.trust
+            .initialized()
+            .then(|| self.link.pin.key().map(|k| team_wire::key_text(&k)))
+            .flatten()
     }
 
     /// Still the address and token saved for its team: not left, nor joined again.
     pub fn is_current(&self) -> bool {
-        let Some(team) = &self.team_id else { return false };
+        let Some(team) = &self.team_id else {
+            return false;
+        };
         crate::team::reach(team).is_ok_and(|r| self.made_with(&r.server, &r.token))
     }
 
@@ -150,9 +173,17 @@ impl TeamClient {
     }
 
     /// Every byte the launcher sends a team server goes through here.
-    async fn exchange(&self, method: Method, path: &str, headers: HeaderMap, body: Payload) -> Result<Response, TeamError> {
+    async fn exchange(
+        &self,
+        method: Method,
+        path: &str,
+        headers: HeaderMap,
+        body: Payload,
+    ) -> Result<Response, TeamError> {
         self.trusted().await?;
-        let mut req = hyper::Request::builder().method(method).uri(format!("{}{}", self.base, path));
+        let mut req = hyper::Request::builder()
+            .method(method)
+            .uri(format!("{}{}", self.base, path));
         let h = req.headers_mut().expect("a request being built");
         if let Ok(v) = HeaderValue::from_str(&format!("Bearer {}", self.token)) {
             h.insert(AUTHORIZATION, v);
@@ -172,18 +203,27 @@ impl TeamClient {
                 full(body)
             }
             Payload::File(body, len) => {
-                h.insert(CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
+                h.insert(
+                    CONTENT_TYPE,
+                    HeaderValue::from_static("application/octet-stream"),
+                );
                 h.insert(CONTENT_LENGTH, HeaderValue::from(len));
                 body
             }
         };
-        let req = req.body(body).map_err(|_| TeamError::Garbled(format!("{} is not a server address", self.base)))?;
+        let req = req
+            .body(body)
+            .map_err(|_| TeamError::Garbled(format!("{} is not a server address", self.base)))?;
         self.send(req).await
     }
 
     /// A request onto the link as it is, nothing added.
     async fn send(&self, req: hyper::Request<Body>) -> Result<Response, TeamError> {
-        self.link.http.request(req).await.map_err(|e| self.failed(&e, e.is_connect()))
+        self.link
+            .http
+            .request(req)
+            .await
+            .map_err(|e| self.failed(&e, e.is_connect()))
     }
 
     /// Why the link failed: the wire's own refusals as such, the rest in plain words.
@@ -197,13 +237,17 @@ impl TeamClient {
     /// Nothing carrying the token goes out before the server is known: held
     /// to a key kept, or one learned that it proved first. A failed vouch is asked again.
     async fn trusted(&self) -> Result<(), TeamError> {
-        self.trust.get_or_try_init(|| self.vouch()).await.map(|_| ())
+        self.trust
+            .get_or_try_init(|| self.vouch())
+            .await
+            .map(|_| ())
     }
 
     /// Ask the server to prove it issued this token, bound to the key it showed.
     async fn vouch(&self) -> Result<(), TeamError> {
         let challenge = team_wire::challenge();
-        let ask = serde_json::to_vec(&team_wire::Vouch::new(&self.token, &challenge)).unwrap_or_default();
+        let ask =
+            serde_json::to_vec(&team_wire::Vouch::new(&self.token, &challenge)).unwrap_or_default();
         let req = hyper::Request::builder()
             .method(Method::POST)
             .uri(format!("{}{}", self.base, team_wire::VOUCH))
@@ -215,11 +259,22 @@ impl TeamClient {
             let status = resp.status().as_u16();
             Ok::<_, TeamError>((status, self.body(resp, REFUSAL_MAX).await?))
         };
-        let (status, bytes) = tokio::time::timeout(CALL_TIMEOUT, answer).await.map_err(|_| no_answer())??;
-        let unproven = || TeamError::Garbled(format!("{} could not prove it is the server this token is from", self.base));
+        let (status, bytes) = tokio::time::timeout(CALL_TIMEOUT, answer)
+            .await
+            .map_err(|_| no_answer())??;
+        let unproven = || {
+            TeamError::Garbled(format!(
+                "{} could not prove it is the server this token is from",
+                self.base
+            ))
+        };
         if status == 404 {
             let r = Refusal::read(status, &bytes);
-            return Err(if r.code == Code::UnknownToken { TeamError::Refused(Box::new(r)) } else { unproven() });
+            return Err(if r.code == Code::UnknownToken {
+                TeamError::Refused(Box::new(r))
+            } else {
+                unproven()
+            });
         }
         let key = self.link.pin.key().ok_or_else(unproven)?;
         let vouched: team_wire::Vouched = serde_json::from_slice(&bytes).map_err(|_| unproven())?;
@@ -240,7 +295,11 @@ impl TeamClient {
             Ok(b) => Ok(b.to_bytes().to_vec()),
             Err(e) => match e.downcast_ref::<hyper::Error>() {
                 Some(h) => Err(TeamError::Offline(plain(h, false))),
-                None => Err(TeamError::Garbled(format!("{} sent more than {} KB", self.base, max >> 10))),
+                None => Err(TeamError::Garbled(format!(
+                    "{} sent more than {} KB",
+                    self.base,
+                    max >> 10
+                ))),
             },
         }
     }
@@ -259,7 +318,9 @@ impl TeamClient {
             let status = resp.status().as_u16();
             Ok::<_, TeamError>((status, self.body(resp, usize::MAX).await?))
         };
-        let (status, bytes) = tokio::time::timeout(CALL_TIMEOUT, answer).await.map_err(|_| no_answer())??;
+        let (status, bytes) = tokio::time::timeout(CALL_TIMEOUT, answer)
+            .await
+            .map_err(|_| no_answer())??;
         if (200..300).contains(&status) {
             return Ok((status, bytes));
         }
@@ -270,7 +331,12 @@ impl TeamClient {
 
     /// Any request, any answer, nothing reported: for a test that probes the server.
     #[cfg(test)]
-    pub async fn raw(&self, method: Method, path: &str, body: Option<Vec<u8>>) -> Result<(u16, Vec<u8>), TeamError> {
+    pub async fn raw(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<(u16, Vec<u8>), TeamError> {
         let body = match body {
             Some(b) => {
                 let len = b.len() as u64;
@@ -288,8 +354,13 @@ impl TeamClient {
     pub async fn wire_stream(&self) -> Result<impl AsyncRead + AsyncWrite + Unpin, TeamError> {
         use tower_service::Service;
         self.trusted().await?;
-        let uri: hyper::Uri = self.base.parse().map_err(|_| TeamError::Garbled("not an address".into()))?;
-        let mut wire = Wire { pin: self.link.pin.clone() };
+        let uri: hyper::Uri = self
+            .base
+            .parse()
+            .map_err(|_| TeamError::Garbled("not an address".into()))?;
+        let mut wire = Wire {
+            pin: self.link.pin.clone(),
+        };
         let secure = wire.call(uri).await.map_err(|e| self.failed(&e, true))?;
         Ok(secure.0.into_inner())
     }
@@ -307,8 +378,9 @@ impl TeamClient {
         body: Option<&serde_json::Value>,
     ) -> Result<T, TeamError> {
         let (_, body) = self.call(method, path, body).await?;
-        serde_json::from_slice(&body)
-            .map_err(|_| TeamError::Garbled(format!("{} did not answer as a team server", self.base)))
+        serde_json::from_slice(&body).map_err(|_| {
+            TeamError::Garbled(format!("{} did not answer as a team server", self.base))
+        })
     }
 
     /// The signed permission, as the server issues it now.
@@ -327,7 +399,11 @@ impl TeamClient {
 
     /// A session download: the JSON in front is answered, the bytes after it
     /// go to `to` a piece at a time, so nothing holds the session whole.
-    pub async fn download(&self, path: &str, to: &std::path::Path) -> Result<SessionFront, TeamError> {
+    pub async fn download(
+        &self,
+        path: &str,
+        to: &std::path::Path,
+    ) -> Result<SessionFront, TeamError> {
         let ask = self.exchange(Method::GET, path, HeaderMap::new(), Payload::None);
         let mut resp = tokio::time::timeout(CALL_TIMEOUT, ask)
             .await
@@ -336,7 +412,9 @@ impl TeamClient {
             return Err(self.refused(resp).await);
         }
         let garbled = || TeamError::Garbled(format!("{} did not send a session", self.base));
-        let local = |e: std::io::Error| TeamError::Garbled(format!("the session could not be written here: {e}"));
+        let local = |e: std::io::Error| {
+            TeamError::Garbled(format!("the session could not be written here: {e}"))
+        };
         let mut file = tokio::fs::File::create(to).await.map_err(local)?;
         let mut head: Vec<u8> = Vec::new();
         let mut front: Option<SessionFront> = None;
@@ -371,14 +449,22 @@ impl TeamClient {
         }
         let front = front.ok_or_else(garbled)?;
         if got != front.size {
-            return Err(TeamError::Offline(format!("the session broke off at {got} of {} bytes", front.size)));
+            return Err(TeamError::Offline(format!(
+                "the session broke off at {got} of {} bytes",
+                front.size
+            )));
         }
         file.sync_all().await.map_err(local)?;
         Ok(front)
     }
 
     /// A blob as it is, into `to`; refused past `max` bytes. Its size.
-    pub async fn fetch(&self, path: &str, to: &std::path::Path, max: u64) -> Result<u64, TeamError> {
+    pub async fn fetch(
+        &self,
+        path: &str,
+        to: &std::path::Path,
+        max: u64,
+    ) -> Result<u64, TeamError> {
         let ask = self.exchange(Method::GET, path, HeaderMap::new(), Payload::None);
         let mut resp = tokio::time::timeout(CALL_TIMEOUT, ask)
             .await
@@ -386,7 +472,9 @@ impl TeamClient {
         if !resp.status().is_success() {
             return Err(self.refused(resp).await);
         }
-        let local = |e: std::io::Error| TeamError::Garbled(format!("the download could not be written here: {e}"));
+        let local = |e: std::io::Error| {
+            TeamError::Garbled(format!("the download could not be written here: {e}"))
+        };
         let mut file = tokio::fs::File::create(to).await.map_err(local)?;
         let mut got = 0u64;
         loop {
@@ -397,7 +485,11 @@ impl TeamClient {
             let Some(piece) = piece else { break };
             got += piece.len() as u64;
             if got > max {
-                return Err(TeamError::Garbled(format!("{} sent more than {} MB", self.base, max >> 20)));
+                return Err(TeamError::Garbled(format!(
+                    "{} sent more than {} MB",
+                    self.base,
+                    max >> 20
+                )));
             }
             file.write_all(&piece).await.map_err(local)?;
         }
@@ -406,18 +498,32 @@ impl TeamClient {
     }
 
     /// A session upload from the file at `from`, sent as it is read.
-    pub async fn upload(&self, path: &str, from: &std::path::Path) -> Result<SessionInfo, TeamError> {
+    pub async fn upload(
+        &self,
+        path: &str,
+        from: &std::path::Path,
+    ) -> Result<SessionInfo, TeamError> {
         self.send_file(path, from).await
     }
 
     /// A PUT of the file at `from`, sent as it is read; the answer is JSON.
-    pub async fn send_file<T: DeserializeOwned>(&self, path: &str, from: &std::path::Path) -> Result<T, TeamError> {
-        let local = |e: std::io::Error| TeamError::Garbled(format!("the file could not be read here: {e}"));
+    pub async fn send_file<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        from: &std::path::Path,
+    ) -> Result<T, TeamError> {
+        let local =
+            |e: std::io::Error| TeamError::Garbled(format!("the file could not be read here: {e}"));
         let file = tokio::fs::File::open(from).await.map_err(local)?;
         let len = file.metadata().await.map_err(local)?.len();
         // Room for a slow link: a minute, and a minute more for every 8 MB.
         let allow = Duration::from_secs(60 + len / (128 * 1024));
-        let send = self.exchange(Method::PUT, path, HeaderMap::new(), Payload::File(file_body(file, len), len));
+        let send = self.exchange(
+            Method::PUT,
+            path,
+            HeaderMap::new(),
+            Payload::File(file_body(file, len), len),
+        );
         let resp = tokio::time::timeout(allow, send)
             .await
             .map_err(|_| TeamError::Offline("the upload took too long".into()))??;
@@ -425,8 +531,9 @@ impl TeamClient {
             return Err(self.refused(resp).await);
         }
         let bytes = self.body(resp, usize::MAX).await?;
-        serde_json::from_slice(&bytes)
-            .map_err(|_| TeamError::Garbled(format!("{} did not answer as a team server", self.base)))
+        serde_json::from_slice(&bytes).map_err(|_| {
+            TeamError::Garbled(format!("{} did not answer as a team server", self.base))
+        })
     }
 
     /// The live socket. The upgrade is an ordinary request through
@@ -441,7 +548,9 @@ impl TeamClient {
             h.insert("sec-websocket-key", v);
         }
         let open = async {
-            let resp = self.exchange(Method::GET, "/live", h, Payload::None).await?;
+            let resp = self
+                .exchange(Method::GET, "/live", h, Payload::None)
+                .await?;
             let status = resp.status().as_u16();
             if status != 101 {
                 let bytes = self.body(resp, REFUSAL_MAX).await.unwrap_or_default();
@@ -453,17 +562,26 @@ impl TeamClient {
                 self.report(&err);
                 return Err(err);
             }
-            let accept = resp.headers().get("sec-websocket-accept").map(|v| v.as_bytes().to_vec());
+            let accept = resp
+                .headers()
+                .get("sec-websocket-accept")
+                .map(|v| v.as_bytes().to_vec());
             if accept.as_deref() != Some(derive_accept_key(key.as_bytes()).as_bytes()) {
-                return Err(TeamError::Garbled(format!("{} answered the live channel wrongly", self.base)));
+                return Err(TeamError::Garbled(format!(
+                    "{} answered the live channel wrongly",
+                    self.base
+                )));
             }
-            let raw = hyper::upgrade::on(resp).await.map_err(|e| TeamError::Offline(plain(&e, false)))?;
+            let raw = hyper::upgrade::on(resp)
+                .await
+                .map_err(|e| TeamError::Offline(plain(&e, false)))?;
             let cfg = WebSocketConfig {
                 max_message_size: Some(LIVE_MAX_IN),
                 max_frame_size: Some(LIVE_MAX_IN),
                 ..Default::default()
             };
-            let ws = WebSocketStream::from_raw_socket(TokioIo::new(raw), Role::Client, Some(cfg)).await;
+            let ws =
+                WebSocketStream::from_raw_socket(TokioIo::new(raw), Role::Client, Some(cfg)).await;
             Ok(LiveSocket { ws })
         };
         tokio::time::timeout(LIVE_OPEN_TIMEOUT, open)
@@ -498,7 +616,9 @@ fn empty() -> Body {
 }
 
 fn full(bytes: Vec<u8>) -> Body {
-    Full::new(Bytes::from(bytes)).map_err(|never| match never {}).boxed_unsync()
+    Full::new(Bytes::from(bytes))
+        .map_err(|never| match never {})
+        .boxed_unsync()
 }
 
 /// The next piece of an answer's body; None at its end.
@@ -513,7 +633,12 @@ async fn next_piece(body: &mut Incoming) -> Result<Option<Bytes>, hyper::Error> 
 
 /// A file as a request body, read a piece at a time as it goes out.
 fn file_body(file: tokio::fs::File, len: u64) -> Body {
-    FileBody { file, left: len, buf: vec![0; 256 * 1024].into_boxed_slice() }.boxed_unsync()
+    FileBody {
+        file,
+        left: len,
+        buf: vec![0; 256 * 1024].into_boxed_slice(),
+    }
+    .boxed_unsync()
 }
 
 struct FileBody {
@@ -535,9 +660,16 @@ impl http_body::Body for FileBody {
         if this.left == 0 {
             return Poll::Ready(None);
         }
-        let want = this.buf.len().min(usize::try_from(this.left).unwrap_or(usize::MAX));
+        let want = this
+            .buf
+            .len()
+            .min(usize::try_from(this.left).unwrap_or(usize::MAX));
         let mut rb = tokio::io::ReadBuf::new(&mut this.buf[..want]);
-        if let Err(e) = std::task::ready!(tokio::io::AsyncRead::poll_read(std::pin::Pin::new(&mut this.file), cx, &mut rb)) {
+        if let Err(e) = std::task::ready!(tokio::io::AsyncRead::poll_read(
+            std::pin::Pin::new(&mut this.file),
+            cx,
+            &mut rb
+        )) {
             return Poll::Ready(Some(Err(e)));
         }
         let n = rb.filled().len();
@@ -545,7 +677,9 @@ impl http_body::Body for FileBody {
             return Poll::Ready(Some(Err(std::io::ErrorKind::UnexpectedEof.into())));
         }
         this.left -= n as u64;
-        Poll::Ready(Some(Ok(http_body::Frame::data(Bytes::copy_from_slice(rb.filled())))))
+        Poll::Ready(Some(Ok(http_body::Frame::data(Bytes::copy_from_slice(
+            rb.filled(),
+        )))))
     }
 
     fn is_end_stream(&self) -> bool {
@@ -599,7 +733,11 @@ fn links() -> &'static Mutex<HashMap<(String, team_wire::Key), Link>> {
 /// meant for the team goes to another address. No key yet: a link of its own.
 fn link(base: &str, key: Option<team_wire::Key>) -> Link {
     if let Some(k) = key {
-        if let Some(l) = links().lock().unwrap_or_else(|e| e.into_inner()).get(&(base.to_owned(), k)) {
+        if let Some(l) = links()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&(base.to_owned(), k))
+        {
             return l.clone();
         }
     }
@@ -617,7 +755,11 @@ fn link(base: &str, key: Option<team_wire::Key>) -> Link {
 
 /// A link whose key is known now, kept for the clients after this one.
 fn remember(base: &str, key: team_wire::Key, l: Link) {
-    links().lock().unwrap_or_else(|e| e.into_inner()).entry((base.to_owned(), key)).or_insert(l);
+    links()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry((base.to_owned(), key))
+        .or_insert(l);
 }
 
 /// Opens a connection the way [`team_wire`] says: connect, ask to switch, TLS.
@@ -629,9 +771,13 @@ struct Wire {
 impl tower_service::Service<hyper::Uri> for Wire {
     type Response = Secure;
     type Error = std::io::Error;
-    type Future = std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<Secure>> + Send>>;
+    type Future =
+        std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<Secure>> + Send>>;
 
-    fn poll_ready(&mut self, _: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_ready(
+        &mut self,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         std::task::Poll::Ready(Ok(()))
     }
 
@@ -646,28 +792,50 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Send> Io for T {}
 async fn open(uri: hyper::Uri, pin: Arc<team_wire::Pin>) -> std::io::Result<Secure> {
     use std::io::{Error, ErrorKind};
     let https = uri.scheme_str() == Some("https");
-    let authority = uri.authority().ok_or_else(|| Error::new(ErrorKind::InvalidInput, "no host"))?.to_string();
-    let host = uri.host().unwrap_or_default().trim_start_matches('[').trim_end_matches(']').to_owned();
+    let authority = uri
+        .authority()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "no host"))?
+        .to_string();
+    let host = uri
+        .host()
+        .unwrap_or_default()
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_owned();
     let port = uri.port_u16().unwrap_or(if https { 443 } else { 80 });
-    let tcp = tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::TcpStream::connect((host.as_str(), port)))
-        .await
-        .map_err(|_| Error::from(ErrorKind::TimedOut))??;
+    let tcp = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        tokio::net::TcpStream::connect((host.as_str(), port)),
+    )
+    .await
+    .map_err(|_| Error::from(ErrorKind::TimedOut))??;
     let _ = tcp.set_nodelay(true);
-    let name = rustls::pki_types::ServerName::try_from(host.clone())
-        .unwrap_or_else(|_| rustls::pki_types::ServerName::try_from("team.invalid").expect("a name"));
+    let name = rustls::pki_types::ServerName::try_from(host.clone()).unwrap_or_else(|_| {
+        rustls::pki_types::ServerName::try_from("team.invalid").expect("a name")
+    });
     let switched = async {
         // https is somebody's proxy in front of the server: through its TLS first.
         let mut io: Box<dyn Io> = if https {
-            let outer = tokio_rustls::TlsConnector::from(outer_tls()).connect(name.clone(), tcp).await?;
+            let outer = tokio_rustls::TlsConnector::from(outer_tls())
+                .connect(name.clone(), tcp)
+                .await?;
             Box::new(outer)
         } else {
             Box::new(tcp)
         };
         switch(&mut io, &authority).await?;
         let tls = tokio_rustls::TlsConnector::from(team_wire::client_config(pin.clone()));
-        tls.connect(name, io).await.map_err(|e| if pin.saw_another() { Error::other(WireFault::OtherKey) } else { e })
+        tls.connect(name, io).await.map_err(|e| {
+            if pin.saw_another() {
+                Error::other(WireFault::OtherKey)
+            } else {
+                e
+            }
+        })
     };
-    let tls = tokio::time::timeout(SWITCH_TIMEOUT, switched).await.map_err(|_| Error::from(ErrorKind::TimedOut))??;
+    let tls = tokio::time::timeout(SWITCH_TIMEOUT, switched)
+        .await
+        .map_err(|_| Error::from(ErrorKind::TimedOut))??;
     Ok(Secure(TokioIo::new(tls)))
 }
 
@@ -693,9 +861,17 @@ async fn switch(io: &mut Box<dyn Io>, authority: &str) -> std::io::Result<()> {
     let mut headers = [httparse::EMPTY_HEADER; 32];
     let mut res = httparse::Response::new(&mut headers);
     let _ = res.parse(&head);
-    let upgrade = res.headers.iter().find(|h| h.name.eq_ignore_ascii_case("upgrade")).map(|h| h.value);
+    let upgrade = res
+        .headers
+        .iter()
+        .find(|h| h.name.eq_ignore_ascii_case("upgrade"))
+        .map(|h| h.value);
     match res.code {
-        Some(101) if upgrade.is_some_and(|v| v.eq_ignore_ascii_case(team_wire::UPGRADE.as_bytes())) => Ok(()),
+        Some(101)
+            if upgrade.is_some_and(|v| v.eq_ignore_ascii_case(team_wire::UPGRADE.as_bytes())) =>
+        {
+            Ok(())
+        }
         Some(426) => Err(std::io::Error::other(WireFault::Newer)),
         _ => Err(std::io::Error::other(WireFault::NoSwitch)),
     }
@@ -706,12 +882,16 @@ fn outer_tls() -> Arc<rustls::ClientConfig> {
     static OUTER: OnceLock<Arc<rustls::ClientConfig>> = OnceLock::new();
     OUTER
         .get_or_init(|| {
-            let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
-            let mut cfg = rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-                .with_safe_default_protocol_versions()
-                .expect("ring speaks TLS")
-                .with_root_certificates(roots)
-                .with_no_client_auth();
+            let roots = rustls::RootCertStore {
+                roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+            };
+            let mut cfg = rustls::ClientConfig::builder_with_provider(Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .expect("ring speaks TLS")
+            .with_root_certificates(roots)
+            .with_no_client_auth();
             cfg.alpn_protocols = vec![b"http/1.1".to_vec()];
             Arc::new(cfg)
         })
@@ -746,11 +926,17 @@ impl hyper::rt::Write for Secure {
         std::pin::Pin::new(&mut self.get_mut().0).poll_write(cx, buf)
     }
 
-    fn poll_flush(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         std::pin::Pin::new(&mut self.get_mut().0).poll_flush(cx)
     }
 
-    fn poll_shutdown(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         std::pin::Pin::new(&mut self.get_mut().0).poll_shutdown(cx)
     }
 }
@@ -791,7 +977,9 @@ fn wire_fault<'a>(e: &'a (dyn std::error::Error + 'static)) -> Option<&'a WireFa
         if let Some(w) = inner.downcast_ref::<WireFault>() {
             return Some(w);
         }
-        let held = inner.downcast_ref::<std::io::Error>().and_then(|io| io.get_ref());
+        let held = inner
+            .downcast_ref::<std::io::Error>()
+            .and_then(|io| io.get_ref());
         if let Some(w) = held.and_then(|h| h.downcast_ref::<WireFault>()) {
             return Some(w);
         }
@@ -1005,7 +1193,10 @@ impl std::fmt::Display for TeamError {
                 } else {
                     f.write_str(&r.message)?;
                 }
-                let now = r.current_revision.or(r.current_session_rev).or(r.current_package_rev);
+                let now = r
+                    .current_revision
+                    .or(r.current_session_rev)
+                    .or(r.current_package_rev);
                 match now {
                     Some(n) => write!(f, " (now at revision {n})"),
                     None => Ok(()),
@@ -1080,27 +1271,45 @@ mod tests {
         drop(closed);
         let c = TeamClient::new(&at, "t", "d").unwrap();
         let e = c.call(Method::GET, "/health", None).await.unwrap_err();
-        assert_eq!(e.to_string(), "the team server did not answer: nothing is listening at its address");
+        assert_eq!(
+            e.to_string(),
+            "the team server did not answer: nothing is listening at its address"
+        );
     }
 
     #[test]
     fn a_refusal_reads_the_servers_code_and_what_is_in_the_way() {
-        let r = Refusal::read(409, br#"{"error":"changed since you read it","code":"stale","current_revision":7}"#);
-        assert_eq!((r.status, &r.code, r.current_revision), (409, &Code::Stale, Some(7)));
+        let r = Refusal::read(
+            409,
+            br#"{"error":"changed since you read it","code":"stale","current_revision":7}"#,
+        );
+        assert_eq!(
+            (r.status, &r.code, r.current_revision),
+            (409, &Code::Stale, Some(7))
+        );
         let e = TeamError::Refused(Box::new(r));
-        assert_eq!(e.to_string(), "changed since you read it (now at revision 7)");
+        assert_eq!(
+            e.to_string(),
+            "changed since you read it (now at revision 7)"
+        );
         assert!(!e.access_lost());
 
         let r = Refusal::read(
             409,
             br#"{"error":"open on another device","code":"leased","lease":{"member_id":"m","device_id":"d","device_name":"Vera's Mac","acquired_at":1,"expires_at":2}}"#,
         );
-        assert_eq!(TeamError::Refused(Box::new(r)).to_string(), "open on Vera's Mac");
+        assert_eq!(
+            TeamError::Refused(Box::new(r)).to_string(),
+            "open on Vera's Mac"
+        );
 
         // A proxy's page in place of the server's JSON keeps only the status.
         let r = Refusal::read(502, b"<html>Bad Gateway</html>");
         assert_eq!(r.code, Code::Other(String::new()));
-        assert_eq!(TeamError::Refused(Box::new(r)).to_string(), "the team server answered 502");
+        assert_eq!(
+            TeamError::Refused(Box::new(r)).to_string(),
+            "the team server answered 502"
+        );
     }
 
     #[test]
@@ -1149,14 +1358,28 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream};
 
     fn some_key() -> (Arc<rustls::ServerConfig>, team_wire::Key) {
-        let pkcs8 = ring::signature::Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new()).unwrap();
+        let pkcs8 =
+            ring::signature::Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new())
+                .unwrap();
         team_wire::server_config(pkcs8.as_ref()).unwrap()
     }
 
     fn every_right() -> Vec<Grant> {
-        [Action::See, Action::Start, Action::Edit, Action::Create, Action::Delete, Action::Cookies, Action::TakeOut]
-            .map(|action| Grant { scope: Scope::Team, action, allow: true })
-            .to_vec()
+        [
+            Action::See,
+            Action::Start,
+            Action::Edit,
+            Action::Create,
+            Action::Delete,
+            Action::Cookies,
+            Action::TakeOut,
+        ]
+        .map(|action| Grant {
+            scope: Scope::Team,
+            action,
+            allow: true,
+        })
+        .to_vec()
     }
 
     fn holds(seen: &[u8], what: &[u8]) -> bool {
@@ -1177,15 +1400,24 @@ mod tests {
     }
 
     /// The front of a team server by hand: the switch, then TLS with `tls`.
-    async fn accept_wire(mut tcp: TcpStream, tls: Arc<rustls::ServerConfig>) -> std::io::Result<tokio_rustls::server::TlsStream<TcpStream>> {
+    async fn accept_wire(
+        mut tcp: TcpStream,
+        tls: Arc<rustls::ServerConfig>,
+    ) -> std::io::Result<tokio_rustls::server::TlsStream<TcpStream>> {
         head_of(&mut tcp).await?;
-        let ok = format!("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: {}\r\n\r\n", team_wire::UPGRADE);
+        let ok = format!(
+            "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: {}\r\n\r\n",
+            team_wire::UPGRADE
+        );
         tcp.write_all(ok.as_bytes()).await?;
         tokio_rustls::TlsAcceptor::from(tls).accept(tcp).await
     }
 
     /// A server that switches and shakes hands with `tls`, then answers each request's head with `answer`.
-    async fn fake_server(tls: Arc<rustls::ServerConfig>, answer: impl Fn(&[u8]) -> String + Send + Sync + 'static) -> String {
+    async fn fake_server(
+        tls: Arc<rustls::ServerConfig>,
+        answer: impl Fn(&[u8]) -> String + Send + Sync + 'static,
+    ) -> String {
         let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let at = format!("http://{}", l.local_addr().unwrap());
         let answer = Arc::new(answer);
@@ -1193,7 +1425,9 @@ mod tests {
             while let Ok((tcp, _)) = l.accept().await {
                 let (tls, answer) = (tls.clone(), answer.clone());
                 tokio::spawn(async move {
-                    let Ok(mut io) = accept_wire(tcp, tls).await else { return };
+                    let Ok(mut io) = accept_wire(tcp, tls).await else {
+                        return;
+                    };
                     if let Ok(head) = head_of(&mut io).await {
                         let _ = io.write_all(answer(&head).as_bytes()).await;
                         let _ = io.shutdown().await;
@@ -1205,7 +1439,11 @@ mod tests {
     }
 
     /// Carry bytes one way, keeping a copy of each.
-    async fn carry(mut from: impl AsyncRead + Unpin, mut to: impl AsyncWrite + Unpin, seen: Arc<Mutex<Vec<u8>>>) {
+    async fn carry(
+        mut from: impl AsyncRead + Unpin,
+        mut to: impl AsyncWrite + Unpin,
+        seen: Arc<Mutex<Vec<u8>>>,
+    ) {
         let mut buf = vec![0u8; 64 * 1024];
         while let Ok(n) = from.read(&mut buf).await {
             if n == 0 || to.write_all(&buf[..n]).await.is_err() {
@@ -1225,7 +1463,9 @@ mod tests {
         let keep = seen.clone();
         tokio::spawn(async move {
             while let Ok((c, _)) = l.accept().await {
-                let Ok(s) = TcpStream::connect(to).await else { continue };
+                let Ok(s) = TcpStream::connect(to).await else {
+                    continue;
+                };
                 let ((cr, cw), (sr, sw)) = (c.into_split(), s.into_split());
                 tokio::spawn(carry(cr, sw, keep.clone()));
                 tokio::spawn(carry(sr, cw, keep.clone()));
@@ -1247,7 +1487,10 @@ mod tests {
 
         let data = base64::engine::general_purpose::STANDARD.encode(b"profile-data-nobody-reads");
         let body = serde_json::json!({ "name": "Secret Shop Name", "folder": "", "data": data });
-        admin.call(Method::PUT, "/profiles/p1", Some(&body)).await.unwrap();
+        admin
+            .call(Method::PUT, "/profiles/p1", Some(&body))
+            .await
+            .unwrap();
         let heard = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 if let Heard::Event(LiveEvent::TeamChanged { what }) = live.hear().await {
@@ -1255,21 +1498,45 @@ mod tests {
                 }
             }
         });
-        assert_eq!(heard.await.unwrap(), "profile", "the live channel works inside");
+        assert_eq!(
+            heard.await.unwrap(),
+            "profile",
+            "the live channel works inside"
+        );
 
-        member.call(Method::POST, "/profiles/p1/lease", None).await.unwrap();
+        member
+            .call(Method::POST, "/profiles/p1/lease", None)
+            .await
+            .unwrap();
         let session = root.path.join("session.bin");
         std::fs::write(&session, b"session-bytes-nobody-reads/".repeat(300_000)).unwrap();
-        let rev = member.upload("/profiles/p1/session?base_session_rev=0", &session).await.unwrap().session_rev;
+        let rev = member
+            .upload("/profiles/p1/session?base_session_rev=0", &session)
+            .await
+            .unwrap()
+            .session_rev;
         let back = root.path.join("back.bin");
-        let front = member.download("/profiles/p1/session", &back).await.unwrap();
-        assert_eq!((front.session_rev, std::fs::read(&back).unwrap()), (rev, std::fs::read(&session).unwrap()));
+        let front = member
+            .download("/profiles/p1/session", &back)
+            .await
+            .unwrap();
+        assert_eq!(
+            (front.session_rev, std::fs::read(&back).unwrap()),
+            (rev, std::fs::read(&session).unwrap())
+        );
         let rows: serde_json::Value = member.get("/profiles").await.unwrap();
         assert!(rows.to_string().contains("Secret Shop Name"));
 
         let seen = seen.lock().unwrap().clone();
-        assert!(seen.len() > 2 * 8_000_000, "the session went through the relay both ways: {} bytes", seen.len());
-        assert!(holds(&seen, format!("Upgrade: {}", team_wire::UPGRADE).as_bytes()), "the switch is what is said in the clear");
+        assert!(
+            seen.len() > 2 * 8_000_000,
+            "the session went through the relay both ways: {} bytes",
+            seen.len()
+        );
+        assert!(
+            holds(&seen, format!("Upgrade: {}", team_wire::UPGRADE).as_bytes()),
+            "the switch is what is said in the clear"
+        );
         let name = crate::team::device_name();
         let secrets = [
             vera.token.as_str(),
@@ -1288,7 +1555,10 @@ mod tests {
             srv.server.team_id(),
         ];
         for secret in secrets.iter().filter(|s| s.len() > 3) {
-            assert!(!holds(&seen, secret.as_bytes()), "seen between the launcher and the server: {secret}");
+            assert!(
+                !holds(&seen, secret.as_bytes()),
+                "seen between the launcher and the server: {secret}"
+            );
         }
     }
 
@@ -1320,8 +1590,15 @@ mod tests {
         });
         let c = TeamClient::held_to(&at, &srv.admin_token, "d", &srv.server.public_key());
         let e = c.call(Method::GET, "/me", None).await.unwrap_err();
-        assert!(e.to_string().starts_with(&format!("{at} is not this team's server")), "{e}");
-        assert!(got.lock().unwrap().is_empty(), "nothing reached it inside the TLS");
+        assert!(
+            e.to_string()
+                .starts_with(&format!("{at} is not this team's server")),
+            "{e}"
+        );
+        assert!(
+            got.lock().unwrap().is_empty(),
+            "nothing reached it inside the TLS"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1340,29 +1617,45 @@ mod tests {
             while let Ok((tcp, _)) = l.accept().await {
                 let (tls, keep) = (tls.clone(), keep.clone());
                 tokio::spawn(async move {
-                    let Ok(inside) = accept_wire(tcp, tls).await else { return };
+                    let Ok(inside) = accept_wire(tcp, tls).await else {
+                        return;
+                    };
                     let mut up: Box<dyn Io> = Box::new(TcpStream::connect(real).await.unwrap());
                     switch(&mut up, &real.to_string()).await.unwrap();
                     let name = rustls::pki_types::ServerName::try_from("127.0.0.1").unwrap();
-                    let up = tokio_rustls::TlsConnector::from(team_wire::client_config(team_wire::Pin::learn()))
-                        .connect(name, up)
-                        .await
-                        .unwrap();
+                    let up = tokio_rustls::TlsConnector::from(team_wire::client_config(
+                        team_wire::Pin::learn(),
+                    ))
+                    .connect(name, up)
+                    .await
+                    .unwrap();
                     let ((ir, iw), (ur, uw)) = (tokio::io::split(inside), tokio::io::split(up));
-                    tokio::join!(carry(ir, uw, keep), carry(ur, iw, Arc::new(Mutex::new(Vec::new()))));
+                    tokio::join!(
+                        carry(ir, uw, keep),
+                        carry(ur, iw, Arc::new(Mutex::new(Vec::new())))
+                    );
                 });
             }
         });
         let c = TeamClient::new(&at, &vera.token, "vera-laptop").unwrap();
         let e = c.call(Method::GET, "/me", None).await.unwrap_err();
-        assert_eq!(e.to_string(), format!("{at} could not prove it is the server this token is from"));
+        assert_eq!(
+            e.to_string(),
+            format!("{at} could not prove it is the server this token is from")
+        );
         assert!(c.server_key().is_none());
         // Asked again, still no: the key it showed first is the one it is held to.
         assert!(c.call(Method::GET, "/me", None).await.is_err());
 
         let heard = String::from_utf8_lossy(&heard.lock().unwrap()).into_owned();
-        assert!(heard.contains(team_wire::VOUCH), "the vouch went through it: {heard}");
-        assert!(!heard.contains(&vera.token) && !heard.contains("Bearer") && !heard.contains("/me"), "{heard}");
+        assert!(
+            heard.contains(team_wire::VOUCH),
+            "the vouch went through it: {heard}"
+        );
+        assert!(
+            !heard.contains(&vera.token) && !heard.contains("Bearer") && !heard.contains("/me"),
+            "{heard}"
+        );
         assert!(!heard.contains("vera-laptop"), "{heard}");
     }
 
@@ -1372,10 +1665,22 @@ mod tests {
         let old = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let at = format!("http://{}", old.local_addr().unwrap());
         let app = axum::Router::new()
-            .route("/health", axum::routing::get(|| async { r#"{"status":"ok","team":"t"}"# }))
-            .fallback(|| async { (axum::http::StatusCode::NOT_FOUND, r#"{"error":"no such thing","code":"not_found"}"#) });
+            .route(
+                "/health",
+                axum::routing::get(|| async { r#"{"status":"ok","team":"t"}"# }),
+            )
+            .fallback(|| async {
+                (
+                    axum::http::StatusCode::NOT_FOUND,
+                    r#"{"error":"no such thing","code":"not_found"}"#,
+                )
+            });
         tokio::spawn(async move { axum::serve(old, app).await.unwrap() });
-        let e = TeamClient::new(&at, "stm_x", "d").unwrap().call(Method::GET, "/health", None).await.unwrap_err();
+        let e = TeamClient::new(&at, "stm_x", "d")
+            .unwrap()
+            .call(Method::GET, "/health", None)
+            .await
+            .unwrap_err();
         assert!(matches!(e, TeamError::Garbled(_)), "{e:?}");
         assert_eq!(e.to_string(), format!("{at} does not answer as an encrypted team server: it is not one, or it is older than this launcher"));
 
@@ -1388,8 +1693,15 @@ mod tests {
                 let _ = tcp.write_all(b"HTTP/1.1 426 Upgrade Required\r\nUpgrade: shardx-tls/2\r\nContent-Length: 0\r\n\r\n").await;
             }
         });
-        let e = TeamClient::new(&at, "stm_x", "d").unwrap().call(Method::GET, "/health", None).await.unwrap_err();
-        assert_eq!(e.to_string(), format!("{at} is a newer team server than this launcher: update ShardBrowser"));
+        let e = TeamClient::new(&at, "stm_x", "d")
+            .unwrap()
+            .call(Method::GET, "/health", None)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            format!("{at} is a newer team server than this launcher: update ShardBrowser")
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1398,8 +1710,14 @@ mod tests {
         let srv = TestServer::start(root.path.join("server")).await.unwrap();
         let c = TeamClient::new(&srv.url, &format!("stm_{}", "Q".repeat(43)), "d").unwrap();
         let e = c.call(Method::GET, "/me", None).await.unwrap_err();
-        assert_eq!((e.status(), e.code()), (Some(404), Some(&Code::UnknownToken)));
-        assert!(!e.access_lost(), "said before the server is trusted: never a withdrawal");
+        assert_eq!(
+            (e.status(), e.code()),
+            (Some(404), Some(&Code::UnknownToken))
+        );
+        assert!(
+            !e.access_lost(),
+            "said before the server is trusted: never a withdrawal"
+        );
     }
 
     /// A session of 232 MB up and down, over the wire and over plain http as before, same server.
@@ -1418,10 +1736,22 @@ mod tests {
         tokio::spawn(async move { axum::serve(plain, router).await.unwrap() });
 
         let admin = TeamClient::new(&srv.url, &srv.admin_token, "speed").unwrap();
-        admin.call(Method::PUT, "/profiles/p1", Some(&serde_json::json!({ "name": "p1", "folder": "", "data": "" }))).await.unwrap();
-        admin.call(Method::POST, "/profiles/p1/lease", None).await.unwrap();
+        admin
+            .call(
+                Method::PUT,
+                "/profiles/p1",
+                Some(&serde_json::json!({ "name": "p1", "folder": "", "data": "" })),
+            )
+            .await
+            .unwrap();
+        admin
+            .call(Method::POST, "/profiles/p1/lease", None)
+            .await
+            .unwrap();
         let session = root.path.join("session.bin");
-        let piece: Vec<u8> = (0..1u32 << 20).map(|i| (i.wrapping_mul(2654435761) >> 13) as u8).collect();
+        let piece: Vec<u8> = (0..1u32 << 20)
+            .map(|i| (i.wrapping_mul(2654435761) >> 13) as u8)
+            .collect();
         std::fs::write(&session, piece.repeat(232)).unwrap();
         let back = root.path.join("back.bin");
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
@@ -1429,7 +1759,14 @@ mod tests {
         let mut rows = Vec::new();
         for round in 0..2 {
             let t = Instant::now();
-            rev = admin.upload(&format!("/profiles/p1/session?base_session_rev={rev}"), &session).await.unwrap().session_rev;
+            rev = admin
+                .upload(
+                    &format!("/profiles/p1/session?base_session_rev={rev}"),
+                    &session,
+                )
+                .await
+                .unwrap()
+                .session_rev;
             let up = t.elapsed();
             let t = Instant::now();
             admin.download("/profiles/p1/session", &back).await.unwrap();
@@ -1440,9 +1777,15 @@ mod tests {
             let t = Instant::now();
             let file = tokio::fs::File::open(&session).await.unwrap();
             let len = file.metadata().await.unwrap().len();
-            let body = reqwest::Body::wrap(FileBody { file, left: len, buf: vec![0; 256 * 1024].into_boxed_slice() });
+            let body = reqwest::Body::wrap(FileBody {
+                file,
+                left: len,
+                buf: vec![0; 256 * 1024].into_boxed_slice(),
+            });
             let r = http
-                .put(format!("{plain_at}/profiles/p1/session?base_session_rev={rev}"))
+                .put(format!(
+                    "{plain_at}/profiles/p1/session?base_session_rev={rev}"
+                ))
                 .bearer_auth(&srv.admin_token)
                 .header("X-Device-Id", "speed")
                 .header(CONTENT_LENGTH, len)
@@ -1470,23 +1813,37 @@ mod tests {
             }
             out.sync_all().await.unwrap();
             let down = t.elapsed();
-            assert!(status.is_success() && got > 232 << 20, "the plain download: {status} {got} bytes");
+            assert!(
+                status.is_success() && got > 232 << 20,
+                "the plain download: {status} {got} bytes"
+            );
             rows.push(("plain", round, up, down));
         }
         for (how, round, up, down) in &rows {
-            println!("{how:>5} round {round}: up {up:?}, down {down:?}, both {:?}", *up + *down);
+            println!(
+                "{how:>5} round {round}: up {up:?}, down {down:?}, both {:?}",
+                *up + *down
+            );
         }
-        let both = |how: &str| rows.iter().filter(|r| r.0 == how && r.1 == 1).map(|r| r.2 + r.3).sum::<Duration>();
+        let both = |how: &str| {
+            rows.iter()
+                .filter(|r| r.0 == how && r.1 == 1)
+                .map(|r| r.2 + r.3)
+                .sum::<Duration>()
+        };
         let (wire, plain) = (both("wire"), both("plain"));
         if cfg!(debug_assertions) {
             println!("a debug build: the numbers above are the shape, not the cost; build with --release to judge it");
             return;
         }
-        assert!(wire <= plain * 2 + Duration::from_secs(2), "the wire took {wire:?} against {plain:?} in the clear");
+        assert!(
+            wire <= plain * 2 + Duration::from_secs(2),
+            "the wire took {wire:?} against {plain:?} in the clear"
+        );
     }
 
     /// Files that talk HTTP or open sockets for something other than a team.
-    const OTHER_TRAFFIC: [(&str, &str); 21] = [
+    const OTHER_TRAFFIC: [(&str, &str); 22] = [
         ("process/close.rs", "Stop's Browser.close on a launched browser's own devtools"),
         ("live_e2e.rs", "the live end-to-end harness, run by hand: a test site, a proxy, CDP, the server raw"),
         ("runtime.rs", "engine and launcher downloads"),
@@ -1496,6 +1853,7 @@ mod tests {
         ("gpu_caps.rs", "the engine's own devtools on localhost"),
         ("cdp.rs", "CDP to the launched browsers"),
         ("requests.rs", "the automation runner's own requests"),
+        ("sequential.rs", "test fixture sends an HTTP report to its own loopback listener"),
         ("space/local/proxy.rs", "proxy checks"),
         ("space/local/extensions.rs", "extension downloads"),
         ("proxy_chain/connector.rs", "TCP to the configured first hop or explicitly permitted fixed assigned proxy"),
@@ -1510,7 +1868,14 @@ mod tests {
         ("proxy_chain/live_tests.rs", "explicit opt-in isolated Engine acceptance checks its own loopback listener cleanup"),
     ];
 
-    const TALKS: [&str; 6] = ["reqwest", "tungstenite", "wreq", "TcpStream::connect", "hyper", "rustls"];
+    const TALKS: [&str; 6] = [
+        "reqwest",
+        "tungstenite",
+        "wreq",
+        "TcpStream::connect",
+        "hyper",
+        "rustls",
+    ];
 
     fn sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         for e in std::fs::read_dir(dir).unwrap() {
@@ -1539,7 +1904,11 @@ mod tests {
         let mut bad = Vec::new();
         let mut unused: Vec<&str> = OTHER_TRAFFIC.iter().map(|(f, _)| *f).collect();
         for path in &files {
-            let rel = path.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/");
+            let rel = path
+                .strip_prefix(&src)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
             if rel == "space/client.rs" {
                 continue;
             }
@@ -1554,20 +1923,33 @@ mod tests {
                 }
                 // The team token, and sync's, are handed out only to the client.
                 let hands_out = line.contains("team::reach(") || line.contains("sync_reach(");
-                if (hands_out && rel != "team.rs") || (rel != "team.rs" && line.contains("fn reach(")) {
+                if (hands_out && rel != "team.rs")
+                    || (rel != "team.rs" && line.contains("fn reach("))
+                {
                     bad.push(format!("{rel}:{}: {}", n + 1, line.trim()));
                 }
             }
         }
-        assert!(bad.is_empty(), "talking to a server outside space/client.rs:\n{}", bad.join("\n"));
-        assert!(unused.is_empty(), "no longer talks HTTP, take it off the list: {unused:?}");
+        assert!(
+            bad.is_empty(),
+            "talking to a server outside space/client.rs:\n{}",
+            bad.join("\n")
+        );
+        assert!(
+            unused.is_empty(),
+            "no longer talks HTTP, take it off the list: {unused:?}"
+        );
         // Inside it, one pool and one way to open a connection: the switch to TLS.
         let ours = std::fs::read_to_string(src.join("space/client.rs")).unwrap();
         let ours = ours.replace("\r\n", "\n");
         let ours = ours.split("#[cfg(test)]\nmod tests").next().unwrap();
-        let builders = code(ours).filter(|(_, l)| l.contains("Client::builder(")).count();
+        let builders = code(ours)
+            .filter(|(_, l)| l.contains("Client::builder("))
+            .count();
         assert_eq!(builders, 1, "one place makes team connections: link()");
-        let opens = code(ours).filter(|(_, l)| l.contains("TcpStream::connect")).count();
+        let opens = code(ours)
+            .filter(|(_, l)| l.contains("TcpStream::connect"))
+            .count();
         assert_eq!(opens, 1, "one place opens them: open()");
     }
 
@@ -1579,10 +1961,23 @@ mod tests {
         assert_eq!(e, LiveEvent::Revoked);
         let e: LiveEvent = serde_json::from_str(r#"{"kind":"token-replaced"}"#).unwrap();
         assert_eq!(e, LiveEvent::TokenReplaced);
-        let e: LiveEvent = serde_json::from_str(r#"{"kind":"team-changed","what":"profile","id":"p1"}"#).unwrap();
-        assert_eq!(e, LiveEvent::TeamChanged { what: "profile".into() });
-        let e: LiveEvent = serde_json::from_str(r#"{"kind":"personal-changed","what":"profile","id":"p1"}"#).unwrap();
-        assert_eq!(e, LiveEvent::PersonalChanged { what: "profile".into() });
+        let e: LiveEvent =
+            serde_json::from_str(r#"{"kind":"team-changed","what":"profile","id":"p1"}"#).unwrap();
+        assert_eq!(
+            e,
+            LiveEvent::TeamChanged {
+                what: "profile".into()
+            }
+        );
+        let e: LiveEvent =
+            serde_json::from_str(r#"{"kind":"personal-changed","what":"profile","id":"p1"}"#)
+                .unwrap();
+        assert_eq!(
+            e,
+            LiveEvent::PersonalChanged {
+                what: "profile".into()
+            }
+        );
         let e: LiveEvent = serde_json::from_str(r#"{"kind":"something-new","what":"x"}"#).unwrap();
         assert_eq!(e, LiveEvent::Other);
     }

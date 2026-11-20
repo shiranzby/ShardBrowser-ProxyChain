@@ -17,7 +17,12 @@ struct Fake {
 
 impl World for Fake {
     fn running_with(&self, lib_id: &str) -> Vec<String> {
-        self.running.lock().unwrap().get(lib_id).cloned().unwrap_or_default()
+        self.running
+            .lock()
+            .unwrap()
+            .get(lib_id)
+            .cloned()
+            .unwrap_or_default()
     }
     fn untracked(&self) -> Vec<String> {
         self.untracked.lock().unwrap().clone()
@@ -65,14 +70,38 @@ fn lib() -> Lib {
 
 /// A 1.0 extension `id` with 1.1 staged and approved.
 fn ready(l: &Lib, id: &str) {
-    write_tree(&l.lib.join(id), &[("manifest.json", manifest("1.0", json!({})).as_bytes()), ("a.js", b"1")]);
+    write_tree(
+        &l.lib.join(id),
+        &[
+            ("manifest.json", manifest("1.0", json!({})).as_bytes()),
+            ("a.js", b"1"),
+        ],
+    );
     let pkg = l.tmp.0.join(format!("{id}.zip"));
-    std::fs::write(&pkg, zip(&[("manifest.json", manifest("1.1", json!({})).as_bytes()), ("a.js", b"2")])).unwrap();
-    assert!(swap::stage_file(&l.lib, id, &pkg, &Order::sync(1, None), &Ops::quick(), &quiet()).unwrap().ready());
+    std::fs::write(
+        &pkg,
+        zip(&[
+            ("manifest.json", manifest("1.1", json!({})).as_bytes()),
+            ("a.js", b"2"),
+        ]),
+    )
+    .unwrap();
+    assert!(swap::stage_file(
+        &l.lib,
+        id,
+        &pkg,
+        &Order::sync(1, None),
+        &Ops::quick(),
+        &quiet()
+    )
+    .unwrap()
+    .ready());
 }
 
 fn version(l: &Lib, id: &str) -> String {
-    let m: serde_json::Value = serde_json::from_slice(&std::fs::read(l.lib.join(id).join("manifest.json")).unwrap()).unwrap();
+    let m: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(l.lib.join(id).join("manifest.json")).unwrap())
+            .unwrap();
     m["version"].as_str().unwrap().to_string()
 }
 
@@ -92,12 +121,26 @@ async fn a_running_profile_defers_the_swap_and_its_close_lets_it_in() {
     let profile = uid("p");
     let udd = l.tmp.0.join("udd");
     std::fs::create_dir_all(&udd).unwrap();
-    let child = tokio::process::Command::new("sleep").arg("30").spawn().unwrap();
+    let child = tokio::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .unwrap();
     let tracker = crate::process::Tracker::shared();
-    tracker.track(profile.clone(), child, udd, crate::process::ExitHook::Local, vec![id.clone()]);
+    tracker.track(
+        profile.clone(),
+        child,
+        udd,
+        crate::process::ExitHook::Local,
+        vec![id.clone()],
+    );
 
     let out = try_apply(&Tracked, &l.lib, &id, &Ops::quick()).unwrap();
-    assert_eq!(out, Outcome::Deferred { profiles: vec![profile.clone()] });
+    assert_eq!(
+        out,
+        Outcome::Deferred {
+            profiles: vec![profile.clone()]
+        }
+    );
     assert_eq!(version(&l, &id), "1.0");
 
     assert!(tracker.kill(&profile).await.unwrap());
@@ -109,7 +152,10 @@ async fn a_running_profile_defers_the_swap_and_its_close_lets_it_in() {
     .await
     .expect("the entry goes once the browser is gone");
     let done = retry(&Tracked, &l.lib, &Ops::quick());
-    assert!(matches!(done.as_slice(), [(i, Ok(Outcome::Applied(_)))] if *i == id), "{done:?}");
+    assert!(
+        matches!(done.as_slice(), [(i, Ok(Outcome::Applied(_)))] if *i == id),
+        "{done:?}"
+    );
     assert_eq!(version(&l, &id), "1.1");
 }
 
@@ -119,8 +165,15 @@ fn a_profile_without_it_does_not_hold_it() {
     let id = uid("free");
     ready(&l, &id);
     let world = Fake::default();
-    world.running.lock().unwrap().insert(uid("other"), vec!["p1".into()]);
-    assert!(matches!(try_apply(&world, &l.lib, &id, &Ops::quick()).unwrap(), Outcome::Applied(_)));
+    world
+        .running
+        .lock()
+        .unwrap()
+        .insert(uid("other"), vec!["p1".into()]);
+    assert!(matches!(
+        try_apply(&world, &l.lib, &id, &Ops::quick()).unwrap(),
+        Outcome::Applied(_)
+    ));
     assert_eq!(version(&l, &id), "1.1");
 }
 
@@ -132,10 +185,18 @@ fn a_browser_nobody_tracks_holds_every_extension() {
     ready(&l, &id);
     let world = Fake::default();
     world.untracked.lock().unwrap().push("p9".into());
-    assert_eq!(try_apply(&world, &l.lib, &id, &Ops::quick()).unwrap(), Outcome::Deferred { profiles: vec!["p9".into()] });
+    assert_eq!(
+        try_apply(&world, &l.lib, &id, &Ops::quick()).unwrap(),
+        Outcome::Deferred {
+            profiles: vec!["p9".into()]
+        }
+    );
     // Its own launch on the way says what it holds: here, nothing.
     let _starting = enter("p9", &[]).unwrap();
-    assert!(matches!(try_apply(&world, &l.lib, &id, &Ops::quick()).unwrap(), Outcome::Applied(_)));
+    assert!(matches!(
+        try_apply(&world, &l.lib, &id, &Ops::quick()).unwrap(),
+        Outcome::Applied(_)
+    ));
 }
 
 /// The launcher finds such a browser by the profile's lock.
@@ -148,7 +209,11 @@ fn the_launcher_finds_untracked_browsers_by_their_lock() {
     std::fs::create_dir_all(udd.join(&held)).unwrap();
     std::fs::create_dir_all(udd.join(uid("idle"))).unwrap();
     let host = crate::reset::this_host().expect("this machine's name");
-    std::os::unix::fs::symlink(format!("{host}-{}", std::process::id()), udd.join(&held).join("SingletonLock")).unwrap();
+    std::os::unix::fs::symlink(
+        format!("{host}-{}", std::process::id()),
+        udd.join(&held).join("SingletonLock"),
+    )
+    .unwrap();
     assert_eq!(System.untracked(), [held]);
 }
 
@@ -159,8 +224,15 @@ fn nothing_is_swapped_while_the_launcher_is_busy() {
     ready(&l, &id);
     let world = Fake::default();
     world.paused.store(true, Ordering::SeqCst);
-    assert_eq!(try_apply(&world, &l.lib, &id, &Ops::quick()).unwrap(), Outcome::Deferred { profiles: vec![] });
-    assert_eq!(try_apply(&Fake::default(), &lib().lib, &id, &Ops::quick()).unwrap(), Outcome::Nothing, "nothing staged there");
+    assert_eq!(
+        try_apply(&world, &l.lib, &id, &Ops::quick()).unwrap(),
+        Outcome::Deferred { profiles: vec![] }
+    );
+    assert_eq!(
+        try_apply(&Fake::default(), &lib().lib, &id, &Ops::quick()).unwrap(),
+        Outcome::Nothing,
+        "nothing staged there"
+    );
 }
 
 /// Design п.9: a launch during the swap waits for it and starts with the new version whole.
@@ -183,7 +255,16 @@ async fn a_launch_during_a_swap_waits_for_it() {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     let t = Instant::now();
-    let hold = begin_launch_in(fake(), Arc::new(Ops::quick()), l.lib.clone(), "pw", std::slice::from_ref(&id), WAIT).await.unwrap();
+    let hold = begin_launch_in(
+        fake(),
+        Arc::new(Ops::quick()),
+        l.lib.clone(),
+        "pw",
+        std::slice::from_ref(&id),
+        WAIT,
+    )
+    .await
+    .unwrap();
     assert!(t.elapsed() >= Duration::from_millis(100), "it waited");
     assert_eq!(version(&l, &id), "1.1");
     assert!(matches!(swapper.join().unwrap(), Ok(Outcome::Applied(_))));
@@ -213,19 +294,40 @@ async fn a_launch_and_a_swap_never_overlap() {
             }) as PairOp
         };
         let real = Ops::real();
-        let ops = Ops { exchange: watch(real.exchange), rename: watch(real.rename), ..Ops::quick() };
+        let ops = Ops {
+            exchange: watch(real.exchange),
+            rename: watch(real.rename),
+            ..Ops::quick()
+        };
         let (lib2, id2) = (l.lib.clone(), id.clone());
         let swapper = std::thread::spawn(move || try_apply(&Fake::default(), &lib2, &id2, &ops));
-        let hold = begin_launch_in(fake(), Arc::new(Ops::quick()), l.lib.clone(), &profile, std::slice::from_ref(&id), WAIT).await.unwrap();
+        let hold = begin_launch_in(
+            fake(),
+            Arc::new(Ops::quick()),
+            l.lib.clone(),
+            &profile,
+            std::slice::from_ref(&id),
+            WAIT,
+        )
+        .await
+        .unwrap();
         let out = swapper.join().unwrap().unwrap();
-        assert!(!overlapped.load(Ordering::SeqCst), "round {i}: swapped under a registered launch");
+        assert!(
+            !overlapped.load(Ordering::SeqCst),
+            "round {i}: swapped under a registered launch"
+        );
         match out {
             Outcome::Deferred { profiles } if profiles == [profile.clone()] => {
                 assert_eq!(version(&l, &id), "1.0");
-                assert!(swap::staged(&l.lib, &id).is_some_and(|n| n.ready()), "kept for later");
+                assert!(
+                    swap::staged(&l.lib, &id).is_some_and(|n| n.ready()),
+                    "kept for later"
+                );
             }
             // It went in, by this swap or by the launch itself first.
-            Outcome::Applied(_) | Outcome::Nothing | Outcome::Deferred { .. } => assert_eq!(version(&l, &id), "1.1"),
+            Outcome::Applied(_) | Outcome::Nothing | Outcome::Deferred { .. } => {
+                assert_eq!(version(&l, &id), "1.1")
+            }
         }
         drop(hold);
     }
@@ -238,11 +340,30 @@ async fn a_launch_gives_up_only_after_its_wait() {
     let _alone = exclusive(&id, Duration::ZERO).unwrap();
     let t = Instant::now();
     let wait = Duration::from_millis(150);
-    let err = begin_launch_in(fake(), Arc::new(Ops::quick()), l.lib.clone(), "pt", std::slice::from_ref(&id), wait).await.err().unwrap();
+    let err = begin_launch_in(
+        fake(),
+        Arc::new(Ops::quick()),
+        l.lib.clone(),
+        "pt",
+        std::slice::from_ref(&id),
+        wait,
+    )
+    .await
+    .err()
+    .unwrap();
     assert!(err.to_string().contains(EXT_UPDATING), "{err:#}");
     assert!(t.elapsed() >= wait);
     // A profile without that extension is not held up.
-    begin_launch_in(fake(), Arc::new(Ops::quick()), l.lib.clone(), "pu", &[uid("other")], wait).await.unwrap();
+    begin_launch_in(
+        fake(),
+        Arc::new(Ops::quick()),
+        l.lib.clone(),
+        "pu",
+        &[uid("other")],
+        wait,
+    )
+    .await
+    .unwrap();
 }
 
 /// Design §3.3.5: before a launch, an approved update nobody holds goes in.
@@ -251,19 +372,45 @@ async fn an_approved_update_goes_in_before_the_launch() {
     let l = lib();
     let id = uid("pre");
     ready(&l, &id);
-    let _pa = begin_launch_in(fake(), Arc::new(Ops::quick()), l.lib.clone(), "pa", std::slice::from_ref(&id), WAIT).await.unwrap();
+    let _pa = begin_launch_in(
+        fake(),
+        Arc::new(Ops::quick()),
+        l.lib.clone(),
+        "pa",
+        std::slice::from_ref(&id),
+        WAIT,
+    )
+    .await
+    .unwrap();
     assert_eq!(version(&l, &id), "1.1");
 
     // Held by a running profile: this one starts with the version there.
     let id2 = uid("pre");
     ready(&l, &id2);
     let busy = Fake::default();
-    busy.running.lock().unwrap().insert(id2.clone(), vec!["other".into()]);
-    let _pb = begin_launch_in(Arc::new(busy), Arc::new(Ops::quick()), l.lib.clone(), "pb", std::slice::from_ref(&id2), WAIT).await.unwrap();
+    busy.running
+        .lock()
+        .unwrap()
+        .insert(id2.clone(), vec!["other".into()]);
+    let _pb = begin_launch_in(
+        Arc::new(busy),
+        Arc::new(Ops::quick()),
+        l.lib.clone(),
+        "pb",
+        std::slice::from_ref(&id2),
+        WAIT,
+    )
+    .await
+    .unwrap();
     assert_eq!(version(&l, &id2), "1.0");
     // And while it holds it, a swap defers to it.
     let out = try_apply(&Fake::default(), &l.lib, &id2, &Ops::quick()).unwrap();
-    assert_eq!(out, Outcome::Deferred { profiles: vec!["pb".into()] });
+    assert_eq!(
+        out,
+        Outcome::Deferred {
+            profiles: vec!["pb".into()]
+        }
+    );
 }
 
 /// The whole launch with a stand-in engine: an approved update goes in first,
@@ -277,27 +424,66 @@ async fn a_launched_browser_holds_its_extensions_until_it_closes() {
     let _serial = crate::migrate::serial();
     let root = crate::store::test_root("ext-usage-launch").with_config();
     let lib = crate::store::extensions_dir().unwrap();
-    let l = Lib { tmp: Tmp::new("ext-usage-pkgs"), lib: lib.clone() };
+    let l = Lib {
+        tmp: Tmp::new("ext-usage-pkgs"),
+        lib: lib.clone(),
+    };
     let id = uid("lx");
     ready(&l, &id);
     let profile = uid("pl");
     let body = json!({ "_meta": { "id": profile, "rev": 1, "extensions": [id] }, "name": "Held" });
-    std::fs::write(crate::store::profiles_dir().unwrap().join(format!("{profile}.json")), body.to_string()).unwrap();
+    std::fs::write(
+        crate::store::profiles_dir()
+            .unwrap()
+            .join(format!("{profile}.json")),
+        body.to_string(),
+    )
+    .unwrap();
     let engine = root.path.join("engine.sh");
     std::fs::write(&engine, "#!/bin/sh\nexec sleep 30\n").unwrap();
     std::fs::set_permissions(&engine, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-    crate::launch::launch_with(engine, &profile, false).await.unwrap();
-    assert_eq!(version(&l, &id), "1.1", "the approved update went in before the browser started");
+    crate::launch::launch_with(engine, &profile, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        version(&l, &id),
+        "1.1",
+        "the approved update went in before the browser started"
+    );
     let tracker = crate::process::Tracker::shared();
     assert_eq!(tracker.users_of(&id), std::slice::from_ref(&profile));
-    assert!(seen(&id).0.is_empty(), "the launch's own hold ends once the browser is tracked");
+    assert!(
+        seen(&id).0.is_empty(),
+        "the launch's own hold ends once the browser is tracked"
+    );
 
     // The next one waits for that browser.
     let pkg = l.tmp.0.join("next.zip");
-    std::fs::write(&pkg, zip(&[("manifest.json", manifest("1.2", json!({})).as_bytes()), ("a.js", b"3")])).unwrap();
-    assert!(swap::stage_file(&lib, &id, &pkg, &Order::sync(2, None), &Ops::quick(), &quiet()).unwrap().ready());
-    assert_eq!(try_apply(&Tracked, &lib, &id, &Ops::quick()).unwrap(), Outcome::Deferred { profiles: vec![profile.clone()] });
+    std::fs::write(
+        &pkg,
+        zip(&[
+            ("manifest.json", manifest("1.2", json!({})).as_bytes()),
+            ("a.js", b"3"),
+        ]),
+    )
+    .unwrap();
+    assert!(swap::stage_file(
+        &lib,
+        &id,
+        &pkg,
+        &Order::sync(2, None),
+        &Ops::quick(),
+        &quiet()
+    )
+    .unwrap()
+    .ready());
+    assert_eq!(
+        try_apply(&Tracked, &lib, &id, &Ops::quick()).unwrap(),
+        Outcome::Deferred {
+            profiles: vec![profile.clone()]
+        }
+    );
 
     assert!(tracker.kill(&profile).await.unwrap());
     tokio::time::timeout(Duration::from_secs(20), async {
@@ -307,7 +493,10 @@ async fn a_launched_browser_holds_its_extensions_until_it_closes() {
     })
     .await
     .expect("the browser closes");
-    assert!(matches!(retry(&Tracked, &lib, &Ops::quick()).as_slice(), [(_, Ok(Outcome::Applied(_)))]));
+    assert!(matches!(
+        retry(&Tracked, &lib, &Ops::quick()).as_slice(),
+        [(_, Ok(Outcome::Applied(_)))]
+    ));
     assert_eq!(version(&l, &id), "1.2");
 }
 
@@ -325,9 +514,17 @@ async fn a_launch_waits_for_the_start_to_settle_the_library() {
     let ids = vec![format!("s{}", uuid::Uuid::new_v4().simple())];
     let launch = begin_launch("p-settle", &ids);
     tokio::pin!(launch);
-    assert!(tokio::time::timeout(Duration::from_millis(150), &mut launch).await.is_err(), "it waits");
+    assert!(
+        tokio::time::timeout(Duration::from_millis(150), &mut launch)
+            .await
+            .is_err(),
+        "it waits"
+    );
     drop(settling);
-    let hold = tokio::time::timeout(Duration::from_secs(5), launch).await.expect("then it goes").unwrap();
+    let hold = tokio::time::timeout(Duration::from_secs(5), launch)
+        .await
+        .expect("then it goes")
+        .unwrap();
     assert_eq!(seen(&ids[0]).0, ["p-settle"]);
     drop(hold);
     assert!(settled(&lib));

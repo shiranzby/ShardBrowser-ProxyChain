@@ -25,7 +25,9 @@ struct LiveInput {
     system_host: String,
     system_port: u16,
 }
-fn default_kind() -> String { "socks5".into() }
+fn default_kind() -> String {
+    "socks5".into()
+}
 
 #[derive(Serialize)]
 struct Exit {

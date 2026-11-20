@@ -14,37 +14,66 @@ const TONE: Record<WorkerState["status"], string> = {
 /** A second window: every browser in every run, one row each. */
 export function FleetMonitor() {
   const t = useT();
-  const [runs, setRuns] = useState<RunState[]>([]);
+  const [runs, setRuns] = useState<RunState[] | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let last = "";
+    let failed = false;
     const tick = () => {
       automationFleet()
         .then((r) => {
           if (!alive) return;
+          if (failed) {
+            failed = false;
+            setUnavailable(false);
+          }
           // Unchanged: nothing to draw (PERF-23).
           const json = JSON.stringify(r);
           if (json !== last) { last = json; setRuns(r); }
           // Every 0.7 s while a run is going, every 3 s while none is.
           timer = setTimeout(tick, r.some((x) => x.running) ? 700 : 3000);
         })
-        .catch(() => { if (alive) timer = setTimeout(tick, 3000); });
+        .catch(() => {
+          if (!alive) return;
+          if (!failed) {
+            failed = true;
+            setUnavailable(true);
+          }
+          timer = setTimeout(tick, 3000);
+        });
     };
     tick();
     return () => { alive = false; clearTimeout(timer); };
   }, []);
 
-  const busy = runs.filter((r) => r.running);
+  const active = runs?.filter((r) => r.running).length ?? 0;
+  const status = {
+    queued: t("fleetMonitor.queued"),
+    starting: t("status.starting"),
+    running: t("status.running"),
+    done: t("fleetMonitor.finished"),
+    failed: t("fleetMonitor.failed"),
+    stopped: t("fleetMonitor.stopped"),
+  };
 
   return (
     <div className="flex h-screen flex-col gap-2 bg-bg-white-0 p-3 ring-1 ring-inset ring-stroke-soft-200">
       <div className="text-ui text-text-strong-950">
-        Fleet {busy.length > 0 && <span className="text-text-soft-400">({busy.length} running)</span>}
+        {t("fleetMonitor.title")} {active > 0 && <span className="text-text-soft-400">({t("fleetMonitor.activeCount", { n: active })})</span>}
       </div>
 
-      {runs.length === 0 ? (
+      {unavailable && (
+        <p role="status" className="m-0 text-secondary text-text-sub-600">
+          {runs?.length ? t("fleetMonitor.stale") : t("fleetMonitor.unavailable")}
+        </p>
+      )}
+      {runs === null ? (
+        !unavailable && <p role="status" className="m-0 mt-6 text-center text-body text-text-soft-400">{t("listStates.loading")}</p>
+      ) : runs.length === 0 ? (
+        !unavailable &&
         <p className="m-0 mt-6 text-center text-balance text-body text-text-soft-400">
           {t("fleetMonitor.emptyState")}
         </p>
@@ -55,7 +84,7 @@ export function FleetMonitor() {
               <div className="flex items-center justify-between px-2.5 py-1.5">
                 <span className="truncate text-secondary font-medium text-text-strong-950">{r.project_name}</span>
                 <span className="text-secondary text-text-soft-400">
-                  {r.running ? "running" : "finished"}
+                  {r.running ? status.running : status.done}
                 </span>
               </div>
               {/* Workers are the run's thread slots, in order; profile_id is empty until a slot takes one. */}
@@ -76,8 +105,8 @@ export function FleetMonitor() {
                     {w.steps_total > 0 ? `${w.step}/${w.steps_total}` : "—"}
                   </div>
                   <div className={`text-right text-secondary ${TONE[w.status]}`}>
-                    {w.status}
-                    {w.pass > 0 && <span className="text-text-soft-400"> pass {w.pass}</span>}
+                    {status[w.status]}
+                    {w.pass > 0 && <span className="text-text-soft-400"> {t("fleetMonitor.pass", { n: w.pass })}</span>}
                   </div>
                 </div>
               ))}

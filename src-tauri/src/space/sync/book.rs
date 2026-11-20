@@ -66,7 +66,11 @@ pub struct Rec {
 
 impl Rec {
     pub fn of(rev: u64, hash: String) -> Rec {
-        Rec { rev, hash, ..Rec::default() }
+        Rec {
+            rev,
+            hash,
+            ..Rec::default()
+        }
     }
 }
 
@@ -129,7 +133,10 @@ impl Book {
     }
 
     pub fn set_rec(&mut self, kind: &str, id: &str, rec: Rec) {
-        self.records.entry(kind.to_string()).or_default().insert(id.to_string(), rec);
+        self.records
+            .entry(kind.to_string())
+            .or_default()
+            .insert(id.to_string(), rec);
     }
 
     pub fn drop_rec(&mut self, kind: &str, id: &str) {
@@ -192,17 +199,27 @@ fn turn() -> Turn {
     static HERE: Mutex<()> = Mutex::new(());
     let here = HERE.lock().unwrap_or_else(|e| e.into_inner());
     let file = path(LOCK).ok().and_then(|p| {
-        let f = fs::OpenOptions::new().create(true).truncate(false).write(true).open(p).ok()?;
+        let f = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(p)
+            .ok()?;
         f.lock().ok()?;
         Some(f)
     });
-    Turn { _here: here, _file: file }
+    Turn {
+        _here: here,
+        _file: file,
+    }
 }
 
 fn read_file<T: Default + serde::de::DeserializeOwned>(name: &str) -> Result<T> {
     let p = path(name)?;
     match fs::read(&p) {
-        Ok(b) => serde_json::from_slice(&b).with_context(|| format!("{} is not readable", p.display())),
+        Ok(b) => {
+            serde_json::from_slice(&b).with_context(|| format!("{} is not readable", p.display()))
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
         Err(e) => Err(e).with_context(|| format!("read {}", p.display())),
     }

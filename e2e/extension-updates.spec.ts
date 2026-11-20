@@ -200,7 +200,7 @@ test.describe("waiting for profiles", () => {
   test("the launcher itself busy: no profiles to stop, only Cancel", async ({ page }) => {
     await records(page, { ublock: { ...WAITING, waiting_on: [] } });
     await openApp(page, { section: "extensions" });
-    await expect(badge(page, "ublock")).toHaveText("Will update when ShardBrowser is free");
+    await expect(badge(page, "ublock")).toHaveText("Will update when ShyShard is free");
     expect((await (await menuOf(page, "ublock")).getByRole("menuitem").allTextContents()).map((s) => s.trim())).toEqual(["Cancel update", "Open in Web Store", "Remove extension"]);
   });
 });
@@ -604,11 +604,11 @@ test.describe("states that say what to do", () => {
     await expect(badge(page, "ublock")).toHaveText("The version from the Web Store would change its ID here, so it wasn’t applied");
   });
 
-  test("waiting on ShardBrowser itself: what it is busy with, on hover", async ({ page }) => {
+  test("waiting on ShyShard itself: what it is busy with, on hover", async ({ page }) => {
     await records(page, { ublock: { state: "waiting", latest: "2025.2.1.900", waiting_on: [], ready_since: NOW_S - 600 } });
     await openApp(page, { section: "extensions" });
     await badge(page, "ublock").hover();
-    await expect(page.getByRole("tooltip")).toHaveText(/^ShardBrowser is moving its data, switching spaces or updating the browser engine\. It goes in once that ends\. Ready since .+\.$/);
+    await expect(page.getByRole("tooltip")).toHaveText(/^ShyShard is moving its data, switching spaces or updating the browser engine\. It goes in once that ends\. Ready since .+\.$/);
   });
 
   test("a profile that closes shortens the wait on the card", async ({ page }) => {

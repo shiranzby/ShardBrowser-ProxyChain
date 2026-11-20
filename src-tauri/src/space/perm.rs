@@ -73,7 +73,10 @@ impl On {
             On::Folder(name) => Target::folder(name),
             On::Team => Target::team(),
             // A proxy is in no folder, as the server judges it.
-            On::Proxy(id) => Target { profile_id: Some(id), folder: None },
+            On::Proxy(id) => Target {
+                profile_id: Some(id),
+                folder: None,
+            },
         }
     }
 
@@ -109,7 +112,10 @@ impl<A> Granted<A> {
 
 fn grant<A>(profile_id: &str) -> Granted<A> {
     Granted {
-        on: On::Profile { id: profile_id.to_string(), folder: String::new() },
+        on: On::Profile {
+            id: profile_id.to_string(),
+            folder: String::new(),
+        },
         _right: PhantomData,
     }
 }
@@ -135,13 +141,22 @@ pub fn team_write<A: Right>(team_id: &str, on: On) -> Result<Granted<A>, CmdErro
     }
     if let On::Profile { id, .. } | On::Proxy(id) = &on {
         if !allows(team_id, Action::See, &on.target()) {
-            return Err(CmdError::Missing(format!("no {} {id} in this team", on.name())));
+            return Err(CmdError::Missing(format!(
+                "no {} {id} in this team",
+                on.name()
+            )));
         }
     }
     if !allows(team_id, A::ACTION, &on.target()) {
-        return Err(CmdError::Forbidden(Need { right: action_name(A::ACTION), on: on.name() }));
+        return Err(CmdError::Forbidden(Need {
+            right: action_name(A::ACTION),
+            on: on.name(),
+        }));
     }
-    Ok(Granted { on, _right: PhantomData })
+    Ok(Granted {
+        on,
+        _right: PhantomData,
+    })
 }
 
 /// Whether a permission is held for the team and has not run out.
@@ -152,7 +167,9 @@ pub fn usable(team_id: &str) -> bool {
 
 /// Nothing is written to a team without a permission to judge it by.
 pub fn no_permission() -> CmdError {
-    CmdError::Offline("no current permission from the team: it has to be reachable to change anything".into())
+    CmdError::Offline(
+        "no current permission from the team: it has to be reachable to change anything".into(),
+    )
 }
 
 /// A personal profile: always. Only one in this machine's own store.
@@ -196,7 +213,11 @@ impl Seen {
 
 /// Ask the server where these team profiles are now. One it no longer shows
 /// this member is left out: hidden or gone.
-pub async fn look(client: &super::client::TeamClient, team_id: &str, ids: &[&str]) -> Result<Vec<Seen>> {
+pub async fn look(
+    client: &super::client::TeamClient,
+    team_id: &str,
+    ids: &[&str],
+) -> Result<Vec<Seen>> {
     #[derive(Deserialize)]
     struct Row {
         id: String,
@@ -207,9 +228,21 @@ pub async fn look(client: &super::client::TeamClient, team_id: &str, ids: &[&str
     if ids.is_empty() {
         return Ok(Vec::new());
     }
-    let list: Vec<String> = ids.iter().map(|id| url::form_urlencoded::byte_serialize(id.as_bytes()).collect()).collect();
-    let rows: Vec<Row> = client.get(&format!("/profiles?ids={}", list.join(","))).await?;
-    Ok(rows.into_iter().map(|r| Seen { id: r.id, folder: r.folder, epoch }).collect())
+    let list: Vec<String> = ids
+        .iter()
+        .map(|id| url::form_urlencoded::byte_serialize(id.as_bytes()).collect())
+        .collect();
+    let rows: Vec<Row> = client
+        .get(&format!("/profiles?ids={}", list.join(",")))
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| Seen {
+            id: r.id,
+            folder: r.folder,
+            epoch,
+        })
+        .collect())
 }
 
 /// Whether the rules moved since this look, so a pass on it is refused for
@@ -222,7 +255,9 @@ pub fn moved_since(team_id: &str, seen: &Seen) -> bool {
 /// from under an older permission is not enough: the rules or the sight moved.
 pub fn team_pass<A: Right>(team_id: &str, seen: &Seen) -> Result<Granted<A>> {
     let held = held().read().unwrap_or_else(|e| e.into_inner());
-    let p = held.get(team_id).context("no permission from the team yet")?;
+    let p = held
+        .get(team_id)
+        .context("no permission from the team yet")?;
     if p.epoch() != seen.epoch {
         bail!("the team's rules changed since the profile was looked up");
     }
@@ -258,16 +293,22 @@ pub fn rights(team_id: &str, profile_id: &str, folder: &str) -> Rights {
 /// Whether the held permission allows `action` on `target` now.
 pub fn allows(team_id: &str, action: Action, target: &Target<'_>) -> bool {
     let held = held().read().unwrap_or_else(|e| e.into_inner());
-    held.get(team_id)
-        .is_some_and(|p| !p.expired(&SystemClock) && decide(&p.claims.grants, action, target).is_allowed())
+    held.get(team_id).is_some_and(|p| {
+        !p.expired(&SystemClock) && decide(&p.claims.grants, action, target).is_allowed()
+    })
 }
 
 /// Whether the server hands this member a team proxy's login: See, and a use for it.
 pub fn may_use_proxy(team_id: &str, proxy_id: &str) -> bool {
     // A proxy is in no folder, as the server judges it.
-    let t = Target { profile_id: Some(proxy_id), folder: None };
+    let t = Target {
+        profile_id: Some(proxy_id),
+        folder: None,
+    };
     allows(team_id, Action::See, &t)
-        && [Action::Start, Action::Edit, Action::TakeOut].into_iter().any(|a| allows(team_id, a, &t))
+        && [Action::Start, Action::Edit, Action::TakeOut]
+            .into_iter()
+            .any(|a| allows(team_id, a, &t))
 }
 
 // ---- a team's permission ----
@@ -337,7 +378,9 @@ pub struct Permission {
 
 /// Whether a team's key can check a permission at all: 32 bytes, base64url.
 pub fn is_key(key: &str) -> bool {
-    URL_SAFE_NO_PAD.decode(key.trim()).is_ok_and(|k| k.len() == 32)
+    URL_SAFE_NO_PAD
+        .decode(key.trim())
+        .is_ok_and(|k| k.len() == 32)
 }
 
 /// Check a signed permission. Expiry is the earlier of the wall-clock `exp`
@@ -346,7 +389,9 @@ pub fn verify(token: &str, expect: &Expect<'_>, clock: &dyn Clock) -> Result<Per
     if !is_key(expect.key) {
         return Err(Rejected::NoKey);
     }
-    let raw = URL_SAFE_NO_PAD.decode(expect.key.trim()).map_err(|_| Rejected::NoKey)?;
+    let raw = URL_SAFE_NO_PAD
+        .decode(expect.key.trim())
+        .map_err(|_| Rejected::NoKey)?;
     let mut v = Validation::new(Algorithm::EdDSA);
     // Expiry is checked below, on both clocks.
     v.validate_exp = false;
@@ -367,7 +412,12 @@ pub fn verify(token: &str, expect: &Expect<'_>, clock: &dyn Clock) -> Result<Per
     let window = Duration::from_secs(claims.exp.saturating_sub(claims.iat));
     let received = clock.since_boot();
     let lead = clock.wall().saturating_sub(claims.iat);
-    let p = Permission { until: received + window, received, lead, claims };
+    let p = Permission {
+        until: received + window,
+        received,
+        lead,
+        claims,
+    };
     if window.is_zero() || p.expired(clock) {
         return Err(Rejected::Expired);
     }
@@ -381,7 +431,10 @@ impl Permission {
 
     /// The edition this is, to refuse an older one later.
     pub fn floor(&self) -> crate::team::Floor {
-        crate::team::Floor { epoch: self.claims.epoch, iat: self.claims.iat }
+        crate::team::Floor {
+            epoch: self.claims.epoch,
+            iat: self.claims.iat,
+        }
     }
 
     /// An older edition than `floor`: an earlier epoch, issued no later than
@@ -406,7 +459,9 @@ impl Permission {
     /// halfway through what it had, so the next one comes before it runs out.
     pub fn refresh_in(&self, clock: &dyn Clock) -> Duration {
         let window = Duration::from_secs(self.claims.exp.saturating_sub(self.claims.iat));
-        let usable = window.min(Duration::from_secs(self.claims.exp.saturating_sub(self.claims.iat + self.lead)));
+        let usable = window.min(Duration::from_secs(
+            self.claims.exp.saturating_sub(self.claims.iat + self.lead),
+        ));
         let now = clock.since_boot();
         let soonest = (self.received + (window / 3).min(usable / 2)).saturating_sub(now);
         self.left(clock).saturating_sub(window / 3).max(soonest)
@@ -418,14 +473,35 @@ impl Permission {
     }
 
     /// A pass on one profile of the team, by the team's own rule.
-    pub fn pass<A: Right>(&self, clock: &dyn Clock, profile_id: &str, folder: &str) -> Result<Granted<A>> {
+    pub fn pass<A: Right>(
+        &self,
+        clock: &dyn Clock,
+        profile_id: &str,
+        folder: &str,
+    ) -> Result<Granted<A>> {
         if self.expired(clock) {
             bail!("the team's permission has run out: the team server has to be reachable, and this computer's clock right");
         }
-        if !decide(&self.claims.grants, A::ACTION, &Target::profile(profile_id, folder)).is_allowed() {
-            return Err(CmdError::Forbidden(Need { right: action_name(A::ACTION), on: "profile" }).into());
+        if !decide(
+            &self.claims.grants,
+            A::ACTION,
+            &Target::profile(profile_id, folder),
+        )
+        .is_allowed()
+        {
+            return Err(CmdError::Forbidden(Need {
+                right: action_name(A::ACTION),
+                on: "profile",
+            })
+            .into());
         }
-        Ok(Granted { on: On::Profile { id: profile_id.into(), folder: folder.into() }, _right: PhantomData })
+        Ok(Granted {
+            on: On::Profile {
+                id: profile_id.into(),
+                folder: folder.into(),
+            },
+            _right: PhantomData,
+        })
     }
 }
 
@@ -436,8 +512,15 @@ fn held() -> &'static RwLock<HashMap<String, Permission>> {
 
 /// The team's permission, checked against what was saved at join.
 fn checked(team_id: &str, token: &str) -> Result<Permission, Rejected> {
-    let link = crate::team::link(team_id).ok().flatten().ok_or(Rejected::NoKey)?;
-    let expect = Expect { key: &link.perm_key, team: &link.id, member: &link.member_id };
+    let link = crate::team::link(team_id)
+        .ok()
+        .flatten()
+        .ok_or(Rejected::NoKey)?;
+    let expect = Expect {
+        key: &link.perm_key,
+        team: &link.id,
+        member: &link.member_id,
+    };
     verify(token, &expect, &SystemClock)
 }
 
@@ -465,11 +548,18 @@ pub fn accept(team_id: &str, token: &str) -> Result<u64, Rejected> {
 
 /// Drop what is held for the team: it was left or withdrawn.
 pub fn forget(team_id: &str) {
-    held().write().unwrap_or_else(|e| e.into_inner()).remove(team_id);
+    held()
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(team_id);
 }
 
 pub fn held_epoch(team_id: &str) -> Option<u64> {
-    held().read().unwrap_or_else(|e| e.into_inner()).get(team_id).map(Permission::epoch)
+    held()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(team_id)
+        .map(Permission::epoch)
 }
 
 /// When the held permission should be renewed; None when none is held.
@@ -558,7 +648,10 @@ mod boot {
     use std::time::Duration;
 
     pub fn since_boot() -> Duration {
-        let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
         // SAFETY: clock_gettime fills the timespec it is given.
         if unsafe { libc::clock_gettime(libc::CLOCK_BOOTTIME, &mut ts) } != 0 {
             return Duration::ZERO;
@@ -579,7 +672,12 @@ mod boot {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android", windows)))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "android",
+    windows
+)))]
 mod boot {
     use std::time::{Duration, Instant};
 
@@ -621,7 +719,10 @@ mod tests {
 
     impl FakeClock {
         fn at(wall: u64, boot_secs: u64) -> Self {
-            FakeClock { wall: AtomicU64::new(wall), boot_secs: AtomicU64::new(boot_secs) }
+            FakeClock {
+                wall: AtomicU64::new(wall),
+                boot_secs: AtomicU64::new(boot_secs),
+            }
         }
         fn set(&self, wall: u64, boot_secs: u64) {
             self.wall.store(wall, Ordering::SeqCst);
@@ -653,7 +754,11 @@ mod tests {
     }
 
     fn expect(key: &Key) -> Expect<'_> {
-        Expect { key: &key.public, team: "t1", member: "m1" }
+        Expect {
+            key: &key.public,
+            team: "t1",
+            member: "m1",
+        }
     }
 
     #[test]
@@ -672,7 +777,10 @@ mod tests {
         let good = sign(&ours, claims(1_000, 1_900));
 
         let foreign = sign(&theirs, claims(1_000, 1_900));
-        assert_eq!(verify(&foreign, &expect(&ours), &clock).unwrap_err(), Rejected::Signature);
+        assert_eq!(
+            verify(&foreign, &expect(&ours), &clock).unwrap_err(),
+            Rejected::Signature
+        );
 
         // A refusal turned into an allowance after signing: the signature stops matching.
         let mut parts: Vec<String> = good.split('.').map(str::to_owned).collect();
@@ -680,7 +788,10 @@ mod tests {
             serde_json::from_slice(&URL_SAFE_NO_PAD.decode(&parts[1]).unwrap()).unwrap();
         body["grants"][1]["allow"] = json!(true);
         parts[1] = URL_SAFE_NO_PAD.encode(body.to_string());
-        assert_eq!(verify(&parts.join("."), &expect(&ours), &clock).unwrap_err(), Rejected::Signature);
+        assert_eq!(
+            verify(&parts.join("."), &expect(&ours), &clock).unwrap_err(),
+            Rejected::Signature
+        );
 
         // Signed with a shared secret instead of the team's key.
         let hs = jsonwebtoken::encode(
@@ -689,11 +800,17 @@ mod tests {
             &EncodingKey::from_secret(ours.public.as_bytes()),
         )
         .unwrap();
-        assert_eq!(verify(&hs, &expect(&ours), &clock).unwrap_err(), Rejected::Signature);
+        assert_eq!(
+            verify(&hs, &expect(&ours), &clock).unwrap_err(),
+            Rejected::Signature
+        );
 
         let mut other_team = claims(1_000, 1_900);
         other_team["team"] = json!("t2");
-        assert_eq!(verify(&sign(&ours, other_team), &expect(&ours), &clock).unwrap_err(), Rejected::OtherTeam);
+        assert_eq!(
+            verify(&sign(&ours, other_team), &expect(&ours), &clock).unwrap_err(),
+            Rejected::OtherTeam
+        );
 
         let mut other_member = claims(1_000, 1_900);
         other_member["sub"] = json!("m2");
@@ -703,13 +820,28 @@ mod tests {
         );
 
         let expired = sign(&ours, claims(100, 900));
-        assert_eq!(verify(&expired, &expect(&ours), &clock).unwrap_err(), Rejected::Expired);
+        assert_eq!(
+            verify(&expired, &expect(&ours), &clock).unwrap_err(),
+            Rejected::Expired
+        );
 
-        assert_eq!(verify("not.a.permission", &expect(&ours), &clock).unwrap_err(), Rejected::Garbled);
-        let no_key = Expect { key: "", ..expect(&ours) };
+        assert_eq!(
+            verify("not.a.permission", &expect(&ours), &clock).unwrap_err(),
+            Rejected::Garbled
+        );
+        let no_key = Expect {
+            key: "",
+            ..expect(&ours)
+        };
         assert_eq!(verify(&good, &no_key, &clock).unwrap_err(), Rejected::NoKey);
-        let short_key = Expect { key: "AAAA", ..expect(&ours) };
-        assert_eq!(verify(&good, &short_key, &clock).unwrap_err(), Rejected::NoKey);
+        let short_key = Expect {
+            key: "AAAA",
+            ..expect(&ours)
+        };
+        assert_eq!(
+            verify(&good, &short_key, &clock).unwrap_err(),
+            Rejected::NoKey
+        );
     }
 
     #[test]
@@ -743,7 +875,10 @@ mod tests {
         clock.set(1_449, 60);
         assert!(!p.expired(&clock));
         clock.set(1_450, 61);
-        assert!(p.expired(&clock), "only 11 s on the boot clock, but exp has passed");
+        assert!(
+            p.expired(&clock),
+            "only 11 s on the boot clock, but exp has passed"
+        );
     }
 
     #[test]
@@ -777,7 +912,10 @@ mod tests {
         // A clock that is right asks a third before the end, as ever.
         let right = FakeClock::at(1_000, 50);
         let q = verify(&sign(&ours, claims(1_000, 1_900)), &expect(&ours), &right).unwrap();
-        assert_eq!((q.clock_ahead(), q.refresh_in(&right)), (None, Duration::from_secs(600)));
+        assert_eq!(
+            (q.clock_ahead(), q.refresh_in(&right)),
+            (None, Duration::from_secs(600))
+        );
     }
 
     #[test]
@@ -800,13 +938,23 @@ mod tests {
         let clock = FakeClock::at(1_000, 50);
         let p = verify(&sign(&ours, claims(1_000, 1_900)), &expect(&ours), &clock).unwrap();
         assert!(p.pass::<Start>(&clock, "p1", "Ads").is_ok());
-        assert!(p.pass::<Start>(&clock, "p9", "Ads").is_err(), "refused on the profile");
+        assert!(
+            p.pass::<Start>(&clock, "p9", "Ads").is_err(),
+            "refused on the profile"
+        );
         assert!(p.pass::<Start>(&clock, "p2", "Shops").is_err(), "no rule");
-        assert!(p.pass::<Cookies>(&clock, "p1", "Ads").is_err(), "Start is not Cookies");
+        assert!(
+            p.pass::<Cookies>(&clock, "p1", "Ads").is_err(),
+            "Start is not Cookies"
+        );
         clock.set(1_000, 50 + 900);
         assert!(p.pass::<Start>(&clock, "p1", "Ads").is_err(), "run out");
         // With nothing held, a team grants nothing.
-        let seen = Seen { id: "p1".into(), folder: "Ads".into(), epoch: 3 };
+        let seen = Seen {
+            id: "p1".into(),
+            folder: "Ads".into(),
+            epoch: 3,
+        };
         assert!(team_pass::<Start>("no-such-team", &seen).is_err());
     }
 
@@ -814,7 +962,11 @@ mod tests {
     fn the_personal_space_grants_everything_on_its_own_profiles_only() {
         let _root = crate::store::test_root("perm-personal");
         let dir = crate::store::profiles_dir().unwrap();
-        std::fs::write(dir.join("p9.json"), json!({ "_meta": { "id": "p9" } }).to_string()).unwrap();
+        std::fs::write(
+            dir.join("p9.json"),
+            json!({ "_meta": { "id": "p9" } }).to_string(),
+        )
+        .unwrap();
         assert!(start("p9").is_ok() && cookies("p9").is_ok());
         // A team's profile, or none at all: not a personal pass.
         assert!(start("team-p1").is_err() && cookies("team-p1").is_err());

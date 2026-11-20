@@ -37,7 +37,8 @@ fn keyed(der: &[u8]) -> String {
     format!("{{\n  \"key\": \"{}\",\n  \"name\": \"X\",\n  \"version\": \"2.0\",\n  \"manifest_version\": 3\n}}\n", b64(der))
 }
 
-const PLAIN: &str = "{\n  \"name\": \"X\",\n  \"version\": \"2.0\",\n  \"manifest_version\": 3\n}\n";
+const PLAIN: &str =
+    "{\n  \"name\": \"X\",\n  \"version\": \"2.0\",\n  \"manifest_version\": 3\n}\n";
 
 /// Fits `new` against `live`, then puts the result where `live` is, as the
 /// swap would: the id Chrome computes there must not move.
@@ -50,7 +51,11 @@ fn fit_at_live(live_manifest: &str, new_manifest: &str) -> (Result<KeyAction>, S
     let fitted = fs::read_to_string(new.join("manifest.json")).unwrap();
     if res.is_ok() {
         fs::write(live.join("manifest.json"), &fitted).unwrap();
-        assert_eq!(chrome_id(&live).unwrap(), before, "id moved for {new_manifest:?}");
+        assert_eq!(
+            chrome_id(&live).unwrap(),
+            before,
+            "id moved for {new_manifest:?}"
+        );
     }
     (res, fitted, before)
 }
@@ -69,7 +74,10 @@ fn same_key_kept() {
     assert_eq!(fitted, keyed(K));
     assert_eq!(id, id_from_key(K));
     // The same DER spelled as PEM is the same key.
-    let pem = format!("-----BEGIN PUBLIC KEY-----\\n{}\\n-----END PUBLIC KEY-----", b64(K));
+    let pem = format!(
+        "-----BEGIN PUBLIC KEY-----\\n{}\\n-----END PUBLIC KEY-----",
+        b64(K)
+    );
     let live = format!("{{\"key\": \"{pem}\", \"name\": \"X\", \"version\": \"1.0\"}}");
     assert_eq!(fit_at_live(&live, &keyed(K)).0.unwrap(), KeyAction::Kept);
 }
@@ -81,7 +89,10 @@ fn lost_key_put_back() {
     let v: Value = serde_json::from_str(&fitted).unwrap();
     assert_eq!(v["key"], b64(K));
     assert_eq!(v["version"], "2.0");
-    assert!(fitted.ends_with(&PLAIN[1..]), "the rest is left as shipped: {fitted}");
+    assert!(
+        fitted.ends_with(&PLAIN[1..]),
+        "the rest is left as shipped: {fitted}"
+    );
     assert_eq!(id, id_from_key(K));
 }
 
@@ -91,7 +102,10 @@ fn new_key_taken_out() {
     assert_eq!(res.unwrap(), KeyAction::Removed);
     let v: Value = serde_json::from_str(&fitted).unwrap();
     assert!(v.get("key").is_none());
-    assert_eq!(v, json!({"name": "X", "version": "2.0", "manifest_version": 3}));
+    assert_eq!(
+        v,
+        json!({"name": "X", "version": "2.0", "manifest_version": 3})
+    );
 }
 
 #[test]
@@ -106,10 +120,16 @@ fn comments_insert_but_never_remove() {
     let commented = "// shipped with a comment\n{ /* a { brace */\n  \"name\": \"X\", // trailing\n  \"version\": \"2.0\"\n}\n";
     let (res, fitted, id) = fit_at_live(&keyed(K), commented);
     assert_eq!(res.unwrap(), KeyAction::Inserted);
-    assert!(fitted.starts_with("// shipped with a comment\n{\n  \"key\": "), "{fitted}");
+    assert!(
+        fitted.starts_with("// shipped with a comment\n{\n  \"key\": "),
+        "{fitted}"
+    );
     assert_eq!(id, id_from_key(K));
 
-    let commented_key = format!("{{ // keyed\n  \"key\": \"{}\",\n  \"name\": \"X\", \"version\": \"2.0\"\n}}", b64(K));
+    let commented_key = format!(
+        "{{ // keyed\n  \"key\": \"{}\",\n  \"name\": \"X\", \"version\": \"2.0\"\n}}",
+        b64(K)
+    );
     let (res, fitted, _) = fit_at_live(PLAIN, &commented_key);
     assert!(res.unwrap_err().to_string().contains("not plain JSON"));
     assert_eq!(fitted, commented_key, "left as it came");
@@ -117,13 +137,18 @@ fn comments_insert_but_never_remove() {
 
 #[test]
 fn strings_hide_comment_markers() {
-    let tricky = r#"{"name": "a // b /* c", "version": "1.0", "homepage_url": "https://x.test/\"//"}"#;
+    let tricky =
+        r#"{"name": "a // b /* c", "version": "1.0", "homepage_url": "https://x.test/\"//"}"#;
     let base = temp();
     let d = tree(&base, "t", tricky);
     let m = read_manifest(&d).unwrap();
     assert_eq!(m["name"], "a // b /* c");
     assert_eq!(m["homepage_url"], "https://x.test/\"//");
-    let bom = tree(&base, "bom", "\u{feff}{\"name\": \"Б\", /* é */ \"version\": \"1\"}");
+    let bom = tree(
+        &base,
+        "bom",
+        "\u{feff}{\"name\": \"Б\", /* é */ \"version\": \"1\"}",
+    );
     assert_eq!(read_manifest(&bom).unwrap()["name"], "Б");
     let empty = tree(&base, "empty", "{ }");
     assert!(insert_key(&empty, K).is_err());
@@ -148,10 +173,15 @@ fn growth_is_what_the_new_version_adds() {
         {"matches": ["file://*/*", "http://*/*", "https://*/*"], "js": ["c.js"]},
         {"matches": ["https://*/*"], "js": ["inpage.js"], "world": "MAIN"}
     ]);
-    new["externally_connectable"] = json!({"matches": ["https://metamask.io/*", "https://*.evil.test/*"]});
-    new["web_accessible_resources"] = json!([{"resources": ["x.js"], "matches": ["https://only.test/*"]}]);
+    new["externally_connectable"] =
+        json!({"matches": ["https://metamask.io/*", "https://*.evil.test/*"]});
+    new["web_accessible_resources"] =
+        json!([{"resources": ["x.js"], "matches": ["https://only.test/*"]}]);
     let got = perm_growth(&old, &new);
-    let g = |kind: GrantKind, value: &str| Grant { kind, value: value.into() };
+    let g = |kind: GrantKind, value: &str| Grant {
+        kind,
+        value: value.into(),
+    };
     assert_eq!(
         got,
         [
@@ -163,7 +193,10 @@ fn growth_is_what_the_new_version_adds() {
         ],
         "the script site and the resource site are covered by what it had"
     );
-    assert_eq!(serde_json::to_value(&got[3]).unwrap(), json!({"kind": "main_world", "value": "https://*/*"}));
+    assert_eq!(
+        serde_json::to_value(&got[3]).unwrap(),
+        json!({"kind": "main_world", "value": "https://*/*"})
+    );
 }
 
 #[test]
@@ -179,13 +212,28 @@ fn growth_across_manifest_versions() {
         "host_permissions": ["https://*/*", "file:///*"],
         "web_accessible_resources": [{"resources": ["inpage.js"], "matches": ["<all_urls>"]}]
     });
-    let g = |kind: GrantKind, value: &str| Grant { kind, value: value.into() };
-    assert_eq!(perm_growth(&mv2, &mv3), [g(GrantKind::Permission, "scripting"), g(GrantKind::ManifestVersion, "3")]);
+    let g = |kind: GrantKind, value: &str| Grant {
+        kind,
+        value: value.into(),
+    };
+    assert_eq!(
+        perm_growth(&mv2, &mv3),
+        [
+            g(GrantKind::Permission, "scripting"),
+            g(GrantKind::ManifestVersion, "3")
+        ]
+    );
     // Less access is no growth.
     assert!(perm_growth(&mv3, &json!({"manifest_version": 3})).is_empty());
     // A new site among MV2 permissions is a host, not an API.
     let more = json!({"manifest_version": 2, "permissions": ["storage", "https://x.test/*"]});
-    assert_eq!(perm_growth(&json!({"manifest_version": 2, "permissions": ["storage"]}), &more), [g(GrantKind::Host, "https://x.test/*")]);
+    assert_eq!(
+        perm_growth(
+            &json!({"manifest_version": 2, "permissions": ["storage"]}),
+            &more
+        ),
+        [g(GrantKind::Host, "https://x.test/*")]
+    );
 }
 
 fn files(base: &Dir, name: &str, list: &[(&str, &str)]) -> PathBuf {
@@ -201,22 +249,39 @@ fn files(base: &Dir, name: &str, list: &[(&str, &str)]) -> PathBuf {
 #[test]
 fn overlap_counts_same_files() {
     let base = temp();
-    let old = files(&base, "old", &[
-        ("manifest.json", "{\"version\":\"1\"}"),
-        ("a.js", "a"),
-        ("b.js", "b"),
-        ("img/x.png", "png"),
-        ("_metadata/verified_contents.json", "[]"),
-        (".added", "@1"),
-        (".DS_Store", "litter"),
-    ]);
-    let new = files(&base, "new", &[("manifest.json", "{\"version\":\"2\"}"), ("a.js", "a"), ("b.js", "b2"), ("img/x.png", "png")]);
+    let old = files(
+        &base,
+        "old",
+        &[
+            ("manifest.json", "{\"version\":\"1\"}"),
+            ("a.js", "a"),
+            ("b.js", "b"),
+            ("img/x.png", "png"),
+            ("_metadata/verified_contents.json", "[]"),
+            (".added", "@1"),
+            (".DS_Store", "litter"),
+        ],
+    );
+    let new = files(
+        &base,
+        "new",
+        &[
+            ("manifest.json", "{\"version\":\"2\"}"),
+            ("a.js", "a"),
+            ("b.js", "b2"),
+            ("img/x.png", "png"),
+        ],
+    );
     let r = overlap(&old, &new).unwrap();
     assert!((r - 2.0 / 3.0).abs() < 1e-9, "{r}");
     let other = files(&base, "other", &[("manifest.json", "{}"), ("z.js", "z")]);
     assert_eq!(overlap(&old, &other).unwrap(), 0.0);
     let bare = files(&base, "bare", &[("manifest.json", "{}")]);
-    assert_eq!(overlap(&bare, &new).unwrap(), 0.0, "nothing to compare is no evidence");
+    assert_eq!(
+        overlap(&bare, &new).unwrap(),
+        0.0,
+        "nothing to compare is no evidence"
+    );
     assert_eq!(overlap(&new, &new).unwrap(), 1.0);
 }
 
@@ -224,37 +289,97 @@ fn overlap_counts_same_files() {
 fn names_compared_as_shown() {
     let base = temp();
     let msg = |name: &str, key: &str, value: &str| {
-        files(&base, name, &[
-            ("manifest.json", &format!(r#"{{"name": "__MSG_{key}__", "default_locale": "en", "version": "1"}}"#)),
-            ("_locales/en/messages.json", &format!(r#"{{"{key}": {{"message": "{value}"}}}}"#)),
-        ])
+        files(
+            &base,
+            name,
+            &[
+                (
+                    "manifest.json",
+                    &format!(
+                        r#"{{"name": "__MSG_{key}__", "default_locale": "en", "version": "1"}}"#
+                    ),
+                ),
+                (
+                    "_locales/en/messages.json",
+                    &format!(r#"{{"{key}": {{"message": "{value}"}}}}"#),
+                ),
+            ],
+        )
     };
     let a = msg("a", "appName", "MetaMask");
     let b = msg("b", "appName", "METAMASK ");
     assert!(name_same(&a, &b));
-    let lower = files(&base, "lower", &[
-        ("manifest.json", r#"{"name": "__MSG_appName__", "default_locale": "en", "version": "1"}"#),
-        ("_locales/en/messages.json", r#"{"appname": {"message": "MetaMask"}}"#),
-    ]);
-    assert_eq!(display_name(&lower).as_deref(), Some("MetaMask"), "message names ignore case");
+    let lower = files(
+        &base,
+        "lower",
+        &[
+            (
+                "manifest.json",
+                r#"{"name": "__MSG_appName__", "default_locale": "en", "version": "1"}"#,
+            ),
+            (
+                "_locales/en/messages.json",
+                r#"{"appname": {"message": "MetaMask"}}"#,
+            ),
+        ],
+    );
+    assert_eq!(
+        display_name(&lower).as_deref(),
+        Some("MetaMask"),
+        "message names ignore case"
+    );
     let clone = msg("c", "appName", "MetaMask Wallet");
     assert!(!name_same(&a, &clone));
     // Placeholders nobody can resolve prove nothing.
-    let lost = files(&base, "lost", &[("manifest.json", r#"{"name": "__MSG_appName__", "version": "1"}"#)]);
+    let lost = files(
+        &base,
+        "lost",
+        &[(
+            "manifest.json",
+            r#"{"name": "__MSG_appName__", "version": "1"}"#,
+        )],
+    );
     assert!(!name_same(&lost, &lost));
-    let plain = files(&base, "plain", &[("manifest.json", r#"{"name": "Rabby Wallet", "version": "1"}"#)]);
-    let plain2 = files(&base, "plain2", &[("manifest.json", r#"{"name": "rabby wallet", "version": "2"}"#)]);
+    let plain = files(
+        &base,
+        "plain",
+        &[(
+            "manifest.json",
+            r#"{"name": "Rabby Wallet", "version": "1"}"#,
+        )],
+    );
+    let plain2 = files(
+        &base,
+        "plain2",
+        &[(
+            "manifest.json",
+            r#"{"name": "rabby wallet", "version": "2"}"#,
+        )],
+    );
     assert!(name_same(&plain, &plain2));
 }
 
 /// The owner's four wallets against their store versions (24.10.2026), and against each other.
 #[test]
 fn thresholds_fit_the_calibrated_pairs() {
-    for (overlap, name) in [(0.4418, true), (0.9567, true), (0.1196, true), (0.7245, true)] {
+    for (overlap, name) in [
+        (0.4418, true),
+        (0.9567, true),
+        (0.1196, true),
+        (0.7245, true),
+    ] {
         assert_eq!(kinship(overlap, name), Kinship::Same, "{overlap}");
     }
-    assert_eq!(kinship(0.0, false), Kinship::Other, "different extensions share no file");
-    assert_eq!(kinship(0.1196, false), Kinship::Unsure, "renamed and mostly rebuilt: the person decides");
+    assert_eq!(
+        kinship(0.0, false),
+        Kinship::Other,
+        "different extensions share no file"
+    );
+    assert_eq!(
+        kinship(0.1196, false),
+        Kinship::Unsure,
+        "renamed and mostly rebuilt: the person decides"
+    );
     assert_eq!(kinship(0.04, true), Kinship::Other);
 }
 
@@ -271,7 +396,10 @@ fn growth_counts_what_it_takes_over() {
     assert!(perm_growth(&old, &old).is_empty());
     let mut same_pages = old.clone();
     same_pages["chrome_url_overrides"] = json!({"newtab": "tab2.html"});
-    assert!(perm_growth(&old, &same_pages).is_empty(), "its own new tab page, moved: nothing new");
+    assert!(
+        perm_growth(&old, &same_pages).is_empty(),
+        "its own new tab page, moved: nothing new"
+    );
 
     let mut new = old.clone();
     new["chrome_settings_overrides"] = json!({
@@ -282,13 +410,19 @@ fn growth_counts_what_it_takes_over() {
     new["devtools_page"] = json!("dt.html");
     new["omnibox"] = json!({"keyword": "w"});
     new["externally_connectable"] = json!({"ids": ["abc", "*"]});
-    let g = |kind: GrantKind, value: &str| Grant { kind, value: value.into() };
+    let g = |kind: GrantKind, value: &str| Grant {
+        kind,
+        value: value.into(),
+    };
     assert_eq!(
         perm_growth(&old, &new),
         [
             g(GrantKind::Connectable, "extension:*"),
             g(GrantKind::Override, "chrome_settings_overrides.homepage"),
-            g(GrantKind::Override, "chrome_settings_overrides.search_provider"),
+            g(
+                GrantKind::Override,
+                "chrome_settings_overrides.search_provider"
+            ),
             g(GrantKind::Override, "chrome_url_overrides.history"),
             g(GrantKind::Override, "devtools_page"),
             g(GrantKind::Override, "omnibox"),
@@ -296,5 +430,9 @@ fn growth_counts_what_it_takes_over() {
     );
     // Any extension let in already covers one more.
     let any = json!({"externally_connectable": {"ids": ["*"]}});
-    assert!(perm_growth(&any, &json!({"externally_connectable": {"ids": ["*", "def"]}})).is_empty());
+    assert!(perm_growth(
+        &any,
+        &json!({"externally_connectable": {"ids": ["*", "def"]}})
+    )
+    .is_empty());
 }

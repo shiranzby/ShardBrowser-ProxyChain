@@ -21,6 +21,7 @@ export type LocalPrefs = {
   simpleNavigation: boolean;
   collapsedPages: CollapsiblePage[];
   hideProxyShard: boolean;
+  hideProxyShardTrial: boolean;
   singleKeys: boolean;
   askDirect: boolean;
 };
@@ -77,6 +78,10 @@ const PREFS: { [K in PrefKey]: Pref<LocalPrefs[K]> } = {
   hideProxyShard: {
     stored: () => useProxyShardVisibility.getState().hidden,
     commit: (v) => useProxyShardVisibility.getState().setHidden(v),
+  },
+  hideProxyShardTrial: {
+    stored: () => useProxyShardVisibility.getState().trialHidden,
+    commit: (v) => useProxyShardVisibility.getState().setTrialHidden(v),
   },
   askDirect: {
     stored: () => useDirectStart.getState().ask,

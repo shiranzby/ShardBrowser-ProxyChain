@@ -21,7 +21,6 @@ import { NOT_IN_TEAM, profileFromFingerprint, settle, spaceStateOf, teamInUse, t
 import { SYNC_REFUSALS } from "../../entities/sync/model/types";
 import { TEAM_REFUSALS } from "../../shared/api/teamRefusals";
 import type { ProxyEntry, ProxyTestSnapshot } from "../../entities/proxy/model/types";
-import type { ProviderUpdate } from "../../entities/proxy/model/api";
 import type { FingerprintEntry } from "../../entities/fingerprint/model/types";
 import type { Project, RunState, ModuleInfo } from "../../entities/automation/model/types";
 
@@ -33,6 +32,11 @@ export type Ctx = {
 
 type Args = Record<string, any>;
 export type Handler = (args: Args, ctx: Ctx) => unknown;
+
+function providerGeneration(value?: NonNullable<MockState["providerDefaults"]>): NonNullable<MockState["tnbGeneration"]> {
+  const { name = "1024Proxy", folder = "", country = "", state = "", city = "", session_type = "sticky", session_minutes = 180, generation_count = 1 } = value ?? {};
+  return { name, folder, country, state, city, session_type, session_minutes, generation_count };
+}
 
 /** Launcher-side timestamps: "@<unix seconds>", the format profile.rs writes. */
 const nowStamp = () => `@${Math.floor(Date.now() / 1000)}`;
@@ -439,7 +443,7 @@ export const handlers: Record<string, Handler> = {
     ctx.emit("runtime:done");
     return handlers.runtime_status({}, ctx);
   },
-  launcher_update_check: () => ({ current: "2.0.3", latest: "2.0.3", update_available: false, release_url: "https://github.com/shiranzby/ShardBrowser-X/releases/latest" }),
+  launcher_update_check: () => ({ current: "2.0.3", latest: "2.0.3", comparable: true, update_available: false, release_url: "https://github.com/shiranzby/ShardBrowser-X/releases/latest" }),
   host_platform: () => hostPlatform(),
   // `window.__shardxMockHostScreen = [w, h, dpr]` (or null: no monitor) stands in for the real one.
   host_screen: () => {
@@ -451,6 +455,7 @@ export const handlers: Record<string, Handler> = {
   app_quit_asking: () => null,
   app_quit_confirmed: () => null,
   app_quit_cancelled: () => null,
+  app_safe_close_cancel: () => null,
   clipboard_write: ({ text }) => {
     // Recorded for tests: headless browsers refuse the real clipboard.
     (window as { __shardxMockClipboard?: string }).__shardxMockClipboard = String(text ?? "");
@@ -565,7 +570,7 @@ export const handlers: Record<string, Handler> = {
     return ctx.state.api;
   },
   mcp_download: ({ dir }) => `${dir}/shardx-mcp`,
-  data_root_get: () => ({ path: DATA_ROOT, custom: false, migrating: false }),
+  data_root_get: () => ({ path: DATA_ROOT, custom: false, migrating: false, portable: false }),
   // Settings > Storage > Delete all data (reset.rs). The plan counts what
   // would move; its id changes with any count, as the backend's digest does.
   // The reset moves everything aside (here: empties the state and remembers
@@ -987,6 +992,83 @@ export const handlers: Record<string, Handler> = {
 
   // ---- proxies ------------------------------------------------------------------
   proxy_list: (_a, { state }) => state.proxies,
+  proxy_folder_list: (_a, { state }) => {
+    const folders = state.proxyFolders ??= { folders: [] };
+    for (const proxy of state.proxies) {
+      const name = String(proxy.folder ?? proxy.provider_options?.folder ?? "").trim();
+      if (name && !folders.folders.some((folder) => folder.name === name)) {
+        folders.folders.push({ name, parent: "" });
+      }
+    }
+    folders.folders.sort((a, b) => a.name.localeCompare(b.name));
+    return folders;
+  },
+  proxy_folder_add: ({ name, parent }, ctx) => {
+    const folderName = String(name ?? "").trim();
+    if (!folderName) throw "a proxy folder needs a name";
+    const folders = ctx.state.proxyFolders ??= { folders: [] };
+    if (folders.folders.some((folder) => folder.name === folderName)) throw "a proxy folder with this name already exists";
+    if (parent && !folders.folders.some((folder) => folder.name === parent)) throw "the parent proxy folder does not exist";
+    folders.folders.push({ name: folderName, parent: String(parent ?? "").trim() });
+    folders.folders.sort((a, b) => a.name.localeCompare(b.name));
+    ctx.save();
+    return folders;
+  },
+  proxy_folder_rename: ({ old, new: next }, ctx) => {
+    const oldName = String(old ?? "").trim();
+    const newName = String(next ?? "").trim();
+    const folders = ctx.state.proxyFolders ??= { folders: [] };
+    if (!folders.folders.some((folder) => folder.name === oldName)) throw "proxy folder does not exist";
+    if (!newName || folders.folders.some((folder) => folder.name === newName && folder.name !== oldName)) throw "a proxy folder with this name already exists";
+    for (const folder of folders.folders) {
+      if (folder.name === oldName) folder.name = newName;
+      if (folder.parent === oldName) folder.parent = newName;
+    }
+    for (const proxy of ctx.state.proxies) {
+      const name = proxy.folder ?? proxy.provider_options?.folder ?? "";
+      if (name === oldName) {
+        proxy.folder = newName;
+        proxy.provider_options = { ...(proxy.provider_options ?? {}), folder: newName };
+      }
+    }
+    ctx.save();
+    return folders;
+  },
+  proxy_folder_delete: ({ name }, ctx) => {
+    const folderName = String(name ?? "").trim();
+    const folders = ctx.state.proxyFolders ??= { folders: [] };
+    const target = folders.folders.find((folder) => folder.name === folderName);
+    if (!target) throw "proxy folder does not exist";
+    folders.folders = folders.folders.filter((folder) => folder.name !== folderName)
+      .map((folder) => folder.parent === folderName ? { ...folder, parent: target.parent } : folder);
+    for (const proxy of ctx.state.proxies) {
+      const current = proxy.folder ?? proxy.provider_options?.folder ?? "";
+      if (current === folderName) {
+        proxy.folder = "";
+        proxy.provider_options = { ...(proxy.provider_options ?? {}), folder: "" };
+      }
+    }
+    ctx.save();
+    return folders;
+  },
+  proxy_folder_set_parent: ({ name, parent }, ctx) => {
+    const folderName = String(name ?? "").trim();
+    const parentName = String(parent ?? "").trim();
+    const folders = ctx.state.proxyFolders ??= { folders: [] };
+    const target = folders.folders.find((folder) => folder.name === folderName);
+    if (!target) throw "proxy folder does not exist";
+    if (parentName && !folders.folders.some((folder) => folder.name === parentName)) throw "the parent proxy folder does not exist";
+    let current = parentName;
+    const seen = new Set<string>();
+    while (current) {
+      if (current === folderName || seen.has(current)) throw "a proxy folder cannot contain itself or its descendants";
+      seen.add(current);
+      current = folders.folders.find((folder) => folder.name === current)?.parent ?? "";
+    }
+    target.parent = parentName;
+    ctx.save();
+    return folders;
+  },
   proxy_save: ({ entry }, ctx) => {
     const e = { ...(entry as ProxyEntry) };
     if (!e.id) { e.id = `px-${newId().slice(0, 6)}`; ctx.state.proxies.push(e); }
@@ -1025,24 +1107,106 @@ export const handlers: Record<string, Handler> = {
   proxy_last_test: ({ id }, { state }) => { const h = state.snapshots[id]; return h?.length ? h[h.length - 1] : null; },
   proxy_history: ({ id }, { state }) => state.snapshots[id] ?? [],
   proxy_bulk_parse: ({ text, kind }) => parseProxyLines(String(text ?? ""), kind),
-  proxy_provider_defaults_get: (_a, { state }) => {
-    const d = state.providerDefaults ?? { relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://usdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false, custom_name: "Custom provider", custom_server: "", custom_plan: "", custom_kind: "http", custom_website: "", custom_whitelist: "", custom_api_username: "", custom_api_password_saved: false, custom_proxy_username: "", custom_proxy_password_saved: false };
+  proxy_provider_defaults_get: ({ customProviderId, create, tnb }, { state }) => {
+    const saved = customProviderId ? state.customProviders?.[customProviderId] : state.providerDefaults;
+    if (customProviderId && !create && !saved) throw "provider_not_found";
+    const d: NonNullable<Ctx["state"]["providerDefaults"]> = (customProviderId && create ? undefined : saved) ?? { custom_providers: [], name: "1024Proxy", folder: "", country: "", state: "", city: "", session_type: "sticky", session_minutes: 180, generation_count: 1, relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://usdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false, custom_name: "Custom provider", custom_server: "", custom_extract_url: "", custom_plan: "", custom_kind: "http", custom_website: "", custom_whitelist: "", custom_api_username: "", custom_api_password_saved: false, custom_proxy_username: "", custom_proxy_password_saved: false };
     const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, custom_api_password: _customApi, custom_proxy_password: _customProxy, ...view } = d;
-    return view;
+    return { ...view, custom_extract_url: d.custom_extract_url ?? "", ...(tnb && !customProviderId ? state.tnbGeneration : {}), custom_providers: Object.entries(state.customProviders ?? {}).map(([id, provider]) => ({ id, name: provider.custom_name })) };
   },
-  proxy_provider_defaults_save: ({ value }, { state, save }) => {
-    const old = state.providerDefaults;
-    const d: any = { ...(value as ProviderUpdate), password: value.password ?? old?.password ?? "", tnb_api_password: value.tnb_api_password ?? old?.tnb_api_password ?? "", tnb_proxy_password: value.tnb_proxy_password ?? old?.tnb_proxy_password ?? "" };
+  proxy_provider_defaults_save: ({ value, customProviderId, create, tnb }, ctx) => {
+    const { state, save } = ctx;
+    if (value.custom_server) {
+      let gateway: URL;
+      try { gateway = new URL(value.custom_server); } catch { throw "provider_defaults_invalid"; }
+      if (!["http:", "https:", "socks5:"].includes(gateway.protocol) || !["", "/"].includes(gateway.pathname) || gateway.username || gateway.password || gateway.search || gateway.hash || !gateway.hostname || !gateway.port) {
+        throw "provider_defaults_invalid";
+      }
+    }
+    const extractUrl = value.custom_extract_url?.trim() ?? "";
+    if (extractUrl) {
+      let url: URL;
+      try { url = new URL(extractUrl); } catch { throw "provider_invalid_extract_url"; }
+      if (url.protocol !== "https:" || url.username || url.password || url.hash || url.port === "0") throw "provider_invalid_extract_url";
+    }
+    const old = customProviderId ? state.customProviders?.[customProviderId] : state.providerDefaults;
+    if (customProviderId && !create && !old) throw "provider_not_found";
+    if (customProviderId && ((create && old) || !value.custom_name.trim() || (!value.custom_server.trim() && !extractUrl))) throw "provider_defaults_invalid";
+    const d = {
+      ...value,
+      custom_extract_url: extractUrl,
+      password: value.password ?? old?.password ?? "",
+      tnb_api_password: value.tnb_api_password ?? old?.tnb_api_password ?? "",
+      tnb_proxy_password: value.tnb_proxy_password ?? old?.tnb_proxy_password ?? "",
+      custom_api_password: value.custom_api_password ?? old?.custom_api_password ?? "",
+      custom_proxy_password: value.custom_proxy_password ?? old?.custom_proxy_password ?? "",
+    };
     d.password_saved = !!d.password; d.tnb_api_password_saved = !!d.tnb_api_password; d.tnb_proxy_password_saved = !!d.tnb_proxy_password; d.custom_api_password_saved = !!d.custom_api_password; d.custom_proxy_password_saved = !!d.custom_proxy_password;
-    state.providerDefaults = d; save();
-    const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, custom_api_password: _customApi, custom_proxy_password: _customProxy, ...view } = d;
-    return view;
+    if (customProviderId) (state.customProviders ??= {})[customProviderId] = d;
+    else {
+      if (tnb) {
+        state.tnbGeneration = providerGeneration(d);
+        Object.assign(d, providerGeneration(old));
+      } else {
+        state.tnbGeneration ??= providerGeneration(old);
+      }
+      state.providerDefaults = d;
+    }
+    save();
+    return handlers.proxy_provider_defaults_get({ customProviderId, tnb }, ctx);
+  },
+  proxy_provider_delete_custom: ({ customProviderId }, { state, save }) => {
+    if (state.customProviders) delete state.customProviders[customProviderId];
+    save();
   },
   proxy_provider_generate: ({ request }, { state }) => {
-    const d = state.providerDefaults;
+    const id = request.custom_provider_id;
+    const d = id ? state.customProviders?.[id] : state.providerDefaults;
+    if (id && !d) throw "provider_not_found";
+    if (request.custom) {
+      if (!d?.custom_server) throw "provider_invalid_relay";
+      const gateway = new URL(d.custom_server);
+      const port = Number(gateway.port || (gateway.protocol === "https:" ? "443" : gateway.protocol === "http:" ? "80" : "0"));
+      if (gateway.protocol !== `${d.custom_kind}:` || !["", "/"].includes(gateway.pathname) || !port) throw "provider_invalid_relay";
+      return { id: newId(), name: d.custom_name || `${gateway.hostname}:${port}`, kind: d.custom_kind, host: gateway.hostname, port, username: d.custom_proxy_username, password: d.custom_proxy_password ?? "", country: request.country.toUpperCase(), notes: "", provider_id: "custom", provider_options: id ? { custom_provider_id: id } : undefined };
+    }
     if (!d?.username || !d.password) throw "provider_credentials_required";
-    const location = request.country ? `-region-${request.country.toUpperCase()}${request.state ? `-st-${request.state}` : ""}` : "";
-    return { id: `provider-${newId()}`, name: `1024Proxy ${request.country || "Global"}`, kind: "socks5", host: d.relay.split(":")[0], port: Number(d.relay.split(":")[1]), username: d.username_template.split("{username}").join(d.username).split("{country}").join(request.country).split("{state}").join(request.state).split("{location}").join(location), password: d.password, country: request.country, notes: "", provider_id: "1024proxy", provider_options: { country: request.country, state: request.state } };
+    const city = request.city ?? "";
+    const location = request.country ? `-region-${request.country.toUpperCase()}${request.state ? `-st-${request.state}` : ""}${city ? `-city-${city}` : ""}` : "";
+    const minutes = request.session_minutes ?? (d.session_type === "sticky" ? Math.min(120, Math.max(1, d.session_minutes)) : 0);
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 120) throw "provider_defaults_invalid";
+    const sessionType = request.session_minutes === undefined ? d.session_type : minutes ? "sticky" : "per_request";
+    const session = minutes ? `-sid-${crypto.randomUUID().slice(0, 8)}-t-${minutes}` : "";
+    const username = d.username_template.split("{username}").join(d.username).split("{country}").join(request.country.toLowerCase()).split("{state}").join(request.state).split("{city}").join(city).split("{location}").join(location) + session;
+    return { id: `provider-${newId()}`, name: `1024Proxy ${request.country || "Global"}`, kind: "socks5", host: d.relay.split(":")[0], port: Number(d.relay.split(":")[1]), username, password: d.password, country: request.country, notes: "", provider_id: "1024proxy", provider_options: { country: request.country, state: request.state, session_type: sessionType, session_minutes: String(minutes) } };
+  },
+  proxy_provider_generate_many: ({ request }, ctx) => {
+    const rawCount = Number(request?.count);
+    if (!Number.isInteger(rawCount) || rawCount < 1 || rawCount > 1000) throw "provider_defaults_invalid";
+    const count = rawCount;
+    const provider = request.custom_provider_id ? ctx.state.customProviders?.[request.custom_provider_id] : ctx.state.providerDefaults;
+    if (request.custom_provider_id && !provider) throw "provider_not_found";
+    const sticky = request.session_minutes === undefined ? provider?.session_type === "sticky" : request.session_minutes > 0;
+    if (count > 1 && !request.custom && !sticky) throw "provider_single_gateway";
+    if (count > 1 && (request.custom || request.custom_provider_id) && !provider?.custom_extract_url?.trim()) {
+      throw "provider_single_gateway";
+    }
+    return Array.from({ length: count }, () => handlers.proxy_provider_generate({ request: { ...request, count: 1 } }, ctx));
+  },
+  proxy_provider_extract_custom: ({ customProviderId, count }, { state }) => {
+    const provider = customProviderId ? state.customProviders?.[customProviderId] : state.providerDefaults;
+    if (!provider) throw "provider_not_found";
+    if (!provider.custom_extract_url) throw "provider_invalid_extract_url";
+    if (!Number.isInteger(count) || count < 1 || count > 1000) throw "provider_defaults_invalid";
+    if (Boolean(provider.custom_api_username) !== Boolean(provider.custom_api_password)) throw "tnb_api_credentials_required";
+    return Array.from({ length: Math.min(count, 2) }, (_, index) => {
+      const host = `proxy${index + 1}.example.test`;
+      return {
+        id: newId(), name: `${host}:8080`, kind: provider.custom_kind, host, port: 8080,
+        username: provider.custom_proxy_username, password: provider.custom_proxy_password ?? "",
+        country: provider.country, folder: provider.folder, notes: "", provider_id: "custom",
+      };
+    });
   },
   tnbproxy_locations: ({ request }) => {
     let server: URL;
@@ -1071,9 +1235,60 @@ export const handlers: Record<string, Handler> = {
   // The library ships with the engine: empty until the first-run download.
   fingerprint_list: (_a, { state }) => (engineInstalled() ? state.fingerprints : []),
   fingerprint_delete: ({ id }, ctx) => { ctx.state.fingerprints = ctx.state.fingerprints.filter((f) => f.id !== id); ctx.save(); return null; },
+  fingerprint_tags_save: ({ id, tags }, ctx) => {
+    const entry = ctx.state.fingerprints.find((f) => f.id === id);
+    if (!entry) throw "unknown fingerprint id";
+    const cleaned = Array.from(new Set((Array.isArray(tags) ? tags : []).map((tag) => String(tag).trim()).filter(Boolean)));
+    entry.tags = cleaned.map((tag) => tag.slice(0, 32));
+    ctx.save();
+    return entry;
+  },
+  fingerprint_export: ({ id }, ctx) => {
+    const entry = ctx.state.fingerprints.find((f) => f.id === id);
+    if (!entry) throw "unknown fingerprint id";
+    return JSON.stringify(entry.payload, null, 2);
+  },
+  fingerprint_update: ({ id, jsonText }, ctx) => {
+    const entry = ctx.state.fingerprints.find((f) => f.id === id);
+    if (!entry) throw "unknown fingerprint id";
+    if (entry.builtin) throw "builtin fingerprint cannot be edited";
+    let payload: any;
+    try { payload = JSON.parse(String(jsonText)); } catch { throw "not valid JSON"; }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw "FingerprintConfig must be a JSON object";
+    }
+    const duplicate = ctx.state.fingerprints.some((candidate) =>
+      candidate.id !== id && JSON.stringify(candidate.payload) === JSON.stringify(payload),
+    );
+    if (duplicate) throw "fingerprint already exists";
+    ctx.state.fingerprintBackups ??= {};
+    ctx.state.fingerprintBackups[id] = structuredClone(entry);
+    entry.payload = payload;
+    entry.label = String(payload?.name || entry.label);
+    entry.platform = String(payload?.navigator?.platform ?? entry.platform);
+    entry.chrome = (/Chrome\/([\d.]+)/.exec(String(payload?.navigator?.user_agent ?? ""))?.[1]) ?? entry.chrome;
+    entry.gpu = String(payload?.webgl?.renderer ?? entry.gpu);
+    ctx.save();
+    return entry;
+  },
+  fingerprint_rollback: ({ id }, ctx) => {
+    const backup = ctx.state.fingerprintBackups?.[id];
+    if (!backup) throw "no previous fingerprint version";
+    const entry = ctx.state.fingerprints.find((f) => f.id === id);
+    if (!entry) throw "unknown fingerprint id";
+    ctx.state.fingerprints = ctx.state.fingerprints.map((item) => item.id === id ? structuredClone(backup) : item);
+    delete ctx.state.fingerprintBackups?.[id];
+    ctx.save();
+    return ctx.state.fingerprints.find((item) => item.id === id);
+  },
   fingerprint_import: ({ jsonText, idHint }, ctx) => {
     let payload: any;
     try { payload = JSON.parse(String(jsonText)); } catch { throw "not valid JSON"; }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw "FingerprintConfig must be a JSON object";
+    }
+    const duplicate = !idHint && ctx.state.fingerprints.some((entry) => JSON.stringify(entry.payload) === JSON.stringify(payload));
+    if (duplicate) throw "fingerprint already exists";
     const ua = String(payload?.navigator?.user_agent ?? "");
     const platform = String(payload?.navigator?.platform ?? (/Windows/.test(ua) ? "Win32" : /Mac/.test(ua) ? "MacIntel" : "Linux x86_64"));
     const entry: FingerprintEntry = {
@@ -1084,6 +1299,8 @@ export const handlers: Record<string, Handler> = {
       gpu: String(payload?.webgl?.renderer ?? "unknown GPU"),
       tag_color: "#64748b",
       builtin: false,
+      payload_sha256: undefined,
+      tags: [],
       payload,
     };
     ctx.state.fingerprints.push(entry);

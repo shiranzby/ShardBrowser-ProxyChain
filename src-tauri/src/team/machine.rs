@@ -21,7 +21,10 @@ pub fn key() -> Option<String> {
 #[cfg(target_os = "macos")]
 fn raw() -> Option<String> {
     let mut id = [0u8; 16];
-    let wait = libc::timespec { tv_sec: 1, tv_nsec: 0 };
+    let wait = libc::timespec {
+        tv_sec: 1,
+        tv_nsec: 0,
+    };
     // SAFETY: a 16-byte buffer, the size of uuid_t.
     if unsafe { libc::gethostuuid(id.as_mut_ptr(), &wait) } != 0 || id == [0; 16] {
         return None;
@@ -31,15 +34,30 @@ fn raw() -> Option<String> {
 
 #[cfg(target_os = "linux")]
 fn raw() -> Option<String> {
-    ["/etc/machine-id", "/var/lib/dbus/machine-id"].iter().find_map(|p| std::fs::read_to_string(p).ok().filter(|s| !s.trim().is_empty()))
+    ["/etc/machine-id", "/var/lib/dbus/machine-id"]
+        .iter()
+        .find_map(|p| {
+            std::fs::read_to_string(p)
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+        })
 }
 
 /// MachineGuid, made when Windows is installed.
 #[cfg(windows)]
 fn raw() -> Option<String> {
-    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RRF_SUBKEY_WOW6464KEY};
-    let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
-    let (key, name) = (wide("SOFTWARE\\Microsoft\\Cryptography"), wide("MachineGuid"));
+    use windows_sys::Win32::System::Registry::{
+        RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RRF_SUBKEY_WOW6464KEY,
+    };
+    let wide = |s: &str| {
+        s.encode_utf16()
+            .chain(std::iter::once(0))
+            .collect::<Vec<u16>>()
+    };
+    let (key, name) = (
+        wide("SOFTWARE\\Microsoft\\Cryptography"),
+        wide("MachineGuid"),
+    );
     let mut buf = [0u16; 128];
     let mut size = std::mem::size_of_val(&buf) as u32;
     // SAFETY: NUL-terminated names, and a buffer of the size given.
@@ -58,7 +76,11 @@ fn raw() -> Option<String> {
         return None;
     }
     let n = (size as usize / 2).min(buf.len());
-    Some(String::from_utf16_lossy(&buf[..n]).trim_end_matches('\0').to_string())
+    Some(
+        String::from_utf16_lossy(&buf[..n])
+            .trim_end_matches('\0')
+            .to_string(),
+    )
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]

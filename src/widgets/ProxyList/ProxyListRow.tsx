@@ -138,6 +138,16 @@ export const ProxyListRow = memo(function ProxyListRow({ proxy, profileCount, to
             <ProxyLocation location={proxyLocation(p, snap)} unknown={t("proxyRow.unknownLocation")} />
           </div>
         );
+      case "folder": {
+        const folder = p.folder?.trim() || p.provider_options?.folder?.trim() || "";
+        return (
+          <Tooltip key="folder" content={folder || t("proxyTable.noFolder")} whenTruncated>
+            <div role="gridcell" data-cell="folder" className="min-w-0 truncate text-secondary text-text-sub-600">
+              {folder || <span className="text-text-soft-400">{t("proxyTable.noFolder")}</span>}
+            </div>
+          </Tooltip>
+        );
+      }
       case "profiles":
         return (
           <div key="profiles" role="gridcell" data-cell="profiles" className="text-secondary tabular-nums text-text-sub-600">

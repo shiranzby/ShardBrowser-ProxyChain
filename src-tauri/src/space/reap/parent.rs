@@ -11,7 +11,9 @@ pub struct Parent {
 impl Parent {
     /// Watch `pid`, the launcher that started this process.
     pub fn watch(pid: u32) -> Parent {
-        Parent { imp: imp::watch(pid) }
+        Parent {
+            imp: imp::watch(pid),
+        }
     }
 
     /// Whether it has ended, waiting up to `wait` for it to.
@@ -39,7 +41,11 @@ mod imp {
     }
 
     pub fn watch(pid: u32) -> Watch {
-        let mut w = Watch { kq: -1, pid, gone: !is_parent(pid) };
+        let mut w = Watch {
+            kq: -1,
+            pid,
+            gone: !is_parent(pid),
+        };
         if w.gone {
             return w;
         }
@@ -74,7 +80,10 @@ mod imp {
                 return true;
             }
             if self.kq >= 0 {
-                let ts = libc::timespec { tv_sec: wait.as_secs() as _, tv_nsec: wait.subsec_nanos() as _ };
+                let ts = libc::timespec {
+                    tv_sec: wait.as_secs() as _,
+                    tv_nsec: wait.subsec_nanos() as _,
+                };
                 // SAFETY: room for the one event asked for.
                 let mut out: libc::kevent = unsafe { std::mem::zeroed() };
                 let n = unsafe { libc::kevent(self.kq, std::ptr::null(), 0, &mut out, 1, &ts) };
@@ -109,7 +118,11 @@ mod imp {
     }
 
     pub fn watch(pid: u32) -> Watch {
-        let mut w = Watch { fd: -1, pid, gone: !is_parent(pid) };
+        let mut w = Watch {
+            fd: -1,
+            pid,
+            gone: !is_parent(pid),
+        };
         if w.gone {
             return w;
         }
@@ -125,7 +138,11 @@ mod imp {
                 return true;
             }
             if self.fd >= 0 {
-                let mut p = libc::pollfd { fd: self.fd, events: libc::POLLIN, revents: 0 };
+                let mut p = libc::pollfd {
+                    fd: self.fd,
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
                 let ms = wait.as_millis().min(i32::MAX as u128) as i32;
                 // SAFETY: one pollfd, ours.
                 self.gone = unsafe { libc::poll(&mut p, 1, ms) } > 0;
@@ -173,10 +190,12 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use std::time::Duration;
-    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, WAIT_OBJECT_0};
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GetLastError, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, WAIT_OBJECT_0,
+    };
     use windows_sys::Win32::System::Threading::{
-        GetCurrentProcess, GetProcessTimes, OpenProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
-        PROCESS_SYNCHRONIZE,
+        GetCurrentProcess, GetProcessTimes, OpenProcess, WaitForSingleObject,
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
     };
 
     pub struct Watch {
@@ -186,10 +205,19 @@ mod imp {
 
     pub fn watch(pid: u32) -> Watch {
         // SAFETY: a handle of our own, closed in Drop.
-        let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+        let handle = unsafe {
+            OpenProcess(
+                PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                0,
+                pid,
+            )
+        };
         if handle.is_null() {
             // No such pid: it ended. Anything else leaves the sweep to close it.
-            return Watch { handle, gone: unsafe { GetLastError() } == ERROR_INVALID_PARAMETER };
+            return Watch {
+                handle,
+                gone: unsafe { GetLastError() } == ERROR_INVALID_PARAMETER,
+            };
         }
         // A pid taken again after the launcher ended names a process younger than this one.
         let me = started(unsafe { GetCurrentProcess() });
@@ -198,7 +226,10 @@ mod imp {
     }
 
     fn started(h: HANDLE) -> Option<u64> {
-        let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+        let zero = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
         let (mut c, mut e, mut k, mut u) = (zero, zero, zero, zero);
         // SAFETY: four FILETIMEs to fill.
         if unsafe { GetProcessTimes(h, &mut c, &mut e, &mut k, &mut u) } == 0 {

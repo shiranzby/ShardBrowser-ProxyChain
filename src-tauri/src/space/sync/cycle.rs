@@ -12,7 +12,10 @@ use super::super::client::{Code, Method, TeamClient, TeamError};
 use super::super::local;
 use super::super::profile::StoredProfile;
 use super::super::proxy::ProxyEntry;
-use super::super::remote::{self, FolderRow, ItemRow, ItemWritten, ProfileRow, ProfileWithData, ProxyRow, ProxyWithData, Written};
+use super::super::remote::{
+    self, FolderRow, ItemRow, ItemWritten, ProfileRow, ProfileWithData, ProxyRow, ProxyWithData,
+    Written,
+};
 use super::book::{self, Book, Entry, Held, Kinds, Op, Rec, Sess};
 use super::{changed, note_failure, rows_changed, run};
 
@@ -132,7 +135,11 @@ fn canon(v: &Value) -> Value {
 fn digest(v: &Value) -> String {
     use sha2::{Digest, Sha256};
     let bytes = serde_json::to_vec(&canon(v)).unwrap_or_default();
-    Sha256::digest(&bytes).iter().take(16).map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(&bytes)
+        .iter()
+        .take(16)
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn b64<T: Serialize>(v: &T) -> String {
@@ -158,7 +165,9 @@ struct Doc {
 
 async fn read_doc(c: &TeamClient) -> Net<Option<(u64, Doc)>> {
     match c.get::<ItemRow>(DOC).await {
-        Ok(row) => Ok(opened(&row.data).and_then(|v| serde_json::from_value(v).ok()).map(|d| (row.revision, d))),
+        Ok(row) => Ok(opened(&row.data)
+            .and_then(|v| serde_json::from_value(v).ok())
+            .map(|d| (row.revision, d))),
         Err(e) if e.status() == Some(404) => Ok(None),
         Err(e) => Err(e),
     }
@@ -176,7 +185,10 @@ pub(super) async fn first_contact(c: &TeamClient) -> Net<()> {
     let found = match read_doc(c).await? {
         Some(d) => Some(d),
         None => {
-            let doc = Doc { generation: uuid::Uuid::new_v4().simple().to_string(), kinds: book::read().kinds };
+            let doc = Doc {
+                generation: uuid::Uuid::new_v4().simple().to_string(),
+                kinds: book::read().kinds,
+            };
             match write_doc(c, &doc, 0).await {
                 Ok(rev) => Some((rev, doc)),
                 // Another computer made it a moment ago: theirs is the one.
@@ -213,7 +225,10 @@ async fn doc(c: &TeamClient) -> Result<bool, Stop> {
         return Err(Stop::Removed);
     }
     if b.kinds_dirty {
-        let doc = Doc { generation: b.generation.clone(), kinds: b.kinds.clone() };
+        let doc = Doc {
+            generation: b.generation.clone(),
+            kinds: b.kinds.clone(),
+        };
         match write_doc(c, &doc, b.doc_rev).await {
             Ok(rev) => {
                 let sent = b.kinds.clone();
@@ -308,7 +323,10 @@ async fn cycle(c: &TeamClient) -> Result<(), Stop> {
             let r = folders(c, &mut p, &mut told).await;
             p.apply(r)?;
         }
-        for kind in ITEM_KINDS.into_iter().filter(|k| *k != ItemKind::Tag && k.on(&kinds)) {
+        for kind in ITEM_KINDS
+            .into_iter()
+            .filter(|k| *k != ItemKind::Tag && k.on(&kinds))
+        {
             let mut p = Patch::default();
             let r = items(c, kind, &mut p, &mut told).await;
             p.apply(r)?;
@@ -363,7 +381,14 @@ fn up_of(stored: &StoredProfile, tags: Vec<String>) -> Up {
     let card = remote::card(stored, tags);
     let hash = digest(&json!({ "name": name, "folder": folder, "data": body, "card": card }));
     let created_at = remote::stamp_secs(stored.meta.created_at.as_deref());
-    Up { name, folder, data: b64(&body), card, created_at, hash }
+    Up {
+        name,
+        folder,
+        data: b64(&body),
+        card,
+        created_at,
+        hash,
+    }
 }
 
 /// This computer's own profiles, temporary ones left out. One whose file is
@@ -386,10 +411,18 @@ fn unreadable(id: &str, here: &BTreeMap<String, StoredProfile>) -> bool {
 /// Two or more synced profiles all gone, none of them through the trash: a
 /// missing data folder far more likely than a choice.
 fn all_vanished(recs: &BTreeMap<String, Rec>, here: &BTreeMap<String, StoredProfile>) -> bool {
-    if recs.len() < 2 || recs.keys().any(|id| here.contains_key(id) || local::profile::exists(id)) {
+    if recs.len() < 2
+        || recs
+            .keys()
+            .any(|id| here.contains_key(id) || local::profile::exists(id))
+    {
         return false;
     }
-    let trashed: BTreeSet<String> = local::trash::list().unwrap_or_default().into_iter().map(|e| e.id).collect();
+    let trashed: BTreeSet<String> = local::trash::list()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| e.id)
+        .collect();
     !recs.keys().any(|id| trashed.contains(id))
 }
 
@@ -397,7 +430,9 @@ fn tags_of(kinds: &Kinds) -> Result<BTreeMap<String, Vec<String>>, Stop> {
     if !kinds.folders_tags {
         return Ok(BTreeMap::new());
     }
-    local::tags::list().map(|t| t.by_profile).map_err(|e| unread("the tags", e))
+    local::tags::list()
+        .map(|t| t.by_profile)
+        .map_err(|e| unread("the tags", e))
 }
 
 fn up_here(id: &str, kinds: &Kinds) -> Option<Up> {
@@ -415,12 +450,20 @@ async fn put_profile(c: &TeamClient, id: &str, up: &Up, base: u64) -> Net<u64> {
         "name": up.name, "folder": up.folder, "data": up.data, "base_revision": base, "card": up.card,
         "created_at": up.created_at,
     });
-    let w: Written = c.json(Method::PUT, &me_path("profiles", id)?, Some(&body)).await?;
+    let w: Written = c
+        .json(Method::PUT, &me_path("profiles", id)?, Some(&body))
+        .await?;
     Ok(w.revision)
 }
 
 async fn delete_at(c: &TeamClient, path: &str, base: u64) -> Net<()> {
-    c.call(Method::DELETE, &format!("{path}?base_revision={base}"), None).await.map(|_| ())
+    c.call(
+        Method::DELETE,
+        &format!("{path}?base_revision={base}"),
+        None,
+    )
+    .await
+    .map(|_| ())
 }
 
 // ---- stop marks ----
@@ -435,16 +478,34 @@ fn stop_mark(id: &str) -> String {
 
 async fn stop_marks(c: &TeamClient) -> Net<BTreeSet<String>> {
     let rows: Vec<Named> = c.get("/me/items/sync").await?;
-    Ok(rows.into_iter().map(|r| r.id).filter(|id| id.starts_with(MARK)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| r.id)
+        .filter(|id| id.starts_with(MARK))
+        .collect())
 }
 
 async fn mark_stopped(c: &TeamClient, id: &str) -> Net<()> {
     let body = json!({ "name": "stopped", "data": b64(&json!({ "profile": id })) });
-    c.call(Method::PUT, &me_path("items/sync", &stop_mark(id))?, Some(&body)).await.map(|_| ())
+    c.call(
+        Method::PUT,
+        &me_path("items/sync", &stop_mark(id))?,
+        Some(&body),
+    )
+    .await
+    .map(|_| ())
 }
 
 async fn unmark_stopped(c: &TeamClient, id: &str) -> Net<()> {
-    gone(c.call(Method::DELETE, &me_path("items/sync", &stop_mark(id))?, None).await.map(|_| ()))
+    gone(
+        c.call(
+            Method::DELETE,
+            &me_path("items/sync", &stop_mark(id))?,
+            None,
+        )
+        .await
+        .map(|_| ()),
+    )
 }
 
 /// A browser of this computer's runs on the profile's data, or is opening or closing.
@@ -453,12 +514,24 @@ fn running_here(id: &str) -> bool {
 }
 
 /// The server's version, written over this computer's; how it reads here after.
-async fn pull_profile(c: &TeamClient, id: &str, kinds: &Kinds) -> Result<Option<(u64, String)>, Stop> {
-    let Some(got) = skip(c.get::<ProfileWithData>(&me_path("profiles", id)?).await, id)? else { return Ok(None) };
+async fn pull_profile(
+    c: &TeamClient,
+    id: &str,
+    kinds: &Kinds,
+) -> Result<Option<(u64, String)>, Stop> {
+    let Some(got) = skip(
+        c.get::<ProfileWithData>(&me_path("profiles", id)?).await,
+        id,
+    )?
+    else {
+        return Ok(None);
+    };
     let existing = local::profile::load_raw(id).ok();
     let mut s = remote::stored(&got.row, Some(&got.data));
     // What only this computer counts stays as it was here.
-    s.meta.last_launched_at = existing.as_ref().and_then(|e| e.meta.last_launched_at.clone());
+    s.meta.last_launched_at = existing
+        .as_ref()
+        .and_then(|e| e.meta.last_launched_at.clone());
     s.meta.rev = existing.as_ref().map_or(1, |e| e.meta.rev);
     s.meta.pinned = existing.as_ref().is_some_and(|e| e.meta.pinned);
     s.meta.total_runtime_ms = existing.as_ref().map_or(0, |e| e.meta.total_runtime_ms);
@@ -468,7 +541,10 @@ async fn pull_profile(c: &TeamClient, id: &str, kinds: &Kinds) -> Result<Option<
             local::profile::set_folder(id, &got.row.folder)?;
         }
         if kinds.folders_tags {
-            local::tags::assign(BTreeMap::from([(id.to_string(), got.row.card.tags.clone())]))?;
+            local::tags::assign(BTreeMap::from([(
+                id.to_string(),
+                got.row.card.tags.clone(),
+            )]))?;
         }
         Ok(())
     });
@@ -486,7 +562,10 @@ pub(super) fn conflict_copy(id: &str, with_data: bool) -> anyhow::Result<String>
     let name = remote::name_of(&s);
     s.meta.id = String::new();
     s.meta.pinned = false;
-    s.config.insert("name".into(), Value::String(format!("{name} (conflict copy)")));
+    s.config.insert(
+        "name".into(),
+        Value::String(format!("{name} (conflict copy)")),
+    );
     local::profile::save_raw(&mut s)?;
     let copy = s.meta.id.clone();
     if with_data {
@@ -505,7 +584,13 @@ pub(super) fn conflict_copy(id: &str, with_data: bool) -> anyhow::Result<String>
         b.picked.insert(c.clone());
         b.conflicts.insert(c.clone());
         if with_data {
-            b.sessions.insert(c, Sess { rev: 0, dirty: true });
+            b.sessions.insert(
+                c,
+                Sess {
+                    rev: 0,
+                    dirty: true,
+                },
+            );
         }
     })?;
     crate::notify_warning(format!(
@@ -521,7 +606,12 @@ fn has_data(id: &str) -> bool {
     crate::store::user_data_root().is_ok_and(|r| r.join(id).join("Default").exists())
 }
 
-async fn profiles(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut Told) -> Result<(), Stop> {
+async fn profiles(
+    c: &TeamClient,
+    rows: &[ProfileRow],
+    p: &mut Patch,
+    told: &mut Told,
+) -> Result<(), Stop> {
     let b = book::read();
     let mine = crate::team::device_id();
     // Who holds what, as the server says now.
@@ -529,7 +619,14 @@ async fn profiles(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut
         .iter()
         .filter_map(|r| {
             let l = r.open_on.as_ref().filter(|l| l.device_id != mine)?;
-            Some((r.id.clone(), Held { device_id: l.device_id.clone(), device_name: l.device_name.clone(), expires_at: l.expires_at }))
+            Some((
+                r.id.clone(),
+                Held {
+                    device_id: l.device_id.clone(),
+                    device_name: l.device_name.clone(),
+                    expires_at: l.expires_at,
+                },
+            ))
         })
         .collect();
     if held != b.held {
@@ -546,7 +643,12 @@ async fn profiles(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut
     if all_vanished(recs, &here) {
         return Err(Stop::Local(VANISHED.into()));
     }
-    let ids: BTreeSet<String> = here.keys().cloned().chain(server.keys().map(|s| s.to_string())).chain(recs.keys().cloned()).collect();
+    let ids: BTreeSet<String> = here
+        .keys()
+        .cloned()
+        .chain(server.keys().map(|s| s.to_string()))
+        .chain(recs.keys().cloned())
+        .collect();
     for id in &ids {
         let id = id.as_str();
         if unreadable(id, &here) {
@@ -562,7 +664,9 @@ async fn profiles(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut
         // Its browser runs on its data here: nothing is moved or deleted under it now.
         let busy = running_here(id);
         match (r, s, &up) {
-            (None, Some(_), Some(_)) if busy => eprintln!("[sync] {id}: open here; met after it closes"),
+            (None, Some(_), Some(_)) if busy => {
+                eprintln!("[sync] {id}: open here; met after it closes")
+            }
             (Some(_), None, Some(_)) if busy && on && !marked => {
                 eprintln!("[sync] {id}: open here; left for a sync after it closes");
             }
@@ -577,7 +681,13 @@ async fn profiles(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut
                     if has_data(id) && !b.sessions.contains_key(id) {
                         let id = id.to_string();
                         p.add(move |b| {
-                            b.sessions.insert(id, Sess { rev: 0, dirty: true });
+                            b.sessions.insert(
+                                id,
+                                Sess {
+                                    rev: 0,
+                                    dirty: true,
+                                },
+                            );
                         });
                     }
                 }
@@ -606,7 +716,13 @@ async fn profiles(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut
                 let (id, data_goes) = (id.to_string(), data_here && s.session_rev == 0);
                 p.add(move |b| {
                     if data_goes {
-                        b.sessions.insert(id.clone(), Sess { rev: 0, dirty: true });
+                        b.sessions.insert(
+                            id.clone(),
+                            Sess {
+                                rev: 0,
+                                dirty: true,
+                            },
+                        );
                     }
                     b.picked.insert(id);
                 });
@@ -664,7 +780,11 @@ async fn profiles(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut
                 // Open here: it runs on, its lease given back and nothing sent.
                 super::super::open::let_go_mine(Some(id));
                 if skip(mark_stopped(c, id).await, id)?.is_some()
-                    && skip(delete_at(c, &me_path("profiles", id)?, s.revision).await, id)?.is_some()
+                    && skip(
+                        delete_at(c, &me_path("profiles", id)?, s.revision).await,
+                        id,
+                    )?
+                    .is_some()
                 {
                     p.rec("profile", id, None);
                     let id = id.to_string();
@@ -677,7 +797,9 @@ async fn profiles(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut
                 (false, false) => {}
                 (true, false) => match put_profile(c, id, u, r.rev).await {
                     Ok(rev) => p.rec("profile", id, Some(Rec::of(rev, u.hash.clone()))),
-                    Err(e) if e.code() == Some(&Code::Stale) => keep_both(c, id, &b.kinds, p, told, false).await?,
+                    Err(e) if e.code() == Some(&Code::Stale) => {
+                        keep_both(c, id, &b.kinds, p, told, false).await?
+                    }
                     Err(e) => {
                         skip(Err::<(), _>(e), id)?;
                     }
@@ -698,18 +820,35 @@ async fn profiles(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut
 
 /// The digest the server's version would have here.
 async fn server_hash(c: &TeamClient, id: &str, kinds: &Kinds) -> Result<Option<String>, Stop> {
-    let Some(got) = skip(c.get::<ProfileWithData>(&me_path("profiles", id)?).await, id)? else { return Ok(None) };
+    let Some(got) = skip(
+        c.get::<ProfileWithData>(&me_path("profiles", id)?).await,
+        id,
+    )?
+    else {
+        return Ok(None);
+    };
     let mut s = remote::stored(&got.row, Some(&got.data));
     if let Ok(here) = local::profile::load_raw(id) {
         s.meta.created_at = here.meta.created_at.or(s.meta.created_at);
     }
-    let tags = if kinds.folders_tags { got.row.card.tags.clone() } else { Vec::new() };
+    let tags = if kinds.folders_tags {
+        got.row.card.tags.clone()
+    } else {
+        Vec::new()
+    };
     Ok(Some(up_of(&s, tags).hash))
 }
 
 /// Changed on both sides: this computer's version becomes a conflict copy,
 /// and the server's takes the profile's place here.
-async fn keep_both(c: &TeamClient, id: &str, kinds: &Kinds, p: &mut Patch, told: &mut Told, with_data: bool) -> Result<(), Stop> {
+async fn keep_both(
+    c: &TeamClient,
+    id: &str,
+    kinds: &Kinds,
+    p: &mut Patch,
+    told: &mut Told,
+    with_data: bool,
+) -> Result<(), Stop> {
     if let Err(e) = conflict_copy(id, with_data) {
         eprintln!("[sync] {id}: no conflict copy made, so nothing is written over: {e:#}");
         return Ok(());
@@ -725,8 +864,13 @@ async fn keep_both(c: &TeamClient, id: &str, kinds: &Kinds, p: &mut Patch, told:
 pub(super) async fn push_one(id: &str) -> Net<()> {
     let c = TeamClient::for_sync().map_err(|e| TeamError::Garbled(format!("{e:#}")))?;
     let b = book::read();
-    let up = up_here(id, &b.kinds).ok_or_else(|| TeamError::Garbled(format!("no profile {id} here")))?;
-    if let Some(x) = up.card.bound_proxy().filter(|x| b.rec("proxy", x).is_none()) {
+    let up =
+        up_here(id, &b.kinds).ok_or_else(|| TeamError::Garbled(format!("no profile {id} here")))?;
+    if let Some(x) = up
+        .card
+        .bound_proxy()
+        .filter(|x| b.rec("proxy", x).is_none())
+    {
         if let Ok(Some(e)) = local::proxy::get(x) {
             let rev = put_proxy(&c, &e, 0).await?;
             let (x, hash) = (x.to_string(), proxy_hash(&e));
@@ -744,18 +888,30 @@ pub(super) async fn push_one(id: &str) -> Net<()> {
 /// it did not take): sent now, each under a lease, while its browser is closed.
 async fn sessions() -> Result<(), Stop> {
     let b = book::read();
-    let Some(place) = crate::team::sync_place() else { return Ok(()) };
+    let Some(place) = crate::team::sync_place() else {
+        return Ok(());
+    };
     for (id, s) in b.sessions.iter().filter(|(_, s)| s.dirty) {
         let here = local::profile::exists(id);
-        if !here || !b.syncs(id) || b.rec("profile", id).is_none() || crate::process::Tracker::shared().is_running(id) {
+        if !here
+            || !b.syncs(id)
+            || b.rec("profile", id).is_none()
+            || crate::process::Tracker::shared().is_running(id)
+        {
             continue;
         }
-        let Ok(udd) = local::profile::user_data_dir(id) else { continue };
-        let name = local::profile::load_raw(id).map(|s| remote::name_of(&s)).unwrap_or_default();
+        let Ok(udd) = local::profile::user_data_dir(id) else {
+            continue;
+        };
+        let name = local::profile::load_raw(id)
+            .map(|s| remote::name_of(&s))
+            .unwrap_or_default();
         match super::super::open::upload_own(&place.team_id, id, &name, udd, s.rev).await {
             Ok(outcome) => eprintln!("[sync] {id}: session {outcome:?}"),
             Err(e) => match super::super::error::find(&e) {
-                Some(super::super::error::CmdError::Offline(why)) => return Err(TeamError::Offline(why.clone()).into()),
+                Some(super::super::error::CmdError::Offline(why)) => {
+                    return Err(TeamError::Offline(why.clone()).into())
+                }
                 _ => eprintln!("[sync] {id}: session not sent now: {e:#}"),
             },
         }
@@ -770,18 +926,25 @@ fn proxy_hash(e: &ProxyEntry) -> String {
 }
 
 async fn put_proxy(c: &TeamClient, e: &ProxyEntry, base: u64) -> Net<u64> {
-    let kind = serde_json::to_value(&e.kind).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
+    let kind = serde_json::to_value(&e.kind)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default();
     let body = json!({
         "name": remote::proxy_name(e), "kind": kind, "country": e.country,
         "data": remote::proxy_data(e), "base_revision": base,
     });
-    let w: Written = c.json(Method::PUT, &me_path("proxies", &e.id)?, Some(&body)).await?;
+    let w: Written = c
+        .json(Method::PUT, &me_path("proxies", &e.id)?, Some(&body))
+        .await?;
     Ok(w.revision)
 }
 
 /// The server's proxy, written here; how it reads here after.
 async fn pull_proxy(c: &TeamClient, id: &str) -> Result<Option<(u64, String)>, Stop> {
-    let Some(got) = skip(c.get::<ProxyWithData>(&me_path("proxies", id)?).await, id)? else { return Ok(None) };
+    let Some(got) = skip(c.get::<ProxyWithData>(&me_path("proxies", id)?).await, id)? else {
+        return Ok(None);
+    };
     let e = remote::proxy(&got.row, Some(&got.data));
     if e.host.trim().is_empty() || e.port == 0 {
         return Ok(None);
@@ -796,11 +959,24 @@ async fn pull_proxy(c: &TeamClient, id: &str) -> Result<Option<(u64, String)>, S
 }
 
 /// The proxies that sync: every one under "all", else those a synced profile is bound to.
-fn wanted_proxies(b: &Book, rows: &[ProfileRow], here: &BTreeMap<String, StoredProfile>) -> BTreeSet<String> {
-    let mut out: BTreeSet<String> = rows.iter().filter_map(|r| r.card.bound_proxy().map(str::to_owned)).collect();
+fn wanted_proxies(
+    b: &Book,
+    rows: &[ProfileRow],
+    here: &BTreeMap<String, StoredProfile>,
+) -> BTreeSet<String> {
+    let mut out: BTreeSet<String> = rows
+        .iter()
+        .filter_map(|r| r.card.bound_proxy().map(str::to_owned))
+        .collect();
     for (id, s) in here {
         if b.syncs(id) {
-            if let Some(x) = s.meta.proxy_id.as_deref().map(str::trim).filter(|x| !x.is_empty()) {
+            if let Some(x) = s
+                .meta
+                .proxy_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|x| !x.is_empty())
+            {
                 out.insert(x.to_string());
             }
         }
@@ -808,18 +984,35 @@ fn wanted_proxies(b: &Book, rows: &[ProfileRow], here: &BTreeMap<String, StoredP
     out
 }
 
-async fn proxies(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut Told) -> Result<(), Stop> {
+async fn proxies(
+    c: &TeamClient,
+    rows: &[ProfileRow],
+    p: &mut Patch,
+    told: &mut Told,
+) -> Result<(), Stop> {
     let b = book::read();
     let all = b.kinds.proxies == book::Proxies::All;
     let wanted = wanted_proxies(&b, rows, &local_profiles()?);
     let bound_there: BTreeSet<&str> = rows.iter().filter_map(|r| r.card.bound_proxy()).collect();
-    let server: BTreeMap<String, ProxyRow> =
-        c.get::<Vec<ProxyRow>>("/me/proxies").await?.into_iter().map(|r| (r.id.clone(), r)).collect();
-    let here: BTreeMap<String, ProxyEntry> =
-        local::proxy::list().map_err(|e| unread("the proxies", e))?.into_iter().map(|e| (e.id.clone(), e)).collect();
+    let server: BTreeMap<String, ProxyRow> = c
+        .get::<Vec<ProxyRow>>("/me/proxies")
+        .await?
+        .into_iter()
+        .map(|r| (r.id.clone(), r))
+        .collect();
+    let here: BTreeMap<String, ProxyEntry> = local::proxy::list()
+        .map_err(|e| unread("the proxies", e))?
+        .into_iter()
+        .map(|e| (e.id.clone(), e))
+        .collect();
     let none = BTreeMap::new();
     let recs = b.records.get("proxy").unwrap_or(&none);
-    let ids: BTreeSet<String> = here.keys().chain(server.keys()).chain(recs.keys()).cloned().collect();
+    let ids: BTreeSet<String> = here
+        .keys()
+        .chain(server.keys())
+        .chain(recs.keys())
+        .cloned()
+        .collect();
     for id in &ids {
         let id = id.as_str();
         let want = all || wanted.contains(id);
@@ -855,7 +1048,9 @@ async fn proxies(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut 
             }
             // Bound to nothing that syncs any more: it leaves the server, unless a profile there needs it.
             (Some(_), Some(s), Some(_)) if !want => {
-                if bound_there.contains(id) || skip(delete_at(c, &me_path("proxies", id)?, s.revision).await, id)?.is_some() {
+                if bound_there.contains(id)
+                    || skip(delete_at(c, &me_path("proxies", id)?, s.revision).await, id)?.is_some()
+                {
                     p.rec("proxy", id, None);
                 }
             }
@@ -885,7 +1080,11 @@ async fn proxies(c: &TeamClient, rows: &[ProfileRow], p: &mut Patch, told: &mut 
 
 fn local_folders() -> Result<BTreeMap<String, String>, Stop> {
     let st = local::folders::list().map_err(|e| unread("the folders", e))?;
-    let mut out: BTreeMap<String, String> = st.registry.iter().map(|n| (n.clone(), String::new())).collect();
+    let mut out: BTreeMap<String, String> = st
+        .registry
+        .iter()
+        .map(|n| (n.clone(), String::new()))
+        .collect();
     for (n, m) in st.meta {
         out.insert(n, m.color.unwrap_or_default());
     }
@@ -894,19 +1093,32 @@ fn local_folders() -> Result<BTreeMap<String, String>, Stop> {
 
 fn set_local_color(name: &str, color: &str) -> anyhow::Result<()> {
     local::folders::add(name)?;
-    let icon = local::folders::list()?.meta.get(name).map(|m| m.icon.clone()).unwrap_or_else(|| "folder".into());
+    let icon = local::folders::list()?
+        .meta
+        .get(name)
+        .map(|m| m.icon.clone())
+        .unwrap_or_else(|| "folder".into());
     let color = Some(color.to_string()).filter(|c| !c.is_empty());
     local::folders::set_meta(name, super::super::folders::FolderMeta { color, icon })
 }
 
 async fn folders(c: &TeamClient, p: &mut Patch, told: &mut Told) -> Result<(), Stop> {
     let b = book::read();
-    let server: BTreeMap<String, FolderRow> =
-        c.get::<Vec<FolderRow>>("/me/folders").await?.into_iter().map(|f| (f.name.clone(), f)).collect();
+    let server: BTreeMap<String, FolderRow> = c
+        .get::<Vec<FolderRow>>("/me/folders")
+        .await?
+        .into_iter()
+        .map(|f| (f.name.clone(), f))
+        .collect();
     let here = local_folders()?;
     let none = BTreeMap::new();
     let recs = b.records.get("folder").unwrap_or(&none);
-    let names: BTreeSet<String> = here.keys().chain(server.keys()).chain(recs.keys()).cloned().collect();
+    let names: BTreeSet<String> = here
+        .keys()
+        .chain(server.keys())
+        .chain(recs.keys())
+        .cloned()
+        .collect();
     let rec = |color: &str| Some(Rec::of(0, color.to_string()));
     for name in &names {
         let n = name.as_str();
@@ -976,7 +1188,12 @@ enum ItemKind {
     Extension,
 }
 
-const ITEM_KINDS: [ItemKind; 4] = [ItemKind::Tag, ItemKind::Bookmark, ItemKind::Automation, ItemKind::Extension];
+const ITEM_KINDS: [ItemKind; 4] = [
+    ItemKind::Tag,
+    ItemKind::Bookmark,
+    ItemKind::Automation,
+    ItemKind::Extension,
+];
 
 impl ItemKind {
     fn key(self) -> &'static str {
@@ -1027,11 +1244,18 @@ impl ItemKind {
     /// This computer's items: name and what goes up.
     fn here(self) -> Result<BTreeMap<String, (String, Value)>, Stop> {
         fn row<T: Serialize>(id: &str, name: &str, v: &T) -> (String, String, Value) {
-            (id.to_string(), name.to_string(), serde_json::to_value(v).unwrap_or_default())
+            (
+                id.to_string(),
+                name.to_string(),
+                serde_json::to_value(v).unwrap_or_default(),
+            )
         }
         let rows: anyhow::Result<Vec<(String, String, Value)>> = match self {
-            ItemKind::Tag => local::tags::list().map(|t| t.tags.iter().map(|t| row(&t.id, &t.name, t)).collect()),
-            ItemKind::Bookmark => local::bookmarks::list().map(|l| l.iter().map(|x| row(&x.id, &x.title, x)).collect()),
+            ItemKind::Tag => {
+                local::tags::list().map(|t| t.tags.iter().map(|t| row(&t.id, &t.name, t)).collect())
+            }
+            ItemKind::Bookmark => local::bookmarks::list()
+                .map(|l| l.iter().map(|x| row(&x.id, &x.title, x)).collect()),
             ItemKind::Automation => local::automation::list().map(|l| {
                 l.into_iter()
                     .map(|mut x| {
@@ -1042,10 +1266,14 @@ impl ItemKind {
                     })
                     .collect()
             }),
-            ItemKind::Extension => local::extensions::list().map(|l| l.iter().map(|x| row(&x.id, &x.name, x)).collect()),
+            ItemKind::Extension => local::extensions::list()
+                .map(|l| l.iter().map(|x| row(&x.id, &x.name, x)).collect()),
         };
         let rows = rows.map_err(|e| unread(self.topic(), e))?;
-        Ok(rows.into_iter().map(|(id, name, v)| (id, (name, self.norm(v)))).collect())
+        Ok(rows
+            .into_iter()
+            .map(|(id, name, v)| (id, (name, self.norm(v))))
+            .collect())
     }
 
     fn remove_here(self, id: &str) -> anyhow::Result<()> {
@@ -1063,21 +1291,33 @@ fn hash_item(kind: ItemKind, v: &Value) -> String {
 }
 
 /// The server's item written here; an extension's files only when its package moved.
-async fn write_item(c: &TeamClient, kind: ItemKind, row: &ItemRow, r: Option<&Rec>, told: &mut Told) -> Result<bool, Stop> {
+async fn write_item(
+    c: &TeamClient,
+    kind: ItemKind,
+    row: &ItemRow,
+    r: Option<&Rec>,
+    told: &mut Told,
+) -> Result<bool, Stop> {
     let mut v = opened(&row.data).unwrap_or_else(|| json!({}));
     if let Value::Object(m) = &mut v {
         m.insert("id".into(), json!(row.id));
     }
     let r = match kind {
-        ItemKind::Tag => serde_json::from_value(v).map_err(anyhow::Error::from).and_then(|t| local::tags::save(t, None).map(|_| ())),
-        ItemKind::Bookmark => serde_json::from_value(v).map_err(anyhow::Error::from).and_then(|x| local::bookmarks::save(x).map(|_| ())),
+        ItemKind::Tag => serde_json::from_value(v)
+            .map_err(anyhow::Error::from)
+            .and_then(|t| local::tags::save(t, None).map(|_| ())),
+        ItemKind::Bookmark => serde_json::from_value(v)
+            .map_err(anyhow::Error::from)
+            .and_then(|x| local::bookmarks::save(x).map(|_| ())),
         ItemKind::Automation => serde_json::from_value::<super::super::automation::Project>(v)
             .map_err(anyhow::Error::from)
             .and_then(|mut x| {
                 keep_secrets_here(&mut x);
                 local::automation::save(x).map(|_| ())
             }),
-        ItemKind::Extension => return Ok(extension::write(c, row, r, told).await? != extension::Wrote::No),
+        ItemKind::Extension => {
+            return Ok(extension::write(c, row, r, told).await? != extension::Wrote::No)
+        }
     };
     match r {
         Ok(()) => Ok(true),
@@ -1090,10 +1330,19 @@ async fn write_item(c: &TeamClient, kind: ItemKind, row: &ItemRow, r: Option<&Re
 
 /// The values this computer keeps for a project's secret steps, put back.
 fn keep_secrets_here(p: &mut super::super::automation::Project) {
-    let Some(mine) = local::automation::list().ok().and_then(|all| all.into_iter().find(|x| x.id == p.id)) else { return };
+    let Some(mine) = local::automation::list()
+        .ok()
+        .and_then(|all| all.into_iter().find(|x| x.id == p.id))
+    else {
+        return;
+    };
     for b in &mut p.blocks {
-        let Some(old) = mine.blocks.iter().find(|o| o.id == b.id) else { continue };
-        let (Value::Object(to), Value::Object(from)) = (&mut b.params, &old.params) else { continue };
+        let Some(old) = mine.blocks.iter().find(|o| o.id == b.id) else {
+            continue;
+        };
+        let (Value::Object(to), Value::Object(from)) = (&mut b.params, &old.params) else {
+            continue;
+        };
         for name in &b.secrets {
             if let Some(v) = from.get(name) {
                 to.insert(name.clone(), v.clone());
@@ -1102,16 +1351,43 @@ fn keep_secrets_here(p: &mut super::super::automation::Project) {
     }
 }
 
-async fn put_item(c: &TeamClient, kind: ItemKind, id: &str, name: &str, v: &Value, base: u64) -> Net<u64> {
+async fn put_item(
+    c: &TeamClient,
+    kind: ItemKind,
+    id: &str,
+    name: &str,
+    v: &Value,
+    base: u64,
+) -> Net<u64> {
     let body = json!({ "name": remote::item_name(name), "data": b64(v), "base_revision": base });
-    let w: ItemWritten = c.json(Method::PUT, &me_path(&format!("items/{}", kind.key()), id)?, Some(&body)).await?;
+    let w: ItemWritten = c
+        .json(
+            Method::PUT,
+            &me_path(&format!("items/{}", kind.key()), id)?,
+            Some(&body),
+        )
+        .await?;
     Ok(w.revision)
 }
 
 /// Up as new or changed, over the server's `over` (none: as new there); an
 /// extension's files after it when they changed ([`extension::after_put`]).
-async fn send_item(c: &TeamClient, kind: ItemKind, id: &str, name: &str, v: &Value, r: Option<&Rec>, over: Option<&ItemRow>) -> Result<Option<Rec>, Stop> {
-    let Some(rev) = skip(put_item(c, kind, id, name, v, over.map_or(0, |o| o.revision)).await, id)? else { return Ok(None) };
+async fn send_item(
+    c: &TeamClient,
+    kind: ItemKind,
+    id: &str,
+    name: &str,
+    v: &Value,
+    r: Option<&Rec>,
+    over: Option<&ItemRow>,
+) -> Result<Option<Rec>, Stop> {
+    let Some(rev) = skip(
+        put_item(c, kind, id, name, v, over.map_or(0, |o| o.revision)).await,
+        id,
+    )?
+    else {
+        return Ok(None);
+    };
     let rec = Rec::of(rev, hash_item(kind, v));
     if kind != ItemKind::Extension {
         return Ok(Some(rec));
@@ -1126,7 +1402,11 @@ fn pulled(kind: ItemKind, id: &str, row: &ItemRow) -> Rec {
         rev: row.revision,
         hash: here_hash(kind, id),
         package: extension::package_of(row),
-        files: if ext { extension::files_here(id) } else { String::new() },
+        files: if ext {
+            extension::files_here(id)
+        } else {
+            String::new()
+        },
     }
 }
 
@@ -1136,15 +1416,31 @@ async fn items(c: &TeamClient, kind: ItemKind, p: &mut Patch, told: &mut Told) -
         return Ok(());
     }
     let b = book::read();
-    let server: BTreeMap<String, ItemRow> =
-        c.get::<Vec<ItemRow>>(&format!("/me/items/{key}")).await?.into_iter().map(|r| (r.id.clone(), r)).collect();
+    let server: BTreeMap<String, ItemRow> = c
+        .get::<Vec<ItemRow>>(&format!("/me/items/{key}"))
+        .await?
+        .into_iter()
+        .map(|r| (r.id.clone(), r))
+        .collect();
     let here = kind.here()?;
     let none = BTreeMap::new();
     let recs = b.records.get(key).unwrap_or(&none);
-    let ids: BTreeSet<String> = here.keys().chain(server.keys()).chain(recs.keys()).cloned().collect();
-    let theirs = |row: &ItemRow| opened(&row.data).map(|v| hash_item(kind, &v)).unwrap_or_default();
+    let ids: BTreeSet<String> = here
+        .keys()
+        .chain(server.keys())
+        .chain(recs.keys())
+        .cloned()
+        .collect();
+    let theirs = |row: &ItemRow| {
+        opened(&row.data)
+            .map(|v| hash_item(kind, &v))
+            .unwrap_or_default()
+    };
     // An extension's package moves without its record when another computer's upload lags.
-    let moved = |r: &Rec, row: &ItemRow| r.rev != row.revision || (kind == ItemKind::Extension && r.package != extension::package_of(row));
+    let moved = |r: &Rec, row: &ItemRow| {
+        r.rev != row.revision
+            || (kind == ItemKind::Extension && r.package != extension::package_of(row))
+    };
     for id in &ids {
         let id = id.as_str();
         let (r, s, l) = (recs.get(id), server.get(id), here.get(id));
@@ -1170,10 +1466,12 @@ async fn items(c: &TeamClient, kind: ItemKind, p: &mut Patch, told: &mut Told) -
                 let same = lh.as_deref() == Some(theirs(row).as_str());
                 // A project of this computer's is kept beside it first.
                 let kept = match l {
-                    Some((name, _)) if !same && kind == ItemKind::Automation => match keep_project(id, name, told) {
-                        Some(()) => true,
-                        None => continue,
-                    },
+                    Some((name, _)) if !same && kind == ItemKind::Automation => {
+                        match keep_project(id, name, told) {
+                            Some(()) => true,
+                            None => continue,
+                        }
+                    }
                     _ => false,
                 };
                 if same || write_item(c, kind, row, None, told).await? {
@@ -1204,7 +1502,12 @@ async fn items(c: &TeamClient, kind: ItemKind, p: &mut Patch, told: &mut Told) -
                         told.topics.insert(kind.topic());
                         p.rec(key, id, Some(pulled(kind, id, row)));
                     }
-                } else if skip(delete_at(c, &me_path(&format!("items/{key}"), id)?, r.rev).await, id)?.is_some() {
+                } else if skip(
+                    delete_at(c, &me_path(&format!("items/{key}"), id)?, r.rev).await,
+                    id,
+                )?
+                .is_some()
+                {
                     p.rec(key, id, None);
                 }
             }
@@ -1222,7 +1525,9 @@ async fn items(c: &TeamClient, kind: ItemKind, p: &mut Patch, told: &mut Told) -
                             continue;
                         }
                     } else if differs {
-                        told.warnings.push(format!("“{name}” was changed on another computer too: that version is kept."));
+                        told.warnings.push(format!(
+                            "“{name}” was changed on another computer too: that version is kept."
+                        ));
                     }
                     if write_item(c, kind, row, Some(r), told).await? {
                         told.topics.insert(kind.topic());
@@ -1247,7 +1552,10 @@ async fn items(c: &TeamClient, kind: ItemKind, p: &mut Patch, told: &mut Told) -
 /// None when no copy could be made; nothing is written over then.
 fn keep_project(id: &str, name: &str, told: &mut Told) -> Option<()> {
     let made = local::automation::list().and_then(|all| {
-        let mine = all.into_iter().find(|p| p.id == id).ok_or_else(|| anyhow::anyhow!("not here"))?;
+        let mine = all
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| anyhow::anyhow!("not here"))?;
         let copy = super::super::automation::Project {
             name: format!("{name} (conflict copy)"),
             ..local::automation::copy_of(mine)
@@ -1264,7 +1572,9 @@ fn keep_project(id: &str, name: &str, told: &mut Told) -> Option<()> {
             Some(())
         }
         Err(e) => {
-            eprintln!("[sync] project {id}: no conflict copy made, so nothing is written over: {e:#}");
+            eprintln!(
+                "[sync] project {id}: no conflict copy made, so nothing is written over: {e:#}"
+            );
             None
         }
     }
@@ -1272,7 +1582,10 @@ fn keep_project(id: &str, name: &str, told: &mut Told) -> Option<()> {
 
 /// The digest of the item as it reads here now.
 fn here_hash(kind: ItemKind, id: &str) -> String {
-    kind.here().ok().and_then(|h| h.get(id).map(|(_, v)| hash_item(kind, v))).unwrap_or_default()
+    kind.here()
+        .ok()
+        .and_then(|h| h.get(id).map(|(_, v)| hash_item(kind, v)))
+        .unwrap_or_default()
 }
 
 // ---- what waits ----
@@ -1299,7 +1612,13 @@ pub(super) fn scan() {
 fn waiting() -> Result<Vec<Entry>, Stop> {
     let b = book::read();
     let mut out = Vec::new();
-    let mut put = |kind: &str, id: &str, op: Op| out.push(Entry { kind: kind.into(), id: id.into(), op });
+    let mut put = |kind: &str, id: &str, op: Op| {
+        out.push(Entry {
+            kind: kind.into(),
+            id: id.into(),
+            op,
+        })
+    };
     let none = BTreeMap::new();
 
     let here = local_profiles()?;
@@ -1315,13 +1634,19 @@ fn waiting() -> Result<Vec<Entry>, Stop> {
         }
     }
     if !all_vanished(recs, &here) {
-        for id in recs.keys().filter(|id| !here.contains_key(*id) && !unreadable(id, &here)) {
+        for id in recs
+            .keys()
+            .filter(|id| !here.contains_key(*id) && !unreadable(id, &here))
+        {
             put("profile", id, Op::Delete);
         }
     }
 
-    let proxies: BTreeMap<String, ProxyEntry> =
-        local::proxy::list().map_err(|e| unread("the proxies", e))?.into_iter().map(|e| (e.id.clone(), e)).collect();
+    let proxies: BTreeMap<String, ProxyEntry> = local::proxy::list()
+        .map_err(|e| unread("the proxies", e))?
+        .into_iter()
+        .map(|e| (e.id.clone(), e))
+        .collect();
     let wanted = wanted_proxies(&b, &[], &here);
     let all = b.kinds.proxies == book::Proxies::All;
     let recs = b.records.get("proxy").unwrap_or(&none);
@@ -1356,7 +1681,9 @@ fn waiting() -> Result<Vec<Entry>, Stop> {
                 put(kind.key(), id, Op::Put);
             }
         }
-        for id in recs.keys().filter(|id| !here.contains_key(*id) && !(kind == ItemKind::Extension && extension::unlisted(id))) {
+        for id in recs.keys().filter(|id| {
+            !here.contains_key(*id) && !(kind == ItemKind::Extension && extension::unlisted(id))
+        }) {
             put(kind.key(), id, Op::Delete);
         }
     }
@@ -1387,7 +1714,8 @@ pub(super) async fn remove_all(c: &TeamClient) -> Net<()> {
         let path = me_path("profiles", &row.id)?;
         match delete_at(c, &path, row.revision).await {
             Err(e) if e.code() == Some(&Code::Leased) => {
-                c.call(Method::POST, &format!("{path}/lease?takeover=true"), None).await?;
+                c.call(Method::POST, &format!("{path}/lease?takeover=true"), None)
+                    .await?;
                 delete_at(c, &path, row.revision).await?;
             }
             Err(e) if e.status() != Some(404) => return Err(e),
@@ -1398,7 +1726,11 @@ pub(super) async fn remove_all(c: &TeamClient) -> Net<()> {
         gone(delete_at(c, &me_path("proxies", &row.id)?, row.revision).await)?;
     }
     for row in c.get::<Vec<Named>>("/me/folders").await? {
-        gone(c.call(Method::DELETE, &me_path("folders", &row.name)?, None).await.map(|_| ()))?;
+        gone(
+            c.call(Method::DELETE, &me_path("folders", &row.name)?, None)
+                .await
+                .map(|_| ()),
+        )?;
     }
     for kind in ITEM_KINDS {
         let key = kind.key();
@@ -1408,7 +1740,11 @@ pub(super) async fn remove_all(c: &TeamClient) -> Net<()> {
     }
     // The stop marks last.
     for row in c.get::<Vec<Named>>("/me/items/sync").await? {
-        gone(c.call(Method::DELETE, &me_path("items/sync", &row.id)?, None).await.map(|_| ()))?;
+        gone(
+            c.call(Method::DELETE, &me_path("items/sync", &row.id)?, None)
+                .await
+                .map(|_| ()),
+        )?;
     }
     Ok(())
 }

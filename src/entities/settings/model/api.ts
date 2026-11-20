@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Settings, ApiInfo, DataRootInfo, ProxyChainDetection, ProxyChainSettings, ProxyChainTestKind, ProxyChainTestResult } from "./types";
+import type { Settings, ApiInfo, DataRootInfo, RecoveryCopy, SnapshotInspection, SnapshotManifest, SnapshotResult, ProxyChainDetection, ProxyChainSettings, ProxyChainTestKind, ProxyChainTestResult } from "./types";
 import { useProfilePasswords } from "./profilePasswords";
 
 let chainWrite: Promise<ProxyChainSettings> | null = null;
@@ -61,6 +61,11 @@ export const mcpDownload = (dir: string) => invoke<string>("mcp_download", { dir
 export const dataRootGet = () => invoke<DataRootInfo>("data_root_get");
 /** Moves the data; progress arrives as `data-migration` events. */
 export const dataRootMigrate = (path: string) => invoke<number>("data_root_migrate", { path });
+export const teamRecoveryCopies = () => invoke<RecoveryCopy[]>("team_recovery_copies");
+export const snapshotPreview = () => invoke<SnapshotManifest>("snapshot_preview");
+export const snapshotCreate = (path: string) => invoke<SnapshotResult>("snapshot_create", { path });
+export const snapshotInspect = (path: string) => invoke<SnapshotInspection>("snapshot_inspect", { path });
+export const snapshotProfilePayloads = (path: string) => invoke<unknown[]>("snapshot_profile_payloads", { path });
 /** What Delete all data would move out of ShardBrowser, counted (reset.rs). Reads only. */
 export type ResetPlan = {
   /** Handed back to `appReset`: the reset refuses when the disk no longer matches it. */

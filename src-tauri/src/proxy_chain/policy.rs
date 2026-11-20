@@ -94,8 +94,13 @@ mod tests {
                         effective(&config, profile, proxy).unwrap().enabled,
                         expected
                     );
-                    assert_eq!(effective(&config, profile, proxy).unwrap().allow_assigned_fallback,
-                        profile == PreferFirstHop || (profile == Inherit && proxy == PreferFirstHop));
+                    assert_eq!(
+                        effective(&config, profile, proxy)
+                            .unwrap()
+                            .allow_assigned_fallback,
+                        profile == PreferFirstHop
+                            || (profile == Inherit && proxy == PreferFirstHop)
+                    );
                 }
             }
         }

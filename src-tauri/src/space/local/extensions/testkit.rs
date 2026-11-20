@@ -17,11 +17,12 @@ impl Key {
     pub fn new() -> Key {
         let rng = SystemRandom::new();
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &rng).unwrap();
-        let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8.as_ref(), &rng).unwrap();
+        let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8.as_ref(), &rng)
+            .unwrap();
         // SubjectPublicKeyInfo { id-ecPublicKey, prime256v1 } around the point.
         let mut spki = vec![
-            0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce,
-            0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
+            0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06,
+            0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
         ];
         spki.extend_from_slice(pair.public_key().as_ref());
         Key { pair, spki }
@@ -33,7 +34,11 @@ impl Key {
     }
 
     fn sign(&self, msg: &[u8]) -> Vec<u8> {
-        self.pair.sign(&SystemRandom::new(), msg).unwrap().as_ref().to_vec()
+        self.pair
+            .sign(&SystemRandom::new(), msg)
+            .unwrap()
+            .as_ref()
+            .to_vec()
     }
 }
 
@@ -54,7 +59,8 @@ impl Drop for StandIn {
 pub fn zip(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     for (name, body) in files {
-        w.start_file(*name, zip::write::SimpleFileOptions::default()).unwrap();
+        w.start_file(*name, zip::write::SimpleFileOptions::default())
+            .unwrap();
         w.write_all(body).unwrap();
     }
     w.finish().unwrap().into_inner()
@@ -84,7 +90,10 @@ pub fn crx3(dev: &Key, store: Option<&Key>, archive: &[u8]) -> Vec<u8> {
     msg.extend_from_slice(archive);
     let mut header = Vec::new();
     for k in std::iter::once(dev).chain(store) {
-        header.extend(field(3, &[field(1, &k.spki), field(2, &k.sign(&msg))].concat()));
+        header.extend(field(
+            3,
+            &[field(1, &k.spki), field(2, &k.sign(&msg))].concat(),
+        ));
     }
     header.extend(field(10000, &signed));
     let mut out = b"Cr24".to_vec();
@@ -98,7 +107,8 @@ pub fn crx3(dev: &Key, store: Option<&Key>, archive: &[u8]) -> Vec<u8> {
 /// A store `verified_contents.json` naming `id` at `version` (signature not checked).
 pub fn verified_contents(id: &str, version: &str) -> String {
     use base64::Engine;
-    let payload = serde_json::json!({ "item_id": id, "item_version": version, "content_hashes": [] });
+    let payload =
+        serde_json::json!({ "item_id": id, "item_version": version, "content_hashes": [] });
     let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string());
     serde_json::json!([{ "description": "treehash per file", "signed_content": { "payload": b64, "signatures": [] } }]).to_string()
 }
@@ -108,7 +118,8 @@ pub struct Tmp(pub std::path::PathBuf);
 
 impl Tmp {
     pub fn new(tag: &str) -> Tmp {
-        let p = std::env::temp_dir().join(format!("shardx-{tag}-{}", uuid::Uuid::new_v4().simple()));
+        let p =
+            std::env::temp_dir().join(format!("shardx-{tag}-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&p).unwrap();
         Tmp(p)
     }

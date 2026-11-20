@@ -69,7 +69,10 @@ impl FolderState {
 
     fn set_parent(&mut self, name: &str, parent: &str, known: &[String]) -> Result<()> {
         named(name)?;
-        if !parent.is_empty() && !known.iter().any(|f| f == parent) && !self.registry.iter().any(|f| f == parent) {
+        if !parent.is_empty()
+            && !known.iter().any(|f| f == parent)
+            && !self.registry.iter().any(|f| f == parent)
+        {
             bail!("the parent folder no longer exists");
         }
         let mut at = parent;
@@ -99,7 +102,11 @@ impl FolderState {
             return;
         }
         let mut registry = Vec::new();
-        for f in self.registry.drain(..).map(|f| if f == old { new.to_string() } else { f }) {
+        for f in self
+            .registry
+            .drain(..)
+            .map(|f| if f == old { new.to_string() } else { f })
+        {
             if !registry.contains(&f) {
                 registry.push(f);
             }
@@ -112,7 +119,9 @@ impl FolderState {
             self.parents.insert(new.to_string(), parent);
         }
         for parent in self.parents.values_mut() {
-            if parent == old { *parent = new.to_string(); }
+            if parent == old {
+                *parent = new.to_string();
+            }
         }
     }
 
@@ -123,8 +132,15 @@ impl FolderState {
         // take its place under its own parent, or at the top level.
         let parent = self.parents.remove(name);
         self.parents.retain(|_, value| {
-            if value != name { return true; }
-            if let Some(parent) = &parent { *value = parent.clone(); true } else { false }
+            if value != name {
+                return true;
+            }
+            if let Some(parent) = &parent {
+                *value = parent.clone();
+                true
+            } else {
+                false
+            }
         });
     }
 
@@ -159,8 +175,8 @@ fn read(path: &Path) -> Result<Option<FolderState>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e).with_context(|| format!("read {}", path.display())),
     };
-    let stored: Stored =
-        serde_json::from_slice(&raw).with_context(|| format!("{} is not readable as folders", path.display()))?;
+    let stored: Stored = serde_json::from_slice(&raw)
+        .with_context(|| format!("{} is not readable as folders", path.display()))?;
     if stored.version > VERSION {
         bail!("{} was written by a newer launcher", path.display());
     }
@@ -168,7 +184,10 @@ fn read(path: &Path) -> Result<Option<FolderState>> {
 }
 
 fn write(path: &Path, state: &FolderState) -> Result<()> {
-    let body = serde_json::to_vec_pretty(&Stored { version: VERSION, state: state.clone() })?;
+    let body = serde_json::to_vec_pretty(&Stored {
+        version: VERSION,
+        state: state.clone(),
+    })?;
     let tmp = path.with_extension("json.tmp");
     {
         let mut f = fs::File::create(&tmp).with_context(|| format!("write {}", tmp.display()))?;
@@ -210,11 +229,20 @@ pub(in crate::space) fn add(name: &str) -> Result<()> {
     change(|s| s.add(name))
 }
 
-pub(in crate::space) fn set_parent(name: &str, parent: &str, meta: Option<FolderMeta>) -> Result<()> {
-    let known: Vec<String> = super::profile::list_all()?.into_iter().map(|p| p.folder).collect();
+pub(in crate::space) fn set_parent(
+    name: &str,
+    parent: &str,
+    meta: Option<FolderMeta>,
+) -> Result<()> {
+    let known: Vec<String> = super::profile::list_all()?
+        .into_iter()
+        .map(|p| p.folder)
+        .collect();
     change(|s| {
         s.set_parent(name, parent, &known)?;
-        if let Some(meta) = meta { s.set_meta(name, meta)?; }
+        if let Some(meta) = meta {
+            s.set_meta(name, meta)?;
+        }
         Ok(())
     })
 }
@@ -236,9 +264,13 @@ pub(in crate::space) fn check_rename(old: &str, new: &str) -> Result<()> {
     // before any profile can be changed.
     let state = list()?;
     let new = new.trim();
-    if new.is_empty() || old == new { return Ok(()); }
-    if state.registry.iter().any(|n| n == new) || state.meta.contains_key(new)
-        || super::profile::list_all()?.iter().any(|p| p.folder == new) {
+    if new.is_empty() || old == new {
+        return Ok(());
+    }
+    if state.registry.iter().any(|n| n == new)
+        || state.meta.contains_key(new)
+        || super::profile::list_all()?.iter().any(|p| p.folder == new)
+    {
         bail!("a folder with this name already exists");
     }
     Ok(())
@@ -270,12 +302,16 @@ mod tests {
         }
     }
     fn dir() -> Dir {
-        let d = std::env::temp_dir().join(format!("shardx-folders-{}", uuid::Uuid::new_v4().simple()));
+        let d =
+            std::env::temp_dir().join(format!("shardx-folders-{}", uuid::Uuid::new_v4().simple()));
         fs::create_dir_all(&d).unwrap();
         Dir(d)
     }
     fn look(color: Option<&str>, icon: &str) -> FolderMeta {
-        FolderMeta { color: color.map(String::from), icon: icon.into() }
+        FolderMeta {
+            color: color.map(String::from),
+            icon: icon.into(),
+        }
     }
 
     #[test]
@@ -308,7 +344,10 @@ mod tests {
             parents: BTreeMap::new(),
         };
         assert!(import_at(&path, first).unwrap());
-        let other = FolderState { registry: vec!["Other".into()], ..FolderState::default() };
+        let other = FolderState {
+            registry: vec!["Other".into()],
+            ..FolderState::default()
+        };
         assert!(!import_at(&path, other).unwrap());
         let back = read(&path).unwrap().unwrap();
         assert_eq!(back.registry, ["Empty1"]);
@@ -357,7 +396,14 @@ mod tests {
         })
         .unwrap();
         assert!(!path.exists());
-        assert!(import_at(&path, FolderState { registry: vec!["Ads".into()], ..FolderState::default() }).unwrap());
+        assert!(import_at(
+            &path,
+            FolderState {
+                registry: vec!["Ads".into()],
+                ..FolderState::default()
+            }
+        )
+        .unwrap());
     }
 
     #[test]
@@ -373,7 +419,11 @@ mod tests {
     fn version_one_names_are_literal_and_hierarchy_survives_disk_reload() {
         let d = dir();
         let path = d.0.join("folders.json");
-        fs::write(&path, br#"{"version":1,"registry":["Client/old","Root"],"meta":{}}"#).unwrap();
+        fs::write(
+            &path,
+            br#"{"version":1,"registry":["Client/old","Root"],"meta":{}}"#,
+        )
+        .unwrap();
         let before = read(&path).unwrap().unwrap();
         assert!(before.parents.is_empty());
         assert_eq!(before.registry[0], "Client/old");
@@ -393,7 +443,8 @@ mod tests {
             s.add("Root")?;
             s.set_parent("Child", "Root", &[])?;
             s.set_parent("Leaf", "Child", &[])
-        }).unwrap();
+        })
+        .unwrap();
         let before = fs::read(&path).unwrap();
         for (name, parent) in [("Root", "Root"), ("Root", "Leaf"), ("Child", "Missing")] {
             assert!(change_at(&path, |s| s.set_parent(name, parent, &[])).is_err());
@@ -427,7 +478,8 @@ mod tests {
     #[test]
     fn assigning_a_parent_keeps_profile_only_folders_and_imports_refuse_cycles() {
         let mut s = FolderState::default();
-        s.set_parent("New", "Profile only", &["Profile only".into()]).unwrap();
+        s.set_parent("New", "Profile only", &["Profile only".into()])
+            .unwrap();
         assert_eq!(s.registry, ["New", "Profile only"]);
         s.parents.insert("Profile only".into(), "New".into());
         let tidy = s.tidy();

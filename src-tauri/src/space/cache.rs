@@ -20,7 +20,9 @@ use super::live::Tell;
 use super::perm;
 use super::profile::{ProfileMeta, StoredProfile};
 use super::proxy::{ProxyEntry, TestSnapshot};
-use super::remote::{self, FolderRow, ItemRow, ProfileRow, ProfileWithData, ProxyRow, ProxyWithData};
+use super::remote::{
+    self, FolderRow, ItemRow, ProfileRow, ProfileWithData, ProxyRow, ProxyWithData,
+};
 use super::tags::TagState;
 
 /// Events closer together than this are one refetch.
@@ -145,14 +147,18 @@ struct Snapshot {
 impl Snapshot {
     /// The settings read at the row's revision, while a right still reads them.
     fn detail(&self, row: &ProfileRow) -> Option<&StoredProfile> {
-        self.details
-            .get(&row.id)
-            .filter(|d| d.meta.rev == row.revision && reads_settings(&perm::rights(&self.team, &row.id, &row.folder)))
+        self.details.get(&row.id).filter(|d| {
+            d.meta.rev == row.revision
+                && reads_settings(&perm::rights(&self.team, &row.id, &row.folder))
+        })
     }
 
     /// A proxy's login, while the permission held still hands it out.
     fn login(&self, id: &str) -> Option<&str> {
-        self.logins.get(id).filter(|_| perm::may_use_proxy(&self.team, id)).map(|(_, d)| d.as_str())
+        self.logins
+            .get(id)
+            .filter(|_| perm::may_use_proxy(&self.team, id))
+            .map(|(_, d)| d.as_str())
     }
 
     fn items(&self, kind: &str) -> &[ItemRow] {
@@ -162,7 +168,9 @@ impl Snapshot {
 
 fn state() -> MutexGuard<'static, Option<Snapshot>> {
     static S: OnceLock<Mutex<Option<Snapshot>>> = OnceLock::new();
-    S.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+    S.get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 /// One fill at a time, so an older answer never lands over a newer one.
@@ -177,7 +185,10 @@ fn with<T>(team: &str, f: impl FnOnce(&Snapshot) -> T) -> Option<T> {
 }
 
 fn now_secs() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 // ---- reads ----
@@ -190,7 +201,10 @@ pub fn status(team: &str) -> TeamStatus {
 pub fn profiles(team: &str) -> Vec<ProfileMeta> {
     let device = crate::team::device_id();
     let mut out = with(team, |s| {
-        s.profiles.iter().map(|r| remote::meta(team, r, s.detail(r), &device)).collect::<Vec<_>>()
+        s.profiles
+            .iter()
+            .map(|r| remote::meta(team, r, s.detail(r), &device))
+            .collect::<Vec<_>>()
     })
     .unwrap_or_default();
     out.sort_by_cached_key(|m| (m.name.to_lowercase(), m.id.clone()));
@@ -205,7 +219,11 @@ pub fn has_profile(team: &str, id: &str) -> bool {
 pub fn profile(team: &str, id: &str) -> Option<StoredProfile> {
     with(team, |s| {
         let row = s.profiles.iter().find(|r| r.id == id)?;
-        Some(s.detail(row).cloned().unwrap_or_else(|| remote::stored(row, None)))
+        Some(
+            s.detail(row)
+                .cloned()
+                .unwrap_or_else(|| remote::stored(row, None)),
+        )
     })
     .flatten()
 }
@@ -215,7 +233,13 @@ pub fn proxies(team: &str) -> Vec<ProxyEntry> {
     let mut rows = with(team, |s| {
         s.proxies
             .iter()
-            .map(|r| (r.updated_at, r.name.to_lowercase(), remote::proxy(r, s.login(&r.id))))
+            .map(|r| {
+                (
+                    r.updated_at,
+                    r.name.to_lowercase(),
+                    remote::proxy(r, s.login(&r.id)),
+                )
+            })
             .collect::<Vec<_>>()
     })
     .unwrap_or_default();
@@ -258,8 +282,13 @@ pub fn tests(team: &str, proxy_id: &str) -> Vec<TestSnapshot> {
 /// Keep a test of a team proxy, here only; answers it as kept.
 pub fn keep_test(team: &str, proxy_id: &str, snap: TestSnapshot) -> TestSnapshot {
     let mut g = state();
-    match g.as_mut().filter(|s| s.team == team && s.proxies.iter().any(|r| r.id == proxy_id)) {
-        Some(s) => super::local::proxy::keep_test(s.tests.entry(proxy_id.to_string()).or_default(), snap),
+    match g
+        .as_mut()
+        .filter(|s| s.team == team && s.proxies.iter().any(|r| r.id == proxy_id))
+    {
+        Some(s) => {
+            super::local::proxy::keep_test(s.tests.entry(proxy_id.to_string()).or_default(), snap)
+        }
         None => super::local::proxy::keep_test(&mut Vec::new(), snap),
     }
 }
@@ -273,7 +302,9 @@ pub async fn profile_detail(team: &str, id: &str) -> Result<StoredProfile> {
     })
     .flatten();
     let missing = || super::CmdError::Missing(format!("no profile {id} in this team"));
-    let Some((row, cached)) = found else { return Err(missing().into()) };
+    let Some((row, cached)) = found else {
+        return Err(missing().into());
+    };
     if let Some(d) = cached {
         return Ok(d);
     }
@@ -286,7 +317,10 @@ pub async fn profile_detail(team: &str, id: &str) -> Result<StoredProfile> {
         Ok(got) => {
             let stored = remote::stored(&got.row, Some(&got.data));
             if let Some(s) = state().as_mut().filter(|s| s.team == team) {
-                if s.profiles.iter().any(|r| r.id == id && r.revision == got.row.revision) {
+                if s.profiles
+                    .iter()
+                    .any(|r| r.id == id && r.revision == got.row.revision)
+                {
                     s.details.insert(id.to_string(), stored.clone());
                 }
             }
@@ -311,7 +345,14 @@ pub fn row(team: &str, id: &str) -> Option<ProfileRow> {
 }
 
 pub fn rows_in_folder(team: &str, folder: &str) -> Vec<ProfileRow> {
-    with(team, |s| s.profiles.iter().filter(|r| r.folder == folder).cloned().collect()).unwrap_or_default()
+    with(team, |s| {
+        s.profiles
+            .iter()
+            .filter(|r| r.folder == folder)
+            .cloned()
+            .collect()
+    })
+    .unwrap_or_default()
 }
 
 pub fn proxy_row(team: &str, id: &str) -> Option<ProxyRow> {
@@ -334,7 +375,8 @@ pub fn wrote_profile(team: &str, row: ProfileRow, data: Option<&str>) {
     change(team, |s| {
         match data {
             Some(d) => {
-                s.details.insert(row.id.clone(), remote::stored(&row, Some(d)));
+                s.details
+                    .insert(row.id.clone(), remote::stored(&row, Some(d)));
             }
             None => {
                 s.details.remove(&row.id);
@@ -355,7 +397,10 @@ pub fn dropped_profile(team: &str, id: &str) {
 }
 
 pub fn wrote_proxy(team: &str, row: ProxyRow, login: Option<String>) {
-    let t = team_model::Target { profile_id: Some(&row.id), folder: None };
+    let t = team_model::Target {
+        profile_id: Some(&row.id),
+        folder: None,
+    };
     if !perm::allows(team, team_model::Action::See, &t) {
         return dropped_proxy(team, &row.id);
     }
@@ -385,13 +430,18 @@ pub fn dropped_proxy(team: &str, id: &str) {
 
 /// A folder kept, or its colour set; None leaves the colour as it is.
 pub fn wrote_folder(team: &str, name: &str, color: Option<&str>) {
-    change(team, |s| match s.folders.iter_mut().find(|f| f.name == name) {
-        Some(f) => {
-            if let Some(c) = color {
-                f.color = c.to_string();
+    change(team, |s| {
+        match s.folders.iter_mut().find(|f| f.name == name) {
+            Some(f) => {
+                if let Some(c) = color {
+                    f.color = c.to_string();
+                }
             }
+            None => s.folders.push(FolderRow {
+                name: name.to_string(),
+                color: color.unwrap_or_default().to_string(),
+            }),
         }
-        None => s.folders.push(FolderRow { name: name.to_string(), color: color.unwrap_or_default().to_string() }),
     });
 }
 
@@ -419,7 +469,9 @@ pub fn item(team: &str, kind: &str, id: &str) -> Option<ItemRow> {
 
 /// An item as written from here, in the list's order; out of sight without the team's See.
 pub fn wrote_item(team: &str, kind: &str, row: ItemRow) {
-    let Some(&(kind, _)) = ITEMS.iter().find(|(k, _)| *k == kind) else { return };
+    let Some(&(kind, _)) = ITEMS.iter().find(|(k, _)| *k == kind) else {
+        return;
+    };
     if !perm::allows(team, team_model::Action::See, &team_model::Target::team()) {
         return dropped_item(team, kind, &row.id);
     }
@@ -435,7 +487,12 @@ pub fn wrote_item(team: &str, kind: &str, row: ItemRow) {
 
 pub fn dropped_item(team: &str, kind: &str, id: &str) {
     change(team, |s| {
-        if let Some(rows) = s.items.iter_mut().find(|(k, _)| **k == kind).map(|(_, r)| r) {
+        if let Some(rows) = s
+            .items
+            .iter_mut()
+            .find(|(k, _)| **k == kind)
+            .map(|(_, r)| r)
+        {
             rows.retain(|r| r.id != id);
         }
     });
@@ -470,7 +527,9 @@ fn needs_fill(team: &str) -> bool {
 /// Before a read of the team in use: fill its lists if none are held, and
 /// wait a while for them. Nothing to do in the personal space.
 pub async fn ready() {
-    let Some(team) = crate::team::active_team() else { return };
+    let Some(team) = crate::team::active_team() else {
+        return;
+    };
     if needs_fill(&team) {
         run_and_wait(team, true, super::live::default_tell()).await;
     }
@@ -508,7 +567,9 @@ struct Pending {
 
 fn pending() -> MutexGuard<'static, Option<Pending>> {
     static P: OnceLock<Mutex<Option<Pending>>> = OnceLock::new();
-    P.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+    P.get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 /// The server said something of the team changed: refetch it once things settle.
@@ -531,7 +592,10 @@ fn schedule(team: &str, kinds: Kinds, tell: &Tell) {
             job.kinds = job.kinds.with(kinds);
             return;
         }
-        *p = Some(Pending { team: team.to_string(), kinds });
+        *p = Some(Pending {
+            team: team.to_string(),
+            kinds,
+        });
     }
     let tell = tell.clone();
     super::live::spawn(async move {
@@ -550,13 +614,19 @@ struct Failed {
 
 impl From<TeamError> for Failed {
     fn from(e: TeamError) -> Self {
-        Failed { offline: matches!(e, TeamError::Offline(_)), why: e.to_string() }
+        Failed {
+            offline: matches!(e, TeamError::Offline(_)),
+            why: e.to_string(),
+        }
     }
 }
 
 impl From<anyhow::Error> for Failed {
     fn from(e: anyhow::Error) -> Self {
-        Failed { offline: false, why: format!("{e:#}") }
+        Failed {
+            offline: false,
+            why: format!("{e:#}"),
+        }
     }
 }
 
@@ -569,7 +639,10 @@ struct Got {
     items: Vec<(&'static str, Vec<ItemRow>)>,
 }
 
-async fn maybe<T>(on: bool, f: impl std::future::Future<Output = Result<T, TeamError>>) -> Result<Option<T>, TeamError> {
+async fn maybe<T>(
+    on: bool,
+    f: impl std::future::Future<Output = Result<T, TeamError>>,
+) -> Result<Option<T>, TeamError> {
     if on {
         f.await.map(Some)
     } else {
@@ -582,33 +655,70 @@ async fn fetch(team: &str, kinds: Kinds) -> Result<Got, Failed> {
     // The rights shown and the logins asked for follow the permission.
     if perm::held_epoch(team).is_none() {
         let issued = client.permission().await?;
-        perm::accept(team, &issued.permission).map_err(|e| Failed { offline: false, why: e.to_string() })?;
+        perm::accept(team, &issued.permission).map_err(|e| Failed {
+            offline: false,
+            why: e.to_string(),
+        })?;
     }
     let c = &client;
     let (profiles, proxies, folders, bookmarks, extensions, automation, tags) = tokio::try_join!(
-        maybe(kinds.has(Kinds::PROFILES), c.get::<Vec<ProfileRow>>("/profiles")),
-        maybe(kinds.has(Kinds::PROXIES), c.get::<Vec<ProxyRow>>("/proxies")),
-        maybe(kinds.has(Kinds::FOLDERS), c.get::<Vec<FolderRow>>("/folders")),
-        maybe(kinds.has(Kinds::BOOKMARKS), c.get::<Vec<ItemRow>>("/items/bookmark")),
-        maybe(kinds.has(Kinds::EXTENSIONS), c.get::<Vec<ItemRow>>("/items/extension")),
-        maybe(kinds.has(Kinds::AUTOMATION), c.get::<Vec<ItemRow>>("/items/automation")),
+        maybe(
+            kinds.has(Kinds::PROFILES),
+            c.get::<Vec<ProfileRow>>("/profiles")
+        ),
+        maybe(
+            kinds.has(Kinds::PROXIES),
+            c.get::<Vec<ProxyRow>>("/proxies")
+        ),
+        maybe(
+            kinds.has(Kinds::FOLDERS),
+            c.get::<Vec<FolderRow>>("/folders")
+        ),
+        maybe(
+            kinds.has(Kinds::BOOKMARKS),
+            c.get::<Vec<ItemRow>>("/items/bookmark")
+        ),
+        maybe(
+            kinds.has(Kinds::EXTENSIONS),
+            c.get::<Vec<ItemRow>>("/items/extension")
+        ),
+        maybe(
+            kinds.has(Kinds::AUTOMATION),
+            c.get::<Vec<ItemRow>>("/items/automation")
+        ),
         maybe(kinds.has(Kinds::TAGS), c.get::<Vec<ItemRow>>("/items/tag")),
     )?;
     let logins = match &proxies {
         Some(rows) => logins(c, team, rows).await,
         None => Vec::new(),
     };
-    let items = [("bookmark", bookmarks), ("extension", extensions), ("automation", automation), ("tag", tags)]
-        .into_iter()
-        .filter_map(|(k, rows)| rows.map(|r| (k, r)))
-        .collect();
-    Ok(Got { profiles, proxies, logins, folders, items })
+    let items = [
+        ("bookmark", bookmarks),
+        ("extension", extensions),
+        ("automation", automation),
+        ("tag", tags),
+    ]
+    .into_iter()
+    .filter_map(|(k, rows)| rows.map(|r| (k, r)))
+    .collect();
+    Ok(Got {
+        profiles,
+        proxies,
+        logins,
+        folders,
+        items,
+    })
 }
 
 /// The logins this member may read and has not read at this revision.
 async fn logins(c: &TeamClient, team: &str, rows: &[ProxyRow]) -> Vec<(String, u64, String)> {
-    let known: HashMap<String, u64> =
-        with(team, |s| s.logins.iter().map(|(id, (rev, _))| (id.clone(), *rev)).collect()).unwrap_or_default();
+    let known: HashMap<String, u64> = with(team, |s| {
+        s.logins
+            .iter()
+            .map(|(id, (rev, _))| (id.clone(), *rev))
+            .collect()
+    })
+    .unwrap_or_default();
     let wanted: Vec<String> = rows
         .iter()
         .filter(|r| perm::may_use_proxy(team, &r.id) && known.get(&r.id) != Some(&r.revision))
@@ -639,7 +749,11 @@ async fn refresh_held(team: &str, kinds: Kinds, tell: &Tell) {
     if crate::team::active_team().as_deref() != Some(team) {
         return;
     }
-    let kinds = if with(team, |s| s.full).unwrap_or(false) { kinds } else { Kinds::ALL };
+    let kinds = if with(team, |s| s.full).unwrap_or(false) {
+        kinds
+    } else {
+        Kinds::ALL
+    };
     let got = fetch(team, kinds).await;
     let (changed, status) = keep(team, kinds, got);
     #[cfg(test)]
@@ -666,16 +780,25 @@ fn keep(team: &str, kinds: Kinds, got: Result<Got, Failed>) -> (Kinds, Option<Te
         return (Kinds::NONE, None);
     }
     if g.as_ref().is_none_or(|s| s.team != team) {
-        *g = Some(Snapshot { team: team.to_string(), ..Default::default() });
+        *g = Some(Snapshot {
+            team: team.to_string(),
+            ..Default::default()
+        });
     }
-    let Some(s) = g.as_mut() else { return (Kinds::NONE, None) };
+    let Some(s) = g.as_mut() else {
+        return (Kinds::NONE, None);
+    };
     let before = s.status.clone();
     let mut changed = Kinds::NONE;
     match got {
         Err(f) => {
             eprintln!("[launcher] team {team}: lists not read: {}", f.why);
             s.failed_at = Some(Instant::now());
-            s.status.state = if f.offline { Reach::Offline } else { Reach::Refused };
+            s.status.state = if f.offline {
+                Reach::Offline
+            } else {
+                Reach::Refused
+            };
             s.status.error = Some(f.why);
         }
         Ok(got) => {
@@ -685,7 +808,8 @@ fn keep(team: &str, kinds: Kinds, got: Result<Got, Failed>) -> (Kinds, Option<Te
                 }
                 s.profiles = rows;
                 let rows = &s.profiles;
-                s.details.retain(|id, d| rows.iter().any(|r| &r.id == id && r.revision == d.meta.rev));
+                s.details
+                    .retain(|id, d| rows.iter().any(|r| &r.id == id && r.revision == d.meta.rev));
             }
             if let Some(rows) = got.proxies {
                 if rows != s.proxies {
@@ -696,7 +820,8 @@ fn keep(team: &str, kinds: Kinds, got: Result<Got, Failed>) -> (Kinds, Option<Te
                 // A login whose proxy moved on, went, or may no longer be used is dropped.
                 let before = s.logins.len();
                 s.logins.retain(|id, (rev, _)| {
-                    rows.iter().any(|r| &r.id == id && r.revision == *rev) && perm::may_use_proxy(team, id)
+                    rows.iter().any(|r| &r.id == id && r.revision == *rev)
+                        && perm::may_use_proxy(team, id)
                 });
                 if s.logins.len() != before || !got.logins.is_empty() {
                     changed = changed.with(Kinds::PROXIES);
@@ -734,10 +859,15 @@ fn keep(team: &str, kinds: Kinds, got: Result<Got, Failed>) -> (Kinds, Option<Te
                 s.full = true;
             }
             s.failed_at = None;
-            s.status = TeamStatus { state: Reach::Ready, error: None, synced_at: Some(now_secs()) };
+            s.status = TeamStatus {
+                state: Reach::Ready,
+                error: None,
+                synced_at: Some(now_secs()),
+            };
         }
     }
-    let moved = (s.status.state != before.state || s.status.error != before.error).then(|| s.status.clone());
+    let moved = (s.status.state != before.state || s.status.error != before.error)
+        .then(|| s.status.clone());
     (changed, moved)
 }
 
@@ -751,7 +881,11 @@ mod tests {
     use std::sync::Arc;
 
     fn on(scope: Scope, action: Action) -> Grant {
-        Grant { scope, action, allow: true }
+        Grant {
+            scope,
+            action,
+            allow: true,
+        }
     }
 
     fn ads() -> Scope {
@@ -779,12 +913,21 @@ mod tests {
             team::join(&srv.url, &vera.token).await.unwrap();
             let team_id = srv.server.team_id().to_string();
             keep_only(None);
-            Team { srv, root, team_id, vera, told: Default::default(), _serial: serial }
+            Team {
+                srv,
+                root,
+                team_id,
+                vera,
+                told: Default::default(),
+                _serial: serial,
+            }
         }
 
         fn tell(&self) -> Tell {
             let told = self.told.clone();
-            Arc::new(move |event: &str, payload| told.lock().unwrap().push((event.to_string(), payload)))
+            Arc::new(move |event: &str, payload| {
+                told.lock().unwrap().push((event.to_string(), payload))
+            })
         }
 
         fn admin(&self) -> TeamClient {
@@ -792,7 +935,10 @@ mod tests {
         }
 
         async fn put(&self, path: &str, body: Value) {
-            self.admin().call(Method::PUT, path, Some(&body)).await.unwrap();
+            self.admin()
+                .call(Method::PUT, path, Some(&body))
+                .await
+                .unwrap();
         }
 
         async fn profile(&self, id: &str, folder: &str, settings: Value) {
@@ -811,7 +957,10 @@ mod tests {
 
         fn topics(&self) -> Vec<String> {
             let told = self.told.lock().unwrap();
-            told.iter().filter(|(e, _)| e == "store-changed").filter_map(|(_, p)| p.as_str().map(String::from)).collect()
+            told.iter()
+                .filter(|(e, _)| e == "store-changed")
+                .filter_map(|(_, p)| p.as_str().map(String::from))
+                .collect()
         }
     }
 
@@ -825,7 +974,10 @@ mod tests {
         let t = Team::new(&[on(ads(), Action::See), on(ads(), Action::Start)]).await;
         for (name, color) in [("Ads", "red"), ("Shops", "blue")] {
             let body = json!({ "name": name, "color": color });
-            t.admin().call(Method::POST, "/admin/folders", Some(&body)).await.unwrap();
+            t.admin()
+                .call(Method::POST, "/admin/folders", Some(&body))
+                .await
+                .unwrap();
         }
         let ua = json!({ "navigator": { "user_agent": "Mozilla/5.0 (Linux; Android 14)" } });
         t.profile("ads-1", "Ads", ua.clone()).await;
@@ -834,18 +986,35 @@ mod tests {
         t.profile("loose-1", "", json!({})).await;
         let proxy = json!({ "name": "DE", "kind": "socks5", "country": "DE", "data": b64(json!({ "host": "203.0.113.5", "port": 1080 })) });
         t.put("/proxies/x1", proxy).await;
-        t.put("/items/bookmark/b1", json!({ "name": "Mail", "data": b64(json!({ "url": "https://mail.example" })) })).await;
+        t.put(
+            "/items/bookmark/b1",
+            json!({ "name": "Mail", "data": b64(json!({ "url": "https://mail.example" })) }),
+        )
+        .await;
         // Someone has one open elsewhere.
-        t.admin().call(Method::POST, "/profiles/ads-2/lease", None).await.unwrap();
+        t.admin()
+            .call(Method::POST, "/profiles/ads-2/lease", None)
+            .await
+            .unwrap();
 
         super::super::ready().await;
         assert_eq!(t.ids(), ["ads-1", "ads-2"]);
         let rows = super::super::profile::list_all().unwrap();
         let open = rows.iter().find(|m| m.id == "ads-2").unwrap();
         let on = open.open_on.as_ref().expect("the lease shows");
-        assert_eq!((on.device_name.as_str(), on.member_name.as_str(), on.this_device), (team::device_name().as_str(), "Admin", false));
+        assert_eq!(
+            (
+                on.device_name.as_str(),
+                on.member_name.as_str(),
+                on.this_device
+            ),
+            (team::device_name().as_str(), "Admin", false)
+        );
         let r = rows[0].rights.unwrap();
-        assert!(r.see && r.start && !r.edit && !r.delete && !r.cookies && !r.take_out, "{r:?}");
+        assert!(
+            r.see && r.start && !r.edit && !r.delete && !r.cookies && !r.take_out,
+            "{r:?}"
+        );
         assert_eq!(rows[0].tags.as_deref(), Some(&["tag-1".to_string()][..]));
         assert_eq!(rows[0].notes, "notes of ads-1");
 
@@ -859,10 +1028,19 @@ mod tests {
 
         // Settings come when asked, as far as Start reaches.
         let got = super::super::profile::fetch("ads-1").await.unwrap();
-        assert_eq!((got.meta.id.as_str(), got.meta.folder.as_str()), ("ads-1", "Ads"));
+        assert_eq!(
+            (got.meta.id.as_str(), got.meta.folder.as_str()),
+            ("ads-1", "Ads")
+        );
         assert_eq!(got.config["navigator"], ua["navigator"]);
-        assert!(profiles(&t.team_id)[0].mobile, "read from the settings now held");
-        let err = super::super::profile::fetch("shop-1").await.unwrap_err().to_string();
+        assert!(
+            profiles(&t.team_id)[0].mobile,
+            "read from the settings now held"
+        );
+        let err = super::super::profile::fetch("shop-1")
+            .await
+            .unwrap_err()
+            .to_string();
         assert_eq!(err, "no profile shop-1 in this team");
         assert!(super::super::profile::load_raw("shop-1").is_err());
 
@@ -870,17 +1048,28 @@ mod tests {
         use super::super::{CmdError, Door, Ticket};
         let tk = Ticket::now();
         let refused = |e: anyhow::Error| super::super::error::find(&e).cloned();
-        let forbidden = |right, on| Some(CmdError::Forbidden(super::super::error::Need { right, on }));
+        let forbidden =
+            |right, on| Some(CmdError::Forbidden(super::super::error::Need { right, on }));
         let mut copy = got.clone();
-        assert_eq!(super::super::profile::save_raw(&mut copy).unwrap_err().to_string(), super::super::PERSONAL_ONLY);
-        let moved = super::super::profile::set_folder(Door("profile_set_folder"), &tk, "ads-1", "").await;
+        assert_eq!(
+            super::super::profile::save_raw(&mut copy)
+                .unwrap_err()
+                .to_string(),
+            super::super::PERSONAL_ONLY
+        );
+        let moved =
+            super::super::profile::set_folder(Door("profile_set_folder"), &tk, "ads-1", "").await;
         assert_eq!(refused(moved.unwrap_err()), forbidden("edit", "profile"));
         let gone = super::super::profile::remove(Door("profile_delete"), &tk, "ads-1").await;
         assert_eq!(refused(gone.unwrap_err()), forbidden("delete", "profile"));
         let entry = super::super::proxy::parse_single("203.0.113.7:1080").unwrap();
         let added = super::super::proxy::upsert(Door("proxy_save"), &tk, entry).await;
         assert_eq!(refused(added.unwrap_err()), forbidden("create", "team"));
-        let tag = super::super::tags::Tag { id: String::new(), name: "x".into(), color: "red".into() };
+        let tag = super::super::tags::Tag {
+            id: String::new(),
+            name: "x".into(),
+            color: "red".into(),
+        };
         let made = super::super::tags::save(Door("tag_save"), &tk, tag, None).await;
         assert_eq!(refused(made.unwrap_err()), forbidden("create", "team"));
         let kept = super::super::folders::add(Door("folder_add"), &tk, "New").await;
@@ -888,7 +1077,10 @@ mod tests {
         let made = super::super::automation::create(Door("automation_create"), &tk, "x").await;
         assert_eq!(refused(made.unwrap_err()), forbidden("create", "team"));
         let gone = super::super::bookmarks::delete(Door("bookmark_delete"), &tk, "b1").await;
-        assert_eq!(refused(gone.unwrap_err()), Some(CmdError::Missing("no bookmark b1 in this team".into())));
+        assert_eq!(
+            refused(gone.unwrap_err()),
+            Some(CmdError::Missing("no bookmark b1 in this team".into()))
+        );
         let err = perm::start("ads-1").err().unwrap().to_string();
         assert_eq!(err, super::super::TEAM_NOT_YET);
         assert!(perm::cookies("someone-elses").is_err());
@@ -902,7 +1094,12 @@ mod tests {
         let body = json!({ "name": "Seen", "folder": "Shops", "data": b64(json!({})), "created_at": 1_700_000_000 });
         t.put("/profiles/seen-1", body).await;
         super::super::ready().await;
-        let made = |id: &str| profiles(&t.team_id).into_iter().find(|m| m.id == id).and_then(|m| m.created_at);
+        let made = |id: &str| {
+            profiles(&t.team_id)
+                .into_iter()
+                .find(|m| m.id == id)
+                .and_then(|m| m.created_at)
+        };
         assert_eq!(made("seen-1").as_deref(), Some("@1700000000"));
 
         // Brought in with the ISO date of older data: the server keeps that date.
@@ -911,7 +1108,14 @@ mod tests {
         stored.meta.created_at = Some("2023-11-14T22:13:20Z".into());
         stored.config.insert("name".into(), json!("Imported"));
         let tk = super::super::Ticket::now();
-        let m = super::super::profile::save(super::super::Door("profile_import"), &tk, stored, Default::default()).await.unwrap();
+        let m = super::super::profile::save(
+            super::super::Door("profile_import"),
+            &tk,
+            stored,
+            Default::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(m.created_at.as_deref(), Some("@1700000000"));
         let rows: Vec<Value> = t.admin().get("/profiles").await.unwrap();
         let row = rows.iter().find(|r| r["id"] == m.id.as_str()).unwrap();
@@ -921,15 +1125,27 @@ mod tests {
 
     #[tokio::test]
     async fn a_proxy_login_comes_only_with_a_right_that_uses_it() {
-        let t = Team::new(&[on(Scope::Team, Action::See), on(Scope::Profile { id: "x2".into() }, Action::Start)]).await;
+        let t = Team::new(&[
+            on(Scope::Team, Action::See),
+            on(Scope::Profile { id: "x2".into() }, Action::Start),
+        ])
+        .await;
         for id in ["x1", "x2"] {
             let body = json!({ "name": id, "kind": "http", "data": b64(json!({ "host": format!("{id}.example"), "port": 8080 })) });
             t.put(&format!("/proxies/{id}"), body).await;
         }
         super::super::ready().await;
         let list = super::super::proxy::list().unwrap();
-        let host = |id: &str| list.iter().find(|p| p.id == id).map(|p| p.host.clone()).unwrap();
-        assert_eq!((host("x1").as_str(), host("x2").as_str()), ("", "x2.example"));
+        let host = |id: &str| {
+            list.iter()
+                .find(|p| p.id == id)
+                .map(|p| p.host.clone())
+                .unwrap()
+        };
+        assert_eq!(
+            (host("x1").as_str(), host("x2").as_str()),
+            ("", "x2.example")
+        );
         assert_eq!(super::super::proxy::get("x2").unwrap().unwrap().port, 8080);
         drop(t.srv);
     }
@@ -946,7 +1162,10 @@ mod tests {
         super::super::live::follow_with(&t.team_id, t.tell());
         let start = Instant::now();
         while fills() == before {
-            assert!(start.elapsed() < Duration::from_secs(5), "the channel did not open");
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "the channel did not open"
+            );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         t.told.lock().unwrap().clear();
@@ -960,7 +1179,11 @@ mod tests {
         let body = json!({ "name": "VIP", "data": b64(json!({ "color": "violet" })) });
         t.put("/items/tag/tag-1", body).await;
         while t.ids().len() < 4 || !t.topics().contains(&"tags".to_string()) {
-            assert!(start.elapsed() < Duration::from_secs(1), "not refreshed within a second: {:?}", t.ids());
+            assert!(
+                start.elapsed() < Duration::from_secs(1),
+                "not refreshed within a second: {:?}",
+                t.ids()
+            );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         assert_eq!(t.ids(), ["p-1", "p-2", "p-3", "p-4"]);
@@ -971,16 +1194,26 @@ mod tests {
         // Rights moved: the rows are news though none of them changed.
         t.told.lock().unwrap().clear();
         let path = format!("/admin/members/{}/grants", t.vera.id);
-        let grants = json!({ "grants": [on(Scope::Team, Action::See), on(Scope::Team, Action::Edit)] });
-        t.admin().call(Method::PUT, &path, Some(&grants)).await.unwrap();
+        let grants =
+            json!({ "grants": [on(Scope::Team, Action::See), on(Scope::Team, Action::Edit)] });
+        t.admin()
+            .call(Method::PUT, &path, Some(&grants))
+            .await
+            .unwrap();
         let start = Instant::now();
         while !profiles(&t.team_id)[0].rights.unwrap().edit {
-            assert!(start.elapsed() < Duration::from_secs(2), "the new rights did not show");
+            assert!(
+                start.elapsed() < Duration::from_secs(2),
+                "the new rights did not show"
+            );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         let start = Instant::now();
         while !t.topics().contains(&"profiles".to_string()) {
-            assert!(start.elapsed() < Duration::from_secs(1), "the rows were not told");
+            assert!(
+                start.elapsed() < Duration::from_secs(1),
+                "the rows were not told"
+            );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         drop(t.srv);
@@ -988,8 +1221,16 @@ mod tests {
 
     /// Every file under `dir` but the server's own that names one of `needles`.
     /// teams.json is the membership: the team's id is expected there, nothing else.
-    fn naming(dir: &std::path::Path, skip: &std::path::Path, team_id: &str, needles: &[&str], out: &mut Vec<String>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+    fn naming(
+        dir: &std::path::Path,
+        skip: &std::path::Path,
+        team_id: &str,
+        needles: &[&str],
+        out: &mut Vec<String>,
+    ) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for e in entries.flatten() {
             let p = e.path();
             if p.starts_with(skip) {
@@ -997,13 +1238,19 @@ mod tests {
             }
             let name = p.to_string_lossy().to_string();
             let membership = p.file_name().is_some_and(|f| f == "teams.json");
-            let named = |text: &str| needles.iter().any(|n| text.contains(n) && !(membership && *n == team_id));
+            let named = |text: &str| {
+                needles
+                    .iter()
+                    .any(|n| text.contains(n) && !(membership && *n == team_id))
+            };
             if named(&name) {
                 out.push(name.clone());
             }
             if p.is_dir() {
                 naming(&p, skip, team_id, needles, out);
-            } else if named(&String::from_utf8_lossy(&std::fs::read(&p).unwrap_or_default())) {
+            } else if named(&String::from_utf8_lossy(
+                &std::fs::read(&p).unwrap_or_default(),
+            )) {
                 out.push(name);
             }
         }
@@ -1011,20 +1258,39 @@ mod tests {
 
     #[tokio::test]
     async fn after_a_restart_nothing_of_the_team_is_on_disk() {
-        let all = [Action::See, Action::Start, Action::Edit, Action::Cookies, Action::TakeOut];
+        let all = [
+            Action::See,
+            Action::Start,
+            Action::Edit,
+            Action::Cookies,
+            Action::TakeOut,
+        ];
         let t = Team::new(&all.map(|a| on(Scope::Team, a))).await;
         let ids = ["team-prof-6f1c2a", "team-prof-91be07"];
         for id in ids {
-            t.profile(id, "Secret-folder-4d2", json!({ "navigator": { "user_agent": "UA-team-7c1" } })).await;
+            t.profile(
+                id,
+                "Secret-folder-4d2",
+                json!({ "navigator": { "user_agent": "UA-team-7c1" } }),
+            )
+            .await;
         }
         // Nothing listens there, so a test of it fails at once.
         let proxy = json!({ "name": "proxy-name-58e", "kind": "socks5", "data": b64(json!({ "host": "127.0.0.1", "port": 1 })) });
         t.put("/proxies/team-proxy-2f8", proxy).await;
-        t.put("/items/bookmark/team-mark-0d1", json!({ "name": "m", "data": b64(json!({ "url": "https://mark-team-77.example" })) })).await;
+        t.put(
+            "/items/bookmark/team-mark-0d1",
+            json!({ "name": "m", "data": b64(json!({ "url": "https://mark-team-77.example" })) }),
+        )
+        .await;
 
         // Used as a member would: switched to, listed, opened in the editor, a proxy tested.
         crate::space::switch(Space::Personal).await.unwrap();
-        let st = crate::space::switch(Space::Team { team_id: t.team_id.clone() }).await.unwrap();
+        let st = crate::space::switch(Space::Team {
+            team_id: t.team_id.clone(),
+        })
+        .await
+        .unwrap();
         assert_eq!(st.team_status.unwrap().state, Reach::Ready);
         assert_eq!(t.ids(), ids);
         for id in ids {
@@ -1041,10 +1307,17 @@ mod tests {
 
         // A restart: nothing held, the files read again, and the server gone.
         let team_id = t.team_id.clone();
-        let needles: Vec<&str> = [team_id.as_str(), "Secret-folder-4d2", "UA-team-7c1", "proxy-name-58e", "team-proxy-2f8", "mark-team-77"]
-            .into_iter()
-            .chain(ids)
-            .collect();
+        let needles: Vec<&str> = [
+            team_id.as_str(),
+            "Secret-folder-4d2",
+            "UA-team-7c1",
+            "proxy-name-58e",
+            "team-proxy-2f8",
+            "mark-team-77",
+        ]
+        .into_iter()
+        .chain(ids)
+        .collect();
         let server_dir = t.root.path.join("server");
         let Team { srv, root, .. } = t;
         drop(srv);

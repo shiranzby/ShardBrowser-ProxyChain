@@ -148,7 +148,7 @@ test("busy: Stop 2 profiles and update asks with their names, and the update fin
 test("busy: a profile left from before, or one starting, is said in words", async ({ page }) => {
   await knobs(page, { ...UPDATE, __shardxMockEngineFail: "busy", __shardxMockEngineBusy: 1, __shardxMockEngineBusyKind: "untracked" });
   await open(page);
-  await expect(banner(page)).toContainText("It finishes once the running profile closes. If no profile shows as running, one was left running when ShardBrowser last closed: end it in the system’s task manager or restart this computer.");
+  await expect(banner(page)).toContainText("It finishes once the running profile closes. If no profile shows as running, one was left running when ShyShard last closed: end it in the system’s task manager or restart this computer.");
   await setKnobs(page, { __shardxMockEngineBusyKind: "starting" });
   // Read from `starting`, not from the message's words.
   const failed = (starting: number, message: string) => page.evaluate((e) => (window as unknown as Mock).__shardxMock.emit("runtime:failed", e), {

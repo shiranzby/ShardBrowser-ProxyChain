@@ -175,6 +175,21 @@ test("Import proxies from clipboard lives in the header's More actions menu", as
   await expect(row(page, "1.2.3.4")).toHaveCount(1);
 });
 
+test("proxy folders can be created and edited from the proxies menu", async ({ page }) => {
+  await openApp(page, { section: "proxies" });
+  await page.locator("main header").getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Manage proxy folders" }).click();
+  const dialog = page.getByRole("dialog", { name: "Manage proxy folders" });
+  await dialog.getByRole("textbox", { name: "Folder name" }).first().fill("Clients");
+  await dialog.getByRole("button", { name: "Create" }).click();
+  await expect(dialog).toContainText("Clients");
+  await dialog.getByRole("button", { name: "Edit" }).first().click();
+  const edit = dialog.getByRole("textbox", { name: "Folder name" }).nth(1);
+  await edit.fill("Clients EU");
+  await dialog.getByRole("button", { name: "Save settings" }).click();
+  await expect(dialog).toContainText("Clients EU");
+});
+
 // Providers that route by the password (a sticky session or a country in it)
 // serve different exits from one host, port and user: each is a proxy of its
 // own. Only an identical one (same type, host, port, user and password) is

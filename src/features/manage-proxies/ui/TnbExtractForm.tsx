@@ -1,24 +1,38 @@
 import { Checkbox, Input, Select } from "@proxyshard/shardx-ui-kit";
 import { useT } from "../../../shared/i18n";
-import type { TnbExtractRequest } from "../../../entities/proxy";
+import type { ProviderDefaults, TnbExtractRequest } from "../../../entities/proxy";
 import { TnbGeoFields, type TnbGeo } from "./TnbGeoFields";
+import { ProviderSessionFields } from "./ProviderSessionFields";
 
 export type TnbDraft = Omit<TnbExtractRequest, "count" | "ttl" | "geo"> & TnbGeo & {
   count: string;
   ttl: string;
 };
 
+const TNB_MAX_SESSION_MINUTES = 180;
+
+export function tnbDefaultTtl(defaults: Pick<ProviderDefaults, "session_type" | "session_minutes">): string {
+  return defaults.session_type === "sticky" ? String(Math.min(defaults.session_minutes, TNB_MAX_SESSION_MINUTES)) : "0";
+}
+
 export const newTnbDraft = (): TnbDraft => ({
-  server: "http://usdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", kind: "http",
-  count: "1", ttl: "0", pre: false, route: "direct", country: null, region: null, city: null,
+  server: "http://usdata.adv.tnbproxy.com:9090", plan_name: "advanced_traffic", provider_name: "", kind: "http",
+  count: "1", ttl: String(TNB_MAX_SESSION_MINUTES), pre: false, route: "direct", country: null, region: null, city: null,
   pool: "", isp: "", asn: "", ip: "", sid: "",
 });
+
+export function tnbGeoDefaults(defaults: Pick<ProviderDefaults, "country" | "state" | "city">): TnbGeo {
+  const location = (code: string) => code.trim() ? { code: code.trim(), label: code.trim() } : null;
+  const country = location(defaults.country);
+  const region = country && location(defaults.state);
+  return { country, region, city: region && location(defaults.city) };
+}
 
 /** UI validation keeps a bad request editable; the backend validates it again. */
 export function tnbRequest(draft: TnbDraft): TnbExtractRequest | null {
   const count = Number(draft.count), ttl = Number(draft.ttl);
   if (!/^\d+$/.test(draft.count) || !Number.isInteger(count) || count < 1 || count > 1000) return null;
-  if (!/^\d+$/.test(draft.ttl) || !Number.isInteger(ttl) || ttl < 0 || ttl > 180) return null;
+  if (!/^\d+$/.test(draft.ttl) || !Number.isInteger(ttl) || ttl < 0 || ttl > TNB_MAX_SESSION_MINUTES) return null;
   let server: URL;
   try { server = new URL(draft.server.trim()); } catch { return null; }
   if (!["http:", "https:"].includes(server.protocol) || server.username || server.password || server.search || server.hash || !["/", "/gen"].includes(server.pathname)) return null;
@@ -29,7 +43,7 @@ export function tnbRequest(draft: TnbDraft): TnbExtractRequest | null {
   if ((region && !country) || (city && !region)) return null;
   if ([country, region, city].filter(Boolean).join("_").length > 256) return null;
   return {
-    server: draft.server.trim(), plan_name: draft.plan_name.trim(), kind: draft.kind,
+    server: draft.server.trim(), plan_name: draft.plan_name.trim(), provider_name: draft.provider_name?.trim() || undefined, kind: draft.kind,
     count, ttl, pre: draft.pre, route: draft.route,
     use_api_credentials: !!draft.use_api_credentials, use_proxy_credentials: !!draft.use_proxy_credentials,
     // TNB's public export formatter keeps selected levels and normalizes hyphens.
@@ -63,20 +77,17 @@ export function TnbExtractForm({ value, onChange, disabled, error }: {
 }) {
   const t = useT();
   const set = <K extends keyof TnbDraft>(key: K, next: TnbDraft[K]) => onChange({ ...value, [key]: next });
+  const rotating = value.ttl === "0";
   return (
     <div className="flex flex-col gap-3" data-tnb-form>
-      <div className="grid grid-cols-2 gap-3">
-        <Input label={t("tnb.server")} inputSize="xsmall" value={value.server} disabled={disabled} onChange={(e) => onChange({ ...value, server: e.target.value, country: null, region: null, city: null })} />
-        <Input label={t("tnb.plan")} inputSize="xsmall" value={value.plan_name} disabled={disabled} onChange={(e) => set("plan_name", e.target.value)} />
-        <Select label={t("tnb.protocol")} size="xsmall" value={value.kind} disabled={disabled} onChange={(v) => set("kind", v as TnbDraft["kind"])} options={[{ value: "http", label: "HTTP" }, { value: "socks5", label: "SOCKS5" }]} />
-        <Input label={t("tnb.count")} inputSize="xsmall" type="number" min={1} max={1000} step={1} value={value.count} disabled={disabled} onChange={(e) => set("count", e.target.value)} />
-      </div>
+      <Input label={t("tnb.server")} inputSize="xsmall" value={value.server} disabled={disabled} onChange={(e) => onChange({ ...value, server: e.target.value, country: null, region: null, city: null })} />
       <TnbGeoFields server={value.server} route={value.route} value={value} disabled={disabled} onChange={(geo) => onChange({ ...value, ...geo })} />
       <p className="m-0 text-secondary text-text-soft-400">{t("tnbGeo.hint")}</p>
-      <div className="grid grid-cols-2 gap-3">
-        <Input label={t("tnb.ttl")} hint={t("tnb.ttlHint")} inputSize="xsmall" type="number" min={0} max={180} step={1} value={value.ttl} disabled={disabled} onChange={(e) => set("ttl", e.target.value)} />
-        <Select label={t("tnb.route")} size="xsmall" value={value.route} disabled={disabled} onChange={(v) => set("route", v as TnbDraft["route"])} options={[{ value: "direct", label: t("tnb.direct") }, { value: "first_hop", label: t("tnb.firstHop") }]} />
-      </div>
+      <ProviderSessionFields alternate="rotating" mode={rotating ? "rotating" : "sticky"}
+        minutes={value.ttl} count={value.count} maxMinutes={TNB_MAX_SESSION_MINUTES} disabled={disabled}
+        onMode={(mode) => set("ttl", mode === "rotating" ? "0" : String(TNB_MAX_SESSION_MINUTES))}
+        onMinutes={(minutes) => set("ttl", minutes)} onCount={(count) => set("count", count)} />
+      <Select label={t("tnb.route")} size="xsmall" value={value.route} disabled={disabled} onChange={(v) => set("route", v as TnbDraft["route"])} options={[{ value: "direct", label: t("tnb.direct") }, { value: "first_hop", label: t("tnb.firstHop") }]} />
       <p className="m-0 text-secondary text-text-sub-600">{value.route === "first_hop" ? t("tnb.firstHopHint") : t("tnb.directHint")}</p>
       <p className="m-0 text-secondary text-text-sub-600">{t("tnb.whitelist")}</p>
       <div className="grid grid-cols-2 gap-3">
@@ -87,6 +98,8 @@ export function TnbExtractForm({ value, onChange, disabled, error }: {
       <details>
         <summary className="cursor-pointer text-ui text-text-sub-600">{t("tnb.advanced")}</summary>
         <div className="mt-3 grid grid-cols-2 gap-3">
+          <Input label={t("tnb.plan")} inputSize="xsmall" value={value.plan_name} disabled={disabled} onChange={(e) => set("plan_name", e.target.value)} />
+          <Select label={t("tnb.protocol")} size="xsmall" value={value.kind} disabled={disabled} onChange={(v) => set("kind", v as TnbDraft["kind"])} options={[{ value: "http", label: "HTTP" }, { value: "socks5", label: "SOCKS5" }]} />
           <Input label={t("tnb.pool")} inputSize="xsmall" value={value.pool ?? ""} disabled={disabled} onChange={(e) => set("pool", e.target.value)} />
           <Input label={t("tnb.isp")} inputSize="xsmall" value={value.isp ?? ""} disabled={disabled} onChange={(e) => set("isp", e.target.value)} />
           <Input label={t("tnb.asn")} inputSize="xsmall" value={value.asn ?? ""} disabled={disabled} onChange={(e) => set("asn", e.target.value)} />

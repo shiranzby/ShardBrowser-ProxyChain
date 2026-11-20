@@ -54,7 +54,7 @@ export function ExtensionsTab({ draft }: { draft: ProfileFormDraft }) {
           </div>
         </div>
       )}
-      {libraryCount > 0 && <ExtensionPicker listOnly value={draft.form.extensions} onChange={(extensions) => patchForm({ extensions })} onAdd={() => setAddingLink(true)} />}
+      <ExtensionPicker listOnly value={draft.form.extensions} onChange={(extensions) => patchForm({ extensions })} onAdd={() => setAddingLink(true)} />
     </div>
   );
 }

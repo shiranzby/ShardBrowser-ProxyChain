@@ -83,7 +83,17 @@ test("quick first-hop source choices keep the popover open", async ({ page }) =>
     await expect(pop).toBeVisible();
     await expect(mode).toContainText(option);
     if (option === "Select a saved proxy") {
-      await expect(pop.getByRole("combobox", { name: "First-layer proxy", exact: true })).toBeVisible();
+      const firstHop = pop.getByRole("combobox", { name: "First-layer proxy", exact: true });
+      await firstHop.click();
+      const search = page.getByRole("combobox", { name: "Search by name, host, country…", exact: true });
+      await search.click();
+      await search.fill("198.51.100.7");
+      const frankfurt = page.getByRole("option", { name: /ISP Frankfurt/ });
+      await expect(frankfurt).toContainText(/profiles? uses? this proxy/);
+      await expect(page.getByRole("option", { name: /DC Tokyo/ })).toHaveCount(0);
+      await frankfurt.click();
+      await expect(pop).toBeVisible();
+      await expect(firstHop).toContainText("ISP Frankfurt");
     } else {
       await expect(pop.getByLabel("Host or IP", { exact: true })).toBeVisible();
       await expect(pop.getByLabel("Port", { exact: true })).toBeVisible();

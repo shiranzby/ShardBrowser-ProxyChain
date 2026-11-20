@@ -466,7 +466,7 @@ test("EMIL-22: a selection keeps the webview menu only at the selected spot; a t
   // A text field: kept, selection or not.
   await page.getByRole("textbox", { name: "Extra start arguments" }).click({ button: "right" });
   // A checkbox is not a text field: suppressed.
-  await page.getByRole("switch", { name: "Use a ShardBrowser camera in profiles" }).click({ button: "right" });
+  await page.getByRole("switch", { name: "Use a ShyShard camera in profiles" }).click({ button: "right" });
 
   expect((await ctxLog(page)).map((e) => e.prevented)).toEqual([false, true, false, true]);
 });

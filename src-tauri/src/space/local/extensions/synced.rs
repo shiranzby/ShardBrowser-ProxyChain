@@ -36,7 +36,9 @@ fn live_version(lib: &Path, id: &str) -> Option<String> {
 /// For package `rev` of `id`, whose record names `version`. `booked`: the
 /// package the sync book took for it last, when the book knows the item.
 pub fn plan(lib: &Path, id: &str, rev: u64, version: Option<&str>, booked: Option<u64>) -> Plan {
-    let Some(live) = live_version(lib, id) else { return Plan::Fetch };
+    let Some(live) = live_version(lib, id) else {
+        return Plan::Fetch;
+    };
     if let Some(booked) = booked {
         let side = source::read(lib, id).unwrap_or_default();
         // A book older than the side file's record says which package these files are.
@@ -45,10 +47,14 @@ pub fn plan(lib: &Path, id: &str, rev: u64, version: Option<&str>, booked: Optio
             return Plan::Have;
         }
     }
-    let Some(s) = swap::staged(lib, id).filter(|s| s.from == live) else { return Plan::Fetch };
+    let Some(s) = swap::staged(lib, id).filter(|s| s.from == live) else {
+        return Plan::Fetch;
+    };
     match &s.origin {
         Origin::Sync(r) if *r == rev => Plan::Staged,
-        Origin::Store(_) if s.approved && version.is_some_and(|v| !newer(v, &s.to)) => Plan::StoreFirst,
+        Origin::Store(_) if s.approved && version.is_some_and(|v| !newer(v, &s.to)) => {
+            Plan::StoreFirst
+        }
         _ => Plan::Fetch,
     }
 }
@@ -61,12 +67,23 @@ pub enum Laid {
     Waiting(Vec<String>),
     NeedsEngine(String),
     /// Kept out, and not fetched again: it would change the id here (`conflict`), or is older.
-    Refused { conflict: bool, message: String },
+    Refused {
+        conflict: bool,
+        message: String,
+    },
     Failed(String),
 }
 
 /// Sync's package at `file` laid down as `id`; `source` is what its record names.
-pub fn lay_down(world: &dyn World, lib: &Path, id: &str, file: &Path, rev: u64, engine: Option<&str>, source: Option<SourceRef>) -> Laid {
+pub fn lay_down(
+    world: &dyn World,
+    lib: &Path,
+    id: &str,
+    file: &Path,
+    rev: u64,
+    engine: Option<&str>,
+    source: Option<SourceRef>,
+) -> Laid {
     if !valid_id(id) {
         return Laid::Failed("invalid extension id".into());
     }
@@ -79,7 +96,14 @@ pub fn lay_down(world: &dyn World, lib: &Path, id: &str, file: &Path, rev: u64, 
             Err(e) => return Laid::Failed(format!("{e:#}")),
         }
     }
-    match swap::stage_file(lib, id, file, &Order::sync(rev, engine), &ops, &swap::quiet()) {
+    match swap::stage_file(
+        lib,
+        id,
+        file,
+        &Order::sync(rev, engine),
+        &ops,
+        &swap::quiet(),
+    ) {
         Ok(s) => match s.needs_engine {
             Some(min) => Laid::NeedsEngine(min),
             None => apply(world, lib, id, rev, &ops),
@@ -120,15 +144,26 @@ fn failed(lib: &Path, id: &str, rev: u64, f: Failure) -> Laid {
     if let Err(e) = source::write(lib, id, &side) {
         eprintln!("[extensions] {id}: side file not updated: {e:#}");
     }
-    Laid::Refused { conflict: f.kind == Kind::IdConflict, message: f.message }
+    Laid::Refused {
+        conflict: f.kind == Kind::IdConflict,
+        message: f.message,
+    }
 }
 
 /// A folder this computer lacks: the package unpacked as it is, its side file
 /// written before it moves in. One there that holds no extension is replaced;
 /// false, with nothing done, when an extension is there after all.
-fn fresh(lib: &Path, id: &str, file: &Path, rev: u64, source: Option<SourceRef>, ops: &Ops) -> Result<bool> {
+fn fresh(
+    lib: &Path,
+    id: &str,
+    file: &Path,
+    rev: u64,
+    source: Option<SourceRef>,
+    ops: &Ops,
+) -> Result<bool> {
     let p = Paths::new(lib, id);
-    let _alone = usage::exclusive(id, usage::SWAP_WAIT).context("the extension is being updated; try again in a minute")?;
+    let _alone = usage::exclusive(id, usage::SWAP_WAIT)
+        .context("the extension is being updated; try again in a minute")?;
     let (stage, tree, live) = (p.staging(), p.tree(), p.live());
     // Looked at again under the lock: a swap may have just put it back.
     swap::put_back(&p, ops);
@@ -151,12 +186,23 @@ fn fresh(lib: &Path, id: &str, file: &Path, rev: u64, source: Option<SourceRef>,
         }
         // An older launcher's package carries `.added`: its date goes to the side file.
         let added = tree.join(source::ADDED);
-        let at = fs::read_to_string(&added).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let at = fs::read_to_string(&added)
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
         let _ = fs::remove_file(&added);
         let found = source::recover(&root);
         // A key gives the id, so the source it names outranks the record's.
-        let source = if found.how == Some(How::ManifestKey) { found.source.clone() } else { source.or(found.source.clone()) };
-        let how = if source == found.source { found.how } else { None };
+        let source = if found.how == Some(How::ManifestKey) {
+            found.source.clone()
+        } else {
+            source.or(found.source.clone())
+        };
+        let how = if source == found.source {
+            found.how
+        } else {
+            None
+        };
         let side = SourceLocal {
             source,
             how,
@@ -196,7 +242,9 @@ pub fn take(lib: &Path, id: &str, src: Option<SourceRef>, laid: Option<u64>) -> 
     let proven = side.source.is_some() && side.how.is_some_and(How::strong);
     // Never against the id a key here gives.
     let keyed = keyed(lib, id);
-    if let Some(s) = src.filter(|s| !proven && side.source.as_ref() != Some(s) && keyed.as_ref().is_none_or(|k| k == s)) {
+    if let Some(s) = src.filter(|s| {
+        !proven && side.source.as_ref() != Some(s) && keyed.as_ref().is_none_or(|k| k == s)
+    }) {
         // Learned from another computer: as weak as a link by hand.
         side.source = Some(s);
         side.how = None;

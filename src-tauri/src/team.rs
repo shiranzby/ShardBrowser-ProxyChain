@@ -59,7 +59,9 @@ impl TeamLink {
 pub enum Space {
     #[default]
     Personal,
-    Team { team_id: String },
+    Team {
+        team_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -157,7 +159,11 @@ fn path() -> Result<PathBuf> {
 
 fn load() -> Result<Saved> {
     let p = path()?;
-    let cached = cell().read().ok().and_then(|g| g.as_ref().filter(|(at, _)| *at == p).map(|(_, s)| s.clone()));
+    let cached = cell().read().ok().and_then(|g| {
+        g.as_ref()
+            .filter(|(at, _)| *at == p)
+            .map(|(_, s)| s.clone())
+    });
     if let Some(s) = cached {
         return Ok(s);
     }
@@ -200,7 +206,11 @@ fn load() -> Result<Saved> {
 /// The saved state without writing anything: a missing device id is not made here.
 fn peek() -> Result<Saved> {
     let p = path()?;
-    let cached = cell().read().ok().and_then(|g| g.as_ref().filter(|(at, _)| *at == p).map(|(_, s)| s.clone()));
+    let cached = cell().read().ok().and_then(|g| {
+        g.as_ref()
+            .filter(|(at, _)| *at == p)
+            .map(|(_, s)| s.clone())
+    });
     if let Some(s) = cached {
         return Ok(s);
     }
@@ -233,7 +243,11 @@ pub fn device_id() -> String {
 
 fn save(s: &Saved) -> Result<()> {
     let p = path()?;
-    let before = cell().read().ok().and_then(|g| g.as_ref().filter(|(at, _)| *at == p).map(|(_, s)| s.space.clone()));
+    let before = cell().read().ok().and_then(|g| {
+        g.as_ref()
+            .filter(|(at, _)| *at == p)
+            .map(|(_, s)| s.space.clone())
+    });
     let body = serde_json::to_vec_pretty(s)?;
     let tmp = p.with_extension("json.tmp");
     write_private(&tmp, &body)?;
@@ -281,7 +295,11 @@ fn write_private(path: &std::path::Path, body: &[u8]) -> Result<()> {
 /// This device's name, as the person would recognise it in "open on …": the
 /// one they gave it, else the machine's.
 pub fn device_name() -> String {
-    if let Some(n) = peek().ok().and_then(|s| s.device_name).filter(|n| !n.trim().is_empty()) {
+    if let Some(n) = peek()
+        .ok()
+        .and_then(|s| s.device_name)
+        .filter(|n| !n.trim().is_empty())
+    {
         return n;
     }
     machine_name()
@@ -335,7 +353,13 @@ pub fn state() -> Result<SpaceState> {
         Space::Team { team_id } => Some(crate::space::cache::status(team_id)),
         Space::Personal => None,
     };
-    Ok(SpaceState { space: s.space, teams: s.teams, device_name: device_name(), epoch: space_epoch(), team_status })
+    Ok(SpaceState {
+        space: s.space,
+        teams: s.teams,
+        device_name: device_name(),
+        epoch: space_epoch(),
+        team_status,
+    })
 }
 
 pub fn set_space(space: Space) -> Result<SpaceState> {
@@ -345,7 +369,9 @@ pub fn set_space(space: Space) -> Result<SpaceState> {
         if let Space::Team { team_id } = &space {
             match s.teams.iter().find(|t| &t.id == team_id) {
                 None => bail!("not a member of that team"),
-                Some(t) if t.revoked => bail!("{} withdrew this launcher's access: join it again", t.name),
+                Some(t) if t.revoked => {
+                    bail!("{} withdrew this launcher's access: join it again", t.name)
+                }
                 Some(t) if t.needs_invite => bail!("{}", replaced_text(&t.name)),
                 Some(_) => {}
             }
@@ -363,7 +389,15 @@ fn replaced_text(team: &str) -> String {
 
 /// The teams a channel is kept open for: joined, and reachable with the token kept.
 pub fn followed() -> Vec<String> {
-    peek().map(|s| s.teams.into_iter().filter(|t| t.usable()).map(|t| t.id).collect()).unwrap_or_default()
+    peek()
+        .map(|s| {
+            s.teams
+                .into_iter()
+                .filter(|t| t.usable())
+                .map(|t| t.id)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub fn link(team_id: &str) -> Result<Option<TeamLink>> {
@@ -381,27 +415,44 @@ pub struct Reach {
 
 pub fn reach(team_id: &str) -> Result<Reach> {
     let s = load()?;
-    let link = s.teams.iter().find(|t| t.id == team_id).context("not a member of that team")?;
+    let link = s
+        .teams
+        .iter()
+        .find(|t| t.id == team_id)
+        .context("not a member of that team")?;
     if link.revoked {
         bail!("{} withdrew this launcher's access", link.name);
     }
     if link.needs_invite {
         bail!("{}", replaced_text(&link.name));
     }
-    let token = s.tokens.get(team_id).context("no token for that team: join it again")?;
-    Ok(Reach { server: link.server.clone(), token: token.clone(), device_id: s.device_id.clone(), key: link.perm_key.clone() })
+    let token = s
+        .tokens
+        .get(team_id)
+        .context("no token for that team: join it again")?;
+    Ok(Reach {
+        server: link.server.clone(),
+        token: token.clone(),
+        device_id: s.device_id.clone(),
+        key: link.perm_key.clone(),
+    })
 }
 
 /// The newest permission edition taken from the team, or zero.
 pub fn floor(team_id: &str) -> Floor {
-    load().ok().and_then(|s| s.floors.get(team_id).copied()).unwrap_or_default()
+    load()
+        .ok()
+        .and_then(|s| s.floors.get(team_id).copied())
+        .unwrap_or_default()
 }
 
 /// Note a newer edition; an older epoch never lowers it.
 pub fn raise_floor(team_id: &str, to: Floor) -> Result<()> {
     let _edit = edit_lock();
     let mut s = load()?;
-    if !s.teams.iter().any(|t| t.id == team_id) || s.floors.get(team_id).is_some_and(|f| f.epoch >= to.epoch) {
+    if !s.teams.iter().any(|t| t.id == team_id)
+        || s.floors.get(team_id).is_some_and(|f| f.epoch >= to.epoch)
+    {
         return Ok(());
     }
     s.floors.insert(team_id.to_string(), to);
@@ -435,7 +486,8 @@ struct MeMember {
 /// The server's base address, http or https: a self-hosted server is often
 /// just an IP and a port.
 pub fn server_base(input: &str) -> Result<String> {
-    let url = url::Url::parse(input.trim()).context("not a server address: give it as http://host:port")?;
+    let url = url::Url::parse(input.trim())
+        .context("not a server address: give it as http://host:port")?;
     if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
         bail!("not a server address: give it as http://host:port");
     }
@@ -463,12 +515,19 @@ pub async fn join(server: &str, token: &str) -> Result<SpaceState> {
         bail!("{base} checks permissions with another key than the one it proved itself with");
     }
     // The admin token acts as the admin principal, and its permissions say so.
-    let member_id = me.member.map(|m| m.id).unwrap_or_else(|| team_model::ADMIN_ID.to_string());
+    let member_id = me
+        .member
+        .map(|m| m.id)
+        .unwrap_or_else(|| team_model::ADMIN_ID.to_string());
     {
         let _edit = edit_lock();
         let mut s = load()?;
         // Sync through this team as this member goes on with the new token.
-        if let Some(l) = s.sync.as_mut().filter(|l| l.team_id == me.team.id && l.member_id == member_id) {
+        if let Some(l) = s
+            .sync
+            .as_mut()
+            .filter(|l| l.team_id == me.team.id && l.member_id == member_id)
+        {
             l.token = token.to_string();
             l.server = base.clone();
         }
@@ -486,7 +545,9 @@ pub async fn join(server: &str, token: &str) -> Result<SpaceState> {
         s.tokens.insert(me.team.id.clone(), token.to_string());
         // Maybe another member now: their editions count from scratch.
         s.floors.remove(&me.team.id);
-        s.space = Space::Team { team_id: me.team.id };
+        s.space = Space::Team {
+            team_id: me.team.id,
+        };
         save(&s)?;
     }
     state()
@@ -494,8 +555,12 @@ pub async fn join(server: &str, token: &str) -> Result<SpaceState> {
 
 fn join_refused(base: &str, e: &TeamError) -> String {
     match (e.code(), e.status()) {
-        (Some(Code::Unauthorized | Code::UnknownToken), _) => "the server does not know this token".into(),
-        (Some(Code::TokenReplaced), _) => "the server does not know this token: it was replaced by a new one".into(),
+        (Some(Code::Unauthorized | Code::UnknownToken), _) => {
+            "the server does not know this token".into()
+        }
+        (Some(Code::TokenReplaced), _) => {
+            "the server does not know this token: it was replaced by a new one".into()
+        }
         (Some(Code::SwitchedOff), _) => "this member is switched off on the server".into(),
         (_, Some(404)) => format!("{base} is not a ShardBrowser team server"),
         (_, None) => match e {
@@ -511,7 +576,11 @@ fn join_refused(base: &str, e: &TeamError) -> String {
 /// Where sync goes now; None while it is not connected.
 pub fn sync_place() -> Option<SyncPlace> {
     let l = peek().ok()?.sync?;
-    Some(SyncPlace { server: l.server, team_id: l.team_id, own: l.admin })
+    Some(SyncPlace {
+        server: l.server,
+        team_id: l.team_id,
+        own: l.admin,
+    })
 }
 
 /// What the client needs to reach the sync server. Only `space::client` asks.
@@ -520,17 +589,33 @@ pub fn sync_reach() -> Result<Reach> {
     let l = s.sync.context(crate::space::sync::NOT_CONNECTED)?;
     // A link saved before keys were kept: the team's own, when it is joined here.
     let key = match l.key.is_empty() {
-        true => s.teams.iter().find(|t| t.id == l.team_id).map(|t| t.perm_key.clone()).unwrap_or_default(),
+        true => s
+            .teams
+            .iter()
+            .find(|t| t.id == l.team_id)
+            .map(|t| t.perm_key.clone())
+            .unwrap_or_default(),
         false => l.key,
     };
-    Ok(Reach { server: l.server, token: l.token, device_id: s.device_id, key })
+    Ok(Reach {
+        server: l.server,
+        token: l.token,
+        device_id: s.device_id,
+        key,
+    })
 }
 
 /// The key sync's server just proved itself with, kept while the link is still that server and token.
 pub fn sync_key_learned(server: &str, token: &str, key: &str) {
     let _edit = edit_lock();
     let Ok(mut s) = load() else { return };
-    let Some(l) = s.sync.as_mut().filter(|l| l.server == server && l.token == token && l.key.is_empty()) else { return };
+    let Some(l) = s
+        .sync
+        .as_mut()
+        .filter(|l| l.server == server && l.token == token && l.key.is_empty())
+    else {
+        return;
+    };
     l.key = key.to_string();
     if let Err(e) = save(&s) {
         eprintln!("[launcher] sync: the server's key was not kept: {e:#}");
@@ -542,7 +627,11 @@ pub fn sync_with_team(team_id: &str) -> Result<SyncPlace> {
     use crate::space::sync::NOT_MEMBER;
     let _edit = edit_lock();
     let mut s = load()?;
-    let link = s.teams.iter().find(|t| t.id == team_id && t.usable()).context(NOT_MEMBER)?;
+    let link = s
+        .teams
+        .iter()
+        .find(|t| t.id == team_id && t.usable())
+        .context(NOT_MEMBER)?;
     let token = s.tokens.get(team_id).context(NOT_MEMBER)?.clone();
     let l = SyncLink {
         server: link.server.clone(),
@@ -552,7 +641,11 @@ pub fn sync_with_team(team_id: &str) -> Result<SyncPlace> {
         token,
         key: link.perm_key.clone(),
     };
-    let place = SyncPlace { server: l.server.clone(), team_id: l.team_id.clone(), own: l.admin };
+    let place = SyncPlace {
+        server: l.server.clone(),
+        team_id: l.team_id.clone(),
+        own: l.admin,
+    };
     s.sync = Some(l);
     save(&s)?;
     Ok(place)
@@ -577,9 +670,23 @@ pub async fn sync_with_server(server: &str, token: &str) -> Result<SyncPlace> {
         bail!("{base} checks permissions with another key than the one it proved itself with");
     }
     // The admin token's own space is the admin principal's.
-    let member_id = me.member.map(|m| m.id).unwrap_or_else(|| team_model::ADMIN_ID.to_string());
-    let l = SyncLink { server: base, team_id: me.team.id, member_id, admin: me.admin, token: token.to_string(), key };
-    let place = SyncPlace { server: l.server.clone(), team_id: l.team_id.clone(), own: l.admin };
+    let member_id = me
+        .member
+        .map(|m| m.id)
+        .unwrap_or_else(|| team_model::ADMIN_ID.to_string());
+    let l = SyncLink {
+        server: base,
+        team_id: me.team.id,
+        member_id,
+        admin: me.admin,
+        token: token.to_string(),
+        key,
+    };
+    let place = SyncPlace {
+        server: l.server.clone(),
+        team_id: l.team_id.clone(),
+        own: l.admin,
+    };
     let _edit = edit_lock();
     let mut s = load()?;
     s.sync = Some(l);
@@ -617,7 +724,11 @@ pub fn set_sync_server(server: &str) {
 
 /// Whether `lost` names the address and token kept for the team now.
 fn still_kept(s: &Saved, team_id: &str, lost: &impl Fn(&str, &str) -> bool) -> bool {
-    let server = s.teams.iter().find(|t| t.id == team_id).map(|t| t.server.as_str());
+    let server = s
+        .teams
+        .iter()
+        .find(|t| t.id == team_id)
+        .map(|t| t.server.as_str());
     matches!((server, s.tokens.get(team_id)), (Some(server), Some(token)) if lost(server, token))
 }
 
@@ -636,7 +747,11 @@ pub fn revoke(team_id: &str, lost: impl Fn(&str, &str) -> bool) -> Result<Option
         for t in s.teams.iter_mut().filter(|t| t.id == team_id) {
             t.revoked = true;
         }
-        if s.space == (Space::Team { team_id: team_id.to_string() }) {
+        if s.space
+            == (Space::Team {
+                team_id: team_id.to_string(),
+            })
+        {
             s.space = Space::Personal;
         }
         save(&s)?;
@@ -646,7 +761,10 @@ pub fn revoke(team_id: &str, lost: impl Fn(&str, &str) -> bool) -> Result<Option
 
 /// The admin re-issued this member's token: forget it and wait for the new
 /// invite. Not a withdrawal: the member is still in the team. None as for [`revoke`].
-pub fn token_replaced(team_id: &str, lost: impl Fn(&str, &str) -> bool) -> Result<Option<SpaceState>> {
+pub fn token_replaced(
+    team_id: &str,
+    lost: impl Fn(&str, &str) -> bool,
+) -> Result<Option<SpaceState>> {
     {
         let _edit = edit_lock();
         let mut s = load()?;
@@ -657,7 +775,11 @@ pub fn token_replaced(team_id: &str, lost: impl Fn(&str, &str) -> bool) -> Resul
         for t in s.teams.iter_mut().filter(|t| t.id == team_id) {
             t.needs_invite = true;
         }
-        if s.space == (Space::Team { team_id: team_id.to_string() }) {
+        if s.space
+            == (Space::Team {
+                team_id: team_id.to_string(),
+            })
+        {
             s.space = Space::Personal;
         }
         save(&s)?;
@@ -669,7 +791,9 @@ pub fn token_replaced(team_id: &str, lost: impl Fn(&str, &str) -> bool) -> Resul
 pub fn rename(team_id: &str, name: &str) -> Result<bool> {
     let _edit = edit_lock();
     let mut s = load()?;
-    let Some(link) = s.teams.iter_mut().find(|t| t.id == team_id) else { return Ok(false) };
+    let Some(link) = s.teams.iter_mut().find(|t| t.id == team_id) else {
+        return Ok(false);
+    };
     if link.name == name {
         return Ok(false);
     }
@@ -686,7 +810,11 @@ pub fn leave(team_id: &str) -> Result<SpaceState> {
         s.teams.retain(|t| t.id != team_id);
         s.tokens.remove(team_id);
         s.floors.remove(team_id);
-        if s.space == (Space::Team { team_id: team_id.to_string() }) {
+        if s.space
+            == (Space::Team {
+                team_id: team_id.to_string(),
+            })
+        {
             s.space = Space::Personal;
         }
         save(&s)?;
@@ -699,7 +827,9 @@ pub fn leave(team_id: &str) -> Result<SpaceState> {
 pub fn forget_all() -> Result<Vec<String>> {
     let _edit = edit_lock();
     let p = path()?;
-    let ids = peek().map(|s| s.teams.into_iter().map(|t| t.id).collect()).unwrap_or_default();
+    let ids = peek()
+        .map(|s| s.teams.into_iter().map(|t| t.id).collect())
+        .unwrap_or_default();
     for f in [p.clone(), p.with_extension("json.tmp")] {
         match std::fs::remove_file(&f) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
@@ -749,7 +879,9 @@ mod tests {
 
     #[test]
     fn a_space_round_trips_through_its_saved_shape() {
-        let s = Space::Team { team_id: "t1".into() };
+        let s = Space::Team {
+            team_id: "t1".into(),
+        };
         let json = serde_json::to_string(&s).unwrap();
         assert_eq!(json, r#"{"kind":"team","team_id":"t1"}"#);
         assert_eq!(serde_json::from_str::<Space>(&json).unwrap(), s);
@@ -787,14 +919,24 @@ mod tests {
     fn a_link_saved_before_keys_reads_as_one_with_no_key() {
         let old = r#"{"id":"t1","name":"Ads","server":"http://203.0.113.7:8787","admin":false}"#;
         let link: TeamLink = serde_json::from_str(old).unwrap();
-        assert_eq!((link.perm_key.as_str(), link.member_id.as_str(), link.revoked), ("", "", false));
+        assert_eq!(
+            (
+                link.perm_key.as_str(),
+                link.member_id.as_str(),
+                link.revoked
+            ),
+            ("", "", false)
+        );
         assert!(!link.needs_invite);
     }
 
     #[test]
     fn waiting_for_a_new_invite_is_shown_only_when_it_is_so() {
-        let mut link: TeamLink = serde_json::from_str(r#"{"id":"t1","name":"Ads","server":"http://t"}"#).unwrap();
-        assert!(!serde_json::to_string(&link).unwrap().contains("needs_invite"));
+        let mut link: TeamLink =
+            serde_json::from_str(r#"{"id":"t1","name":"Ads","server":"http://t"}"#).unwrap();
+        assert!(!serde_json::to_string(&link)
+            .unwrap()
+            .contains("needs_invite"));
         link.needs_invite = true;
         let shown = serde_json::to_value(&link).unwrap();
         assert_eq!(shown["needs_invite"], true);
@@ -808,10 +950,15 @@ mod tests {
         {
             let _edit = edit_lock();
             let mut s = load().unwrap();
-            let link: TeamLink = serde_json::from_value(serde_json::json!({ "id": "t1", "name": "Ads", "server": server })).unwrap();
+            let link: TeamLink = serde_json::from_value(
+                serde_json::json!({ "id": "t1", "name": "Ads", "server": server }),
+            )
+            .unwrap();
             s.teams.push(link);
             s.tokens.insert("t1".into(), "stm_new".into());
-            s.space = Space::Team { team_id: "t1".into() };
+            s.space = Space::Team {
+                team_id: "t1".into(),
+            };
             save(&s).unwrap();
         }
         // Lost with the old token, after the new invite was pasted: the new one stays.
@@ -820,23 +967,45 @@ mod tests {
         assert!(revoke("t1", old).unwrap().is_none());
         let kept = link("t1").unwrap().unwrap();
         assert!(!kept.revoked && !kept.needs_invite && has_token("t1"));
-        assert_eq!(state().unwrap().space, Space::Team { team_id: "t1".into() });
+        assert_eq!(
+            state().unwrap().space,
+            Space::Team {
+                team_id: "t1".into()
+            }
+        );
 
         let new = |at: &str, token: &str| at == server && token == "stm_new";
-        assert_eq!(token_replaced("t1", new).unwrap().unwrap().space, Space::Personal);
+        assert_eq!(
+            token_replaced("t1", new).unwrap().unwrap().space,
+            Space::Personal
+        );
         assert!(link("t1").unwrap().unwrap().needs_invite && !has_token("t1"));
         // Heard again, it changes nothing.
         assert!(revoke("t1", new).unwrap().is_none());
         assert!(!link("t1").unwrap().unwrap().revoked);
-        let err = set_space(Space::Team { team_id: "t1".into() }).unwrap_err().to_string();
+        let err = set_space(Space::Team {
+            team_id: "t1".into(),
+        })
+        .unwrap_err()
+        .to_string();
         assert_eq!(err, "Ads: the server does not know this token any more: paste the new invite from the team's admin");
-        assert!(reach("t1").err().unwrap().to_string().contains("does not know this token"));
+        assert!(reach("t1")
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("does not know this token"));
     }
 
     #[test]
     fn a_server_is_an_http_or_https_address() {
-        assert_eq!(server_base("https://team.example.com/").unwrap(), "https://team.example.com");
-        assert_eq!(server_base("http://203.0.113.7:8787").unwrap(), "http://203.0.113.7:8787");
+        assert_eq!(
+            server_base("https://team.example.com/").unwrap(),
+            "https://team.example.com"
+        );
+        assert_eq!(
+            server_base("http://203.0.113.7:8787").unwrap(),
+            "http://203.0.113.7:8787"
+        );
         assert!(server_base("ftp://team.example.com").is_err());
         assert!(server_base("team.example.com").is_err());
     }
@@ -863,7 +1032,11 @@ mod tests {
         // Read again there: the same.
         crate::store::set_test_config(Some(root.path.join("config")));
         machine::force(Some(Some("mac-1")));
-        assert_eq!(device_id(), first, "the first computer keeps its id and name");
+        assert_eq!(
+            device_id(),
+            first,
+            "the first computer keeps its id and name"
+        );
         assert_eq!(device_name(), "Vera's MacBook");
         crate::store::set_test_config(Some(other));
         machine::force(Some(Some("mac-2")));
@@ -891,7 +1064,10 @@ mod tests {
         let root = crate::store::test_root("team-local").with_config();
         let at = path().unwrap();
         assert_eq!(at, crate::store::local_root().unwrap().join("teams.json"));
-        assert_ne!(at.parent(), Some(crate::store::config_root().unwrap().as_path()));
+        assert_ne!(
+            at.parent(),
+            Some(crate::store::config_root().unwrap().as_path())
+        );
         drop(root);
     }
 }

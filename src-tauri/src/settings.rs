@@ -137,7 +137,9 @@ fn decode_text(bytes: &[u8]) -> String {
         return String::from_utf16_lossy(&units);
     }
     let body = String::from_utf8_lossy(bytes).into_owned();
-    body.strip_prefix('\u{feff}').map(str::to_owned).unwrap_or(body)
+    body.strip_prefix('\u{feff}')
+        .map(str::to_owned)
+        .unwrap_or(body)
 }
 
 /// The message for the UI banner, or None while the file reads fine.
@@ -162,7 +164,10 @@ pub fn load() -> Result<Settings> {
         Err(e) => {
             // Defaults for this run only: the file stays as it is, and `save`
             // keeps a copy of it before writing over it.
-            let msg = format!("{} could not be read ({e}); running on defaults", path.display());
+            let msg = format!(
+                "{} could not be read ({e}); running on defaults",
+                path.display()
+            );
             eprintln!("[launcher] settings: {msg}");
             if let Ok(mut g) = LOAD_ERROR.lock() {
                 *g = Some(msg);
@@ -245,7 +250,10 @@ pub fn save(s: &Settings) -> Result<()> {
         if let Err(e) = fs::rename(&path, &backup) {
             eprintln!("[launcher] settings: could not keep a copy of the old file: {e}");
         } else {
-            eprintln!("[launcher] settings: kept the unreadable file as {}", backup.display());
+            eprintln!(
+                "[launcher] settings: kept the unreadable file as {}",
+                backup.display()
+            );
         }
     }
     let body = serde_json::to_string_pretty(s)?;
@@ -260,13 +268,20 @@ pub fn save(s: &Settings) -> Result<()> {
 mod tests {
     #[test]
     fn missing_settings_preserve_other_fields_and_disable_extension_checks() {
-        let old: super::Settings = serde_json::from_str(r#"{"theme":"light","extra_args":"--lang=de"}"#).unwrap();
+        let old: super::Settings =
+            serde_json::from_str(r#"{"theme":"light","extra_args":"--lang=de"}"#).unwrap();
         assert!(!old.ext_update_check);
         assert_eq!(old.theme, "light");
         assert_eq!(old.extra_args, "--lang=de");
         assert_eq!(old.profile_defaults.language, "zh-CN");
-        assert_eq!(old.profile_defaults.startup_url, "https://www.browserscan.net/zh/");
-        let explicit: super::Settings = serde_json::from_str(r#"{"ext_update_check":true,"profile_defaults":{"language":"auto","startup_url":""}}"#).unwrap();
+        assert_eq!(
+            old.profile_defaults.startup_url,
+            "https://www.browserscan.net/zh/"
+        );
+        let explicit: super::Settings = serde_json::from_str(
+            r#"{"ext_update_check":true,"profile_defaults":{"language":"auto","startup_url":""}}"#,
+        )
+        .unwrap();
         assert!(explicit.ext_update_check);
         assert_eq!(explicit.profile_defaults.language, "auto");
         assert_eq!(explicit.profile_defaults.startup_url, "");

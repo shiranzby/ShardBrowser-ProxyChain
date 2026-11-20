@@ -109,10 +109,15 @@ export type ProxyFilters = {
     kind: '' | 'socks5' | 'http' | 'https';
     /** An upper-case country code. */
     country: string;
+    /** A saved local folder name. Empty means proxies without a folder. */
+    folder: string;
 };
-export const emptyProxyFilters = (): ProxyFilters => ({ status: 'any', used: 'any', kind: '', country: '' });
+export const emptyProxyFilters = (): ProxyFilters => ({ status: 'any', used: 'any', kind: '', country: '', folder: '' });
 export const countActiveProxyFilters = (f: ProxyFilters) =>
-    (f.status !== 'any' ? 1 : 0) + (f.used !== 'any' ? 1 : 0) + (f.kind ? 1 : 0) + (f.country ? 1 : 0);
+    (f.status !== 'any' ? 1 : 0) + (f.used !== 'any' ? 1 : 0) + (f.kind ? 1 : 0) + (f.country ? 1 : 0) + (f.folder ? 1 : 0);
+
+/** Reads the folder from the current field or the legacy provider_options slot. */
+export const proxyFolder = (p: ProxyEntry): string => p.folder?.trim() || p.provider_options?.folder?.trim() || "";
 
 /** Display's order. `added` is the stored order. */
 export type ProxySort = 'added' | 'manual' | 'name' | 'latency' | 'tested' | 'profiles';
@@ -149,12 +154,14 @@ export function filterProxies(
         if (filters.used === 'unused' && used[p.id] > 0) return false;
         if (filters.kind && p.kind !== filters.kind) return false;
         if (filters.country && (snap?.country_code || p.country).toUpperCase() !== filters.country) return false;
+        if (filters.folder && proxyFolder(p) !== filters.folder) return false;
         if (!q) return true;
         return (
             p.name.toLowerCase().includes(q) ||
             p.host.toLowerCase().includes(q) ||
             String(p.port).includes(q) ||
             p.country.toLowerCase().includes(q) ||
+            proxyFolder(p).toLowerCase().includes(q) ||
             p.notes.toLowerCase().includes(q) ||
             p.username.toLowerCase().includes(q) ||
             (snap?.ip ?? '').toLowerCase().includes(q) ||

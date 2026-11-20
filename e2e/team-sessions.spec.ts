@@ -25,7 +25,7 @@ const answers = (page: Page) =>
     const c = (window as unknown as M).__shardxMock.calls;
     return { confirmed: c.app_quit_confirmed ?? 0, cancelled: c.app_quit_cancelled ?? 0 };
   });
-const question = (page: Page) => page.getByRole("dialog", { name: "Quit ShardBrowser?" });
+const question = (page: Page) => page.getByRole("dialog", { name: "Quit ShyShard?" });
 const call = (page: Page, cmd: string, args: Record<string, unknown>) =>
   page.evaluate(([c, a]) => {
     const w = window as unknown as M;
@@ -34,6 +34,29 @@ const call = (page: Page, cmd: string, args: Record<string, unknown>) =>
 const ends = (page: Page, id: string, outcome: Outcome, why?: string) =>
   page.evaluate(([i, o, w]) => (window as unknown as M).__shardxMock.teamSessionEnds(i as string, o as Outcome, w as string | undefined), [id, outcome, why] as const);
 const warn = (page: Page, text: string) => page.evaluate((t) => (window as unknown as M).__shardxMock.emit("launcher-warning", t), text);
+
+test("SafeClose reports its current work and lets Escape cancel the exit", async ({ page }) => {
+  await openApp(page);
+  const update = (payload: unknown) =>
+    page.evaluate((value) => (window as unknown as M).__shardxMock.emit("app://safe-close", value), payload);
+  await update({ remaining: 2 });
+  const progress = page.getByRole("dialog", { name: "Closing ShyShard" });
+  await expect(progress.getByRole("status")).toHaveText("Waiting for 2 profile windows to close.");
+  await update({ remaining: 0 });
+  await expect(progress.getByRole("status")).toHaveText("Waiting for session saves and connection cleanup.");
+  await page.keyboard.press("Escape");
+  await expect.poll(() =>
+    page.evaluate(() => (window as unknown as M).__shardxMock.calls.app_safe_close_cancel)
+  ).toBe(1);
+  await update({ failure: "cancelled" });
+  await expect(progress).toHaveCount(0);
+
+  await update({ failure: "save_failed" });
+  const failure = page.getByRole("dialog", { name: "ShyShard is still open" });
+  await expect(failure.getByRole("status")).toContainText("could not be saved");
+  await failure.getByRole("button", { name: "Close", exact: true }).last().click();
+  await expect(failure).toHaveCount(0);
+});
 
 /** In the Ads team as its admin, with `ids` of its profiles running here. */
 async function inTeamWith(page: Page, ids: string[]) {
@@ -57,7 +80,7 @@ test("Quit names the team and synced profiles open here; Cancel stays, Save and 
 
   await requestQuit(page);
   await expect(question(page)).toBeVisible();
-  await expect(question(page)).toContainText("These profiles are open here. ShardBrowser saves each one and closes it before it quits.");
+  await expect(question(page)).toContainText("These profiles are open here. ShyShard saves each one and closes it before it quits.");
   const items = question(page).locator("[data-confirm-items] li");
   // In the order they opened: Amazon US seller was running first.
   await expect(items).toHaveText([
@@ -84,7 +107,7 @@ test("unsaved changes are asked first, then the open profiles", async ({ page })
   });
   await requestQuit(page);
   await page.getByRole("alertdialog", { name: "Save changes to Fake?" }).getByRole("button", { name: "Don’t save" }).click();
-  await expect(question(page)).toContainText("This profile is open here. ShardBrowser saves it and closes it before it quits.");
+  await expect(question(page)).toContainText("This profile is open here. ShyShard saves it and closes it before it quits.");
   await expect(question(page).locator("[data-confirm-items] li")).toHaveText(["FB Ads 01Will be saved to “Ads team” and closed"]);
   await question(page).getByRole("button", { name: "Save and quit" }).click();
   await expect.poll(() => answers(page)).toEqual({ confirmed: 1, cancelled: 0 });

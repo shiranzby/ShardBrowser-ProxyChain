@@ -12,8 +12,8 @@ use std::path::Path;
 
 /// SHA-256 of the store's "ecdsa_2017_public" key (`kPublisherKeyHash`).
 pub const PUBLISHER_KEY_HASH: [u8; 32] = [
-    0x61, 0xf7, 0xf2, 0xa6, 0xbf, 0xcf, 0x74, 0xcd, 0x0b, 0xc1, 0xfe, 0x24, 0x97, 0xcc, 0x9b, 0x04, 0x25, 0x4c, 0x65, 0x8f,
-    0x79, 0xf2, 0x14, 0x53, 0x92, 0x86, 0x7e, 0xa8, 0x36, 0x63, 0x67, 0xcf,
+    0x61, 0xf7, 0xf2, 0xa6, 0xbf, 0xcf, 0x74, 0xcd, 0x0b, 0xc1, 0xfe, 0x24, 0x97, 0xcc, 0x9b, 0x04,
+    0x25, 0x4c, 0x65, 0x8f, 0x79, 0xf2, 0x14, 0x53, 0x92, 0x86, 0x7e, 0xa8, 0x36, 0x63, 0x67, 0xcf,
 ];
 /// The store's publisher hash; a test on this thread may stand its own key in.
 pub fn publisher() -> [u8; 32] {
@@ -63,9 +63,13 @@ impl fmt::Display for Reject {
             Reject::BadSignature => f.write_str("the CRX signature does not match its contents"),
             Reject::NoDeveloperProof => f.write_str("the CRX is not signed by its developer's key"),
             Reject::NoPublisherProof => f.write_str("the CRX is not signed by the Web Store"),
-            Reject::WrongId { want, got } => write!(f, "the package is extension {got}, not {want}"),
+            Reject::WrongId { want, got } => {
+                write!(f, "the package is extension {got}, not {want}")
+            }
             Reject::WrongHash => f.write_str("the download does not match the Web Store's hash"),
-            Reject::WrongSize { want, got } => write!(f, "the download is {got} bytes, the Web Store said {want}"),
+            Reject::WrongSize { want, got } => {
+                write!(f, "the download is {got} bytes, the Web Store said {want}")
+            }
         }
     }
 }
@@ -87,7 +91,12 @@ pub struct Expect<'a> {
 impl<'a> Expect<'a> {
     /// A Web Store package for `id`: the store's own proof is required.
     pub fn store(id: &'a str, sha256: Option<&'a str>, size: Option<u64>) -> Expect<'a> {
-        Expect { id: Some(id), publisher: Some(publisher()), sha256, size }
+        Expect {
+            id: Some(id),
+            publisher: Some(publisher()),
+            sha256,
+            size,
+        }
     }
 }
 
@@ -136,7 +145,10 @@ pub fn verify(bytes: &[u8], expect: &Expect) -> Result<Verified, Reject> {
     let sha256: String = digest.iter().map(|b| format!("{b:02x}")).collect();
     if let Some(want) = expect.size {
         if want != bytes.len() as u64 {
-            return Err(Reject::WrongSize { want, got: bytes.len() as u64 });
+            return Err(Reject::WrongSize {
+                want,
+                got: bytes.len() as u64,
+            });
         }
     }
     if let Some(want) = expect.sha256 {
@@ -153,7 +165,10 @@ pub fn verify(bytes: &[u8], expect: &Expect) -> Result<Verified, Reject> {
     }
     let header = &bytes[12..12 + header_size];
     let archive_offset = 12 + header_size;
-    if ZIP_TOKENS.iter().any(|t| header.windows(4).any(|w| w == *t)) {
+    if ZIP_TOKENS
+        .iter()
+        .any(|t| header.windows(4).any(|w| w == *t))
+    {
         return Err(Reject::ZipTokenInHeader);
     }
 
@@ -212,12 +227,17 @@ pub fn verify(bytes: &[u8], expect: &Expect) -> Result<Verified, Reject> {
     msg.extend_from_slice(signed);
     msg.extend_from_slice(archive);
     for (alg, raw, sig, _) in &checks {
-        UnparsedPublicKey::new(*alg, raw).verify(&msg, sig).map_err(|_| Reject::BadSignature)?;
+        UnparsedPublicKey::new(*alg, raw)
+            .verify(&msg, sig)
+            .map_err(|_| Reject::BadSignature)?;
     }
 
     if let Some(want) = expect.id {
         if want != crx_id {
-            return Err(Reject::WrongId { want: want.to_string(), got: crx_id });
+            return Err(Reject::WrongId {
+                want: want.to_string(),
+                got: crx_id,
+            });
         }
     }
     let verified_contents = compressed_vc.and_then(|gz| {
@@ -240,13 +260,21 @@ pub fn verify(bytes: &[u8], expect: &Expect) -> Result<Verified, Reject> {
 /// store's signature over it is not checked.
 pub fn verified_item(json: &[u8]) -> Option<StoreItem> {
     let top: serde_json::Value = serde_json::from_slice(json).ok()?;
-    let entry = top.as_array()?.iter().find(|e| e.get("description").and_then(|d| d.as_str()) == Some("treehash per file"))?;
+    let entry = top
+        .as_array()?
+        .iter()
+        .find(|e| e.get("description").and_then(|d| d.as_str()) == Some("treehash per file"))?;
     let payload = entry.get("signed_content")?.get("payload")?.as_str()?;
-    let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')).ok()?;
+    let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .ok()?;
     let p: serde_json::Value = serde_json::from_slice(&raw).ok()?;
     let id = p.get("item_id")?.as_str()?;
     let version = p.get("item_version")?.as_str()?;
-    super::chrome_id::is_id(id).then(|| StoreItem { id: id.to_string(), version: version.to_string() })
+    super::chrome_id::is_id(id).then(|| StoreItem {
+        id: id.to_string(),
+        version: version.to_string(),
+    })
 }
 
 /// The length-delimited fields of a protobuf message, in order; others are
@@ -321,13 +349,26 @@ const OID_P384: &[u8] = &[0x2b, 0x81, 0x04, 0x00, 0x22];
 /// A SubjectPublicKeyInfo as what ring verifies with: the algorithm for its
 /// kind of key and the key's raw form. None if unreadable or of the other kind.
 fn spki(key: &[u8], rsa: bool) -> Option<(&'static dyn VerificationAlgorithm, &[u8])> {
-    let (0x30, body, []) = der(key)? else { return None };
-    let (0x30, alg, rest) = der(body)? else { return None };
-    let (0x03, bits, []) = der(rest)? else { return None };
-    let (0x06, oid, params) = der(alg)? else { return None };
-    let ([0], raw) = bits.split_at_checked(1)? else { return None };
+    let (0x30, body, []) = der(key)? else {
+        return None;
+    };
+    let (0x30, alg, rest) = der(body)? else {
+        return None;
+    };
+    let (0x03, bits, []) = der(rest)? else {
+        return None;
+    };
+    let (0x06, oid, params) = der(alg)? else {
+        return None;
+    };
+    let ([0], raw) = bits.split_at_checked(1)? else {
+        return None;
+    };
     match (rsa, oid) {
-        (true, OID_RSA) if params == [0x05, 0x00] => Some((&signature::RSA_PKCS1_1024_8192_SHA256_FOR_LEGACY_USE_ONLY, raw)),
+        (true, OID_RSA) if params == [0x05, 0x00] => Some((
+            &signature::RSA_PKCS1_1024_8192_SHA256_FOR_LEGACY_USE_ONLY,
+            raw,
+        )),
         (false, OID_EC) => match der(params)? {
             (0x06, OID_P256, []) => Some((&signature::ECDSA_P256_SHA256_ASN1, raw)),
             (0x06, OID_P384, []) => Some((&signature::ECDSA_P384_SHA256_ASN1, raw)),

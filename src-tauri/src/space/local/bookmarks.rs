@@ -20,7 +20,11 @@ const OLD_FOLDER_KEY: &str = "shardx_managed";
 /// That folder's name before the rename to ShardBrowser, written without the marker.
 const LEGACY_FOLDER: &str = "ShardX";
 /// Chrome's roots in its order, with the names it writes when it makes a file.
-const ROOTS: [(&str, &str); 3] = [("bookmark_bar", "Bookmarks bar"), ("other", "Other bookmarks"), ("synced", "Mobile bookmarks")];
+const ROOTS: [(&str, &str); 3] = [
+    ("bookmark_bar", "Bookmarks bar"),
+    ("other", "Other bookmarks"),
+    ("synced", "Mobile bookmarks"),
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bookmark {
@@ -90,7 +94,12 @@ pub(in crate::space) fn cleaned(mut b: Bookmark) -> Result<Bookmark> {
         "synced" | "mobile" => "synced".into(),
         other => anyhow::bail!("a bookmark's root is bookmark_bar, other or synced, not {other:?}"),
     };
-    b.path = b.path.iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    b.path = b
+        .path
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
     if b.url.is_empty() {
         anyhow::bail!("a bookmark needs a URL");
     }
@@ -128,7 +137,8 @@ fn normalise_url(raw: &str) -> String {
 
 /// `javascript:…`, in any case: a bookmark that runs its script on the open page.
 fn is_bookmarklet(url: &str) -> bool {
-    url.get(..11).is_some_and(|s| s.eq_ignore_ascii_case("javascript:"))
+    url.get(..11)
+        .is_some_and(|s| s.eq_ignore_ascii_case("javascript:"))
 }
 
 /// Chromium timestamps are microseconds since 1601-01-01.
@@ -161,7 +171,11 @@ fn empty_tree() -> Value {
 }
 
 fn max_id(node: &Value, cur: &mut u64) {
-    if let Some(id) = node.get("id").and_then(|v| v.as_str()).and_then(|s| s.parse::<u64>().ok()) {
+    if let Some(id) = node
+        .get("id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<u64>().ok())
+    {
         *cur = (*cur).max(id);
     }
     if let Some(children) = node.get("children").and_then(|v| v.as_array()) {
@@ -180,8 +194,15 @@ fn max_id(node: &Value, cur: &mut u64) {
 /// Rewrite `<udd>/Default/Bookmarks` so it carries exactly the bookmarks of
 /// `all` this launcher folder defines, each in its root and folders, leaving
 /// every node the operator added where it is.
-pub(in crate::space) fn apply_to_profile(udd: &Path, folder: &str, all: &[Bookmark]) -> Result<usize> {
-    let wanted: Vec<&Bookmark> = all.iter().filter(|b| b.folder.is_empty() || b.folder == folder).collect();
+pub(in crate::space) fn apply_to_profile(
+    udd: &Path,
+    folder: &str,
+    all: &[Bookmark],
+) -> Result<usize> {
+    let wanted: Vec<&Bookmark> = all
+        .iter()
+        .filter(|b| b.folder.is_empty() || b.folder == folder)
+        .collect();
 
     let default_dir = udd.join("Default");
     let path = default_dir.join("Bookmarks");
@@ -203,7 +224,12 @@ pub(in crate::space) fn apply_to_profile(udd: &Path, folder: &str, all: &[Bookma
     max_id(&tree, &mut next_id);
     let mut reuse = HashMap::new();
     collect_ours(&tree["roots"], &mut reuse);
-    let mut cx = Layout { reuse, next_id, ts: chrome_now(), had_ours: false };
+    let mut cx = Layout {
+        reuse,
+        next_id,
+        ts: chrome_now(),
+        had_ours: false,
+    };
 
     for (key, name) in ROOTS {
         let root = &mut tree["roots"][key];
@@ -254,14 +280,19 @@ fn wanted_tree<'a>(marks: impl Iterator<Item = &'a Bookmark>) -> Vec<Want<'a>> {
     for b in marks {
         let mut kids = &mut top;
         for name in &b.path {
-            let at = match kids.iter().position(|w| matches!(w, Want::Folder(n, _) if *n == name.as_str())) {
+            let at = match kids
+                .iter()
+                .position(|w| matches!(w, Want::Folder(n, _) if *n == name.as_str()))
+            {
                 Some(i) => i,
                 None => {
                     kids.push(Want::Folder(name, Vec::new()));
                     kids.len() - 1
                 }
             };
-            let Want::Folder(_, inner) = &mut kids[at] else { unreachable!("just matched a folder") };
+            let Want::Folder(_, inner) = &mut kids[at] else {
+                unreachable!("just matched a folder")
+            };
             kids = inner;
         }
         kids.push(Want::Mark(b));
@@ -289,7 +320,11 @@ fn collect_ours(n: &Value, out: &mut HashMap<String, Value>) {
     }
     match n {
         Value::Object(m) if m.contains_key("children") => {
-            n["children"].as_array().into_iter().flatten().for_each(|c| collect_ours(c, out));
+            n["children"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .for_each(|c| collect_ours(c, out));
         }
         // The file's `roots`: an object of Chrome's root folders.
         Value::Object(m) => m.values().for_each(|c| collect_ours(c, out)),
@@ -326,7 +361,10 @@ impl Layout {
             } else if owned(&n) {
                 self.had_ours = true;
                 if n["type"] == "folder" {
-                    folders.push(Some((n["name"].as_str().unwrap_or_default().to_string(), n)));
+                    folders.push(Some((
+                        n["name"].as_str().unwrap_or_default().to_string(),
+                        n,
+                    )));
                     seq.push(Slot::Folder(folders.len() - 1));
                 } else {
                     // Ours: put back from `reuse` where the list wants it.
@@ -346,7 +384,9 @@ impl Layout {
             match w {
                 Want::Mark(b) => ours.push(self.mark_node(b)),
                 Want::Folder(name, inner) => {
-                    let found = folders.iter_mut().find(|f| f.as_ref().is_some_and(|(n, _)| n == name));
+                    let found = folders
+                        .iter_mut()
+                        .find(|f| f.as_ref().is_some_and(|(n, _)| n == name));
                     let mut node = match found.and_then(Option::take) {
                         Some((_, node)) => node,
                         None => self.folder_node(name),
@@ -386,7 +426,11 @@ impl Layout {
 
         let slots = seq.iter().filter(|s| matches!(s, Slot::Ours)).count();
         let mut ours = ours.into_iter();
-        let mut out: Vec<Value> = if slots == 0 { ours.by_ref().collect() } else { Vec::new() };
+        let mut out: Vec<Value> = if slots == 0 {
+            ours.by_ref().collect()
+        } else {
+            Vec::new()
+        };
         let mut seen = 0;
         for s in seq {
             match s {
@@ -407,7 +451,9 @@ impl Layout {
     }
 
     fn mark_node(&mut self, b: &Bookmark) -> Value {
-        let reused = (!b.id.is_empty()).then(|| self.reuse.remove(&b.id)).flatten();
+        let reused = (!b.id.is_empty())
+            .then(|| self.reuse.remove(&b.id))
+            .flatten();
         let mut n = reused.unwrap_or_else(|| {
             self.next_id += 1;
             json!({ "date_added": self.ts, "date_last_used": "0", "guid": uuid::Uuid::new_v4().to_string(), "id": self.next_id.to_string() })
@@ -458,7 +504,11 @@ mod tests {
 
     /// A launcher bookmark as the store has it: its own id, a root and folders.
     fn placed(title: &str, root: &str, path: &[&str]) -> Bookmark {
-        Bookmark { id: format!("id-{title}"), root: root.into(), ..mark(title, "", path) }
+        Bookmark {
+            id: format!("id-{title}"),
+            root: root.into(),
+            ..mark(title, "", path)
+        }
     }
 
     /// A node's shape: a bookmark's name, or a folder's name and what it holds.
@@ -466,18 +516,32 @@ mod tests {
         match n["children"].as_array() {
             Some(kids) => {
                 let name = n["name"].as_str().unwrap_or_default().to_string();
-                Value::Object([(name, Value::Array(kids.iter().map(shape).collect()))].into_iter().collect())
+                Value::Object(
+                    [(name, Value::Array(kids.iter().map(shape).collect()))]
+                        .into_iter()
+                        .collect(),
+                )
             }
             None => n["name"].clone(),
         }
     }
 
     fn kids(tree: &Value, root: &str) -> Value {
-        Value::Array(tree["roots"][root]["children"].as_array().unwrap().iter().map(shape).collect())
+        Value::Array(
+            tree["roots"][root]["children"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(shape)
+                .collect(),
+        )
     }
 
     fn udd() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("shardx-bookmarks-{}", uuid::Uuid::new_v4().simple()))
+        std::env::temp_dir().join(format!(
+            "shardx-bookmarks-{}",
+            uuid::Uuid::new_v4().simple()
+        ))
     }
 
     fn read(udd: &Path) -> Value {
@@ -494,8 +558,14 @@ mod tests {
         if n["name"] == name {
             return Some(n);
         }
-        let kids = n["children"].as_array().map(|k| k.iter().collect::<Vec<_>>());
-        let kids = kids.unwrap_or_else(|| n.as_object().map(|m| m.values().collect()).unwrap_or_default());
+        let kids = n["children"]
+            .as_array()
+            .map(|k| k.iter().collect::<Vec<_>>());
+        let kids = kids.unwrap_or_else(|| {
+            n.as_object()
+                .map(|m| m.values().collect())
+                .unwrap_or_default()
+        });
         kids.into_iter().find_map(|c| find(c, name))
     }
 
@@ -505,7 +575,12 @@ mod tests {
         }
         match n["children"].as_array() {
             Some(kids) => kids.iter().for_each(|c| ids(c, out)),
-            None => n.as_object().into_iter().flat_map(|m| m.values()).filter(|v| v.is_object()).for_each(|c| ids(c, out)),
+            None => n
+                .as_object()
+                .into_iter()
+                .flat_map(|m| m.values())
+                .filter(|v| v.is_object())
+                .for_each(|c| ids(c, out)),
         }
     }
 
@@ -553,25 +628,76 @@ mod tests {
 
     #[test]
     fn a_path_and_a_root_are_cleaned_and_empty_ones_are_not_written() {
-        let b = cleaned(Bookmark { path: vec![" Work ".into(), "  ".into(), "Docs".into()], root: " Other ".into(), ..mark("A", "", &[]) }).unwrap();
-        assert_eq!((b.root.as_str(), b.path.clone()), ("other", vec!["Work".to_string(), "Docs".to_string()]));
-        assert_eq!(cleaned(Bookmark { root: "bookmark_bar".into(), ..mark("A", "", &[]) }).unwrap().root, "");
-        assert_eq!(cleaned(Bookmark { root: "mobile".into(), ..mark("A", "", &[]) }).unwrap().root, "synced");
-        assert!(cleaned(Bookmark { root: "desktop".into(), ..mark("A", "", &[]) }).is_err());
+        let b = cleaned(Bookmark {
+            path: vec![" Work ".into(), "  ".into(), "Docs".into()],
+            root: " Other ".into(),
+            ..mark("A", "", &[])
+        })
+        .unwrap();
+        assert_eq!(
+            (b.root.as_str(), b.path.clone()),
+            ("other", vec!["Work".to_string(), "Docs".to_string()])
+        );
+        assert_eq!(
+            cleaned(Bookmark {
+                root: "bookmark_bar".into(),
+                ..mark("A", "", &[])
+            })
+            .unwrap()
+            .root,
+            ""
+        );
+        assert_eq!(
+            cleaned(Bookmark {
+                root: "mobile".into(),
+                ..mark("A", "", &[])
+            })
+            .unwrap()
+            .root,
+            "synced"
+        );
+        assert!(cleaned(Bookmark {
+            root: "desktop".into(),
+            ..mark("A", "", &[])
+        })
+        .is_err());
         // A bookmark on the bar without folders serializes as before, so its sync digest stays.
         let plain = serde_json::to_value(mark("A", "Ads", &[])).unwrap();
-        assert_eq!(plain, json!({ "id": "", "title": "A", "url": "https://a.example/", "folder": "Ads" }));
+        assert_eq!(
+            plain,
+            json!({ "id": "", "title": "A", "url": "https://a.example/", "folder": "Ads" })
+        );
     }
 
     #[test]
     fn a_bookmarklet_is_kept_as_written_and_a_bare_one_is_refused() {
-        let js = cleaned(Bookmark { url: " javascript:alert(document.title) ".into(), title: "".into(), ..mark("A", "", &[]) }).unwrap();
+        let js = cleaned(Bookmark {
+            url: " javascript:alert(document.title) ".into(),
+            title: "".into(),
+            ..mark("A", "", &[])
+        })
+        .unwrap();
         assert_eq!(js.url, "javascript:alert(document.title)");
         assert_eq!(js.title, js.url);
-        assert_eq!(cleaned(Bookmark { url: "JavaScript:void(0)".into(), ..mark("A", "", &[]) }).unwrap().url, "JavaScript:void(0)");
-        assert!(cleaned(Bookmark { url: "javascript:  ".into(), ..mark("A", "", &[]) }).is_err());
+        assert_eq!(
+            cleaned(Bookmark {
+                url: "JavaScript:void(0)".into(),
+                ..mark("A", "", &[])
+            })
+            .unwrap()
+            .url,
+            "JavaScript:void(0)"
+        );
+        assert!(cleaned(Bookmark {
+            url: "javascript:  ".into(),
+            ..mark("A", "", &[])
+        })
+        .is_err());
         // Anything else without a scheme is still a site.
-        assert_eq!(normalise_url("javascript.info/intro"), "https://javascript.info/intro");
+        assert_eq!(
+            normalise_url("javascript.info/intro"),
+            "https://javascript.info/intro"
+        );
         assert_eq!(normalise_url("localhost:8080"), "https://localhost:8080");
     }
 
@@ -585,21 +711,51 @@ mod tests {
             placed("Run", "", &["Work"]),
             placed("D", "", &[]),
             // The same address in another root is a bookmark of its own.
-            Bookmark { title: "B again".into(), ..placed("B2", "other", &[]) },
+            Bookmark {
+                title: "B again".into(),
+                ..placed("B2", "other", &[])
+            },
             placed("E", "other", &["Shop"]),
             placed("Phone", "synced", &[]),
-            Bookmark { folder: "Shop".into(), ..placed("Not here", "", &[]) },
+            Bookmark {
+                folder: "Shop".into(),
+                ..placed("Not here", "", &[])
+            },
         ];
-        let all: Vec<Bookmark> = all.into_iter().map(|b| if b.title == "Run" { Bookmark { url: "javascript:alert(1)".into(), ..b } } else { b }).collect();
+        let all: Vec<Bookmark> = all
+            .into_iter()
+            .map(|b| {
+                if b.title == "Run" {
+                    Bookmark {
+                        url: "javascript:alert(1)".into(),
+                        ..b
+                    }
+                } else {
+                    b
+                }
+            })
+            .collect();
         assert_eq!(apply_to_profile(&udd, "Ads", &all).unwrap(), 8);
         let tree = read(&udd);
-        assert_eq!(kids(&tree, "bookmark_bar"), json!(["A", { "Work": ["B", { "Deep": ["C"] }, "Run"] }, "D"]));
+        assert_eq!(
+            kids(&tree, "bookmark_bar"),
+            json!(["A", { "Work": ["B", { "Deep": ["C"] }, "Run"] }, "D"])
+        );
         assert_eq!(kids(&tree, "other"), json!(["B again", { "Shop": ["E"] }]));
         assert_eq!(kids(&tree, "synced"), json!(["Phone"]));
-        assert_eq!(find(&tree["roots"], "Run").unwrap()["url"], "javascript:alert(1)");
+        assert_eq!(
+            find(&tree["roots"], "Run").unwrap()["url"],
+            "javascript:alert(1)"
+        );
         // Every node written is marked, a bookmark with its launcher id.
-        assert_eq!(find(&tree["roots"], "Work").unwrap()["meta_info"], json!({ OWNED_KEY: "1" }));
-        assert_eq!(find(&tree["roots"], "C").unwrap()["meta_info"], json!({ OWNED_KEY: "1", ID_KEY: "id-C" }));
+        assert_eq!(
+            find(&tree["roots"], "Work").unwrap()["meta_info"],
+            json!({ OWNED_KEY: "1" })
+        );
+        assert_eq!(
+            find(&tree["roots"], "C").unwrap()["meta_info"],
+            json!({ OWNED_KEY: "1", ID_KEY: "id-C" })
+        );
         let mut all_ids = Vec::new();
         ids(&tree["roots"], &mut all_ids);
         let n = all_ids.len();
@@ -612,32 +768,60 @@ mod tests {
     #[test]
     fn a_later_start_moves_and_removes_only_ours_and_leaves_the_operators_where_they_are() {
         let udd = udd();
-        write(&udd, &profile(vec![operator("Mine first"), operator_folder("My stuff", vec![operator("Mine deep")])], vec![operator("Mine other")]));
-        let first = [placed("A", "", &[]), placed("B", "", &["Work"]), placed("C", "", &["Work"]), placed("D", "", &[])];
+        write(
+            &udd,
+            &profile(
+                vec![
+                    operator("Mine first"),
+                    operator_folder("My stuff", vec![operator("Mine deep")]),
+                ],
+                vec![operator("Mine other")],
+            ),
+        );
+        let first = [
+            placed("A", "", &[]),
+            placed("B", "", &["Work"]),
+            placed("C", "", &["Work"]),
+            placed("D", "", &[]),
+        ];
         apply_to_profile(&udd, "", &first).unwrap();
         let mut tree = read(&udd);
         // The first time, ours go first; the operator's follow as they were.
-        assert_eq!(kids(&tree, "bookmark_bar"), json!(["A", { "Work": ["B", "C"] }, "D", "Mine first", { "My stuff": ["Mine deep"] }]));
+        assert_eq!(
+            kids(&tree, "bookmark_bar"),
+            json!(["A", { "Work": ["B", "C"] }, "D", "Mine first", { "My stuff": ["Mine deep"] }])
+        );
         assert_eq!(kids(&tree, "other"), json!(["Mine other"]));
-        assert_eq!((tree["checksum"].as_str(), tree.get("checksum_sha256")), (Some(""), None));
+        assert_eq!(
+            (tree["checksum"].as_str(), tree.get("checksum_sha256")),
+            (Some(""), None)
+        );
         let guid_of = |t: &Value, name: &str| find(&t["roots"], name).unwrap()["guid"].clone();
         let a_guid = guid_of(&tree, "A");
         let b_guid = guid_of(&tree, "B");
 
         // In the profile: one of the operator's between ours, one inside our Work, and
         // our D dragged into the operator's folder.
-        let bar = tree["roots"]["bookmark_bar"]["children"].as_array_mut().unwrap();
+        let bar = tree["roots"]["bookmark_bar"]["children"]
+            .as_array_mut()
+            .unwrap();
         bar.insert(1, operator("Mine between"));
         let d = bar.remove(3);
         let work = bar.iter_mut().find(|n| n["name"] == "Work").unwrap();
-        work["children"].as_array_mut().unwrap().push(operator("Mine in Work"));
+        work["children"]
+            .as_array_mut()
+            .unwrap()
+            .push(operator("Mine in Work"));
         let mine = bar.iter_mut().find(|n| n["name"] == "My stuff").unwrap();
         mine["children"].as_array_mut().unwrap().push(d);
         write(&udd, &tree);
 
         // The launcher's list changes: A renamed, B moves to Other bookmarks, C goes, E comes.
         let next = [
-            Bookmark { title: "A renamed".into(), ..placed("A", "", &[]) },
+            Bookmark {
+                title: "A renamed".into(),
+                ..placed("A", "", &[])
+            },
             placed("D", "", &[]),
             placed("E", "", &[]),
             placed("B", "other", &["Moved"]),
@@ -650,16 +834,26 @@ mod tests {
             kids(&tree, "bookmark_bar"),
             json!(["A renamed", "D", "E", "Mine between", { "Work": ["Mine in Work"] }, "Mine first", { "My stuff": ["Mine deep"] }])
         );
-        assert_eq!(kids(&tree, "other"), json!([{ "Moved": ["B"] }, "Mine other"]));
+        assert_eq!(
+            kids(&tree, "other"),
+            json!([{ "Moved": ["B"] }, "Mine other"])
+        );
         // A bookmark kept or moved keeps its node: Chrome sees the same bookmark.
         assert_eq!(guid_of(&tree, "A renamed"), a_guid);
         assert_eq!(guid_of(&tree, "B"), b_guid);
-        assert_eq!(find(&tree["roots"], "Mine first").unwrap().get("meta_info"), None, "the operator's own are not marked");
+        assert_eq!(
+            find(&tree["roots"], "Mine first").unwrap().get("meta_info"),
+            None,
+            "the operator's own are not marked"
+        );
 
         // Nothing of ours wanted: ours go, the operator's stay; Work stays while it holds theirs, Moved goes.
         apply_to_profile(&udd, "", &[]).unwrap();
         let tree = read(&udd);
-        assert_eq!(kids(&tree, "bookmark_bar"), json!(["Mine between", { "Work": ["Mine in Work"] }, "Mine first", { "My stuff": ["Mine deep"] }]));
+        assert_eq!(
+            kids(&tree, "bookmark_bar"),
+            json!(["Mine between", { "Work": ["Mine in Work"] }, "Mine first", { "My stuff": ["Mine deep"] }])
+        );
         assert_eq!(kids(&tree, "other"), json!(["Mine other"]));
         let _ = fs::remove_dir_all(&udd);
     }
@@ -674,13 +868,26 @@ mod tests {
         });
         let legacy = operator_folder(LEGACY_FOLDER, vec![operator("Older")]);
         // The operator's own folder named like ours, not at the bar's top, stays.
-        let theirs = operator_folder("Kept", vec![operator_folder(LEGACY_FOLDER, vec![operator("Theirs")])]);
-        write(&udd, &profile(vec![operator("Mine first"), old, legacy, theirs], vec![]));
-        let all = [placed("A", "", &[]), placed("B", "", &["Work"]), placed("E", "other", &[])];
+        let theirs = operator_folder(
+            "Kept",
+            vec![operator_folder(LEGACY_FOLDER, vec![operator("Theirs")])],
+        );
+        write(
+            &udd,
+            &profile(vec![operator("Mine first"), old, legacy, theirs], vec![]),
+        );
+        let all = [
+            placed("A", "", &[]),
+            placed("B", "", &["Work"]),
+            placed("E", "other", &[]),
+        ];
         apply_to_profile(&udd, "", &all).unwrap();
         let tree = read(&udd);
         // Ours take the old folder's place on the bar; what it held is gone with it.
-        assert_eq!(kids(&tree, "bookmark_bar"), json!(["Mine first", "A", { "Work": ["B"] }, { "Kept": [{ "ShardX": ["Theirs"] }] }]));
+        assert_eq!(
+            kids(&tree, "bookmark_bar"),
+            json!(["Mine first", "A", { "Work": ["B"] }, { "Kept": [{ "ShardX": ["Theirs"] }] }])
+        );
         assert_eq!(kids(&tree, "other"), json!(["E"]));
         // A profile whose old folder is all there was of ours: the folder still goes.
         let udd2 = self::udd();
@@ -692,7 +899,10 @@ mod tests {
         assert_eq!(kids(&read(&udd2), "bookmark_bar"), json!(["Mine"]));
         // A profile that never had ours and gets none is not rewritten.
         let udd3 = self::udd();
-        write(&udd3, &json!({ "roots": { "bookmark_bar": { "children": [], "name": "x", "type": "folder" } }, "version": 1, "checksum": "kept" }));
+        write(
+            &udd3,
+            &json!({ "roots": { "bookmark_bar": { "children": [], "name": "x", "type": "folder" } }, "version": 1, "checksum": "kept" }),
+        );
         apply_to_profile(&udd3, "", &[]).unwrap();
         assert_eq!(read(&udd3)["checksum"], "kept");
         for d in [udd, udd2, udd3] {

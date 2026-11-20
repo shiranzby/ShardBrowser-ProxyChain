@@ -26,6 +26,8 @@ export type ProxyEntry = {
   provider_id?: ProxyProviderId;
   credential_ref?: string;
   provider_options?: Record<string, string>;
+  /** Local folder assignment for the proxy list. Persisted in provider_options for old entries. */
+  folder?: string;
   capabilities?: ProxyCapabilities;
   country: string;
   notes: string;

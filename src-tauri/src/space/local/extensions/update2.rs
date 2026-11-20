@@ -34,22 +34,36 @@ impl ProdVersion {
 /// One or more update-check URLs for `(id, installed version)` pairs, each
 /// within the budget. Pairs with a malformed id or version are left out.
 pub fn requests(base: &str, prod: &ProdVersion, items: &[(String, String)]) -> Vec<String> {
-    batches(base, prod, items).into_iter().map(|(url, _)| url).collect()
+    batches(base, prod, items)
+        .into_iter()
+        .map(|(url, _)| url)
+        .collect()
 }
 
 /// As `requests`, each URL with the pairs it asks about.
-pub fn batches(base: &str, prod: &ProdVersion, items: &[(String, String)]) -> Vec<(String, Vec<(String, String)>)> {
-    let head = format!("{base}?response=updatecheck&acceptformat=crx3&prodversion={}", prod.0);
+pub fn batches(
+    base: &str,
+    prod: &ProdVersion,
+    items: &[(String, String)],
+) -> Vec<(String, Vec<(String, String)>)> {
+    let head = format!(
+        "{base}?response=updatecheck&acceptformat=crx3&prodversion={}",
+        prod.0
+    );
     let mut out = Vec::new();
     let (mut url, mut asked) = (head.clone(), Vec::new());
     for (id, v) in items {
         if !is_id(id) || Version::parse(v).is_none() {
             continue;
         }
-        let x: String = url::form_urlencoded::byte_serialize(format!("id={id}&v={v}&uc").as_bytes()).collect();
+        let x: String =
+            url::form_urlencoded::byte_serialize(format!("id={id}&v={v}&uc").as_bytes()).collect();
         let extra = format!("&x={x}");
         if url.len() > head.len() && url.len() + extra.len() > URL_BUDGET {
-            out.push((std::mem::replace(&mut url, head.clone()), std::mem::take(&mut asked)));
+            out.push((
+                std::mem::replace(&mut url, head.clone()),
+                std::mem::take(&mut asked),
+            ));
         }
         url.push_str(&extra);
         asked.push((id.clone(), v.clone()));
@@ -62,7 +76,12 @@ pub fn batches(base: &str, prod: &ProdVersion, items: &[(String, String)]) -> Ve
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Answer {
-    Update { version: String, codebase: String, sha256: Option<String>, size: Option<u64> },
+    Update {
+        version: String,
+        codebase: String,
+        sha256: Option<String>,
+        size: Option<u64>,
+    },
     NoUpdate,
     /// The app's status is not "ok" (an id the store never had).
     Unknown(String),
@@ -96,7 +115,12 @@ pub fn answers(body: &[u8], asked: &[(String, String)]) -> Vec<AppAnswer> {
         .iter()
         .map(|(id, installed)| {
             let Some(mut a) = parsed.iter().find(|a| &a.id == id).cloned() else {
-                return AppAnswer { id: id.clone(), answer: Answer::Error("no answer".into()), flags: vec![], allowlisted: None };
+                return AppAnswer {
+                    id: id.clone(),
+                    answer: Answer::Error("no answer".into()),
+                    flags: vec![],
+                    allowlisted: None,
+                };
             };
             if let Answer::Update { version, .. } = &a.answer {
                 if !super::version::newer(version, installed) {
@@ -117,7 +141,9 @@ pub fn parse(body: &[u8]) -> Result<Vec<AppAnswer>, String> {
     // The <app> being read: its id and status, and the updatechecks inside it.
     let mut app: Option<(String, String, Vec<Attrs>)> = None;
     loop {
-        let (ns, ev) = r.read_resolved_event().map_err(|e| format!("not XML: {e}"))?;
+        let (ns, ev) = r
+            .read_resolved_event()
+            .map_err(|e| format!("not XML: {e}"))?;
         let in_ns = matches!(ns, ResolveResult::Bound(Namespace(n)) if n == GUPDATE_NS);
         match ev {
             Event::Start(ref e) | Event::Empty(ref e) => {
@@ -125,7 +151,10 @@ pub fn parse(body: &[u8]) -> Result<Vec<AppAnswer>, String> {
                 let name = e.local_name().as_ref().to_vec();
                 match depth {
                     0 => {
-                        if !in_ns || name != b"gupdate" || attr(&r, e, "protocol").as_deref() != Some("2.0") {
+                        if !in_ns
+                            || name != b"gupdate"
+                            || attr(&r, e, "protocol").as_deref() != Some("2.0")
+                        {
                             return Err("not a gupdate response".into());
                         }
                         root = true;
@@ -180,22 +209,38 @@ fn attrs(r: &NsReader<&[u8]>, e: &BytesStart) -> Attrs {
 }
 
 fn attr(r: &NsReader<&[u8]>, e: &BytesStart, key: &str) -> Option<String> {
-    attrs(r, e).into_iter().find(|(k, _)| k == key).map(|(_, v)| v)
+    attrs(r, e)
+        .into_iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v)
 }
 
 fn finish((id, status, checks): (String, String, Vec<Attrs>)) -> AppAnswer {
-    let mut out = AppAnswer { id, answer: Answer::NoUpdate, flags: vec![], allowlisted: None };
+    let mut out = AppAnswer {
+        id,
+        answer: Answer::NoUpdate,
+        flags: vec![],
+        allowlisted: None,
+    };
     if !status.is_empty() && status != "ok" {
         out.answer = Answer::Unknown(status);
         return out;
     }
     let [uc] = checks.as_slice() else {
-        let what = if checks.is_empty() { "no updatecheck" } else { "several updatecheck" };
+        let what = if checks.is_empty() {
+            "no updatecheck"
+        } else {
+            "several updatecheck"
+        };
         out.answer = Answer::Error(what.into());
         return out;
     };
     let at = |k: &str| get(uc, k);
-    for (key, flag) in [("_malware", Flag::Malware), ("_policy_violation", Flag::PolicyViolation), ("_potentially_uws", Flag::PotentiallyUws)] {
+    for (key, flag) in [
+        ("_malware", Flag::Malware),
+        ("_policy_violation", Flag::PolicyViolation),
+        ("_potentially_uws", Flag::PotentiallyUws),
+    ] {
         if at(key) == Some("true") {
             out.flags.push(flag);
         }
@@ -231,11 +276,18 @@ fn update(uc: &Attrs) -> Answer {
     }
     let sha256 = match at("hash_sha256") {
         None | Some("") => None,
-        Some(h) if h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()) => Some(h.to_ascii_lowercase()),
+        Some(h) if h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()) => {
+            Some(h.to_ascii_lowercase())
+        }
         Some(_) => return Answer::Error("bad hash_sha256".into()),
     };
     let size = at("size").and_then(|s| s.parse().ok());
-    Answer::Update { version: version.into(), codebase: codebase.into(), sha256, size }
+    Answer::Update {
+        version: version.into(),
+        codebase: codebase.into(),
+        sha256,
+        size,
+    }
 }
 
 #[cfg(test)]
@@ -243,7 +295,11 @@ mod tests {
     use super::*;
 
     fn fixture(name: &str) -> Vec<u8> {
-        std::fs::read(format!("{}/tests/fixtures/ext/{name}", env!("CARGO_MANIFEST_DIR"))).unwrap()
+        std::fs::read(format!(
+            "{}/tests/fixtures/ext/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
     }
 
     const METAMASK: &str = "nkbihfbeogaeaoehlefnkodbefgpgknn";
@@ -265,7 +321,11 @@ mod tests {
 
     #[test]
     fn request_shape() {
-        let urls = requests(WEBSTORE_UPDATE, &prod(), &[pair(METAMASK, "13.46.1.0"), pair(RABBY, "0.94.6")]);
+        let urls = requests(
+            WEBSTORE_UPDATE,
+            &prod(),
+            &[pair(METAMASK, "13.46.1.0"), pair(RABBY, "0.94.6")],
+        );
         assert_eq!(
             urls,
             [format!(
@@ -273,14 +333,24 @@ mod tests {
                  &x=id%3D{METAMASK}%26v%3D13.46.1.0%26uc&x=id%3D{RABBY}%26v%3D0.94.6%26uc"
             )]
         );
-        assert!(!urls[0].contains("puff") && !urls[0].contains("os=") && !urls[0].contains("arch="));
-        assert_eq!(user_agent(), format!("ShardX-Launcher/{}", env!("CARGO_PKG_VERSION")));
+        assert!(
+            !urls[0].contains("puff") && !urls[0].contains("os=") && !urls[0].contains("arch=")
+        );
+        assert_eq!(
+            user_agent(),
+            format!("ShardX-Launcher/{}", env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[test]
     fn nothing_linked_nothing_asked() {
         assert!(requests(WEBSTORE_UPDATE, &prod(), &[]).is_empty());
-        assert!(requests(WEBSTORE_UPDATE, &prod(), &[pair("nope", "1.0"), pair(METAMASK, "01.0")]).is_empty());
+        assert!(requests(
+            WEBSTORE_UPDATE,
+            &prod(),
+            &[pair("nope", "1.0"), pair(METAMASK, "01.0")]
+        )
+        .is_empty());
     }
 
     #[test]
@@ -295,14 +365,22 @@ mod tests {
         let items: Vec<_> = (0..200).map(|n| pair(&id_of(n), "1.2.3.4")).collect();
         let urls = requests(WEBSTORE_UPDATE, &prod(), &items);
         assert!(urls.len() > 1);
-        assert!(urls.iter().all(|u| u.len() <= URL_BUDGET), "every GET within 2000");
+        assert!(
+            urls.iter().all(|u| u.len() <= URL_BUDGET),
+            "every GET within 2000"
+        );
         let total: usize = urls.iter().map(|u| u.matches("&x=").count()).sum();
         assert_eq!(total, 200, "nothing dropped");
         // Each batch names exactly the pairs its URL asks about.
         let b = batches(WEBSTORE_UPDATE, &prod(), &items);
         assert_eq!(b.iter().map(|(u, _)| u.clone()).collect::<Vec<_>>(), urls);
-        assert!(b.iter().all(|(u, asked)| u.matches("&x=").count() == asked.len()));
-        assert_eq!(b.iter().flat_map(|(_, a)| a.clone()).collect::<Vec<_>>(), items);
+        assert!(b
+            .iter()
+            .all(|(u, asked)| u.matches("&x=").count() == asked.len()));
+        assert_eq!(
+            b.iter().flat_map(|(_, a)| a.clone()).collect::<Vec<_>>(),
+            items
+        );
         for u in &urls {
             assert!(u.starts_with(&format!("{WEBSTORE_UPDATE}?response=updatecheck&acceptformat=crx3&prodversion=156.0.8078.48&x=")));
         }
@@ -321,11 +399,22 @@ mod tests {
         assert_eq!(mm.id, METAMASK);
         assert_eq!(mm.allowlisted, Some(true));
         assert!(mm.flags.is_empty());
-        let Answer::Update { version, codebase, sha256, size } = &mm.answer else { panic!("{mm:?}") };
+        let Answer::Update {
+            version,
+            codebase,
+            sha256,
+            size,
+        } = &mm.answer
+        else {
+            panic!("{mm:?}")
+        };
         assert_eq!(version, "13.53.0.0");
         assert!(codebase.starts_with("https://clients2.googleusercontent.com/crx/blobs/"));
         assert!(codebase.ends_with("/NKBIHFBEOGAEAOEHLEFNKODBEFGPGKNN_13_53_0_0.crx"));
-        assert_eq!(sha256.as_deref(), Some("de0dc9366f76486ee2168342727e265ec1023d2a32108050578429e0096fcb12"));
+        assert_eq!(
+            sha256.as_deref(),
+            Some("de0dc9366f76486ee2168342727e265ec1023d2a32108050578429e0096fcb12")
+        );
         assert_eq!(*size, Some(25224198));
         let versions: Vec<_> = apps[1..4]
             .iter()
@@ -334,16 +423,24 @@ mod tests {
                 other => panic!("{other:?}"),
             })
             .collect();
-        assert_eq!(versions, [(RABBY, "0.94.13"), (PHANTOM, "26.34.0"), (KEPLR, "0.13.53")]);
+        assert_eq!(
+            versions,
+            [(RABBY, "0.94.13"), (PHANTOM, "26.34.0"), (KEPLR, "0.13.53")]
+        );
         assert_eq!(apps[4].id, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-        assert_eq!(apps[4].answer, Answer::Unknown("error-unknownApplication".into()));
+        assert_eq!(
+            apps[4].answer,
+            Answer::Unknown("error-unknownApplication".into())
+        );
     }
 
     #[test]
     fn live_answers_noupdate() {
         let apps = parse(&fixture("resp2.xml")).unwrap();
         assert_eq!(apps.len(), 2);
-        assert!(apps.iter().all(|a| a.answer == Answer::NoUpdate && a.allowlisted == Some(true)));
+        assert!(apps
+            .iter()
+            .all(|a| a.answer == Answer::NoUpdate && a.allowlisted == Some(true)));
         let rabby = parse(&fixture("crit_rabby_noprod.xml")).unwrap();
         assert_eq!(rabby[0].answer, Answer::NoUpdate);
         assert_eq!(rabby[0].allowlisted, None);
@@ -368,16 +465,38 @@ mod tests {
     #[test]
     fn answers_follow_what_was_asked() {
         let body = fixture("resp1.xml");
-        let asked = [pair(METAMASK, "13.53.0"), pair(RABBY, "0.94.6"), pair("pppppppppppppppppppppppppppppppp", "1.0")];
+        let asked = [
+            pair(METAMASK, "13.53.0"),
+            pair(RABBY, "0.94.6"),
+            pair("pppppppppppppppppppppppppppppppp", "1.0"),
+        ];
         let got = answers(&body, &asked);
         assert_eq!(got.len(), 3);
-        assert_eq!(got[0].answer, Answer::NoUpdate, "13.53.0.0 is not newer than 13.53.0");
-        assert_eq!(got[0].allowlisted, Some(true), "the rest of the answer is kept");
+        assert_eq!(
+            got[0].answer,
+            Answer::NoUpdate,
+            "13.53.0.0 is not newer than 13.53.0"
+        );
+        assert_eq!(
+            got[0].allowlisted,
+            Some(true),
+            "the rest of the answer is kept"
+        );
         assert!(matches!(&got[1].answer, Answer::Update { version, .. } if version == "0.94.13"));
         assert_eq!(got[2].answer, Answer::Error("no answer".into()));
-        for junk in [&b""[..], b"<html><body>Sign in to Wi-Fi</body></html>", b"\xff\xfe", b"<gupdate", b"{\"apps\":[]}"] {
+        for junk in [
+            &b""[..],
+            b"<html><body>Sign in to Wi-Fi</body></html>",
+            b"\xff\xfe",
+            b"<gupdate",
+            b"{\"apps\":[]}",
+        ] {
             let got = answers(junk, &asked);
-            assert!(got.iter().all(|a| a.answer == Answer::Error("no answer".into())), "{junk:?}");
+            assert!(
+                got.iter()
+                    .all(|a| a.answer == Answer::Error("no answer".into())),
+                "{junk:?}"
+            );
         }
     }
 
@@ -394,30 +513,63 @@ mod tests {
 
     #[test]
     fn synthetic_answers() {
-        let a = one(&format!(r#"<updatecheck status="ok" {GOOD} _malware="true" _policy_violation="true" _potentially_uws="false"/>"#));
+        let a = one(&format!(
+            r#"<updatecheck status="ok" {GOOD} _malware="true" _policy_violation="true" _potentially_uws="false"/>"#
+        ));
         assert_eq!(a.flags, [Flag::Malware, Flag::PolicyViolation]);
-        assert!(matches!(a.answer, Answer::Update { ref sha256, size: None, .. } if sha256.is_none()));
+        assert!(
+            matches!(a.answer, Answer::Update { ref sha256, size: None, .. } if sha256.is_none())
+        );
         assert_eq!(one("").answer, Answer::Error("no updatecheck".into()));
         assert_eq!(
-            one(&format!(r#"<updatecheck status="ok" {GOOD}/><updatecheck status="noupdate"/>"#)).answer,
+            one(&format!(
+                r#"<updatecheck status="ok" {GOOD}/><updatecheck status="noupdate"/>"#
+            ))
+            .answer,
             Answer::Error("several updatecheck".into())
         );
         assert_eq!(
-            one(r#"<updatecheck status="ok" codebase="http://example.test/a.crx" version="2.0"/>"#).answer,
+            one(r#"<updatecheck status="ok" codebase="http://example.test/a.crx" version="2.0"/>"#)
+                .answer,
             Answer::Error("codebase is not https".into())
         );
-        assert_eq!(one(r#"<updatecheck status="ok" version="2.0"/>"#).answer, Answer::Error("bad codebase".into()));
+        assert_eq!(
+            one(r#"<updatecheck status="ok" version="2.0"/>"#).answer,
+            Answer::Error("bad codebase".into())
+        );
         assert!(matches!(
-            one(r#"<updatecheck status="ok" codebase="https://example.test/a.crx" version="01.2"/>"#).answer,
+            one(
+                r#"<updatecheck status="ok" codebase="https://example.test/a.crx" version="01.2"/>"#
+            )
+            .answer,
             Answer::Error(_)
         ));
-        assert!(matches!(one(&format!(r#"<updatecheck status="ok" {GOOD} hash_sha256="zz"/>"#)).answer, Answer::Error(_)));
-        assert_eq!(one(r#"<updatecheck status="error-internal"/>"#).answer, Answer::Error("updatecheck status error-internal".into()));
+        assert!(matches!(
+            one(&format!(
+                r#"<updatecheck status="ok" {GOOD} hash_sha256="zz"/>"#
+            ))
+            .answer,
+            Answer::Error(_)
+        ));
+        assert_eq!(
+            one(r#"<updatecheck status="error-internal"/>"#).answer,
+            Answer::Error("updatecheck status error-internal".into())
+        );
         // An updatecheck nested deeper than the app is not the app's.
-        assert_eq!(one(&format!(r#"<data><updatecheck status="ok" {GOOD}/></data>"#)).answer, Answer::Error("no updatecheck".into()));
+        assert_eq!(
+            one(&format!(
+                r#"<data><updatecheck status="ok" {GOOD}/></data>"#
+            ))
+            .answer,
+            Answer::Error("no updatecheck".into())
+        );
         // Entities in the codebase are read as XML reads them.
-        let a = one(r#"<updatecheck status="ok" codebase="https://example.test/a.crx?x=1&amp;y=2" version="2.0"/>"#);
-        assert!(matches!(a.answer, Answer::Update { ref codebase, .. } if codebase == "https://example.test/a.crx?x=1&y=2"));
+        let a = one(
+            r#"<updatecheck status="ok" codebase="https://example.test/a.crx?x=1&amp;y=2" version="2.0"/>"#,
+        );
+        assert!(
+            matches!(a.answer, Answer::Update { ref codebase, .. } if codebase == "https://example.test/a.crx?x=1&y=2")
+        );
     }
 
     #[test]

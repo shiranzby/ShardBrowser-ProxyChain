@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DataRootCard } from "../../../features/manage-profiles/ui/DataRootCard";
+import { DataRootCard, SnapshotCard, TeamRecoveryCopies } from "../../../features/manage-profiles/ui/DataRootCard";
 import { DeleteAllData, KeptIn, ShowBackupButton } from "../../../features/delete-all-data";
 import { appResetBackup } from "../../../entities/settings";
 import { useT } from "../../../shared/i18n";
@@ -20,6 +20,16 @@ export function StorageSection() {
       <SettingsGroup title={t("settings.dataLocationTitle")}>
         <div className="py-3">
           <DataRootCard />
+        </div>
+      </SettingsGroup>
+      <SettingsGroup title={t("teamRecovery.title")}>
+        <div className="py-3">
+          <TeamRecoveryCopies />
+        </div>
+      </SettingsGroup>
+      <SettingsGroup title={t("snapshot.title")}>
+        <div className="py-3">
+          <SnapshotCard />
         </div>
       </SettingsGroup>
       {/* A fresh start (owner, 2026-10-08): everything the user made moves

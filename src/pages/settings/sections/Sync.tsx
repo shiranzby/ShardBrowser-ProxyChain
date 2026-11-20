@@ -14,6 +14,7 @@ import { SyncStatusWord, syncError, useSync, useSyncLine, type SyncKinds, type S
 import { useCreateTeam } from "../../../features/create-team";
 import { ConnectServerForm, DeviceNameDialog, DisconnectDialog, TeamServerPicker, copyInvite, syncNow } from "../../../features/sync-setup";
 import { SettingRow, SettingsGroup } from "../SettingRow";
+import { SyncScopeSummary } from "./SyncScopeSummary";
 
 const hostOf = (url: string) => { try { return new URL(url).host; } catch { return url; } };
 
@@ -146,6 +147,7 @@ function Connected({ state, onDisconnect }: { state: SyncState; onDisconnect: ()
           )}
         />
       </SettingsGroup>
+      <SyncScopeSummary kinds={state.kinds} />
       <Kinds kinds={state.kinds} own={conn.own} host={host} />
       {renameLife.mounted && <DeviceNameDialog key={renameLife.session} open={renaming} onClose={() => setRenaming(false)} />}
     </div>

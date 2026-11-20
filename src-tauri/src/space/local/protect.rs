@@ -71,7 +71,8 @@ fn check_password(password: &str) -> Result<()> {
 
 /// Refused while the browser runs: its files are open, and sealing them would catch them half-written.
 fn check_closed(id: &str) -> Result<()> {
-    if crate::process::Tracker::shared().is_running(id) || crate::reset::lock_is_live(&udd_of(id)?) {
+    if crate::process::Tracker::shared().is_running(id) || crate::reset::lock_is_live(&udd_of(id)?)
+    {
         bail!(CLOSE_FIRST);
     }
     Ok(())
@@ -115,8 +116,13 @@ fn stub_of(full: &StoredProfile, key: &DataKey, lock: &seal::Lock) -> Result<Sto
 
 /// `stub` opened with `key`: the profile as it was before it was locked, its lock still on it.
 fn full_of(stub: &StoredProfile, key: &DataKey) -> Result<StoredProfile> {
-    let blob = stub.config.get(SEALED).and_then(|v| v.as_str()).context("profile has no sealed part")?;
-    let secret: Secret = serde_json::from_slice(&seal::open_blob(&stub.meta.id, key, "profile", blob)?)?;
+    let blob = stub
+        .config
+        .get(SEALED)
+        .and_then(|v| v.as_str())
+        .context("profile has no sealed part")?;
+    let secret: Secret =
+        serde_json::from_slice(&seal::open_blob(&stub.meta.id, key, "profile", blob)?)?;
     let mut config = secret.config;
     if let Some(n) = stub.config.get("name") {
         config.insert("name".into(), n.clone());
@@ -191,7 +197,11 @@ pub(in crate::space) fn change_password(id: &str, old: &str, new: &str) -> Resul
 pub(in crate::space) fn save_full(full: &StoredProfile, key: &DataKey) -> Result<()> {
     let _guard = profile::file_lock();
     let existing = profile::load_raw(&full.meta.id)?;
-    let lock = existing.meta.lock.clone().context("profile is not protected")?;
+    let lock = existing
+        .meta
+        .lock
+        .clone()
+        .context("profile is not protected")?;
     let mut next = full.clone();
     next.meta.pinned = existing.meta.pinned;
     next.meta.folder = existing.meta.folder.clone();
@@ -199,8 +209,11 @@ pub(in crate::space) fn save_full(full: &StoredProfile, key: &DataKey) -> Result
     next.meta.last_launched_at = existing.meta.last_launched_at.clone();
     next.meta.total_runtime_ms = existing.meta.total_runtime_ms;
     let before = full_of(&existing, key)?;
-    next.meta.rev = if before.config == next.config && before.meta.proxy_id == next.meta.proxy_id
-        && before.meta.proxy_chain_policy == next.meta.proxy_chain_policy && before.meta.proxy_route == next.meta.proxy_route {
+    next.meta.rev = if before.config == next.config
+        && before.meta.proxy_id == next.meta.proxy_id
+        && before.meta.proxy_chain_policy == next.meta.proxy_chain_policy
+        && before.meta.proxy_route == next.meta.proxy_route
+    {
         existing.meta.rev
     } else {
         existing.meta.rev.wrapping_add(1)
@@ -239,11 +252,19 @@ pub(in crate::space) fn seal_data(id: &str, key: &DataKey) -> Result<()> {
 
 /// Profiles left open by a crash: their plaintext is still on disk until the next unlock.
 pub(in crate::space) fn left_open() -> Vec<String> {
-    let Ok(dir) = store::profiles_dir() else { return Vec::new() };
-    let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
+    let Ok(dir) = store::profiles_dir() else {
+        return Vec::new();
+    };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
     entries
         .flatten()
-        .filter_map(|e| e.path().file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .filter_map(|e| {
+            e.path()
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+        })
         .filter(|id| {
             profile::load_raw(id).is_ok_and(|p| is_protected(&p))
                 && udd_of(id).is_ok_and(|u| u.exists())
@@ -275,8 +296,12 @@ mod tests {
         p.meta.folder = "Work".into();
         p.meta.extensions = vec!["ext-marker-1".into()];
         p.config.insert("name".into(), "Visible".into());
-        p.config.insert("notes".into(), "secret notes marker".into());
-        p.config.insert("navigator".into(), serde_json::json!({ "platform": "Win32-marker" }));
+        p.config
+            .insert("notes".into(), "secret notes marker".into());
+        p.config.insert(
+            "navigator".into(),
+            serde_json::json!({ "platform": "Win32-marker" }),
+        );
         p
     }
 
@@ -291,7 +316,12 @@ mod tests {
 
         protect("a1", "long enough").unwrap();
         let body = fs::read_to_string(store::profiles_dir().unwrap().join("a1.json")).unwrap();
-        for leak in ["proxy-marker-1", "secret notes marker", "Win32-marker", "ext-marker-1"] {
+        for leak in [
+            "proxy-marker-1",
+            "secret notes marker",
+            "Win32-marker",
+            "ext-marker-1",
+        ] {
             assert!(!body.contains(leak), "{leak} readable in {body}");
         }
         assert!(body.contains("Visible") && body.contains("Work"));
@@ -302,10 +332,16 @@ mod tests {
         let (full, key) = unlock("a1", "long enough").unwrap();
         assert_eq!(full.meta.proxy_id.as_deref(), Some("proxy-marker-1"));
         assert_eq!(full.config.get("notes").unwrap(), "secret notes marker");
-        assert_eq!(fs::read(open_data("a1", &key).unwrap().join("Default/Cookies")).unwrap(), b"cookie jar");
+        assert_eq!(
+            fs::read(open_data("a1", &key).unwrap().join("Default/Cookies")).unwrap(),
+            b"cookie jar"
+        );
         seal_data("a1", &key).unwrap();
         assert!(!udd.exists());
-        assert_eq!(unlock("a1", "wrong one!").err().unwrap().to_string(), seal::WRONG_PASSWORD);
+        assert_eq!(
+            unlock("a1", "wrong one!").err().unwrap().to_string(),
+            seal::WRONG_PASSWORD
+        );
     }
 
     #[test]
@@ -354,9 +390,15 @@ mod tests {
         let before = fs::read(store::profiles_dir().unwrap().join("policy-lock.json")).unwrap();
         stub.meta.proxy_chain_policy = ChainPolicy::Disabled;
         assert!(shows_secrets(&stub));
-        assert_eq!(profile::save_raw(&mut stub).unwrap_err().to_string(), PASSWORD_REQUIRED);
+        assert_eq!(
+            profile::save_raw(&mut stub).unwrap_err().to_string(),
+            PASSWORD_REQUIRED
+        );
         assert!(unlock("policy-lock", "wrong password").is_err());
-        assert_eq!(fs::read(store::profiles_dir().unwrap().join("policy-lock.json")).unwrap(), before);
+        assert_eq!(
+            fs::read(store::profiles_dir().unwrap().join("policy-lock.json")).unwrap(),
+            before
+        );
         let (mut full, key) = unlock("policy-lock", "long enough").unwrap();
         assert_eq!(full.meta.proxy_chain_policy, ChainPolicy::Enabled);
         let rev = full.meta.rev;
@@ -367,7 +409,13 @@ mod tests {
         assert_eq!(again.meta.rev, rev.wrapping_add(1));
         assert_eq!(again.meta.proxy_id, p.meta.proxy_id);
         unprotect("policy-lock", "long enough").unwrap();
-        assert_eq!(profile::load_raw("policy-lock").unwrap().meta.proxy_chain_policy, ChainPolicy::PreferFirstHop);
+        assert_eq!(
+            profile::load_raw("policy-lock")
+                .unwrap()
+                .meta
+                .proxy_chain_policy,
+            ChainPolicy::PreferFirstHop
+        );
     }
 
     #[test]
@@ -375,7 +423,12 @@ mod tests {
         use crate::proxy_chain::route::{FirstHop, ProfileProxyRoute, SecondHop};
         let _root = store::test_root("protected-explicit-route");
         let mut p = plain("route-lock");
-        let route = ProfileProxyRoute::Chain { first: FirstHop::Proxy { proxy_id: "private-first-proxy".into() }, second: SecondHop::Proxy };
+        let route = ProfileProxyRoute::Chain {
+            first: FirstHop::Proxy {
+                proxy_id: "private-first-proxy".into(),
+            },
+            second: SecondHop::Proxy,
+        };
         p.meta.proxy_route = Some(route.clone());
         profile::write_raw(&p).unwrap();
         protect("route-lock", "long enough").unwrap();
@@ -385,7 +438,10 @@ mod tests {
         let mut stub = profile::load_raw("route-lock").unwrap();
         assert!(stub.meta.proxy_route.is_none());
         stub.meta.proxy_route = Some(ProfileProxyRoute::Direct);
-        assert_eq!(profile::save_raw(&mut stub).unwrap_err().to_string(), PASSWORD_REQUIRED);
+        assert_eq!(
+            profile::save_raw(&mut stub).unwrap_err().to_string(),
+            PASSWORD_REQUIRED
+        );
         assert_eq!(fs::read(&path).unwrap(), bytes);
         let (mut full, key) = unlock("route-lock", "long enough").unwrap();
         assert_eq!(full.meta.proxy_route, Some(route));
@@ -396,6 +452,10 @@ mod tests {
         assert_eq!(again.meta.proxy_route, Some(ProfileProxyRoute::System));
         assert_eq!(again.meta.proxy_id, p.meta.proxy_id);
         assert_eq!(again.meta.rev, rev.wrapping_add(1));
-        assert!(profile::load_raw("route-lock").unwrap().meta.proxy_route.is_none());
+        assert!(profile::load_raw("route-lock")
+            .unwrap()
+            .meta
+            .proxy_route
+            .is_none());
     }
 }

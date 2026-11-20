@@ -128,7 +128,7 @@ test("What’s new after an update has Take the tour, and it starts the full tou
   await expect(whatsNew(page)).toHaveCount(0);
   await expectFullTourFromStart(page);
   // No welcome screens for someone who is updating; the tour is the answer.
-  await expect(page.getByRole("dialog", { name: "Welcome to ShardBrowser" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Welcome to ShyShard" })).toHaveCount(0);
   expect(await stored(page)).toMatchObject({ welcomeDone: true, tour: "never", pagesSeen: [] });
 });
 

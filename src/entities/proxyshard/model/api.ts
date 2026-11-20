@@ -7,6 +7,7 @@ export const psMe = () => invoke<PsMe>("ps_me");
 export const psOrders = (params: { status: string; offset?: number; limit?: number }) => invoke<any>("ps_orders", params);
 export const psOrder = (id: number) => invoke<any>("ps_order", { id });
 export const psRenew = (id: number) => invoke("ps_renew", { id });
+export const psTrialOffer = () => invoke<{ show?: boolean; url?: string; trial_gb?: number }>("ps_trial_offer");
 export const psProducts = () => invoke<any>("ps_products");
 export const psCalculate = (params: { product: string; location: string | null; cycle: string | null; quantity: number; promoCode: string | null; addonsJson: string | null }) => invoke<any>("ps_calculate", params);
 export const psPurchase = (body: any) => invoke<any>("ps_purchase", { body });

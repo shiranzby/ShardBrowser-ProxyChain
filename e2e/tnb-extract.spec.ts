@@ -21,6 +21,7 @@ test("TNB extracts a preview and saves only selected entries through the existin
   await openTnb(page);
   const d = dialog(page);
   await expect(d.getByRole("spinbutton", { name: "Count (1–1000)" })).toHaveValue("1");
+  await expect(d.getByRole("spinbutton", { name: "Session duration (minutes)" })).toHaveValue("180");
   await d.getByRole("spinbutton", { name: "Count (1–1000)" }).fill("2");
   await d.locator("[data-tnb-location='country'] button").click();
   await page.getByRole("combobox", { name: "Search country or code" }).fill("EG");
@@ -50,6 +51,7 @@ test("explicit first-hop extraction keeps fields on failure, has no direct retry
   const d = dialog(page);
   await d.getByRole("combobox", { name: "Extraction route" }).click();
   await page.getByRole("option", { name: "Saved first hop", exact: true }).click();
+  await d.getByText("Advanced options", { exact: true }).click();
   await d.getByRole("combobox", { name: "Proxy protocol" }).click();
   await page.getByRole("option", { name: "SOCKS5", exact: true }).click();
   await d.getByRole("textbox", { name: "Plan name" }).fill("my-plan");
@@ -85,7 +87,9 @@ test("invalid counts, sessions and URLs never send a request; advanced options r
   await d.getByRole("spinbutton", { name: "Session duration (minutes)" }).fill("181");
   await extract.click();
   expect(await count(page, "tnbproxy_extract")).toBe(0);
-  await d.getByRole("spinbutton", { name: "Session duration (minutes)" }).fill("0");
+  await d.getByRole("combobox", { name: "Session type" }).click();
+  await page.getByRole("option", { name: "Rotate IP", exact: true }).click();
+  await expect(d.getByRole("spinbutton", { name: "Session duration (minutes)" })).toHaveCount(0);
   await d.getByRole("textbox", { name: "Extraction server" }).fill("http://user:pass@proxy.example:9090/path");
   await extract.click();
   expect(await count(page, "tnbproxy_extract")).toBe(0);
@@ -99,7 +103,7 @@ test("invalid counts, sessions and URLs never send a request; advanced options r
   await d.getByRole("checkbox", { name: "Enable TNB pre option" }).check();
   await extract.click();
   await expect(d.locator("[data-tnb-preview]")).toBeVisible();
-  expect(await request(page)).toMatchObject({ pool: "pool-a", isp: "carrier", asn: "1234", ip: "192.0.2.9", sid: "session-a", pre: true });
+  expect(await request(page)).toMatchObject({ ttl: 0, pool: "pool-a", isp: "carrier", asn: "1234", ip: "192.0.2.9", sid: "session-a", pre: true });
 });
 
 test("a failed save retains the preview; going back retains the extraction inputs", async ({ page }) => {
@@ -126,11 +130,50 @@ test("the custom source still previews pasted proxies and never calls TNB", asyn
   await d.locator("textarea").fill("192.0.2.10:1080:synthetic:password");
   await d.getByRole("button", { name: "Preview", exact: true }).click();
   await expect(d.getByRole("button", { name: "Add 1 proxy", exact: true })).toBeVisible();
+  await expect(d.getByRole("textbox", { name: "Host", exact: true })).toHaveValue("192.0.2.10");
+  await expect(d.getByRole("textbox", { name: "Port", exact: true })).toHaveValue("1080");
+  await expect(d.getByRole("textbox", { name: "Username", exact: true })).toHaveValue("synthetic");
+  await expect(d.getByLabel("Password", { exact: true })).toHaveValue("password");
+  await d.getByRole("textbox", { name: "Name", exact: true }).fill("Edited proxy");
+  await d.getByRole("button", { name: "Add 1 proxy", exact: true }).click();
+  await expect(d).toBeHidden();
+  expect(await proxies(page)).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Edited proxy", host: "192.0.2.10", port: 1080 })]));
   expect(await count(page, "tnbproxy_extract")).toBe(0);
   expect(await count(page, "proxy_bulk_parse")).toBe(1);
-  await d.getByRole("button", { name: "Cancel", exact: true }).click();
+});
+
+test("custom proxy fields save a manual proxy and default its name to host and port", async ({ page }) => {
+  await openApp(page, { section: "proxies" });
+  await page.locator("[data-tour='add-proxy']").click();
+  const d = dialog(page);
+  await d.getByRole("button", { name: "Enter manually", exact: true }).click();
+  const add = d.getByRole("button", { name: "Add 1 proxy", exact: true });
+  await expect(add).toBeDisabled();
+  await d.getByRole("textbox", { name: "Host", exact: true }).fill("proxy.example.test");
+  await d.getByRole("textbox", { name: "Port", exact: true }).fill("8443");
+  await add.click();
   await expect(d).toBeHidden();
-  expect(await proxies(page)).toHaveLength(7);
+  expect(await proxies(page)).toEqual(expect.arrayContaining([
+    expect.objectContaining({ name: "proxy.example.test:8443", host: "proxy.example.test", port: 8443 }),
+  ]));
+});
+
+test("pasting previews the complete input and respects the selected range", async ({ page }) => {
+  await openApp(page, { section: "proxies" });
+  await page.locator("[data-tour='add-proxy']").click();
+  const d = dialog(page);
+  const input = d.locator("textarea");
+  await input.fill("192.0.2.10:1080\nreplace this");
+  await input.evaluate((el: HTMLTextAreaElement) => {
+    el.setSelectionRange(el.value.indexOf("\n") + 1, el.value.length);
+    const clipboardData = new DataTransfer();
+    clipboardData.setData("text/plain", "https://192.0.2.20:8443");
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
+  });
+  await expect(d.getByRole("button", { name: "Add 2 proxies", exact: true })).toBeVisible();
+  await expect(d.getByText("192.0.2.10", { exact: false })).toBeVisible();
+  await expect(d.getByText("192.0.2.20", { exact: false })).toBeVisible();
+  expect(await count(page, "proxy_bulk_parse")).toBe(1);
 });
 
 for (const lang of ["en", "zh", "ru"]) {

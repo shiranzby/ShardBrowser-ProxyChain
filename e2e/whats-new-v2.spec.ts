@@ -60,6 +60,44 @@ test("Chinese notes can switch to English and back (WRITE-27)", async ({ page })
   await expect(dialog.getByRole("button", { name: "中文", exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "中文", exact: true }).click();
   await expect(dialog.getByText("代理链控制", { exact: true })).toBeVisible();
+  await dialog.getByRole("combobox").click();
+  await page.getByRole("option", { name: /^v2\.1\.3 / }).click();
+  const passwords = dialog.locator('[data-entry="profile-password"]');
+  await passwords.getByRole("button", { name: /配置密码/ }).click();
+  await expect(passwords.getByText(/每次启动时都要输入密码/)).toBeVisible();
+  await dialog.getByRole("button", { name: "English", exact: true }).click();
+  await expect(passwords.getByText(/It is asked at every start/)).toBeVisible();
+});
+
+test("historical release details render in the selected language", async ({ page }) => {
+  const dialog = await open(page, "zh");
+  await dialog.getByRole("combobox").click();
+  await page.getByRole("option", { name: /^v2\.0\.1 / }).click();
+  const fixes = dialog.locator('[data-entry="fixes"]');
+  await fixes.getByRole("button", { name: /修复/ }).click();
+  await expect(fixes.getByText(/代理页新增的代理立即出现在配置编辑器中/)).toBeVisible();
+
+  await dialog.getByRole("combobox").click();
+  await page.getByRole("option", { name: /^v2\.0\.2 / }).click();
+  const requests = dialog.locator('[data-entry="automation-requests-and-drag"]');
+  await requests.getByRole("button", { name: /自动化请求与拖动/ }).click();
+  await expect(requests.getByText(/等待元素消失/)).toBeVisible();
+  await dialog.getByRole("button", { name: "English", exact: true }).click();
+  await expect(requests.getByText(/until an element is gone/)).toBeVisible();
+  await expect(dialog.getByRole("combobox")).toHaveText(/v2\.0\.2/);
+
+  await dialog.getByRole("button", { name: "中文", exact: true }).click();
+  await dialog.getByRole("combobox").click();
+  await page.getByRole("option", { name: /^v2\.0\.3 / }).click();
+  const settings = dialog.locator('[data-entry="settings-file-kept"]');
+  await settings.getByRole("button", { name: /无法读取时保留设置文件/ }).click();
+  await expect(settings.getByText(/保留原文件和 API 密钥/)).toBeVisible();
+
+  await dialog.getByRole("combobox").click();
+  await page.getByRole("option", { name: /^v2\.1\.0 / }).click();
+  const proxies = dialog.locator('[data-entry="proxy-password-sessions"]');
+  await proxies.getByRole("button", { name: /仅密码不同的代理/ }).click();
+  await expect(proxies.getByText(/只跳过完全相同的代理/)).toBeVisible();
 });
 
 // Live layer 6.3: a body's height moves from what shows now, so a second
@@ -69,15 +107,19 @@ test.describe("with motion", () => {
   test.use({ reducedMotion: "no-preference" });
   test("a body opens from its current height and turns around mid-way", async ({ page }) => {
     const dialog = await open(page);
-    // Slowed tenfold, so "mid-way" does not depend on the machine's speed.
+    // Freeze the animation timeline and seek to an intermediate frame.
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Animation.enable");
-    await cdp.send("Animation.setPlaybackRate", { playbackRate: 0.1 });
+    await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
     const first = dialog.locator("[data-entry] button[aria-expanded]").first();
     await first.click();
     const body = dialog.locator("[data-entry-body]");
-    const mid = await body.evaluate((el) => ({ h: el.offsetHeight, full: el.scrollHeight, moving: el.getAnimations().length }));
-    expect(mid.moving).toBe(1);
+    const mid = await body.evaluate((el) => {
+      const animation = el.getAnimations()[0];
+      animation.currentTime = Number(animation.effect!.getTiming().duration) / 4;
+      return { h: el.offsetHeight, full: el.scrollHeight };
+    });
+    expect(mid.h).toBeGreaterThan(0);
     expect(mid.h).toBeLessThan(mid.full);
     await first.click();
     // It closes from where it was, not from its full height.

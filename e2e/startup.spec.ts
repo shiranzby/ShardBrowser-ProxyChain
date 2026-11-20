@@ -116,7 +116,7 @@ test("What's new loads its notes when it opens", async ({ page }) => {
   const scripts = watchScripts(page);
   await openApp(page);
   const before = new Set(scripts());
-  await page.getByRole("button", { name: /ShardBrowser v\d/ }).click();
+  await page.getByRole("button", { name: /ShyShard v\d/ }).click();
   await expect(page.getByRole("dialog", { name: /What’s new/ })).toBeVisible();
   expect(scripts().filter((u) => !before.has(u)).length).toBeGreaterThan(0);
 });

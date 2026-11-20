@@ -21,7 +21,11 @@ pub enum CmdError {
     /// Not done in a team space.
     NotOffered(&'static str),
     /// Changed since it was read.
-    Stale { what: &'static str, now: Option<u64>, had: Option<u64> },
+    Stale {
+        what: &'static str,
+        now: Option<u64>,
+        had: Option<u64>,
+    },
     /// Open on another device, by its name.
     Leased(String),
     /// The launcher moved to another space before this was written.
@@ -29,18 +33,28 @@ pub enum CmdError {
     /// The team server did not answer, or no current permission is held.
     Offline(String),
     /// The team server said no for another reason.
-    Refused { status: u16, code: String, message: String },
+    Refused {
+        status: u16,
+        code: String,
+        message: String,
+    },
 }
 
 /// What a write refused for a switch of space says.
-pub const SPACE_CHANGED: &str = "the launcher switched spaces before this was saved: nothing was written";
+pub const SPACE_CHANGED: &str =
+    "the launcher switched spaces before this was saved: nothing was written";
 
 impl std::fmt::Display for CmdError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CmdError::Missing(m) => f.write_str(m),
             CmdError::Forbidden(n) => {
-                write!(f, "not allowed in this team: needs {} on the {}", n.right.replace('_', " "), n.on)
+                write!(
+                    f,
+                    "not allowed in this team: needs {} on the {}",
+                    n.right.replace('_', " "),
+                    n.on
+                )
             }
             CmdError::NotOffered(m) => f.write_str(m),
             // Worded so the editor's conflict check (`changed after you opened it`) knows it.
@@ -53,7 +67,9 @@ impl std::fmt::Display for CmdError {
                 }
                 f.write_str(" — someone else saved it. Reopen it and apply your changes to the current version.")
             }
-            CmdError::Leased(device) => write!(f, "this profile is open on {device}: close it there first"),
+            CmdError::Leased(device) => {
+                write!(f, "this profile is open on {device}: close it there first")
+            }
             CmdError::SpaceChanged => f.write_str(SPACE_CHANGED),
             CmdError::Offline(why) => write!(f, "the team server did not answer: {why}"),
             CmdError::Refused { message, .. } => f.write_str(message),
@@ -79,14 +95,21 @@ impl CmdError {
         let r = match e {
             TeamError::Offline(why) => return CmdError::Offline(why),
             TeamError::Garbled(why) => {
-                return CmdError::Refused { status: 502, code: "garbled".into(), message: why };
+                return CmdError::Refused {
+                    status: 502,
+                    code: "garbled".into(),
+                    message: why,
+                };
             }
             TeamError::Refused(r) => r,
         };
         match &r.code {
             Code::Stale => CmdError::Stale {
                 what: doing.what,
-                now: r.current_revision.or(r.current_session_rev).or(r.current_package_rev),
+                now: r
+                    .current_revision
+                    .or(r.current_session_rev)
+                    .or(r.current_package_rev),
                 had: doing.had,
             },
             Code::Leased => CmdError::Leased(
@@ -97,7 +120,9 @@ impl CmdError {
                     .unwrap_or_else(|| "another device".into()),
             ),
             Code::Forbidden => CmdError::Forbidden(doing.need),
-            Code::NotFound => CmdError::Missing(format!("no {} {} in this team", doing.what, doing.id)),
+            Code::NotFound => {
+                CmdError::Missing(format!("no {} {} in this team", doing.what, doing.id))
+            }
             code => CmdError::Refused {
                 status: r.status,
                 code: code.as_str().to_string(),
@@ -146,13 +171,35 @@ mod tests {
 
     #[test]
     fn a_stale_save_reads_as_the_editors_conflict() {
-        let e = CmdError::Stale { what: "profile", now: Some(3), had: Some(2) };
-        assert!(e.to_string().contains("changed after you opened it (rev 3, you have 2)"), "{e}");
+        let e = CmdError::Stale {
+            what: "profile",
+            now: Some(3),
+            had: Some(2),
+        };
+        assert!(
+            e.to_string()
+                .contains("changed after you opened it (rev 3, you have 2)"),
+            "{e}"
+        );
         assert_eq!((e.status(), e.code()), (409, "stale"));
-        let need = Need { right: "take_out", on: "team" };
-        assert_eq!(CmdError::Forbidden(need).to_string(), "not allowed in this team: needs take out on the team");
+        let need = Need {
+            right: "take_out",
+            on: "team",
+        };
+        assert_eq!(
+            CmdError::Forbidden(need).to_string(),
+            "not allowed in this team: needs take out on the team"
+        );
         let wrapped = anyhow::Error::new(CmdError::SpaceChanged).context("saving");
         assert_eq!(find(&wrapped), Some(&CmdError::SpaceChanged));
-        assert_eq!(CmdError::Refused { status: 401, code: "unauthorized".into(), message: String::new() }.status(), 403);
+        assert_eq!(
+            CmdError::Refused {
+                status: 401,
+                code: "unauthorized".into(),
+                message: String::new()
+            }
+            .status(),
+            403
+        );
     }
 }

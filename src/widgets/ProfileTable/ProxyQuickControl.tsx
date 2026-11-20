@@ -11,6 +11,14 @@ import { fmtTs } from "../../shared/lib/utils";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { NumField } from "../../shared/ui/NumField";
 
+function insideOwnedSelect(root: HTMLElement | null, target: Node | null) {
+  if (!root || !target) return false;
+  return Array.from(root.querySelectorAll('[role="combobox"][aria-controls]')).some((field) => {
+    const id = field.getAttribute("aria-controls");
+    return id && document.getElementById(id)?.contains(target);
+  });
+}
+
 /** Saved global routing and a fresh first-hop probe, never a profile's exit. */
 export function ProxyQuickControl() {
   const t = useT();
@@ -61,11 +69,12 @@ export function ProxyQuickControl() {
       // Select renders its listbox in a portal. Treat that child overlay as
       // part of this control, otherwise its option click dismisses the
       // parent popover before Select can commit the new source.
-      if (target?.closest('[role="listbox"], [data-overlay-branch]')) return;
+      if (insideOwnedSelect(root.current, target) || target?.closest('[role="listbox"], [data-overlay-branch]')) return;
       if (!root.current?.contains(target)) setOpen(false);
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing) return;
+      if (insideOwnedSelect(root.current, document.activeElement)) return;
       event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus();
     };
     document.addEventListener("pointerdown", dismiss);
@@ -111,8 +120,11 @@ export function ProxyQuickControl() {
       // The Select list is portalled outside the root. Keep this surface open
       // while the pointer moves from its field into that list.
       const next = event.relatedTarget as Element | null;
-      if (next?.closest('[role="listbox"], [data-overlay-branch]')) return;
-      timer.current = setTimeout(() => { if (!root.current?.contains(document.activeElement)) setOpen(false); }, 250);
+      if (insideOwnedSelect(root.current, next) || next?.closest('[role="listbox"], [data-overlay-branch]')) return;
+      timer.current = setTimeout(() => {
+        const focused = document.activeElement;
+        if (!root.current?.contains(focused) && !insideOwnedSelect(root.current, focused)) setOpen(false);
+      }, 250);
     }}
     onKeyDown={(e) => { if (e.key === "Escape" && open) { e.preventDefault(); e.stopPropagation(); setOpen(false); trigger.current?.focus(); } }}>
     <Button ref={trigger} size="xsmall" mode="stroke" variant="neutral" leftIcon={<span className="relative flex">

@@ -90,7 +90,7 @@ test("the proxy added from the checklist is not left open in Peek", async ({ pag
 test("a fresh install: the checklist's proxy round trip leaves no tip over Profiles, and Proxies still plays its tip later", async ({ page }) => {
   await empty(page);
   await openApp(page, { onboarding: "fresh" });
-  const welcome = page.getByRole("dialog", { name: "Welcome to ShardBrowser" });
+  const welcome = page.getByRole("dialog", { name: "Welcome to ShyShard" });
   await expect(welcome).toBeVisible();
   await welcome.getByRole("button", { name: "Skip", exact: true }).click();
   await expect(welcome).toHaveCount(0);

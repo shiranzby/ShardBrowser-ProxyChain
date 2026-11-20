@@ -110,6 +110,133 @@ test("a card opens from the keyboard", async ({ page }) => {
   await expect(peek(page).locator("[data-peek-section='compat']")).toContainText("This computer can run it");
 });
 
+test("Peek copies the fingerprint payload without its library metadata", async ({ page }) => {
+  await openApp(page, { section: "fingerprints" });
+  const target = card(page, "macOS 14, Apple M1");
+  await target.click();
+  await peek(page).locator("[data-peek-header]").getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Copy fingerprint JSON" }).click();
+  await expect(page.locator("[data-toast]")).toContainText("Copied fingerprint JSON");
+  const result = await page.evaluate(() => {
+    const mock = window as unknown as {
+      __shardxMockClipboard: string;
+      __shardxMock: { state: { fingerprints: { label: string; payload: unknown }[] } };
+    };
+    return {
+      copied: JSON.parse(mock.__shardxMockClipboard),
+      expected: mock.__shardxMock.state.fingerprints.find((entry) => entry.label === "macOS 14, Apple M1")!.payload,
+    };
+  });
+  expect(result.copied).toEqual(result.expected);
+});
+
+test("fingerprint tags save, appear on the card, and filter the library", async ({ page }) => {
+  await openApp(page, { section: "fingerprints" });
+  const target = card(page, "macOS 14, Apple M1");
+  await target.click();
+  const panel = peek(page);
+  await panel.getByRole("textbox", { name: "Tags, separated by commas" }).fill("warm-up, needs 2FA");
+  await panel.getByRole("button", { name: "Save tags" }).click();
+  await expect(page.locator("[data-toast]")).toContainText("Fingerprint tags saved");
+  await expect(target).toContainText("warm-up");
+  await expect(target).toContainText("needs 2FA");
+
+  await page.keyboard.press("Escape");
+  await bar(page).getByRole("button", { name: /^Filters/ }).click();
+  await page.getByRole("option", { name: /^Tag/ }).click();
+  await page.getByRole("option", { name: /^warm-up/ }).click();
+  await expect(cards(page)).toHaveCount(1);
+  await expect(card(page, "macOS 14, Apple M1")).toBeVisible();
+  const stored = await page.evaluate(() => {
+    const state = (window as unknown as { __shardxMock: { state: { fingerprints: { label: string; tags?: string[] }[] } } }).__shardxMock.state;
+    return state.fingerprints.find((entry) => entry.label === "macOS 14, Apple M1")?.tags ?? [];
+  });
+  expect(stored).toEqual(["warm-up", "needs 2FA"]);
+});
+
+test("fingerprint import previews batches and skips duplicates", async ({ page }) => {
+  await openApp(page, { section: "fingerprints" });
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "Paste JSON" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import fingerprint from JSON", exact: true });
+  const payload = {
+    name: "Imported batch",
+    navigator: { platform: "Win32", user_agent: "Mozilla/5.0" },
+    screen: { width: 1920, height: 1080, avail_width: 1920, avail_height: 1040, device_pixel_ratio: 1 },
+    webgl: { vendor: "Google Inc.", renderer: "ANGLE (Batch GPU)" },
+    client_hints: { brand_version: "120", platform_version: "10.0.0" },
+  };
+  const existing = await page.evaluate(() => {
+    const state = (window as unknown as { __shardxMock: { state: { fingerprints: { payload: unknown }[] } } }).__shardxMock.state;
+    return state.fingerprints[0].payload;
+  });
+  await dialog.getByRole("textbox", { name: "Paste the full JSON" }).fill(JSON.stringify([existing, payload, payload, { navigator: "bad" }]));
+  const preview = dialog.getByTestId("fingerprint-import-preview");
+  await expect(preview).toContainText("Ready 1");
+  await expect(preview).toContainText("Duplicate 2");
+  await expect(preview).toContainText("Invalid 1");
+  await dialog.getByRole("button", { name: "Import" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator("[data-toast]")).toContainText("Imported “Imported batch”");
+  await expect(card(page, "Imported batch")).toBeVisible();
+});
+
+test("fingerprint import marks malformed known fields invalid", async ({ page }) => {
+  await openApp(page, { section: "fingerprints" });
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "Paste JSON" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import fingerprint from JSON", exact: true });
+  await dialog.getByRole("textbox", { name: "Paste the full JSON" }).fill(JSON.stringify({
+    name: "Malformed",
+    navigator: "Win32",
+    screen: { width: 1920 },
+    webgl: {},
+    client_hints: {},
+  }));
+  const preview = dialog.getByTestId("fingerprint-import-preview");
+  await expect(preview).toContainText("Invalid 1");
+});
+
+test("an imported fingerprint can be edited in place without changing its library id", async ({ page }) => {
+  await openApp(page, { section: "fingerprints" });
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "Paste JSON" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import fingerprint from JSON", exact: true });
+  const payload = {
+    name: "Editable fingerprint",
+    navigator: { platform: "Win32", user_agent: "Mozilla/5.0 Chrome/152.0.0.0" },
+    screen: { width: 1920, height: 1080, avail_width: 1920, avail_height: 1040, device_pixel_ratio: 1 },
+    webgl: { vendor: "Google Inc.", renderer: "ANGLE (Editable GPU)" },
+    client_hints: { brand_version: "152", platform_version: "10.0.0" },
+  };
+  await dialog.getByRole("textbox", { name: "Paste the full JSON" }).fill(JSON.stringify(payload));
+  await dialog.getByRole("button", { name: "Import" }).click();
+  await expect(card(page, "Editable fingerprint")).toBeVisible();
+  const id = await card(page, "Editable fingerprint").getAttribute("data-fingerprint-id");
+  await card(page, "Editable fingerprint").click();
+  const panel = peek(page);
+  await panel.getByRole("button", { name: "Edit fingerprint JSON" }).click();
+  const editor = panel.getByRole("textbox", { name: "Edit fingerprint JSON" });
+  await editor.fill(JSON.stringify({ ...payload, name: "Edited fingerprint" }, null, 2));
+  await panel.getByRole("button", { name: "Save JSON" }).click();
+  await expect(page.locator("[data-toast]").filter({ hasText: "Fingerprint JSON saved" })).toBeVisible();
+  const updated = card(page, "Edited fingerprint");
+  await expect(updated).toBeVisible();
+  await expect(updated).toHaveAttribute("data-fingerprint-id", id!);
+  const stored = await page.evaluate(() => {
+    const state = (window as unknown as { __shardxMock: { state: { fingerprints: { id: string; label: string; payload: { name: string } }[] } } }).__shardxMock.state;
+    return state.fingerprints.find((entry) => entry.label === "Edited fingerprint");
+  });
+  expect(stored?.payload.name).toBe("Edited fingerprint");
+  await updated.click();
+  const rollbackPanel = peek(page);
+  await rollbackPanel.getByRole("button", { name: "Edit fingerprint JSON" }).click();
+  await rollbackPanel.getByRole("button", { name: "Restore previous version" }).click();
+  await expect(page.locator("[data-toast]").filter({ hasText: "Previous fingerprint version restored" })).toBeVisible();
+  await expect(card(page, "Editable fingerprint")).toBeVisible();
+  await expect(card(page, "Edited fingerprint")).toHaveCount(0);
+});
+
 test("New profile from a fingerprint opens the create form with that fingerprint chosen; nothing is made until Create profile", async ({ page }) => {
   await openApp(page, { section: "fingerprints" });
   const before = await profileCount(page);

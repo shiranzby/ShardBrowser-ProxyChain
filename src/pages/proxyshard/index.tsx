@@ -12,12 +12,15 @@ import { KeyIcon, RefreshIcon } from "../../shared/icons";
 import { useDialogLife } from "../../shared/lib/useDialogLife";
 import { useT } from "../../shared/i18n";
 
+import { useProxyShardVisibility } from "../../shared/model/proxyShardVisibility";
+
 type View = "panels" | "setup";
 
 /// Provider defaults are the primary page. Existing ProxyShard account tools
 /// remain available on demand without loading its account on every visit.
 export function ProxyShardPage() {
   const t = useT();
+  const hidden = useProxyShardVisibility((s) => s.hidden);
   const init = usePsAccount((s) => s.init);
   const key = usePsAccount((s) => s.key);
   const status = usePsAccount((s) => s.status);
@@ -27,7 +30,7 @@ export function ProxyShardPage() {
   const keyLife = useDialogLife(keyOpen);
   const [buying, setBuying] = useState(false);
   const buyLife = useDialogLife(buying);
-  useEffect(() => { if (accountOpen) init(); }, [accountOpen, init]);
+  useEffect(() => { if (!hidden && accountOpen) init(); }, [hidden, accountOpen, init]);
   // While a key is being read or checked, the body keeps what it showed (the
   // header says "Checking your key…"): empty before the first answer, so the
   // setup card never flashes, and no swap during Check again or a new key.
@@ -46,7 +49,7 @@ export function ProxyShardPage() {
       <PageBody>
         <div className="flex flex-col gap-6" data-provider-management>
           <ProviderDefaultsPanel />
-          <div className="border-t border-stroke-soft-200 pt-4">
+          {!hidden && <div className="border-t border-stroke-soft-200 pt-4">
             <Button variant="neutral" mode="ghost" size="xsmall" aria-expanded={accountOpen} onClick={() => setAccountOpen((open) => !open)}>{t("provider.legacyAccount")}</Button>
             {accountOpen && <div className="flex flex-col gap-4 pt-3">
               <h3 className="m-0 text-section-label text-text-strong-950">{t("pageHelp.proxyshard.title")}</h3>
@@ -62,11 +65,11 @@ export function ProxyShardPage() {
               </div>
               {view === "panels" ? <PsManagementPanels /> : view === "setup" ? <PsKeySetup /> : null}
             </div>}
-          </div>
+          </div>}
         </div>
       </PageBody>
-      {buyLife.mounted && <PsBuyDialog key={buyLife.session} open={buying} onClose={() => setBuying(false)} />}
-      {keyLife.mounted && <PsKeyDialog key={keyLife.session} open={keyOpen} onClose={() => setKeyOpen(false)} />}
+      {!hidden && buyLife.mounted && <PsBuyDialog key={buyLife.session} open={buying} onClose={() => setBuying(false)} />}
+      {!hidden && keyLife.mounted && <PsKeyDialog key={keyLife.session} open={keyOpen} onClose={() => setKeyOpen(false)} />}
     </>
   );
 }

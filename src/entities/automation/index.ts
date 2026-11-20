@@ -6,3 +6,4 @@ export * from "./model/palette";
 export * from "./lib/layout";
 export * from "./lib/runOrder";
 export * from "./lib/useFleet";
+export * from "./model/sequential";

@@ -74,7 +74,9 @@ pub fn status(project_id: &str) -> Option<RunState> {
 
 /// Every run currently going, for the fleet window.
 pub fn all() -> Vec<RunState> {
-    let Ok(g) = runs().lock() else { return Vec::new() };
+    let Ok(g) = runs().lock() else {
+        return Vec::new();
+    };
     g.values()
         .filter_map(|r| r.state.lock().ok().map(|s| s.clone()))
         .collect()
@@ -98,9 +100,13 @@ fn log_path(project_id: &str, started_at: u64) -> Option<std::path::PathBuf> {
 /// Keeps the newest `keep` run logs and deletes the rest. Called once when a
 /// run starts, so a machine left running for months does not fill up.
 fn prune_logs(keep: usize) {
-    let Ok(root) = store::config_root() else { return };
+    let Ok(root) = store::config_root() else {
+        return;
+    };
     let dir = root.join("automation-runs");
-    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
     let mut files: Vec<_> = entries
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("log"))
@@ -132,7 +138,11 @@ impl Run {
         }
         if let Some(p) = path {
             use std::io::Write;
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(p)
+            {
                 let _ = writeln!(f, "{stamped}");
             }
         }
@@ -157,7 +167,10 @@ fn expand(text: &str, vars: &HashMap<String, String>) -> String {
 }
 
 fn param<'a>(params: &'a Value, name: &str) -> Option<&'a str> {
-    params.get(name).and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+    params
+        .get(name)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
 }
 
 /// A number a step asks for, with `{{variables}}` resolved first.
@@ -205,10 +218,15 @@ async fn center_of(profile: &str, selector: &str) -> Result<(f64, f64)> {
 /// the glass, so a long scroll has to know how much glass there is.
 async fn viewport_size(profile: &str) -> (f64, f64) {
     if let Ok(m) = cdp::page_call(profile, "Page.getLayoutMetrics", json!({})).await {
-        let v = m.get("cssVisualViewport").or_else(|| m.get("visualViewport"));
+        let v = m
+            .get("cssVisualViewport")
+            .or_else(|| m.get("visualViewport"));
         if let Some(v) = v {
             let w = v.get("clientWidth").and_then(|x| x.as_f64()).unwrap_or(0.0);
-            let h = v.get("clientHeight").and_then(|x| x.as_f64()).unwrap_or(0.0);
+            let h = v
+                .get("clientHeight")
+                .and_then(|x| x.as_f64())
+                .unwrap_or(0.0);
             if w > 0.0 && h > 0.0 {
                 return (w, h);
             }
@@ -220,10 +238,15 @@ async fn viewport_size(profile: &str) -> (f64, f64) {
 /// Middle of the visible page, from the browser rather than a guess.
 async fn viewport_center(profile: &str) -> (f64, f64) {
     if let Ok(m) = cdp::page_call(profile, "Page.getLayoutMetrics", json!({})).await {
-        let v = m.get("cssVisualViewport").or_else(|| m.get("visualViewport"));
+        let v = m
+            .get("cssVisualViewport")
+            .or_else(|| m.get("visualViewport"));
         if let Some(v) = v {
             let w = v.get("clientWidth").and_then(|x| x.as_f64()).unwrap_or(0.0);
-            let h = v.get("clientHeight").and_then(|x| x.as_f64()).unwrap_or(0.0);
+            let h = v
+                .get("clientHeight")
+                .and_then(|x| x.as_f64())
+                .unwrap_or(0.0);
             if w > 0.0 && h > 0.0 {
                 return (w / 2.0, h / 2.0);
             }
@@ -263,7 +286,9 @@ async fn center_waiting(profile: &str, selector: &str, timeout_s: f64) -> Result
 
 /// The wait a step asks for, or the default.
 fn wait_for(p: &Value, vars: &HashMap<String, String>) -> f64 {
-    param_f64(p, "timeout", vars).filter(|v| *v >= 0.0).unwrap_or(DEFAULT_WAIT_S)
+    param_f64(p, "timeout", vars)
+        .filter(|v| *v >= 0.0)
+        .unwrap_or(DEFAULT_WAIT_S)
 }
 
 async fn exists(profile: &str, selector: &str) -> bool {
@@ -275,7 +300,12 @@ async fn click_at(profile: &str, x: f64, y: f64, button: &str) -> Result<()> {
     cdp::page_call(profile, "Motion.glideTo", json!({ "x": x, "y": y })).await?;
     let clicks = if button == "double" { 2 } else { 1 };
     let b = if button == "right" { "right" } else { "left" };
-    cdp::page_call(profile, "Motion.tap", json!({ "button": b, "clickCount": clicks })).await?;
+    cdp::page_call(
+        profile,
+        "Motion.tap",
+        json!({ "button": b, "clickCount": clicks }),
+    )
+    .await?;
     Ok(())
 }
 
@@ -357,7 +387,10 @@ impl CallCtx {
         if let Some(at) = self.stack.iter().position(|f| *f == frame) {
             let mut chain: Vec<String> = self.stack[at..].iter().map(Frame::name).collect();
             chain.push(frame.name());
-            return Err(anyhow!("that call goes round in a circle: {}", chain.join(" → ")));
+            return Err(anyhow!(
+                "that call goes round in a circle: {}",
+                chain.join(" → ")
+            ));
         }
         if self.depth >= MAX_CALL_DEPTH {
             let chain: Vec<String> = self.stack.iter().map(Frame::name).collect();
@@ -367,7 +400,10 @@ impl CallCtx {
                 frame.name()
             ));
         }
-        let saved = Saved { depth: self.depth, stack_len: self.stack.len() };
+        let saved = Saved {
+            depth: self.depth,
+            stack_len: self.stack.len(),
+        };
         if self.depth == 0 {
             self.actions = 0;
         }
@@ -403,7 +439,10 @@ impl CallCtx {
         };
         let grant = wasm::grant_for(caller);
         let (allowed, what) = match target {
-            Frame::Module(id) => (grant.call_modules.iter().any(|m| m == id), format!("module \"{id}\"")),
+            Frame::Module(id) => (
+                grant.call_modules.iter().any(|m| m == id),
+                format!("module \"{id}\""),
+            ),
             // "*" is a module that asked to run any project and was granted
             // exactly that by the operator (Modules: "run any of your projects").
             Frame::Flow(id) => (
@@ -428,7 +467,9 @@ impl CallCtx {
     fn charge(&mut self) -> Result<()> {
         self.actions += 1;
         if self.actions > MAX_CHAIN_ACTIONS {
-            return Err(anyhow!("this chain of calls asked for more than {MAX_CHAIN_ACTIONS} actions"));
+            return Err(anyhow!(
+                "this chain of calls asked for more than {MAX_CHAIN_ACTIONS} actions"
+            ));
         }
         Ok(())
     }
@@ -533,8 +574,8 @@ fn make_profile(
         // Deliberately inline: a proxy a project generated belongs to that
         // profile, not to the operator's proxy library, which is theirs to
         // curate and would otherwise fill up with single-use entries.
-        let entry = proxy::parse_single(pstr)
-            .ok_or_else(|| anyhow!("cannot read proxy \"{pstr}\""))?;
+        let entry =
+            proxy::parse_single(pstr).ok_or_else(|| anyhow!("cannot read proxy \"{pstr}\""))?;
         meta["inline_proxy"] = serde_json::to_value(entry)?;
     }
     cfg.insert("_meta".into(), meta);
@@ -633,12 +674,8 @@ async fn ensure_browser(bound: &Bound, run: &Run) -> Result<()> {
     if !run.rules.is_empty() {
         match serde_json::to_string(&run.rules) {
             Ok(rules_json) => {
-                if let Err(e) = cdp::page_call(
-                    &bound.id,
-                    "Traffic.mount",
-                    json!({ "rules": rules_json }),
-                )
-                .await
+                if let Err(e) =
+                    cdp::page_call(&bound.id, "Traffic.mount", json!({ "rules": rules_json })).await
                 {
                     run.log(format!("interception rules did not mount: {e}"));
                 } else {
@@ -671,7 +708,11 @@ enum Flow {
 /// Compares two values for an `if` block. Numbers are compared as numbers when
 /// both parse; otherwise as text. `b` is ignored for the empty/not-empty tests.
 fn cond_holds(a: &str, op: &str, b: &str) -> bool {
-    let nums = a.trim().parse::<f64>().ok().zip(b.trim().parse::<f64>().ok());
+    let nums = a
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .zip(b.trim().parse::<f64>().ok());
     match op {
         "=" | "==" | "equals" => a == b,
         "≠" | "!=" | "not equals" => a != b,
@@ -746,7 +787,10 @@ async fn current_url(profile: &str) -> String {
     let Ok(hist) = cdp::page_call(profile, "Page.getNavigationHistory", json!({})).await else {
         return String::new();
     };
-    let idx = hist.get("currentIndex").and_then(|v| v.as_i64()).unwrap_or(0);
+    let idx = hist
+        .get("currentIndex")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     hist.get("entries")
         .and_then(|e| e.as_array())
         .and_then(|e| e.get(idx.max(0) as usize))
@@ -761,12 +805,7 @@ async fn current_url(profile: &str) -> String {
 /// poll, so also finish when document.readyState reaches "complete" at a URL
 /// that is no longer `before`. Returns on either, or when the window closes (a
 /// slow page still gets the whole timeout).
-async fn await_load(
-    profile: &str,
-    wait: Option<cdp::EventWait>,
-    before: &str,
-    timeout: Duration,
-) {
+async fn await_load(profile: &str, wait: Option<cdp::EventWait>, before: &str, timeout: Duration) {
     let pid = profile.to_string();
     let was = before.to_string();
     let poll = async move {
@@ -900,7 +939,6 @@ fn build_traffic_rule(kind: &str, p: &Value, vars: &HashMap<String, String>) -> 
     Ok(json!({ "match": traffic_match(p, vars), "action": Value::Object(a) }))
 }
 
-
 /// How a sub-flow ended.
 enum WalkEnd {
     /// It reached the end, or a step said Stop after succeeding, or the pass
@@ -1004,7 +1042,6 @@ fn name_list(raw: &str) -> Vec<String> {
         .collect()
 }
 
-
 /// Finds the project a `flow.call` names.
 ///
 /// By id first and by name second, and never silently: an id is not portable
@@ -1033,7 +1070,11 @@ fn resolve_flow(run: &Run, id: &str, name: &str) -> Result<automation::Project> 
     }
     Err(anyhow!(
         "the flow this step calls is not on this machine{}",
-        if name.is_empty() { String::new() } else { format!(" (\"{name}\")") }
+        if name.is_empty() {
+            String::new()
+        } else {
+            format!(" (\"{name}\")")
+        }
     ))
 }
 
@@ -1046,8 +1087,12 @@ async fn call_flow(
     callee: &automation::Project,
     p: &Value,
 ) -> Result<Flow> {
-    let mut steps: Vec<automation::Block> =
-        callee.blocks.iter().filter(|b| b.enabled).cloned().collect();
+    let mut steps: Vec<automation::Block> = callee
+        .blocks
+        .iter()
+        .filter(|b| b.enabled)
+        .cloned()
+        .collect();
     if steps.is_empty() {
         return Err(anyhow!("\"{}\" has no steps to run", callee.name));
     }
@@ -1056,7 +1101,8 @@ async fn call_flow(
     steps.sort_by(|a, b| {
         let ca = (a.x / 40.0).round() as i64;
         let cb = (b.x / 40.0).round() as i64;
-        ca.cmp(&cb).then(a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal))
+        ca.cmp(&cb)
+            .then(a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal))
     });
 
     // Where to start. A named entry is a block id — usually a flow.entry
@@ -1075,11 +1121,11 @@ async fn call_flow(
             .position(|b| {
                 b.id == wanted_entry
                     || (b.kind == "flow.entry"
-                        && param(&b.params, "name").map(|n| n == wanted_entry).unwrap_or(false))
+                        && param(&b.params, "name")
+                            .map(|n| n == wanted_entry)
+                            .unwrap_or(false))
             })
-            .ok_or_else(|| {
-                anyhow!("\"{}\" has no entry called \"{wanted_entry}\"", callee.name)
-            })?
+            .ok_or_else(|| anyhow!("\"{}\" has no entry called \"{wanted_entry}\"", callee.name))?
     };
 
     // Variables. Shared by default, because they are the run's and a sub-flow
@@ -1111,7 +1157,11 @@ async fn call_flow(
     run.log(format!(
         "entering flow \"{}\"{}",
         callee.name,
-        if wanted_entry.is_empty() { String::new() } else { format!(" at {wanted_entry}") }
+        if wanted_entry.is_empty() {
+            String::new()
+        } else {
+            format!(" at {wanted_entry}")
+        }
     ));
     let end = Box::pin(walk_flow(&steps, entry, bound, &mut inner_vars, run, ctx)).await;
 
@@ -1195,8 +1245,16 @@ async fn run_block(
             )?;
             run.log(format!(
                 "{} profile {id}{}",
-                if temporary { "made a temporary" } else { "made" },
-                if inline.is_some() { " with a proxy" } else { "" }
+                if temporary {
+                    "made a temporary"
+                } else {
+                    "made"
+                },
+                if inline.is_some() {
+                    " with a proxy"
+                } else {
+                    ""
+                }
             ));
             // Switching profiles means the old browser is no longer this
             // worker's; let go of it rather than leaving a stale connection.
@@ -1209,7 +1267,11 @@ async fn run_block(
             if temporary {
                 ctx.remember_temp(&id);
             }
-            *bound = Bound { id: id.clone(), temporary, mobile: bound_is_mobile(&id) };
+            *bound = Bound {
+                id: id.clone(),
+                temporary,
+                mobile: bound_is_mobile(&id),
+            };
             if let Some(into) = param(p, "into") {
                 vars.insert(check_var_name(into)?, id);
             }
@@ -1221,7 +1283,11 @@ async fn run_block(
             if !bound.id.is_empty() && bound.id != id {
                 cdp::detach(&bound.id);
             }
-            *bound = Bound { mobile: bound_is_mobile(&id), id, temporary: false };
+            *bound = Bound {
+                mobile: bound_is_mobile(&id),
+                id,
+                temporary: false,
+            };
             return Ok(Flow::Next);
         }
         "profile.keep" => {
@@ -1240,7 +1306,9 @@ async fn run_block(
             return Ok(Flow::Next);
         }
         "profile.delete" => {
-            let id = param(p, "id").map(|s| expand(s, vars)).unwrap_or_else(|| bound.id.clone());
+            let id = param(p, "id")
+                .map(|s| expand(s, vars))
+                .unwrap_or_else(|| bound.id.clone());
             if id.is_empty() {
                 return Err(anyhow!("no profile to delete"));
             }
@@ -1326,7 +1394,9 @@ async fn run_block(
                 .map(|v| !(v.eq_ignore_ascii_case("dynamic") || v.eq_ignore_ascii_case("rotating")))
                 .unwrap_or(true);
             let session_mode = ex("session_mode");
-            let http = ex("protocol").map(|v| v.eq_ignore_ascii_case("http")).unwrap_or(false);
+            let http = ex("protocol")
+                .map(|v| v.eq_ignore_ascii_case("http"))
+                .unwrap_or(false);
             // Any refusal here — wrong plan for an OS, no traffic left — comes
             // back as a step failure, which stops the run by default and names
             // the reason in the log.
@@ -1355,7 +1425,11 @@ async fn run_block(
             profile::save_raw(&mut stored)?;
             run.log(format!(
                 "residential proxy on the profile — {tier}{} via {host}",
-                if where_.is_empty() { String::new() } else { format!(" in {where_}") }
+                if where_.is_empty() {
+                    String::new()
+                } else {
+                    format!(" in {where_}")
+                }
             ));
             if let Some(into) = param(p, "into") {
                 vars.insert(check_var_name(into)?, line);
@@ -1399,14 +1473,17 @@ async fn run_block(
                 // The generated person is offered by the fill helper, which
                 // only speaks up once a page shows it a form. Saying so beats
                 // handing back an empty string that looks like a real answer.
-                .ok_or_else(|| anyhow!("the fill helper has nothing to offer yet — open a page with a form first"))?;
+                .ok_or_else(|| {
+                    anyhow!(
+                        "the fill helper has nothing to offer yet — open a page with a form first"
+                    )
+                })?;
             let value = offer
                 .get("fields")
                 .and_then(|f| f.as_array())
                 .and_then(|list| {
-                    list.iter().find(|f| {
-                        f.get("kind").and_then(|k| k.as_str()) == Some(field.as_str())
-                    })
+                    list.iter()
+                        .find(|f| f.get("kind").and_then(|k| k.as_str()) == Some(field.as_str()))
                 })
                 .and_then(|f| f.get("value"))
                 .and_then(|v| v.as_str())
@@ -1445,7 +1522,9 @@ async fn run_block(
                 .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
                 .filter(|(k, _)| !k.is_empty())
                 .collect();
-            let body = param(p, "body").map(|b| expand(b, vars)).filter(|b| !b.is_empty());
+            let body = param(p, "body")
+                .map(|b| expand(b, vars))
+                .filter(|b| !b.is_empty());
             let fingerprint = param(p, "fingerprint").map(|f| expand(f, vars));
             let session = param(p, "session").map(|x| expand(x, vars));
 
@@ -1490,13 +1569,12 @@ async fn run_block(
             // Three names off one: the body under the name asked for, and the
             // status and headers beside it, because a step that answered only
             // with the body would need a second request to check it worked.
-            vars.insert(
-                format!("{into}_status"),
-                status.to_string(),
-            );
+            vars.insert(format!("{into}_status"), status.to_string());
             vars.insert(
                 format!("{into}_headers"),
-                out.get("headers").map(|h| h.to_string()).unwrap_or_default(),
+                out.get("headers")
+                    .map(|h| h.to_string())
+                    .unwrap_or_default(),
             );
             vars.insert(
                 into,
@@ -1570,8 +1648,7 @@ async fn run_block(
                     }
                     rest.push(l);
                 }
-                std::fs::write(&path, rest.join("\n"))
-                    .with_context(|| format!("write {path}"))?;
+                std::fs::write(&path, rest.join("\n")).with_context(|| format!("write {path}"))?;
             }
             vars.insert(into, line);
             return Ok(Flow::Next);
@@ -1601,9 +1678,11 @@ async fn run_block(
                 .map(|s| expand(s, vars))
                 .unwrap_or_default();
             let database = param(p, "database").map(|s| expand(s, vars));
-            tokio::task::spawn_blocking(move || crate::db::open(&name, &driver, &target, database.as_deref()))
-                .await
-                .map_err(|e| anyhow!("db task failed: {e}"))??;
+            tokio::task::spawn_blocking(move || {
+                crate::db::open(&name, &driver, &target, database.as_deref())
+            })
+            .await
+            .map_err(|e| anyhow!("db task failed: {e}"))??;
             run.log("opened a database");
             return Ok(Flow::Next);
         }
@@ -1614,7 +1693,10 @@ async fn run_block(
                 .await
                 .map_err(|e| anyhow!("db task failed: {e}"))??;
             if let Some(into) = param(p, "into") {
-                let changes = out.get("changes").map(|v| v.to_string()).unwrap_or_default();
+                let changes = out
+                    .get("changes")
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
                 vars.insert(check_var_name(into)?, changes);
             }
             return Ok(Flow::Next);
@@ -1626,7 +1708,9 @@ async fn run_block(
                 .await
                 .map_err(|e| anyhow!("db task failed: {e}"))??;
             let n = rows.len();
-            let mode = param(p, "mode").map(|s| expand(s, vars)).unwrap_or_else(|| "rows".into());
+            let mode = param(p, "mode")
+                .map(|s| expand(s, vars))
+                .unwrap_or_else(|| "rows".into());
             let value = match mode.as_str() {
                 "count" => n.to_string(),
                 "value" => rows
@@ -1635,7 +1719,10 @@ async fn run_block(
                     .and_then(|o| cols.first().and_then(|c| o.get(c)))
                     .map(crate::db::scalar_to_string)
                     .unwrap_or_default(),
-                "row" => rows.first().map(|r| r.to_string()).unwrap_or_else(|| "null".into()),
+                "row" => rows
+                    .first()
+                    .map(|r| r.to_string())
+                    .unwrap_or_else(|| "null".into()),
                 _ => serde_json::Value::Array(rows).to_string(),
             };
             if let Some(into) = param(p, "into") {
@@ -1653,7 +1740,9 @@ async fn run_block(
             // Compares two values (variables, text, numbers). True takes "when
             // it works"; false takes "when it fails" (the else branch).
             let a = expand(param(p, "a").unwrap_or(""), vars);
-            let op = param(p, "op").map(|s| expand(s, vars)).unwrap_or_else(|| "=".into());
+            let op = param(p, "op")
+                .map(|s| expand(s, vars))
+                .unwrap_or_else(|| "=".into());
             let b = expand(param(p, "b").unwrap_or(""), vars);
             let holds = cond_holds(&a, &op, &b);
             run.log(format!(
@@ -1711,7 +1800,9 @@ async fn run_block(
         "proxy.swap" => {
             // Hot-swap the profile's proxy through the core, no restart. Empty
             // proxy = direct. Full URL scheme://user:pass@host:port.
-            let proxy = param(p, "proxy").map(|s| expand(s, vars)).unwrap_or_default();
+            let proxy = param(p, "proxy")
+                .map(|s| expand(s, vars))
+                .unwrap_or_default();
             let args = if proxy.trim().is_empty() {
                 json!({})
             } else {
@@ -1725,7 +1816,9 @@ async fn run_block(
             // Inject the operator's JS through the core's Script domain (isolated
             // world by default), not a page-visible CDP evaluate. Source comes
             // inline or from a file.
-            let file = param(p, "file").map(|s| expand(s, vars)).unwrap_or_default();
+            let file = param(p, "file")
+                .map(|s| expand(s, vars))
+                .unwrap_or_default();
             let source = if !file.trim().is_empty() {
                 std::fs::read_to_string(file.trim())
                     .with_context(|| format!("reading script {}", file.trim()))?
@@ -1755,11 +1848,18 @@ async fn run_block(
             // them. On by default; pass "off" to stop.
             let on = param(p, "enabled").map(|s| expand(s, vars)).as_deref() != Some("off");
             cdp::page_call(profile, "Traffic.observe", json!({ "enabled": on })).await?;
-            run.log(if on { "watching requests" } else { "stopped watching requests" });
+            run.log(if on {
+                "watching requests"
+            } else {
+                "stopped watching requests"
+            });
             return Ok(Flow::Next);
         }
-        "traffic.block" | "traffic.redirect" | "traffic.setHeaders"
-        | "traffic.editResponse" | "traffic.fulfill" => {
+        "traffic.block"
+        | "traffic.redirect"
+        | "traffic.setHeaders"
+        | "traffic.editResponse"
+        | "traffic.fulfill" => {
             // Mount one interception rule live, at this point in the flow. It
             // takes effect for requests made after it — put it before the step
             // that triggers them. Adds to whatever the project already mounts.
@@ -1773,29 +1873,46 @@ async fn run_block(
             let wait = cdp::watch(profile);
             cdp::page_call(profile, "Page.reload", json!({})).await?;
             if let Some(w) = wait {
-                w.until("Page.loadEventFired", Duration::from_secs(30)).await;
+                w.until("Page.loadEventFired", Duration::from_secs(30))
+                    .await;
             }
         }
         "back" | "forward" => {
             let hist = cdp::page_call(profile, "Page.getNavigationHistory", json!({})).await?;
-            let idx = hist.get("currentIndex").and_then(|v| v.as_i64()).unwrap_or(0);
+            let idx = hist
+                .get("currentIndex")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
             let entries = hist
                 .get("entries")
                 .and_then(|e| e.as_array())
                 .cloned()
                 .unwrap_or_default();
-            let want = if block.kind == "back" { idx - 1 } else { idx + 1 };
+            let want = if block.kind == "back" {
+                idx - 1
+            } else {
+                idx + 1
+            };
             if want < 0 || want as usize >= entries.len() {
                 run.log(format!("{}: nowhere to go", block.kind));
                 return Ok(Flow::Next);
             }
-            let id = entries[want as usize].get("id").cloned().unwrap_or(Value::Null);
-            cdp::page_call(profile, "Page.navigateToHistoryEntry", json!({ "entryId": id })).await?;
+            let id = entries[want as usize]
+                .get("id")
+                .cloned()
+                .unwrap_or(Value::Null);
+            cdp::page_call(
+                profile,
+                "Page.navigateToHistoryEntry",
+                json!({ "entryId": id }),
+            )
+            .await?;
         }
         "waitLoad" => {
             let secs = param_f64(p, "timeout", vars).unwrap_or(30.0);
             if let Some(w) = cdp::watch(profile) {
-                w.until("Page.loadEventFired", Duration::from_secs_f64(secs)).await;
+                w.until("Page.loadEventFired", Duration::from_secs_f64(secs))
+                    .await;
             }
         }
         // Gestures with no desktop twin. Refused on a desktop profile rather
@@ -1832,13 +1949,19 @@ async fn run_block(
             }
             match block.kind.as_str() {
                 "touch.tap" => {
-                    let taps = param_f64(p, "tapCount", vars).unwrap_or(1.0).clamp(1.0, 3.0) as i64;
-                    cdp::page_call(profile, "Motion.touchTap",
-                                   json!({ "x": x, "y": y, "tapCount": taps })).await?;
+                    let taps = param_f64(p, "tapCount", vars)
+                        .unwrap_or(1.0)
+                        .clamp(1.0, 3.0) as i64;
+                    cdp::page_call(
+                        profile,
+                        "Motion.touchTap",
+                        json!({ "x": x, "y": y, "tapCount": taps }),
+                    )
+                    .await?;
                 }
                 "touch.longPress" => {
-                    cdp::page_call(profile, "Motion.touchLongPress",
-                                   json!({ "x": x, "y": y })).await?;
+                    cdp::page_call(profile, "Motion.touchLongPress", json!({ "x": x, "y": y }))
+                        .await?;
                 }
                 "touch.swipe" => {
                     let dx = param_f64(p, "dx", vars).unwrap_or(0.0);
@@ -1846,17 +1969,25 @@ async fn run_block(
                     if dx == 0.0 && dy == 0.0 {
                         return Err(anyhow!("a swipe of nothing goes nowhere — set how far"));
                     }
-                    cdp::page_call(profile, "Motion.touchSwipe",
-                                   json!({ "fromX": x, "fromY": y,
-                                           "toX": x + dx, "toY": y + dy })).await?;
+                    cdp::page_call(
+                        profile,
+                        "Motion.touchSwipe",
+                        json!({ "fromX": x, "fromY": y,
+                                           "toX": x + dx, "toY": y + dy }),
+                    )
+                    .await?;
                 }
                 _ => {
                     let scale = param_f64(p, "scale", vars).unwrap_or(2.0);
                     if scale <= 0.0 {
                         return Err(anyhow!("a pinch scales by a positive factor"));
                     }
-                    cdp::page_call(profile, "Motion.pinch",
-                                   json!({ "x": x, "y": y, "scale": scale })).await?;
+                    cdp::page_call(
+                        profile,
+                        "Motion.pinch",
+                        json!({ "x": x, "y": y, "scale": scale }),
+                    )
+                    .await?;
                 }
             }
         }
@@ -1970,8 +2101,12 @@ async fn run_block(
                     }
                     cdp::page_call(profile, "Motion.touchDrag", args).await?;
                 } else {
-                    cdp::page_call(profile, "Motion.touchSwipe",
-                                   json!({ "fromX": x0, "fromY": y0, "toX": x1, "toY": y1 })).await?;
+                    cdp::page_call(
+                        profile,
+                        "Motion.touchSwipe",
+                        json!({ "fromX": x0, "fromY": y0, "toX": x1, "toY": y1 }),
+                    )
+                    .await?;
                 }
                 return Ok(Flow::Next);
             }
@@ -2099,10 +2234,12 @@ async fn run_block(
                 // clears a field by holding Backspace, so that is what this
                 // does — bounded, because a field of unknown length must not
                 // become an unbounded loop.
-                let len = param_f64(p, "count", vars).unwrap_or(120.0).clamp(1.0, 200.0) as usize;
+                let len = param_f64(p, "count", vars)
+                    .unwrap_or(120.0)
+                    .clamp(1.0, 200.0) as usize;
                 for _ in 0..len {
-                    cdp::page_call(profile, "Motion.pressKey",
-                                   json!({ "key": "Backspace" })).await?;
+                    cdp::page_call(profile, "Motion.pressKey", json!({ "key": "Backspace" }))
+                        .await?;
                 }
             } else {
                 cdp::page_call(
@@ -2115,7 +2252,9 @@ async fn run_block(
             }
         }
         "wait" => {
-            let secs = param_f64(p, "seconds", vars).unwrap_or(1.0).clamp(0.0, 3600.0);
+            let secs = param_f64(p, "seconds", vars)
+                .unwrap_or(1.0)
+                .clamp(0.0, 3600.0);
             tokio::time::sleep(Duration::from_secs_f64(secs)).await;
         }
         "waitFor" => {
@@ -2135,7 +2274,9 @@ async fn run_block(
         "ifExists" => {
             let sel = expand(param(p, "selector").context("no element")?, vars);
             if !exists(profile, &sel).await {
-                run.log(format!("{sel} is not there — skipping the rest of this pass"));
+                run.log(format!(
+                    "{sel} is not there — skipping the rest of this pass"
+                ));
                 return Ok(Flow::EndPass);
             }
         }
@@ -2144,24 +2285,37 @@ async fn run_block(
             // else branch ("when it fails").
             let sel = expand(param(p, "selector").context("no element")?, vars);
             let there = exists(profile, &sel).await;
-            run.log(format!("if {sel} exists → {}", if there { "yes" } else { "no (else)" }));
+            run.log(format!(
+                "if {sel} exists → {}",
+                if there { "yes" } else { "no (else)" }
+            ));
             return Ok(if there { Flow::Next } else { Flow::Else });
         }
         "if.text" => {
             let sel = expand(param(p, "selector").context("no element")?, vars);
-            let op = param(p, "op").map(|s| expand(s, vars)).unwrap_or_else(|| "contains".into());
+            let op = param(p, "op")
+                .map(|s| expand(s, vars))
+                .unwrap_or_else(|| "contains".into());
             let want = expand(param(p, "text").unwrap_or(""), vars);
             let txt = element_text(profile, &sel).await.unwrap_or_default();
             let holds = cond_holds(&txt, &op, &want);
-            run.log(format!("if {sel} text {op} {want:?} → {}", if holds { "yes" } else { "no (else)" }));
+            run.log(format!(
+                "if {sel} text {op} {want:?} → {}",
+                if holds { "yes" } else { "no (else)" }
+            ));
             return Ok(if holds { Flow::Next } else { Flow::Else });
         }
         "if.url" => {
-            let op = param(p, "op").map(|s| expand(s, vars)).unwrap_or_else(|| "contains".into());
+            let op = param(p, "op")
+                .map(|s| expand(s, vars))
+                .unwrap_or_else(|| "contains".into());
             let want = expand(param(p, "text").unwrap_or(""), vars);
             let url = current_url(profile).await;
             let holds = cond_holds(&url, &op, &want);
-            run.log(format!("if address {op} {want:?} → {}", if holds { "yes" } else { "no (else)" }));
+            run.log(format!(
+                "if address {op} {want:?} → {}",
+                if holds { "yes" } else { "no (else)" }
+            ));
             return Ok(if holds { Flow::Next } else { Flow::Else });
         }
         "stop" => return Ok(Flow::EndPass),
@@ -2211,7 +2365,10 @@ async fn run_block(
         "count" => {
             let sel = expand(param(p, "selector").context("no element")?, vars);
             let into = check_var_name(param(p, "into").context("no name to save into")?)?;
-            let n = cdp::query_piercing(profile, &sel).await.map(|v| v.len()).unwrap_or(0);
+            let n = cdp::query_piercing(profile, &sel)
+                .await
+                .map(|v| v.len())
+                .unwrap_or(0);
             run.log(format!("{into} = {n}"));
             vars.insert(into, n.to_string());
         }
@@ -2224,16 +2381,25 @@ async fn run_block(
                 .await?
                 .first()
                 .ok_or_else(|| anyhow!("no element matches {sel}"))?;
-            let got = cdp::page_call(profile, "DOM.getAttributes", json!({ "nodeId": node })).await?;
+            let got =
+                cdp::page_call(profile, "DOM.getAttributes", json!({ "nodeId": node })).await?;
             // Attributes arrive as one flat list: name, value, name, value.
             let flat: Vec<String> = got
                 .get("attributes")
                 .and_then(|a| a.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             let value = flat
                 .chunks(2)
-                .find(|c| c.first().map(|n| n.eq_ignore_ascii_case(&name)).unwrap_or(false))
+                .find(|c| {
+                    c.first()
+                        .map(|n| n.eq_ignore_ascii_case(&name))
+                        .unwrap_or(false)
+                })
                 .and_then(|c| c.get(1).cloned())
                 .ok_or_else(|| anyhow!("{sel} has no attribute \"{name}\""))?;
             vars.insert(into, value);
@@ -2248,7 +2414,10 @@ async fn run_block(
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(b64)
                 .map_err(|e| anyhow!("unreadable picture: {e}"))?;
-            let path = match param(p, "path").map(|s| expand(s, vars)).filter(|s| !s.trim().is_empty()) {
+            let path = match param(p, "path")
+                .map(|s| expand(s, vars))
+                .filter(|s| !s.trim().is_empty())
+            {
                 Some(p) => std::path::PathBuf::from(p),
                 // Beside the run logs, so evidence and log sit together.
                 None => crate::store::config_root()?
@@ -2316,7 +2485,6 @@ async fn run_block(
     Ok(Flow::Next)
 }
 
-
 /// Runs one block a module contributed, start to finish.
 ///
 /// Extracted from `run_block`'s `module:` arm so it can be entered from inside
@@ -2350,9 +2518,16 @@ async fn drive_module(
     }
     ctx.may_call(&Frame::Module(module_id.to_string()))?;
     let saved = ctx.enter(Frame::Module(module_id.to_string()))?;
-    let result =
-        Box::pin(drive_module_inner(bound, vars, run, ctx, &module_id.to_string(), block_name, params))
-            .await;
+    let result = Box::pin(drive_module_inner(
+        bound,
+        vars,
+        run,
+        ctx,
+        &module_id.to_string(),
+        block_name,
+        params,
+    ))
+    .await;
     ctx.leave(saved);
     result
 }
@@ -2468,7 +2643,10 @@ async fn drive_module_inner(
     // Bounded: a module that returned a thousand clicks is a bug, and
     // running them would be indistinguishable from an attack.
     if out.actions.len() > 200 {
-        return Err(anyhow!("the module asked for {} actions", out.actions.len()));
+        return Err(anyhow!(
+            "the module asked for {} actions",
+            out.actions.len()
+        ));
     }
     for action in out.actions {
         let kind = action
@@ -2504,8 +2682,12 @@ async fn run_worker(
     project: automation::Project,
     deadline: Option<Instant>,
 ) {
-    let mut steps: Vec<automation::Block> =
-        project.blocks.iter().filter(|b| b.enabled).cloned().collect();
+    let mut steps: Vec<automation::Block> = project
+        .blocks
+        .iter()
+        .filter(|b| b.enabled)
+        .cloned()
+        .collect();
     // The run follows the visual stack top-to-bottom (by column, then height),
     // not the order the blocks happen to sit in the list. A card dragged above
     // another therefore runs before it, which is what the canvas shows.
@@ -2668,7 +2850,9 @@ async fn run_worker(
 
 pub async fn start(project_id: &str) -> Result<()> {
     if migrate::in_progress() {
-        return Err(anyhow!("profiles are being moved — try again when that finishes"));
+        return Err(anyhow!(
+            "profiles are being moved — try again when that finishes"
+        ));
     }
     if status(project_id).map(|s| s.running).unwrap_or(false) {
         return Err(anyhow!("that project is already running"));
@@ -2742,10 +2926,12 @@ pub async fn start(project_id: &str) -> Result<()> {
         projects,
         space,
     });
-    runs()
-        .lock()
-        .map_err(|_| anyhow!("runs lock poisoned"))?
-        .insert(project.id.clone(), run.clone());
+    {
+        let mut running = runs().lock().map_err(|_| anyhow!("runs lock poisoned"))?;
+        // SafeClose takes its snapshot using this same lock.
+        anyhow::ensure!(!crate::safe_close::active(), "ShyShard is closing.");
+        running.insert(project.id.clone(), run.clone());
+    }
 
     // Trimmed when a run starts rather than on a timer: it is the only moment
     // a new file is about to appear, and a launcher left closed for a month
@@ -2788,9 +2974,8 @@ pub async fn start(project_id: &str) -> Result<()> {
         let others_going = runs()
             .lock()
             .map(|g| {
-                g.values().any(|r| {
-                    r.state.lock().map(|s| s.running).unwrap_or(false)
-                })
+                g.values()
+                    .any(|r| r.state.lock().map(|s| s.running).unwrap_or(false))
             })
             .unwrap_or(false);
         if !others_going {
@@ -2859,16 +3044,25 @@ mod tests {
         let mut ctx = CallCtx::new();
         let mut saved = Vec::new();
         for i in 0..MAX_CALL_DEPTH {
-            saved.push(ctx.enter(Frame::Module(format!("m{i}"))).expect("within depth"));
+            saved.push(
+                ctx.enter(Frame::Module(format!("m{i}")))
+                    .expect("within depth"),
+            );
         }
-        let too_deep = ctx.enter(Frame::Module("m9".into())).unwrap_err().to_string();
+        let too_deep = ctx
+            .enter(Frame::Module("m9".into()))
+            .unwrap_err()
+            .to_string();
         assert!(too_deep.contains("deep"), "{too_deep}");
 
         // A repeat is reported as the loop it is, not as depth.
         let mut ctx = CallCtx::new();
         let _ = ctx.enter(Frame::Module("a".into())).unwrap();
         let _ = ctx.enter(Frame::Flow("f".into())).unwrap();
-        let loop_err = ctx.enter(Frame::Module("a".into())).unwrap_err().to_string();
+        let loop_err = ctx
+            .enter(Frame::Module("a".into()))
+            .unwrap_err()
+            .to_string();
         assert!(loop_err.contains("circle"), "{loop_err}");
         assert!(loop_err.contains("\"a\""), "{loop_err}");
     }
@@ -2933,8 +3127,14 @@ mod tests {
             "Sets a token",
             vec![
                 block("flow.entry", json!({ "name": "start" })),
-                block("var.set", json!({ "name": "token", "value": "abc-{{seed}}" })),
-                block("var.set", json!({ "name": "private", "value": "not yours" })),
+                block(
+                    "var.set",
+                    json!({ "name": "token", "value": "abc-{{seed}}" }),
+                ),
+                block(
+                    "var.set",
+                    json!({ "name": "private", "value": "not yours" }),
+                ),
             ],
         );
         // Lay them out down one column, the order a project runs in.
@@ -2974,7 +3174,10 @@ mod tests {
         let mut callee = project(
             "flow-2",
             "Sets nothing",
-            vec![block("var.set", json!({ "name": "other", "value": "hello" }))],
+            vec![block(
+                "var.set",
+                json!({ "name": "other", "value": "hello" }),
+            )],
         );
         callee.blocks[0].y = 0.0;
         let run = a_run(vec![callee]);
@@ -2987,7 +3190,10 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("without setting"), "{err}");
-        assert_eq!(ctx.depth, 0, "the frame must be left even on the error path");
+        assert_eq!(
+            ctx.depth, 0,
+            "the frame must be left even on the error path"
+        );
     }
 
     #[tokio::test]
@@ -3030,7 +3236,10 @@ mod tests {
         let mut ctx = CallCtx::new();
         let mut bound = Bound::default();
         let mut vars = HashMap::new();
-        let call = block("flow.call", json!({ "project": "flow-4", "entry": "missing" }));
+        let call = block(
+            "flow.call",
+            json!({ "project": "flow-4", "entry": "missing" }),
+        );
         let err = run_block(&mut bound, &call, &mut vars, &run, &mut ctx)
             .await
             .unwrap_err()
@@ -3058,10 +3267,18 @@ mod tests {
         let mut ctx = CallCtx::new();
         let mut bound = Bound::default();
         let mut vars = HashMap::new();
-        let call = block("flow.call", json!({ "project": "flow-5", "entry": "second" }));
-        run_block(&mut bound, &call, &mut vars, &run, &mut ctx).await.unwrap();
+        let call = block(
+            "flow.call",
+            json!({ "project": "flow-5", "entry": "second" }),
+        );
+        run_block(&mut bound, &call, &mut vars, &run, &mut ctx)
+            .await
+            .unwrap();
         assert_eq!(vars.get("second_ran").map(String::as_str), Some("yes"));
-        assert!(vars.get("first").is_none(), "the half above the entry must not run");
+        assert!(
+            vars.get("first").is_none(),
+            "the half above the entry must not run"
+        );
     }
 
     /// The guard fires through the real path, not only in its own tests: a
@@ -3078,7 +3295,10 @@ mod tests {
         // The operator placed it themselves: their block, their call.
         let their_own = run_block(&mut bound, &go, &mut vars, &run, &mut ctx).await;
         assert!(
-            their_own.unwrap_err().to_string().contains("needs a profile"),
+            their_own
+                .unwrap_err()
+                .to_string()
+                .contains("needs a profile"),
             "an operator's goto must get as far as the browser check"
         );
 
@@ -3168,7 +3388,10 @@ mod tests {
         vars.insert("clean".into(), "1".into());
         let other = block("script.run", json!({ "source": "{{clean}}" }));
         let ok_again = run_block(&mut bound, &other, &mut vars, &run, &mut ctx).await;
-        assert!(ok_again.unwrap_err().to_string().contains("needs a profile"));
+        assert!(ok_again
+            .unwrap_err()
+            .to_string()
+            .contains("needs a profile"));
 
         // And a block that is not a sink does not care.
         let harmless = block("type", json!({ "text": "{{payload}}" }));
@@ -3182,7 +3405,10 @@ mod tests {
         let mut callee = project(
             "flow-6",
             "Shares",
-            vec![block("var.set", json!({ "name": "added", "value": "{{outer}}!" }))],
+            vec![block(
+                "var.set",
+                json!({ "name": "added", "value": "{{outer}}!" }),
+            )],
         );
         callee.blocks[0].y = 0.0;
         let run = a_run(vec![callee]);
@@ -3191,7 +3417,9 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("outer".into(), "hi".into());
         let call = block("flow.call", json!({ "project": "flow-6" }));
-        run_block(&mut bound, &call, &mut vars, &run, &mut ctx).await.unwrap();
+        run_block(&mut bound, &call, &mut vars, &run, &mut ctx)
+            .await
+            .unwrap();
         assert_eq!(vars.get("added").map(String::as_str), Some("hi!"));
     }
 }

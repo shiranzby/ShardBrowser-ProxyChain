@@ -24,7 +24,10 @@ fn base() -> (Base, Layout) {
 /// An engine tree for this host's layout, `version.txt` saying which it is.
 fn engine_files(layout: &Layout, version: &str) -> Vec<(String, Vec<u8>)> {
     let mut files = vec![
-        (layout.binary.to_string_lossy().replace('\\', "/"), b"\x7fELF engine".to_vec()),
+        (
+            layout.binary.to_string_lossy().replace('\\', "/"),
+            b"\x7fELF engine".to_vec(),
+        ),
         ("version.txt".into(), version.as_bytes().to_vec()),
         ("resources/en-US.pak".into(), vec![7u8; 4096]),
     ];
@@ -100,7 +103,11 @@ fn refused() -> io::Error {
 }
 
 fn rec() -> Record {
-    Record { etag: "etag-157.0.0.1".into(), version: Some("157.0.0.1".into()), build: Some("7".into()) }
+    Record {
+        etag: "etag-157.0.0.1".into(),
+        version: Some("157.0.0.1".into()),
+        build: Some("7".into()),
+    }
 }
 
 #[test]
@@ -110,16 +117,29 @@ fn an_update_replaces_the_engine_whole() {
     let dl = download(&l, "157.0.0.1");
     let staged = stage(&l, &dl, &ops()).unwrap();
     assert_eq!(staged.etag, "etag-157.0.0.1");
-    assert!(!l.archive().exists(), "the archive goes once the tree checks out");
-    assert_eq!(version_of(&l.live()).as_deref(), Some("156.0.0.1"), "staging touches nothing live");
+    assert!(
+        !l.archive().exists(),
+        "the archive goes once the tree checks out"
+    );
+    assert_eq!(
+        version_of(&l.live()).as_deref(),
+        Some("156.0.0.1"),
+        "staging touches nothing live"
+    );
 
     swap(&l, &ops(), &rec()).unwrap();
     assert_eq!(version_of(&l.live()).as_deref(), Some("157.0.0.1"));
-    assert!(!l.live().join("only-in-156.0.0.1.dll").exists(), "nothing of the old version lingers");
+    assert!(
+        !l.live().join("only-in-156.0.0.1.dll").exists(),
+        "nothing of the old version lingers"
+    );
     assert!(cleanup(&l, &ops()));
     assert!(!l.old().exists() && !l.staging().exists());
     if l.marker != Marker::None {
-        assert_eq!(version_in(&l.live(), l.marker).as_deref(), Some("157.0.0.1"));
+        assert_eq!(
+            version_in(&l.live(), l.marker).as_deref(),
+            Some("157.0.0.1")
+        );
     }
 }
 
@@ -150,7 +170,10 @@ fn an_extract_that_fails_half_way_leaves_the_engine() {
     assert!(f.message.contains("os error 28"), "{}", f.message);
     assert_eq!(version_of(&l.live()).as_deref(), Some("156.0.0.1"));
     assert!(!l.staging().exists(), "the half tree is gone");
-    assert!(downloaded(&l).is_none(), "an archive that failed to unpack is fetched anew");
+    assert!(
+        downloaded(&l).is_none(),
+        "an archive that failed to unpack is fetched anew"
+    );
 
     // The next try, from a fresh download, goes through.
     let dl = download(&l, "157.0.0.1");
@@ -167,7 +190,10 @@ fn a_real_unpack_that_fails_half_way_leaves_the_engine() {
     live(&l, "156.0.0.1");
     let dl = download(&l, "157.0.0.1");
     let mut bytes = fs::read(l.archive()).unwrap();
-    let at = bytes.windows(64).position(|w| w.iter().all(|b| *b == 7)).unwrap();
+    let at = bytes
+        .windows(64)
+        .position(|w| w.iter().all(|b| *b == 7))
+        .unwrap();
     bytes[at] = 8;
     fs::write(l.archive(), bytes).unwrap();
     let f = stage(&l, &dl, &ops()).unwrap_err();
@@ -193,7 +219,10 @@ fn a_damaged_archive_is_dropped_and_touches_nothing() {
 fn an_archive_without_the_engine_is_refused() {
     let (_b, l) = base();
     live(&l, "156.0.0.1");
-    zip_of(&l.part(), &[(format!("{}/readme.txt", l.root), b"hi".to_vec())]);
+    zip_of(
+        &l.part(),
+        &[(format!("{}/readme.txt", l.root), b"hi".to_vec())],
+    );
     let dl = keep_download(&l, "etag-x").unwrap();
     let f = stage(&l, &dl, &ops()).unwrap_err();
     assert_eq!(f.stage, Stage::Verify);
@@ -246,7 +275,11 @@ fn not_enough_room_refuses_before_unpacking_and_keeps_the_download() {
     assert_eq!(f.stage, Stage::Space);
     assert!(f.message.contains("10 MB is free"), "{}", f.message);
     assert!(!l.staging().exists(), "nothing unpacked");
-    assert_eq!(downloaded(&l), Some(dl.clone()), "kept for the try after space is freed");
+    assert_eq!(
+        downloaded(&l),
+        Some(dl.clone()),
+        "kept for the try after space is freed"
+    );
     assert_eq!(version_of(&l.live()).as_deref(), Some("156.0.0.1"));
 
     // Before the download, the guess counts the unpacked tree and the margin.
@@ -255,7 +288,10 @@ fn not_enough_room_refuses_before_unpacking_and_keeps_the_download() {
     assert!(room(&ops(), &l.base, need).is_ok());
     let mut unknown = ops();
     unknown.free_bytes = Box::new(|_| None);
-    assert!(room(&unknown, &l.base, need).is_ok(), "an unknown disk is not a full one");
+    assert!(
+        room(&unknown, &l.base, need).is_ok(),
+        "an unknown disk is not a full one"
+    );
 }
 
 #[test]
@@ -266,29 +302,65 @@ fn running_browsers_refuse_the_swap_and_the_update_waits_for_a_retry() {
     stage(&l, &dl, &ops()).unwrap();
 
     let mut o = ops();
-    o.holders = Box::new(|_| Holders { processes: 9, browsers: 2, untracked: 0 });
+    o.holders = Box::new(|_| Holders {
+        processes: 9,
+        browsers: 2,
+        untracked: 0,
+    });
     let f = swap(&l, &o, &rec()).unwrap_err();
     assert_eq!((f.stage, f.browsers), (Stage::Busy, 2));
-    assert!(f.message.contains("2 profiles are still running"), "{}", f.message);
+    assert!(
+        f.message.contains("2 profiles are still running"),
+        "{}",
+        f.message
+    );
     assert_eq!(version_of(&l.live()).as_deref(), Some("156.0.0.1"));
-    assert_eq!(staged(&l).map(|s| s.etag), Some("etag-157.0.0.1".into()), "the update is kept");
+    assert_eq!(
+        staged(&l).map(|s| s.etag),
+        Some("etag-157.0.0.1".into()),
+        "the update is kept"
+    );
     assert!(!f.message.contains("earlier session"), "{}", f.message);
     assert!(journal(&l).is_none());
 
     // One the launcher does not list: left by an earlier session.
-    o.holders = Box::new(|_| Holders { processes: 3, browsers: 1, untracked: 1 });
+    o.holders = Box::new(|_| Holders {
+        processes: 3,
+        browsers: 1,
+        untracked: 1,
+    });
     let f = swap(&l, &o, &rec()).unwrap_err();
-    assert!(f.message.contains("1 profile is still running"), "{}", f.message);
-    assert!(f.message.contains("earlier session") && f.message.contains("restart"), "{}", f.message);
+    assert!(
+        f.message.contains("1 profile is still running"),
+        "{}",
+        f.message
+    );
+    assert!(
+        f.message.contains("earlier session") && f.message.contains("restart"),
+        "{}",
+        f.message
+    );
 
-    o.holders = Box::new(|_| Holders { processes: 1, browsers: 0, untracked: 0 });
+    o.holders = Box::new(|_| Holders {
+        processes: 1,
+        browsers: 0,
+        untracked: 0,
+    });
     let f = swap(&l, &o, &rec()).unwrap_err();
-    assert!(f.message.contains("1 browser process is still running"), "{}", f.message);
+    assert!(
+        f.message.contains("1 browser process is still running"),
+        "{}",
+        f.message
+    );
 
     let mut starting = ops();
     starting.starting = Box::new(|| 1);
     let f = swap(&l, &starting, &rec()).unwrap_err();
-    assert_eq!((f.stage, f.browsers, f.starting), (Stage::Busy, 0, 1), "a start is counted apart from the browsers");
+    assert_eq!(
+        (f.stage, f.browsers, f.starting),
+        (Stage::Busy, 0, 1),
+        "a start is counted apart from the browsers"
+    );
     assert_eq!(swap(&l, &o, &rec()).unwrap_err().starting, 0);
 
     // Closed: the retry swaps the kept tree, nothing unpacked again.
@@ -312,7 +384,13 @@ fn a_first_rename_windows_refuses_leaves_everything() {
     stage(&l, &dl, &ops()).unwrap();
     let mut o = ops();
     let live_dir = l.live();
-    o.rename = Box::new(move |a, b| if a == live_dir { Err(refused()) } else { fs::rename(a, b) });
+    o.rename = Box::new(move |a, b| {
+        if a == live_dir {
+            Err(refused())
+        } else {
+            fs::rename(a, b)
+        }
+    });
     let f = swap(&l, &o, &rec()).unwrap_err();
     assert_eq!(f.stage, Stage::Swap);
     assert!(f.message.contains("os error 32"), "{}", f.message);
@@ -329,7 +407,13 @@ fn a_second_rename_that_fails_puts_the_engine_back() {
     stage(&l, &dl, &ops()).unwrap();
     let mut o = ops();
     let tree = l.staged_tree();
-    o.rename = Box::new(move |a, b| if a == tree { Err(refused()) } else { fs::rename(a, b) });
+    o.rename = Box::new(move |a, b| {
+        if a == tree {
+            Err(refused())
+        } else {
+            fs::rename(a, b)
+        }
+    });
     let f = swap(&l, &o, &rec()).unwrap_err();
     assert_eq!(f.stage, Stage::Swap);
     assert!(f.message.contains("was not changed"), "{}", f.message);
@@ -393,11 +477,21 @@ fn a_new_tree_still_held_is_refused_before_the_swap() {
     let mut o = ops();
     o.tries = 3;
     let unpacked = l.unpack().join(&l.root);
-    o.rename = Box::new(move |a, b| if a == unpacked { Err(refused()) } else { fs::rename(a, b) });
+    o.rename = Box::new(move |a, b| {
+        if a == unpacked {
+            Err(refused())
+        } else {
+            fs::rename(a, b)
+        }
+    });
     let f = stage(&l, &dl, &o).unwrap_err();
     assert_eq!(f.stage, Stage::Extract);
     assert!(f.message.contains("antivirus"), "{}", f.message);
-    assert_eq!(downloaded(&l), Some(dl.clone()), "unpacked again, not downloaded again");
+    assert_eq!(
+        downloaded(&l),
+        Some(dl.clone()),
+        "unpacked again, not downloaded again"
+    );
     assert!(!l.staging().exists());
     assert_eq!(version_of(&l.live()).as_deref(), Some("156.0.0.1"));
     assert!(journal(&l).is_none() && !l.old().exists());
@@ -446,9 +540,19 @@ fn a_failed_put_back_is_restored_at_the_next_start() {
     stage(&l, &dl, &ops()).unwrap();
     let mut o = ops();
     let (tree, old) = (l.staged_tree(), l.old());
-    o.rename = Box::new(move |a, b| if a == tree || a == old { Err(refused()) } else { fs::rename(a, b) });
+    o.rename = Box::new(move |a, b| {
+        if a == tree || a == old {
+            Err(refused())
+        } else {
+            fs::rename(a, b)
+        }
+    });
     let f = swap(&l, &o, &rec()).unwrap_err();
-    assert!(f.message.contains("restored the next time"), "{}", f.message);
+    assert!(
+        f.message.contains("restored the next time"),
+        "{}",
+        f.message
+    );
     assert!(!l.live().exists());
 
     assert!(restore(&l, &ops()));
@@ -469,7 +573,13 @@ fn a_retry_after_a_failed_put_back_starts_from_the_previous_engine() {
     stage(&l, &dl, &ops()).unwrap();
     let mut o = ops();
     let (tree, old) = (l.staged_tree(), l.old());
-    o.rename = Box::new(move |a, b| if a == tree || a == old { Err(refused()) } else { fs::rename(a, b) });
+    o.rename = Box::new(move |a, b| {
+        if a == tree || a == old {
+            Err(refused())
+        } else {
+            fs::rename(a, b)
+        }
+    });
     swap(&l, &o, &rec()).unwrap_err();
 
     let mut retry = ops();
@@ -484,7 +594,11 @@ fn a_retry_after_a_failed_put_back_starts_from_the_previous_engine() {
     swap(&l, &retry, &rec()).unwrap();
     assert_eq!(asked.load(SeqCst), 1);
     assert_eq!(version_of(&l.live()).as_deref(), Some("157.0.0.1"));
-    assert_eq!(version_of(&l.old()).as_deref(), Some("156.0.0.1"), "removed by the cleanup");
+    assert_eq!(
+        version_of(&l.old()).as_deref(),
+        Some("156.0.0.1"),
+        "removed by the cleanup"
+    );
     assert!(cleanup(&l, &ops()));
     assert!(!l.old().exists());
 }
@@ -514,7 +628,10 @@ fn a_launcher_killed_between_the_renames_comes_back_to_the_old_engine() {
     assert_eq!(version_of(&l.live()).as_deref(), Some("156.0.0.1"));
     assert!(!l.old().exists());
     assert!(journal(&l).is_none());
-    assert!(staged(&l).is_some(), "a complete staged tree survives the sweep");
+    assert!(
+        staged(&l).is_some(),
+        "a complete staged tree survives the sweep"
+    );
     swap(&l, &ops(), &rec()).unwrap();
     assert_eq!(version_of(&l.live()).as_deref(), Some("157.0.0.1"));
 }
@@ -598,7 +715,13 @@ fn a_previous_tree_that_lost_files_is_not_put_back() {
     stage(&l, &dl, &ops()).unwrap();
     let mut o = ops();
     let (tree, old) = (l.staged_tree(), l.old());
-    o.rename = Box::new(move |a, b| if a == tree || a == old { Err(refused()) } else { fs::rename(a, b) });
+    o.rename = Box::new(move |a, b| {
+        if a == tree || a == old {
+            Err(refused())
+        } else {
+            fs::rename(a, b)
+        }
+    });
     swap(&l, &o, &rec()).unwrap_err();
     fs::remove_file(l.old().join("version.txt")).unwrap();
     assert!(!restore(&l, &ops()));
@@ -615,12 +738,22 @@ fn a_previous_engine_still_held_is_kept_until_it_is_back() {
     stage(&l, &dl, &ops()).unwrap();
     let mut held = ops();
     let (tree, old) = (l.staged_tree(), l.old());
-    held.rename = Box::new(move |a, b| if a == tree || a == old { Err(refused()) } else { fs::rename(a, b) });
+    held.rename = Box::new(move |a, b| {
+        if a == tree || a == old {
+            Err(refused())
+        } else {
+            fs::rename(a, b)
+        }
+    });
     swap(&l, &held, &rec()).unwrap_err();
 
     let f = swap(&l, &held, &rec()).unwrap_err();
     assert_eq!(f.stage, Stage::Swap);
-    assert!(f.message.contains("could not be put back yet"), "{}", f.message);
+    assert!(
+        f.message.contains("could not be put back yet"),
+        "{}",
+        f.message
+    );
     sweep(&l, &held);
     assert_eq!(version_of(&l.old()).as_deref(), Some("156.0.0.1"));
     assert!(journal(&l).is_some());
@@ -651,7 +784,13 @@ fn a_cleanup_windows_refuses_is_finished_at_the_next_start() {
     swap(&l, &ops(), &rec()).unwrap();
     let mut locked = ops();
     let old = l.old();
-    locked.remove = Box::new(move |p| if p == old { Err(refused()) } else { fs::remove_dir_all(p) });
+    locked.remove = Box::new(move |p| {
+        if p == old {
+            Err(refused())
+        } else {
+            fs::remove_dir_all(p)
+        }
+    });
     locked.rename = Box::new(|_, _| Err(refused()));
     assert!(!cleanup(&l, &locked), "reported, never an error");
     assert!(l.old().exists());
@@ -673,14 +812,24 @@ fn what_cannot_be_removed_is_moved_aside_then_swept() {
     swap(&l, &ops(), &rec()).unwrap();
     let mut o = ops();
     let old = l.old();
-    o.remove = Box::new(move |p| if p == old { Err(refused()) } else { fs::remove_dir_all(p) });
+    o.remove = Box::new(move |p| {
+        if p == old {
+            Err(refused())
+        } else {
+            fs::remove_dir_all(p)
+        }
+    });
     assert!(cleanup(&l, &o));
     assert!(!l.old().exists());
     let trash = || {
         fs::read_dir(&l.base)
             .unwrap()
             .flatten()
-            .filter(|e| e.file_name().to_string_lossy().starts_with(&l.trash_prefix()))
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with(&l.trash_prefix())
+            })
             .count()
     };
     assert_eq!(trash(), 1);
@@ -699,9 +848,19 @@ fn a_leftover_old_copy_is_cleared_before_the_next_swap() {
     stage(&l, &dl, &ops()).unwrap();
     let mut o = ops();
     let tree = l.staged_tree();
-    o.rename = Box::new(move |a, b| if a == tree { Err(refused()) } else { fs::rename(a, b) });
+    o.rename = Box::new(move |a, b| {
+        if a == tree {
+            Err(refused())
+        } else {
+            fs::rename(a, b)
+        }
+    });
     swap(&l, &o, &rec()).unwrap_err();
-    assert_eq!(version_of(&l.live()).as_deref(), Some("157.0.0.1"), "the live engine, not the leftover");
+    assert_eq!(
+        version_of(&l.live()).as_deref(),
+        Some("157.0.0.1"),
+        "the live engine, not the leftover"
+    );
     swap(&l, &ops(), &rec()).unwrap();
     assert_eq!(version_of(&l.live()).as_deref(), Some("158.0.0.1"));
 }
@@ -731,14 +890,35 @@ fn the_sweep_removes_what_a_crash_left_and_keeps_what_is_complete() {
 fn the_version_marker_is_read_per_platform() {
     let (_b, l) = base();
     let tree = l.base.join("t");
-    write_tree(&tree, &[("foo.manifest".into(), vec![1]), ("156.0.7.8.manifest".into(), vec![1])]);
-    assert_eq!(version_in(&tree, Marker::WinManifest).as_deref(), Some("156.0.7.8"));
     write_tree(
         &tree,
-        &[("ShardX.app/Contents/Frameworks/ShardX Framework.framework/Versions/157.0.1.2/x".into(), vec![1])],
+        &[
+            ("foo.manifest".into(), vec![1]),
+            ("156.0.7.8.manifest".into(), vec![1]),
+        ],
     );
-    fs::create_dir_all(tree.join("ShardX.app/Contents/Frameworks/ShardX Framework.framework/Versions/Current")).unwrap();
-    assert_eq!(version_in(&tree, Marker::MacFramework).as_deref(), Some("157.0.1.2"));
+    assert_eq!(
+        version_in(&tree, Marker::WinManifest).as_deref(),
+        Some("156.0.7.8")
+    );
+    write_tree(
+        &tree,
+        &[(
+            "ShardX.app/Contents/Frameworks/ShardX Framework.framework/Versions/157.0.1.2/x".into(),
+            vec![1],
+        )],
+    );
+    fs::create_dir_all(
+        tree.join("ShardX.app/Contents/Frameworks/ShardX Framework.framework/Versions/Current"),
+    )
+    .unwrap();
+    assert_eq!(
+        version_in(&tree, Marker::MacFramework).as_deref(),
+        Some("157.0.1.2")
+    );
     assert_eq!(version_in(&tree, Marker::None), None);
-    assert_eq!(version_in(&l.base.join("missing"), Marker::WinManifest), None);
+    assert_eq!(
+        version_in(&l.base.join("missing"), Marker::WinManifest),
+        None
+    );
 }

@@ -16,7 +16,8 @@ pub const SWAP_WAIT: Duration = Duration::from_secs(30);
 /// How long a launch or a sync waits for the library to be settled at start.
 pub const SETTLE_WAIT: Duration = Duration::from_secs(60);
 /// Why a launch is refused when the swap outlasts its wait.
-pub const EXT_UPDATING: &str = "An extension of this profile is being updated. Try again in a minute.";
+pub const EXT_UPDATING: &str =
+    "An extension of this profile is being updated. Try again in a minute.";
 const STEP: Duration = Duration::from_millis(20);
 
 #[derive(Default)]
@@ -30,7 +31,9 @@ struct State {
 
 fn state() -> MutexGuard<'static, State> {
     static S: OnceLock<Mutex<State>> = OnceLock::new();
-    S.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+    S.get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 /// What the rest of the launcher says about running browsers; tests stand in their own.
@@ -52,8 +55,12 @@ impl World for System {
     }
 
     fn untracked(&self) -> Vec<String> {
-        let Ok(root) = crate::store::user_data_root() else { return Vec::new() };
-        let Ok(rd) = std::fs::read_dir(&root) else { return Vec::new() };
+        let Ok(root) = crate::store::user_data_root() else {
+            return Vec::new();
+        };
+        let Ok(rd) = std::fs::read_dir(&root) else {
+            return Vec::new();
+        };
         let tracker = crate::process::Tracker::shared();
         let mut out: Vec<String> = rd
             .flatten()
@@ -74,7 +81,9 @@ impl World for System {
 pub enum Outcome {
     Applied(Applied),
     /// Held by these profiles; none named when the launcher itself is busy.
-    Deferred { profiles: Vec<String> },
+    Deferred {
+        profiles: Vec<String>,
+    },
     /// Nothing approved is staged.
     Nothing,
 }
@@ -86,11 +95,20 @@ pub fn holders(world: &dyn World, lib_id: &str) -> Vec<String> {
 
 fn holders_in(s: &State, world: &dyn World, lib_id: &str) -> Vec<String> {
     let starting: HashSet<&str> = s.launching.values().map(|(p, _)| p.as_str()).collect();
-    let mut out: Vec<String> =
-        s.launching.values().filter(|(_, ids)| ids.iter().any(|i| i == lib_id)).map(|(p, _)| p.clone()).collect();
+    let mut out: Vec<String> = s
+        .launching
+        .values()
+        .filter(|(_, ids)| ids.iter().any(|i| i == lib_id))
+        .map(|(p, _)| p.clone())
+        .collect();
     out.extend(world.running_with(lib_id));
     // A launch on its way may hold its lock before it is tracked; its own list says what it holds.
-    out.extend(world.untracked().into_iter().filter(|p| !starting.contains(p.as_str())));
+    out.extend(
+        world
+            .untracked()
+            .into_iter()
+            .filter(|p| !starting.contains(p.as_str())),
+    );
     out.sort();
     out.dedup();
     out
@@ -99,7 +117,9 @@ fn holders_in(s: &State, world: &dyn World, lib_id: &str) -> Vec<String> {
 /// Libraries being settled at start, in the background (`extensions::at_launch`).
 fn settling_now() -> MutexGuard<'static, HashSet<PathBuf>> {
     static S: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
-    S.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+    S.get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 /// `lib` settling until dropped.
@@ -154,7 +174,9 @@ pub fn try_apply(world: &dyn World, lib: &Path, id: &str, ops: &Ops) -> Result<O
     {
         let mut s = state();
         if s.applying.contains(id) || world.paused() {
-            return Ok(Outcome::Deferred { profiles: Vec::new() });
+            return Ok(Outcome::Deferred {
+                profiles: Vec::new(),
+            });
         }
         let profiles = holders_in(&s, world, id);
         if !profiles.is_empty() {
@@ -201,7 +223,8 @@ fn enter(profile_id: &str, ids: &[String]) -> Option<Hold> {
     }
     s.next += 1;
     let n = s.next;
-    s.launching.insert(n, (profile_id.to_string(), ids.to_vec()));
+    s.launching
+        .insert(n, (profile_id.to_string(), ids.to_vec()));
     Some(Hold(n))
 }
 
@@ -213,7 +236,15 @@ pub async fn begin_launch(profile_id: &str, ids: &[String]) -> anyhow::Result<Ho
     if !until_settled(&lib, SETTLE_WAIT).await {
         eprintln!("[extensions] {profile_id} starts while the library is still being settled");
     }
-    begin_launch_in(Arc::new(System), Arc::new(Ops::real()), lib, profile_id, ids, LAUNCH_WAIT).await
+    begin_launch_in(
+        Arc::new(System),
+        Arc::new(Ops::real()),
+        lib,
+        profile_id,
+        ids,
+        LAUNCH_WAIT,
+    )
+    .await
 }
 
 pub async fn begin_launch_in(
@@ -224,11 +255,21 @@ pub async fn begin_launch_in(
     ids: &[String],
     wait: Duration,
 ) -> anyhow::Result<Hold> {
-    let ready: Vec<String> = ids.iter().filter(|id| swap::staged(&lib, id).is_some_and(|n| n.ready())).cloned().collect();
+    let ready: Vec<String> = ids
+        .iter()
+        .filter(|id| swap::staged(&lib, id).is_some_and(|n| n.ready()))
+        .cloned()
+        .collect();
     if !ready.is_empty() {
         let (w, o, l) = (world.clone(), ops.clone(), lib.clone());
         let done = tokio::task::spawn_blocking(move || {
-            ready.into_iter().map(|id| { let r = try_apply(&*w, &l, &id, &o); (id, r) }).collect::<Vec<_>>()
+            ready
+                .into_iter()
+                .map(|id| {
+                    let r = try_apply(&*w, &l, &id, &o);
+                    (id, r)
+                })
+                .collect::<Vec<_>>()
         })
         .await;
         match done {
@@ -280,7 +321,10 @@ pub fn report(results: &[(String, Result<Outcome, Failure>)], when: &str) {
     for (id, r) in results {
         match r {
             Ok(Outcome::Applied(a)) => {
-                eprintln!("[extensions] {id}: updated from {} to {} ({when})", a.from, a.to);
+                eprintln!(
+                    "[extensions] {id}: updated from {} to {} ({when})",
+                    a.from, a.to
+                );
                 changed = true;
             }
             Ok(_) => {}
@@ -297,7 +341,12 @@ pub fn report(results: &[(String, Result<Outcome, Failure>)], when: &str) {
 #[cfg(test)]
 fn seen(id: &str) -> (Vec<String>, bool) {
     let s = state();
-    let starting = s.launching.values().filter(|(_, ids)| ids.iter().any(|i| i == id)).map(|(p, _)| p.clone()).collect();
+    let starting = s
+        .launching
+        .values()
+        .filter(|(_, ids)| ids.iter().any(|i| i == id))
+        .map(|(p, _)| p.clone())
+        .collect();
     (starting, s.applying.contains(id))
 }
 

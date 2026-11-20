@@ -25,8 +25,15 @@ async fn assigned_proxy_tls_keeps_certificate_and_original_name_validation() {
     let certified = rcgen::generate_simple_self_signed(vec!["127.0.0.1".into()]).unwrap();
     let cert = certified.cert.der().clone();
     let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let server = rustls::ServerConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().unwrap()
-        .with_no_client_auth().with_single_cert(vec![cert.clone()], PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der()).into()).unwrap();
+    let server = rustls::ServerConfig::builder_with_provider(provider.clone())
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![cert.clone()],
+            PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der()).into(),
+        )
+        .unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let task = tokio::spawn(async move {
@@ -50,17 +57,45 @@ async fn assigned_proxy_tls_keeps_certificate_and_original_name_validation() {
         }
     });
     let target = Target::new("127.0.0.1", addr.port()).unwrap();
-    assert_eq!(super::tls::connect_assigned(&target, super::tls::client().unwrap(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
-    let mut roots = rustls::RootCertStore::empty(); roots.add(cert).unwrap();
-    let client = Arc::new(rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth());
+    assert_eq!(
+        super::tls::connect_assigned(&target, super::tls::client().unwrap(), WAIT)
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "proxy_chain_profile_tls_failed"
+    );
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(cert).unwrap();
+    let client = Arc::new(
+        rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    );
     let wrong = Target::new("localhost", addr.port()).unwrap();
-    assert_eq!(super::tls::connect_assigned(&wrong, client.clone(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
+    assert_eq!(
+        super::tls::connect_assigned(&wrong, client.clone(), WAIT)
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "proxy_chain_profile_tls_failed"
+    );
     let tunnel = Tunnel::bind_assigned(target, Some(client)).await.unwrap();
     let mut local = TcpStream::connect(tunnel.addr()).await.unwrap();
-    local.write_all(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n").await.unwrap();
-    assert!(http_head(&mut local).await.unwrap().starts_with(b"HTTP/1.1 200"));
+    local
+        .write_all(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")
+        .await
+        .unwrap();
+    assert!(http_head(&mut local)
+        .await
+        .unwrap()
+        .starts_with(b"HTTP/1.1 200"));
     tunnel.shutdown().await;
-    task.abort(); let _ = task.await;
+    task.abort();
+    let _ = task.await;
 }
 
 #[tokio::test]
@@ -69,8 +104,15 @@ async fn https_second_hop_verifies_original_name_and_carries_http_inside_tls() {
     let certified = rcgen::generate_simple_self_signed(vec!["second.test".into()]).unwrap();
     let cert = certified.cert.der().clone();
     let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let server = rustls::ServerConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().unwrap()
-        .with_no_client_auth().with_single_cert(vec![cert.clone()], PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der()).into()).unwrap();
+    let server = rustls::ServerConfig::builder_with_provider(provider.clone())
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![cert.clone()],
+            PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der()).into(),
+        )
+        .unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let second = tokio::spawn(async move {
@@ -102,24 +144,57 @@ async fn https_second_hop_verifies_original_name_and_carries_http_inside_tls() {
     let hop = chain(first.addr).hop(&Default::default()).unwrap();
     let target = Target::new("second.test", addr.port()).unwrap();
     // Default trust must reject our self-signed fixture, not silently downgrade.
-    assert_eq!(super::tls::connect(&hop, &target, super::tls::client().unwrap(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
-    let mut roots = rustls::RootCertStore::empty(); roots.add(cert).unwrap();
-    let client = Arc::new(rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth());
+    assert_eq!(
+        super::tls::connect(&hop, &target, super::tls::client().unwrap(), WAIT)
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "proxy_chain_profile_tls_failed"
+    );
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(cert).unwrap();
+    let client = Arc::new(
+        rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    );
     let wrong = Target::new("wrong.test", addr.port()).unwrap();
-    assert_eq!(super::tls::connect(&hop, &wrong, client.clone(), WAIT).await.err().unwrap().code, "proxy_chain_profile_tls_failed");
+    assert_eq!(
+        super::tls::connect(&hop, &wrong, client.clone(), WAIT)
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "proxy_chain_profile_tls_failed"
+    );
     // A later relay connection can fail TLS after the first direct check.
     // Its loopback EOF is not an HTTP status and must preserve the TLS cause.
-    let rejected = Tunnel::bind_tls(hop.clone(), wrong, client.clone()).await.unwrap();
+    let rejected = Tunnel::bind_tls(hop.clone(), wrong, client.clone())
+        .await
+        .unwrap();
     let mut probe = entry("tls-refusal", rejected.addr());
     probe.kind = crate::space::proxy::ProxyKind::Http;
-    let error = crate::space::proxy::probe_on_route(&probe).await.unwrap_err();
-    assert!(error.downcast_ref::<crate::space::proxy::HttpProbeError>().is_none());
-    assert_eq!(super::profile_failure(&rejected, &error).code, "proxy_chain_profile_tls_failed");
+    let error = crate::space::proxy::probe_on_route(&probe)
+        .await
+        .unwrap_err();
+    assert!(error
+        .downcast_ref::<crate::space::proxy::HttpProbeError>()
+        .is_none());
+    assert_eq!(
+        super::profile_failure(&rejected, &error).code,
+        "proxy_chain_profile_tls_failed"
+    );
     rejected.shutdown().await;
     let tunnel = Tunnel::bind_tls(hop, target, client).await.unwrap();
     let mut local = TcpStream::connect(tunnel.addr()).await.unwrap();
     local.write_all(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Basic c2Vjb25kOnNlY3JldA==\r\n\r\n").await.unwrap();
-    let head = tokio::time::timeout(WAIT, http_head(&mut local)).await.unwrap().unwrap();
+    let head = tokio::time::timeout(WAIT, http_head(&mut local))
+        .await
+        .unwrap()
+        .unwrap();
     assert!(head.starts_with(b"HTTP/1.1 200"));
     tunnel.shutdown().await;
     assert!(first.accepted.load(Ordering::SeqCst) >= 3);
@@ -129,14 +204,15 @@ async fn https_second_hop_verifies_original_name_and_carries_http_inside_tls() {
 
 #[tokio::test]
 async fn http_second_hop_refusal_is_typed_and_does_not_change_saved_proxy() {
-    let _root=crate::store::test_root("chain-http-second-hop-refusal");
+    let _root = crate::store::test_root("chain-http-second-hop-refusal");
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let accepted=Arc::new(AtomicUsize::new(0));let count=accepted.clone();
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let count = accepted.clone();
     let task = tokio::spawn(async move {
-        while let Ok((mut s,_))=listener.accept().await {
+        while let Ok((mut s, _)) = listener.accept().await {
             if http_head(&mut s).await.is_ok() {
-                count.fetch_add(1,Ordering::SeqCst);
+                count.fetch_add(1, Ordering::SeqCst);
                 let _ = s.write_all(b"HTTP/1.1 407 Authentication Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
             }
         }
@@ -147,17 +223,35 @@ async fn http_second_hop_refusal_is_typed_and_does_not_change_saved_proxy() {
     let before = serde_json::to_value(&proxy).unwrap();
     // Strict preparation now verifies the actual route before returning it.
     // An authoritative refusal must fail there, before any equivalence probe.
-    let refusal = super::prepare(Some(&proxy), &chain(first.addr)).await.err().unwrap();
-    assert_eq!(refusal.downcast_ref::<super::error::ChainError>().unwrap().code, "proxy_chain_profile_auth_failed");
+    let refusal = super::prepare(Some(&proxy), &chain(first.addr))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(
+        refusal
+            .downcast_ref::<super::error::ChainError>()
+            .unwrap()
+            .code,
+        "proxy_chain_profile_auth_failed"
+    );
     assert_eq!(serde_json::to_value(&proxy).unwrap(), before);
-    assert_eq!(first.accepted.load(Ordering::SeqCst),1);
-    assert_eq!(accepted.load(Ordering::SeqCst),1,"an explicit authentication refusal cannot be retried");
+    assert_eq!(first.accepted.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        accepted.load(Ordering::SeqCst),
+        1,
+        "an explicit authentication refusal cannot be retried"
+    );
     task.abort();
 }
 
 #[tokio::test]
 async fn http_second_hop_invalid_replies_are_not_authoritative_status_codes() {
-    for reply in ["", "HTTP/1.1 2000 Invalid\r\n\r\n", "HTTP/2 200 Invalid\r\n\r\n", "HTTP/1.1 99 Invalid\r\n\r\n"] {
+    for reply in [
+        "",
+        "HTTP/1.1 2000 Invalid\r\n\r\n",
+        "HTTP/2 200 Invalid\r\n\r\n",
+        "HTTP/1.1 99 Invalid\r\n\r\n",
+    ] {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let task = tokio::spawn(async move {
@@ -167,8 +261,12 @@ async fn http_second_hop_invalid_replies_are_not_authoritative_status_codes() {
         });
         let mut proxy = entry("invalid-http", addr);
         proxy.kind = crate::space::proxy::ProxyKind::Http;
-        let error = crate::space::proxy::probe_on_route(&proxy).await.unwrap_err();
-        assert!(error.downcast_ref::<crate::space::proxy::HttpProbeError>().is_none());
+        let error = crate::space::proxy::probe_on_route(&proxy)
+            .await
+            .unwrap_err();
+        assert!(error
+            .downcast_ref::<crate::space::proxy::HttpProbeError>()
+            .is_none());
         task.await.unwrap();
     }
 }
@@ -423,8 +521,8 @@ fn missing_chain_settings_preserve_old_settings_and_invalid_enabled_settings_ref
 
 #[test]
 fn profile_policy_survives_disk_and_export_without_changing_fingerprint() {
-    use crate::space::profile::{save_here, load_raw, SaveOpts, StoredProfile};
     use super::policy::ChainPolicy;
+    use crate::space::profile::{load_raw, save_here, SaveOpts, StoredProfile};
     let _root = crate::store::test_root("chain-profile-policy-disk");
     let mut stored: StoredProfile = serde_json::from_value(json!({"name":"Synthetic policy", "navigator":{"platform":"Win32"},"_meta":{"proxy_id":"kept-proxy","proxy_chain_policy":"disabled"}})).unwrap();
     let row = save_here(stored, SaveOpts::default()).unwrap();
@@ -437,12 +535,16 @@ fn profile_policy_survives_disk_and_export_without_changing_fingerprint() {
     assert_eq!(saved.meta.proxy_chain_policy, ChainPolicy::Enabled);
     assert_eq!(saved.meta.proxy_id.as_deref(), Some("kept-proxy"));
     assert_eq!(saved.config, fingerprint);
-    let roundtrip: StoredProfile = serde_json::from_value(serde_json::to_value(&saved).unwrap()).unwrap();
+    let roundtrip: StoredProfile =
+        serde_json::from_value(serde_json::to_value(&saved).unwrap()).unwrap();
     assert_eq!(roundtrip.meta.proxy_chain_policy, ChainPolicy::Enabled);
     let mut bad = roundtrip;
     bad.meta.proxy_chain_policy = ChainPolicy::Invalid;
     assert!(save_here(bad, SaveOpts::default()).is_err());
-    assert_eq!(load_raw(&row.id).unwrap().meta.proxy_chain_policy, ChainPolicy::Enabled);
+    assert_eq!(
+        load_raw(&row.id).unwrap().meta.proxy_chain_policy,
+        ChainPolicy::Enabled
+    );
 }
 
 #[tokio::test]
@@ -533,16 +635,21 @@ async fn first_hop_failure_prevents_the_real_launch_path_from_spawning() {
     let second = second_hop(false).await;
     let unavailable = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let a = unavailable.local_addr().unwrap();
-    let accepted=Arc::new(AtomicUsize::new(0));let count=accepted.clone();
-    let _first=Service{addr:a,accepted,task:tokio::spawn(async move {
-        while let Ok((mut socket,_))=unavailable.accept().await {
-            // Keep the endpoint owned while every CONNECT closes without a
-            // response; later attempts must not turn EOF into connection refusal.
-            let _ = http_head(&mut socket).await;
-            count.fetch_add(1,Ordering::SeqCst);
-            let _ = socket.shutdown().await;
-        }
-    })};
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let count = accepted.clone();
+    let _first = Service {
+        addr: a,
+        accepted,
+        task: tokio::spawn(async move {
+            while let Ok((mut socket, _)) = unavailable.accept().await {
+                // Keep the endpoint owned while every CONNECT closes without a
+                // response; later attempts must not turn EOF into connection refusal.
+                let _ = http_head(&mut socket).await;
+                count.fetch_add(1, Ordering::SeqCst);
+                let _ = socket.shutdown().await;
+            }
+        }),
+    };
     let p = entry("bad-a-proxy", second.addr);
     save_proxies(std::slice::from_ref(&p));
     profile("bad-a-profile", &p.id);
@@ -581,10 +688,24 @@ async fn preferred_both_proxy_routes_fail_before_spawn_and_preserve_profile_byte
     let saved = save_proxies(std::slice::from_ref(&p));
     let profile_path = profile("preferred-failed-profile", &p.id);
     let before = std::fs::read(&profile_path).unwrap();
-    crate::settings::save(&crate::settings::Settings { proxy_chain: chain(first.addr), ..Default::default() }).unwrap();
+    crate::settings::save(&crate::settings::Settings {
+        proxy_chain: chain(first.addr),
+        ..Default::default()
+    })
+    .unwrap();
     let (engine, marker) = marker_engine(&root.path);
-    let error = tokio::time::timeout(WAIT, crate::launch::launch_with(engine, "preferred-failed-profile", false)).await.unwrap().err().unwrap();
-    assert_eq!(error.downcast_ref::<ChainError>().map(|e| e.code), Some("proxy_chain_routes_failed"));
+    let error = tokio::time::timeout(
+        WAIT,
+        crate::launch::launch_with(engine, "preferred-failed-profile", false),
+    )
+    .await
+    .unwrap()
+    .err()
+    .unwrap();
+    assert_eq!(
+        error.downcast_ref::<ChainError>().map(|e| e.code),
+        Some("proxy_chain_routes_failed")
+    );
     assert!(!marker.exists());
     assert!(!crate::process::Tracker::shared().is_running("preferred-failed-profile"));
     assert_eq!(
@@ -592,7 +713,10 @@ async fn preferred_both_proxy_routes_fail_before_spawn_and_preserve_profile_byte
         2,
         "one chained relay attempt and one assigned-proxy fallback were attempted"
     );
-    assert_eq!(std::fs::read(crate::store::proxies_path().unwrap()).unwrap(), saved);
+    assert_eq!(
+        std::fs::read(crate::store::proxies_path().unwrap()).unwrap(),
+        saved
+    );
     assert_eq!(std::fs::read(profile_path).unwrap(), before);
 }
 
@@ -794,7 +918,11 @@ async fn http_probe_only_proxy() -> Service {
             }
         }
     });
-    Service { addr, accepted, task }
+    Service {
+        addr,
+        accepted,
+        task,
+    }
 }
 
 #[tokio::test]
@@ -809,14 +937,31 @@ async fn repeated_preparation_dials_only_for_the_actual_relay_probe() {
         // The old eager preflight had already opened and dropped an upstream
         // connection before returning from prepare_with_hop.
         tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(first.accepted.load(Ordering::SeqCst), completed, "preparation must not dial the first hop");
-        assert_eq!(second.accepted.load(Ordering::SeqCst), completed, "preparation must not leave an unused second-hop connection");
-        crate::space::proxy::probe_on_route(&prepared.effective).await.unwrap();
-        assert_eq!(first.accepted.load(Ordering::SeqCst), completed + 1, "one probe must use one first-hop CONNECT");
+        assert_eq!(
+            first.accepted.load(Ordering::SeqCst),
+            completed,
+            "preparation must not dial the first hop"
+        );
+        assert_eq!(
+            second.accepted.load(Ordering::SeqCst),
+            completed,
+            "preparation must not leave an unused second-hop connection"
+        );
+        crate::space::proxy::probe_on_route(&prepared.effective)
+            .await
+            .unwrap();
+        assert_eq!(
+            first.accepted.load(Ordering::SeqCst),
+            completed + 1,
+            "one probe must use one first-hop CONNECT"
+        );
         assert_eq!(second.accepted.load(Ordering::SeqCst), completed + 1);
         let stopped = prepared.tunnel.closed_signal();
         prepared.tunnel.shutdown().await;
-        assert!(*stopped.borrow(), "a repeated test must wait for the previous relay to close");
+        assert!(
+            *stopped.borrow(),
+            "a repeated test must wait for the previous relay to close"
+        );
     }
 }
 
@@ -827,20 +972,37 @@ async fn concurrently_prepared_relays_probe_independently_without_preflight_conn
     let mut proxy = entry("concurrent-relay-probe", second.addr);
     proxy.kind = crate::space::proxy::ProxyKind::Http;
     let hop = chain(first.addr).hop(&Default::default()).unwrap();
-    let (a, b) = tokio::join!(super::prepare_with_hop(&proxy, hop.clone()), super::prepare_with_hop(&proxy, hop));
+    let (a, b) = tokio::join!(
+        super::prepare_with_hop(&proxy, hop.clone()),
+        super::prepare_with_hop(&proxy, hop)
+    );
     let (a, b) = (a.unwrap(), b.unwrap());
     assert_ne!(a.tunnel.addr(), b.tunnel.addr());
     tokio::time::sleep(Duration::from_millis(100)).await;
-    assert_eq!(first.accepted.load(Ordering::SeqCst), 0, "binding independent relays must not open upstream connections");
-    let (left, right) = tokio::join!(crate::space::proxy::probe_on_route(&a.effective), crate::space::proxy::probe_on_route(&b.effective));
-    left.unwrap(); right.unwrap();
+    assert_eq!(
+        first.accepted.load(Ordering::SeqCst),
+        0,
+        "binding independent relays must not open upstream connections"
+    );
+    let (left, right) = tokio::join!(
+        crate::space::proxy::probe_on_route(&a.effective),
+        crate::space::proxy::probe_on_route(&b.effective)
+    );
+    left.unwrap();
+    right.unwrap();
     assert_eq!(first.accepted.load(Ordering::SeqCst), 2);
     assert_eq!(second.accepted.load(Ordering::SeqCst), 2);
     let a_stopped = a.tunnel.closed_signal();
     a.tunnel.shutdown().await;
     assert!(*a_stopped.borrow());
-    crate::space::proxy::probe_on_route(&b.effective).await.unwrap();
-    assert_eq!(first.accepted.load(Ordering::SeqCst), 3, "closing one relay must not affect the other probe");
+    crate::space::proxy::probe_on_route(&b.effective)
+        .await
+        .unwrap();
+    assert_eq!(
+        first.accepted.load(Ordering::SeqCst),
+        3,
+        "closing one relay must not affect the other probe"
+    );
     assert_eq!(second.accepted.load(Ordering::SeqCst), 3);
     let b_stopped = b.tunnel.closed_signal();
     b.tunnel.shutdown().await;

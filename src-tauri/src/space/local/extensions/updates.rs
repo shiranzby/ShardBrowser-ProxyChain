@@ -39,7 +39,8 @@ pub const CANCELLED: &str = "the update was cancelled";
 pub const NOT_IN_LIBRARY: &str = "the extension is not in the library";
 pub const NOT_A_LINK: &str = "that is not a Web Store link or extension id";
 pub const NOT_IN_STORE: &str = "the Web Store has no extension with that id";
-pub const NOT_OFFERED: &str = "the Web Store offers no package of it right now, so its files cannot be compared";
+pub const NOT_OFFERED: &str =
+    "the Web Store offers no package of it right now, so its files cannot be compared";
 pub const DIFFERENT: &str = "by its files, that is a different extension";
 
 /// What the window hears: `(event, payload)`.
@@ -76,8 +77,16 @@ impl Env {
             ops: Arc::new(Ops::real()),
             names: Arc::new(|id| {
                 let stored = crate::space::local::profile::load_raw(id).ok();
-                let name = stored.as_ref().and_then(|p| p.config.get("name")?.as_str()).unwrap_or("").trim();
-                if name.is_empty() { id.to_string() } else { name.to_string() }
+                let name = stored
+                    .as_ref()
+                    .and_then(|p| p.config.get("name")?.as_str())
+                    .unwrap_or("")
+                    .trim();
+                if name.is_empty() {
+                    id.to_string()
+                } else {
+                    name.to_string()
+                }
             }),
             tell: Arc::new(|event, payload| match (event, payload.as_str()) {
                 ("store-changed", Some(kind)) => crate::notify_store_changed(kind),
@@ -89,14 +98,23 @@ impl Env {
 
     /// The engine's version, else the bundle's: without one the store answers "noupdate".
     fn prod(&self) -> Option<ProdVersion> {
-        self.engine.as_deref().and_then(ProdVersion::new).or_else(|| ProdVersion::new(crate::runtime::CHROMIUM_VERSION))
+        self.engine
+            .as_deref()
+            .and_then(ProdVersion::new)
+            .or_else(|| ProdVersion::new(crate::runtime::CHROMIUM_VERSION))
     }
 
     /// A codebase as this env fetches it.
     fn blob(&self, codebase: &str) -> String {
-        let Some(to) = &self.blobs else { return codebase.to_string() };
+        let Some(to) = &self.blobs else {
+            return codebase.to_string();
+        };
         match url::Url::parse(codebase) {
-            Ok(u) => format!("{}{}", to.trim_end_matches('/'), &u[url::Position::BeforePath..]),
+            Ok(u) => format!(
+                "{}{}",
+                to.trim_end_matches('/'),
+                &u[url::Position::BeforePath..]
+            ),
             Err(_) => codebase.to_string(),
         }
     }
@@ -107,7 +125,9 @@ impl Env {
 }
 
 fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 // ---- The record ----
@@ -169,7 +189,10 @@ fn book_lock() -> MutexGuard<'static, ()> {
 
 /// The record, or an empty one: it is only a cache of the store's answers.
 pub fn load(path: &Path) -> Book {
-    fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    fs::read(path)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
 }
 
 fn save(path: &Path, b: &Book) -> Result<()> {
@@ -229,7 +252,11 @@ pub fn note_conflict(book: &Path, id: &str, message: Option<&str>) {
             (it.status, it.error) = (Status::IdConflict, Some(m.to_string()));
         }
         None => {
-            if let Some(it) = b.items.get_mut(&key(id)).filter(|it| it.status == Status::IdConflict) {
+            if let Some(it) = b
+                .items
+                .get_mut(&key(id))
+                .filter(|it| it.status == Status::IdConflict)
+            {
                 (it.status, it.error) = (Status::Current, None);
             }
         }
@@ -281,7 +308,11 @@ fn record(it: &mut Item, a: &AppAnswer, installed: &str, at: u64) {
 fn failed(env: &Env, id: &str, kind: Option<Kind>, message: &str) {
     edit(env, |b| {
         let it = item(b, id);
-        it.status = if kind == Some(Kind::IdConflict) { Status::IdConflict } else { Status::Failed };
+        it.status = if kind == Some(Kind::IdConflict) {
+            Status::IdConflict
+        } else {
+            Status::Failed
+        };
         it.error = Some(message.to_string());
     });
     env.changed("extension-updates");
@@ -315,7 +346,9 @@ type RunKey = (PathBuf, String);
 
 fn registry() -> MutexGuard<'static, HashMap<RunKey, Running>> {
     static R: OnceLock<Mutex<HashMap<RunKey, Running>>> = OnceLock::new();
-    R.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+    R.get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 /// One update or link of an extension at a time; Cancel reaches it through here.
@@ -360,22 +393,37 @@ fn busy_at(lib: &Path, id: &str) -> Result<Busy> {
         bail!(BUSY);
     }
     let (tx, rx) = watch::channel(false);
-    r.insert(key.clone(), Running { progress: None, cancel: tx, told: None });
+    r.insert(
+        key.clone(),
+        Running {
+            progress: None,
+            cancel: tx,
+            told: None,
+        },
+    );
     Ok(Busy { key, cancel: rx })
 }
 
 fn running(lib: &Path, id: &str) -> Option<Option<Progress>> {
-    registry().get(&(lib.to_path_buf(), id.to_string())).map(|r| r.progress)
+    registry()
+        .get(&(lib.to_path_buf(), id.to_string()))
+        .map(|r| r.progress)
 }
 
 /// Where an update is; the window hears it a few times a second.
 fn step(lib: &Path, id: &str, tell: &Tell, phase: Step, received: u64, total: u64) {
     let emit = {
         let mut r = registry();
-        let Some(run) = r.get_mut(&(lib.to_path_buf(), id.to_string())) else { return };
+        let Some(run) = r.get_mut(&(lib.to_path_buf(), id.to_string())) else {
+            return;
+        };
         let new_phase = run.progress.map(|p| p.phase) != Some(phase);
         let due = run.told.is_none_or(|t| t.elapsed() >= TELL_EVERY);
-        run.progress = Some(Progress { phase, received, total });
+        run.progress = Some(Progress {
+            phase,
+            received,
+            total,
+        });
         let emit = new_phase || due || (total > 0 && received >= total);
         if emit {
             run.told = Some(Instant::now());
@@ -383,7 +431,10 @@ fn step(lib: &Path, id: &str, tell: &Tell, phase: Step, received: u64, total: u6
         emit
     };
     if emit {
-        tell("extension-update:progress", json!({ "id": id, "phase": phase, "received": received, "total": total }));
+        tell(
+            "extension-update:progress",
+            json!({ "id": id, "phase": phase, "received": received, "total": total }),
+        );
     }
 }
 
@@ -471,9 +522,19 @@ fn live(lib: &Path, id: &str) -> Option<Live> {
     let m = manifest_edit::read_manifest(&root).ok()?;
     let version = m.get("version")?.as_str()?.to_string();
     Version::parse(&version)?;
-    let shown = m.get("version_name").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).unwrap_or(&version).to_string();
+    let shown = m
+        .get("version_name")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(&version)
+        .to_string();
     let name = manifest_edit::display_name(&root).unwrap_or_else(|| id.to_string());
-    Some(Live { root, version, shown, name })
+    Some(Live {
+        root,
+        version,
+        shown,
+        name,
+    })
 }
 
 /// The store item a library extension is linked to.
@@ -485,7 +546,9 @@ fn linked(lib: &Path, id: &str) -> Option<String> {
 }
 
 fn ids(lib: &Path) -> Vec<String> {
-    let Ok(rd) = fs::read_dir(lib) else { return Vec::new() };
+    let Ok(rd) = fs::read_dir(lib) else {
+        return Vec::new();
+    };
     let mut out: Vec<String> = rd
         .flatten()
         .filter(|e| e.path().is_dir())
@@ -497,13 +560,22 @@ fn ids(lib: &Path) -> Vec<String> {
 }
 
 fn named(env: &Env, profiles: &[String]) -> Vec<Holder> {
-    profiles.iter().map(|p| Holder { id: p.clone(), name: (env.names)(p) }).collect()
+    profiles
+        .iter()
+        .map(|p| Holder {
+            id: p.clone(),
+            name: (env.names)(p),
+        })
+        .collect()
 }
 
 /// Every library extension's update, from the record, what is staged and what runs.
 pub fn all(env: &Env) -> Vec<ExtensionUpdate> {
     let book = load(&env.book);
-    ids(&env.lib).iter().filter_map(|id| view(env, &book, id)).collect()
+    ids(&env.lib)
+        .iter()
+        .filter_map(|id| view(env, &book, id))
+        .collect()
 }
 
 pub fn one(env: &Env, id: &str) -> Option<ExtensionUpdate> {
@@ -536,7 +608,11 @@ fn view(env: &Env, book: &Book, id: &str) -> Option<ExtensionUpdate> {
     };
     u.state = if let Some(progress) = running(&env.lib, id) {
         u.progress = progress;
-        if progress.is_some_and(|p| p.phase == Step::Apply) { State::Applying } else { State::Downloading }
+        if progress.is_some_and(|p| p.phase == Step::Apply) {
+            State::Applying
+        } else {
+            State::Downloading
+        }
     } else if let Some(s) = &staged {
         if latest.as_ref().is_none_or(|l| newer(&s.to, l)) {
             u.latest = Some(s.to.clone());
@@ -549,7 +625,11 @@ fn view(env: &Env, book: &Book, id: &str) -> Option<ExtensionUpdate> {
     } else if it.status == Status::Failed {
         State::Failed
     } else if let Some(l) = &latest {
-        if it.skipped.as_deref() == Some(l.as_str()) { State::Current } else { State::Available }
+        if it.skipped.as_deref() == Some(l.as_str()) {
+            State::Current
+        } else {
+            State::Available
+        }
     } else if it.status == Status::Unchecked {
         State::Unchecked
     } else {
@@ -565,7 +645,11 @@ fn staged_state(env: &Env, it: &Item, s: &Staged, u: &mut ExtensionUpdate) -> St
     }
     if !s.approved && (!s.grown.is_empty() || s.identity.is_some()) {
         u.confirm = Some(Confirm {
-            reason: if s.identity.is_some() { Reason::Identity } else { Reason::Permissions },
+            reason: if s.identity.is_some() {
+                Reason::Identity
+            } else {
+                Reason::Permissions
+            },
             grown: s.grown.clone(),
             names: s.identity.as_ref().map(|i| i.names.clone()),
             overlap: s.identity.as_ref().map(|i| i.overlap),
@@ -634,12 +718,21 @@ async fn ask(env: &Env, items: &[(String, String)]) -> Asked {
     let no_answer = |asked: &[(String, String)], why: &str| -> Vec<AppAnswer> {
         asked
             .iter()
-            .map(|(id, _)| AppAnswer { id: id.clone(), answer: Answer::Error(why.into()), flags: vec![], allowlisted: None })
+            .map(|(id, _)| AppAnswer {
+                id: id.clone(),
+                answer: Answer::Error(why.into()),
+                flags: vec![],
+                allowlisted: None,
+            })
             .collect()
     };
     let Some(prod) = env.prod() else {
         let why = "the engine's version is unknown";
-        return Asked { answers: no_answer(items, why), error: Some(why.into()), none: true };
+        return Asked {
+            answers: no_answer(items, why),
+            error: Some(why.into()),
+            none: true,
+        };
     };
     let batches = update2::batches(&env.base, &prod, items);
     let (mut answers, mut error, mut got) = (Vec::new(), None, 0);
@@ -660,7 +753,11 @@ async fn ask(env: &Env, items: &[(String, String)]) -> Asked {
             }
         }
     }
-    Asked { answers, error, none: got == 0 && !batches.is_empty() }
+    Asked {
+        answers,
+        error,
+        none: got == 0 && !batches.is_empty(),
+    }
 }
 
 /// One check of a record at a time; a second caller takes the first one's result.
@@ -672,9 +769,18 @@ struct Gate {
 
 fn gate(book: &Path) -> Arc<Gate> {
     static G: OnceLock<Mutex<HashMap<PathBuf, Arc<Gate>>>> = OnceLock::new();
-    let mut g = G.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = G
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     g.entry(book.to_path_buf())
-        .or_insert_with(|| Arc::new(Gate { turn: tokio::sync::Mutex::new(()), done: AtomicU64::new(0), last: Mutex::new(None) }))
+        .or_insert_with(|| {
+            Arc::new(Gate {
+                turn: tokio::sync::Mutex::new(()),
+                done: AtomicU64::new(0),
+                last: Mutex::new(None),
+            })
+        })
         .clone()
 }
 
@@ -686,7 +792,12 @@ pub async fn check(env: &Env) -> Result<News, String> {
     let _turn = gate.turn.lock().await;
     if gate.done.load(Ordering::SeqCst) != seen {
         // One ran while this waited: its answer is this one's.
-        return gate.last.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_else(|| Ok(News::default()));
+        return gate
+            .last
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .unwrap_or_else(|| Ok(News::default()));
     }
     let out = check_once(env).await;
     *gate.last.lock().unwrap_or_else(|e| e.into_inner()) = Some(out.clone());
@@ -715,7 +826,9 @@ async fn check_once(env: &Env) -> Result<News, String> {
     // One question per store item, for its oldest copy.
     let mut oldest: BTreeMap<String, String> = BTreeMap::new();
     for (_, sid, l) in &copies {
-        let v = oldest.entry(sid.clone()).or_insert_with(|| l.version.clone());
+        let v = oldest
+            .entry(sid.clone())
+            .or_insert_with(|| l.version.clone());
         if newer(v, &l.version) {
             *v = l.version.clone();
         }
@@ -729,15 +842,25 @@ async fn check_once(env: &Env) -> Result<News, String> {
             let it = item(b, id);
             record(it, a, &l.version, at);
             // A flagged one is told of as flagged, never as an update.
-            if let (Status::Available, Some(v), true) = (it.status, it.latest.clone(), it.flags.is_empty()) {
+            if let (Status::Available, Some(v), true) =
+                (it.status, it.latest.clone(), it.flags.is_empty())
+            {
                 if it.notified.as_ref() != Some(&v) && it.skipped.as_ref() != Some(&v) {
                     it.notified = Some(v.clone());
-                    news.fresh.push(Fresh { id: id.clone(), name: l.name.clone(), version: v });
+                    news.fresh.push(Fresh {
+                        id: id.clone(),
+                        name: l.name.clone(),
+                        version: v,
+                    });
                 }
             }
             if !matches!(a.answer, Answer::Error(_)) {
                 if !it.flags.is_empty() && it.flags_told != it.flags {
-                    news.flagged.push(Flagged { id: id.clone(), name: l.name.clone(), flags: it.flags.clone() });
+                    news.flagged.push(Flagged {
+                        id: id.clone(),
+                        name: l.name.clone(),
+                        flags: it.flags.clone(),
+                    });
                 }
                 it.flags_told = it.flags.clone();
             }
@@ -771,7 +894,8 @@ async fn check_once(env: &Env) -> Result<News, String> {
 
 /// A stage from the store newer than what it offers now goes.
 async fn drop_withdrawn(env: &Env, id: &str, sid: &str, offered: &str) -> bool {
-    let withdrawn = swap::staged(&env.lib, id).is_some_and(|s| s.origin == Origin::Store(sid.to_string()) && newer(&s.to, offered));
+    let withdrawn = swap::staged(&env.lib, id)
+        .is_some_and(|s| s.origin == Origin::Store(sid.to_string()) && newer(&s.to, offered));
     if !withdrawn || running(&env.lib, id).is_some() {
         return false;
     }
@@ -782,7 +906,9 @@ async fn drop_withdrawn(env: &Env, id: &str, sid: &str, offered: &str) -> bool {
 /// The store's stage of a flagged item goes; one that cannot go yet stops
 /// going in by itself.
 async fn drop_flagged(env: &Env, id: &str, sid: &str) {
-    if !swap::staged(&env.lib, id).is_some_and(|s| s.origin == Origin::Store(sid.to_string())) || running(&env.lib, id).is_some() {
+    if !swap::staged(&env.lib, id).is_some_and(|s| s.origin == Origin::Store(sid.to_string()))
+        || running(&env.lib, id).is_some()
+    {
         return;
     }
     eprintln!("[extensions] {id}: the Web Store flags it; its staged version is dropped");
@@ -794,18 +920,28 @@ async fn drop_flagged(env: &Env, id: &str, sid: &str) {
 /// `swap::cancel` off the async threads: it may wait for a swap.
 async fn drop_stage(env: &Env, id: &str) -> bool {
     let (lib, who, ops) = (env.lib.clone(), id.to_string(), env.ops.clone());
-    tokio::task::spawn_blocking(move || swap::cancel(&lib, &who, &ops)).await.unwrap_or(false)
+    tokio::task::spawn_blocking(move || swap::cancel(&lib, &who, &ops))
+        .await
+        .unwrap_or(false)
 }
 
 // ---- Downloads ----
 
 /// The store's package at `codebase` into `.<id>.part`, given up on Cancel.
-async fn download(env: &Env, busy: &mut Busy, id: &str, codebase: &str, order: &Order) -> Result<PathBuf> {
+async fn download(
+    env: &Env,
+    busy: &mut Busy,
+    id: &str,
+    codebase: &str,
+    order: &Order,
+) -> Result<PathBuf> {
     if let Some(size) = order.size {
         swap::room(&env.ops, &env.lib, size)?;
     }
     let part = swap::Paths::new(&env.lib, id).part();
-    let cap = order.size.map_or(super::DOWNLOAD_MAX, |s| s.saturating_add(MB).min(super::DOWNLOAD_MAX));
+    let cap = order.size.map_or(super::DOWNLOAD_MAX, |s| {
+        s.saturating_add(MB).min(super::DOWNLOAD_MAX)
+    });
     let total = order.size.unwrap_or(0);
     let (lib, who, tell) = (env.lib.clone(), id.to_string(), env.tell.clone());
     let heard = move |n: u64| step(&lib, &who, &tell, Step::Download, n, total);
@@ -823,8 +959,20 @@ async fn download(env: &Env, busy: &mut Busy, id: &str, codebase: &str, order: &
 }
 
 /// The downloaded package staged over the live tree, off the async threads.
-async fn stage(env: &Env, busy: &Busy, id: &str, part: &Path, order: Order) -> Result<Staged, Failure> {
-    let (lib, who, file, ops, tell) = (env.lib.clone(), id.to_string(), part.to_path_buf(), env.ops.clone(), env.tell.clone());
+async fn stage(
+    env: &Env,
+    busy: &Busy,
+    id: &str,
+    part: &Path,
+    order: Order,
+) -> Result<Staged, Failure> {
+    let (lib, who, file, ops, tell) = (
+        env.lib.clone(),
+        id.to_string(),
+        part.to_path_buf(),
+        env.ops.clone(),
+        env.tell.clone(),
+    );
     let progress: swap::Progress = {
         let (lib, who, tell) = (lib.clone(), who.clone(), tell.clone());
         Arc::new(move |phase, got, total| {
@@ -836,9 +984,16 @@ async fn stage(env: &Env, busy: &Busy, id: &str, part: &Path, order: Order) -> R
             step(&lib, &who, &tell, phase, got, total)
         })
     };
-    let staged = tokio::task::spawn_blocking(move || swap::stage_file(&lib, &who, &file, &order, &ops, &progress))
-        .await
-        .unwrap_or_else(|e| Err(Failure::new(Kind::Package, format!("the update could not be unpacked: {e}"))));
+    let staged = tokio::task::spawn_blocking(move || {
+        swap::stage_file(&lib, &who, &file, &order, &ops, &progress)
+    })
+    .await
+    .unwrap_or_else(|e| {
+        Err(Failure::new(
+            Kind::Package,
+            format!("the update could not be unpacked: {e}"),
+        ))
+    });
     if busy.cancelled() {
         drop_stage(env, id).await;
         return Err(Failure::new(Kind::Stale, CANCELLED));
@@ -851,12 +1006,21 @@ async fn stage(env: &Env, busy: &Busy, id: &str, part: &Path, order: Order) -> R
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "result", rename_all = "snake_case")]
 pub enum Done {
-    Applied { from: String, to: String },
+    Applied {
+        from: String,
+        to: String,
+    },
     /// Goes in once these profiles close.
-    Waiting { waiting_on: Vec<Holder> },
+    Waiting {
+        waiting_on: Vec<Holder>,
+    },
     /// Shown to the person first; Update again with `confirmed`.
-    Confirm { update: Box<ExtensionUpdate> },
-    NeedsEngine { version: String },
+    Confirm {
+        update: Box<ExtensionUpdate>,
+    },
+    NeedsEngine {
+        version: String,
+    },
     /// The store does not offer the version it named at the last check.
     NotServed,
     /// Nothing newer.
@@ -870,19 +1034,36 @@ pub async fn update(env: &Env, id: &str, confirmed: bool) -> Result<Done> {
     let mut busy = busy(env, id)?;
     let live = live(&env.lib, id).context(NOT_IN_LIBRARY)?;
     let sid = linked(&env.lib, id).context(UNLINKED)?;
-    let known = load(&env.book).items.get(&key(id)).cloned().unwrap_or_default();
+    let known = load(&env.book)
+        .items
+        .get(&key(id))
+        .cloned()
+        .unwrap_or_default();
     if !known.flags.is_empty() {
         bail!(FLAGGED);
     }
     // Asked again right before: a version the store has withdrawn never goes in.
     let asked = ask(env, &[(sid.clone(), live.version.clone())]).await;
     if asked.none {
-        bail!("{}", asked.error.unwrap_or_else(|| "the Web Store did not answer".into()));
+        bail!(
+            "{}",
+            asked
+                .error
+                .unwrap_or_else(|| "the Web Store did not answer".into())
+        );
     }
-    let a = asked.about(&sid).cloned().context("the Web Store did not answer about this extension")?;
+    let a = asked
+        .about(&sid)
+        .cloned()
+        .context("the Web Store did not answer about this extension")?;
     let at = now();
     let (version, codebase, sha256, size) = match &a.answer {
-        Answer::Update { version, codebase, sha256, size } if newer(version, &live.version) => {
+        Answer::Update {
+            version,
+            codebase,
+            sha256,
+            size,
+        } if newer(version, &live.version) => {
             edit(env, |b| record(item(b, id), &a, &live.version, at));
             (version.clone(), codebase.clone(), sha256.clone(), *size)
         }
@@ -898,7 +1079,11 @@ pub async fn update(env: &Env, id: &str, confirmed: bool) -> Result<Done> {
             if !a.flags.is_empty() {
                 bail!(FLAGGED);
             }
-            return Ok(if known.latest.is_some_and(|l| newer(&l, &live.version)) { Done::NotServed } else { Done::Current });
+            return Ok(if known.latest.is_some_and(|l| newer(&l, &live.version)) {
+                Done::NotServed
+            } else {
+                Done::Current
+            });
         }
         Answer::Unknown(_) => {
             edit(env, |b| record(item(b, id), &a, &live.version, at));
@@ -912,10 +1097,14 @@ pub async fn update(env: &Env, id: &str, confirmed: bool) -> Result<Done> {
         bail!(FLAGGED);
     }
 
-    let order = Order::store(&sid, sha256.as_deref(), size, env.engine.as_deref()).expecting(&version);
+    let order =
+        Order::store(&sid, sha256.as_deref(), size, env.engine.as_deref()).expecting(&version);
     let engine_short = |min: &str| env.engine.as_deref().is_some_and(|e| newer(min, e));
     let kept = swap::staged(&env.lib, id).filter(|s| {
-        s.origin == order.origin && s.to == version && s.from == live.version && s.needs_engine.as_deref().is_none_or(engine_short)
+        s.origin == order.origin
+            && s.to == version
+            && s.from == live.version
+            && s.needs_engine.as_deref().is_none_or(engine_short)
     });
     let fresh = kept.is_none();
     let staged = match kept {
@@ -943,7 +1132,9 @@ pub async fn update(env: &Env, id: &str, confirmed: bool) -> Result<Done> {
     };
     if let Some(min) = &staged.needs_engine {
         env.changed("extension-updates");
-        return Ok(Done::NeedsEngine { version: min.clone() });
+        return Ok(Done::NeedsEngine {
+            version: min.clone(),
+        });
     }
     let let_in = fresh || !staged.approved;
     if !staged.approved {
@@ -952,7 +1143,9 @@ pub async fn update(env: &Env, id: &str, confirmed: bool) -> Result<Done> {
             drop(busy);
             env.changed("extension-updates");
             let shown = one(env, id).context(NOT_IN_LIBRARY)?;
-            return Ok(Done::Confirm { update: Box::new(shown) });
+            return Ok(Done::Confirm {
+                update: Box::new(shown),
+            });
         }
         swap::approve(&env.lib, id)?;
     }
@@ -969,7 +1162,12 @@ pub async fn update(env: &Env, id: &str, confirmed: bool) -> Result<Done> {
 /// `_busy` keeps it shown as applying meanwhile.
 async fn apply(env: &Env, _busy: &Busy, id: &str) -> Result<Done> {
     step(&env.lib, id, &env.tell, Step::Apply, 0, 0);
-    let (world, lib, who, ops) = (env.world.clone(), env.lib.clone(), id.to_string(), env.ops.clone());
+    let (world, lib, who, ops) = (
+        env.world.clone(),
+        env.lib.clone(),
+        id.to_string(),
+        env.ops.clone(),
+    );
     let out = tokio::task::spawn_blocking(move || usage::try_apply(&*world, &lib, &who, &ops))
         .await
         .map_err(|e| anyhow!("the update stopped: {e}"))?;
@@ -983,11 +1181,16 @@ async fn apply(env: &Env, _busy: &Busy, id: &str) -> Result<Done> {
             });
             env.changed("extensions");
             env.changed("extension-updates");
-            Ok(Done::Applied { from: a.from, to: a.to })
+            Ok(Done::Applied {
+                from: a.from,
+                to: a.to,
+            })
         }
         Ok(Outcome::Deferred { profiles }) => {
             env.changed("extension-updates");
-            Ok(Done::Waiting { waiting_on: named(env, &profiles) })
+            Ok(Done::Waiting {
+                waiting_on: named(env, &profiles),
+            })
         }
         Ok(Outcome::Nothing) => bail!("nothing is staged for this extension"),
         Err(f) => {
@@ -1002,7 +1205,11 @@ async fn apply(env: &Env, _busy: &Busy, id: &str) -> Result<Done> {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "result", rename_all = "snake_case")]
 pub enum Linked {
-    Linked { source: SourceRef, allowlisted: Option<bool>, update: Option<Box<ExtensionUpdate>> },
+    Linked {
+        source: SourceRef,
+        allowlisted: Option<bool>,
+        update: Option<Box<ExtensionUpdate>>,
+    },
     /// Shown to the person first, always when the files decide; link again with `confirmed`.
     Confirm {
         names: Names,
@@ -1029,7 +1236,9 @@ pub async fn link(env: &Env, id: &str, raw: &str, confirmed: bool) -> Result<Lin
             drop(busy);
             return Ok(linked_now(env, id, &sid));
         }
-        Some(SourceRef::Webstore { id: have }) => bail!("it is linked to the Web Store item {have} already"),
+        Some(SourceRef::Webstore { id: have }) => {
+            bail!("it is linked to the Web Store item {have} already")
+        }
         _ => {}
     }
     // Chrome gives it the id its key makes: nothing else to weigh.
@@ -1048,25 +1257,46 @@ pub async fn link(env: &Env, id: &str, raw: &str, confirmed: bool) -> Result<Lin
 
     let asked = ask(env, &[(sid.clone(), ANY_VERSION.into())]).await;
     if asked.none {
-        bail!("{}", asked.error.unwrap_or_else(|| "the Web Store did not answer".into()));
+        bail!(
+            "{}",
+            asked
+                .error
+                .unwrap_or_else(|| "the Web Store did not answer".into())
+        );
     }
-    let a = asked.about(&sid).cloned().context("the Web Store did not answer about this extension")?;
+    let a = asked
+        .about(&sid)
+        .cloned()
+        .context("the Web Store did not answer about this extension")?;
     let (version, codebase, sha256, size) = match &a.answer {
-        Answer::Update { version, codebase, sha256, size } => (version.clone(), codebase.clone(), sha256.clone(), *size),
+        Answer::Update {
+            version,
+            codebase,
+            sha256,
+            size,
+        } => (version.clone(), codebase.clone(), sha256.clone(), *size),
         Answer::Unknown(_) => bail!(NOT_IN_STORE),
         Answer::NoUpdate => bail!(NOT_OFFERED),
         Answer::Error(e) => bail!("the Web Store's answer could not be read: {e}"),
     };
     // Linking is not asking for the update; the files were weighed here already.
-    let mut order = Order::store(&sid, sha256.as_deref(), size, env.engine.as_deref()).expecting(&version);
+    let mut order =
+        Order::store(&sid, sha256.as_deref(), size, env.engine.as_deref()).expecting(&version);
     (order.approve, order.weighed) = (false, true);
     let part = download(env, &mut busy, id, &codebase, &order).await?;
     step(&env.lib, id, &env.tell, Step::Verify, 0, 0);
-    let (lib, who, file, weigh_order, ops) = (env.lib.clone(), id.to_string(), part.clone(), order.clone(), env.ops.clone());
-    let weighed = tokio::task::spawn_blocking(move || swap::weigh(&lib, &who, &file, &weigh_order, &ops))
-    .await
-    .map_err(|e| anyhow!("the package could not be compared: {e}"))
-    .and_then(|r| r.map_err(anyhow::Error::from));
+    let (lib, who, file, weigh_order, ops) = (
+        env.lib.clone(),
+        id.to_string(),
+        part.clone(),
+        order.clone(),
+        env.ops.clone(),
+    );
+    let weighed =
+        tokio::task::spawn_blocking(move || swap::weigh(&lib, &who, &file, &weigh_order, &ops))
+            .await
+            .map_err(|e| anyhow!("the package could not be compared: {e}"))
+            .and_then(|r| r.map_err(anyhow::Error::from));
     let w = match weighed {
         Ok(w) if !busy.cancelled() => w,
         Ok(_) => {
@@ -1079,10 +1309,16 @@ pub async fn link(env: &Env, id: &str, raw: &str, confirmed: bool) -> Result<Lin
         }
     };
     let kin = manifest_edit::kinship(w.overlap, w.same_name);
-    eprintln!("[extensions] {id}: weighed against {sid} {}: {:.2} of its files match, same name {}", w.version, w.overlap, w.same_name);
+    eprintln!(
+        "[extensions] {id}: weighed against {sid} {}: {:.2} of its files match, same name {}",
+        w.version, w.overlap, w.same_name
+    );
     if kin == Kinship::Other {
         let _ = fs::remove_file(&part);
-        bail!("{DIFFERENT} ({}% of its files match)", (w.overlap * 100.0).round());
+        bail!(
+            "{DIFFERENT} ({}% of its files match)",
+            (w.overlap * 100.0).round()
+        );
     }
     // Names and shared files are easy to copy: the person sees what was found first.
     if !confirmed {
@@ -1136,9 +1372,15 @@ pub fn cancel(env: &Env, id: &str) -> Result<()> {
     if !valid_id(id) {
         bail!("invalid extension id");
     }
-    let signalled = registry().get(&(env.lib.clone(), id.to_string())).map(|r| r.cancel.send(true)).is_some();
+    let signalled = registry()
+        .get(&(env.lib.clone(), id.to_string()))
+        .map(|r| r.cancel.send(true))
+        .is_some();
     // One under way drops its own stage once it stops.
-    if !signalled && swap::Paths::new(&env.lib, id).staging().exists() && !swap::cancel(&env.lib, id, &env.ops) {
+    if !signalled
+        && swap::Paths::new(&env.lib, id).staging().exists()
+        && !swap::cancel(&env.lib, id, &env.ops)
+    {
         bail!("the extension is being updated right now; try again in a minute");
     }
     edit(env, |b| {
@@ -1187,8 +1429,12 @@ pub fn retry_waiting(env: &Env, when: &str) {
     // One the store flagged since it was let in stays out.
     let book = load(&env.book);
     for id in swap::waiting(&env.lib) {
-        let flagged = book.items.get(&key(&id)).is_some_and(|it| !it.flags.is_empty());
-        let store = swap::staged(&env.lib, &id).is_some_and(|s| matches!(s.origin, Origin::Store(_)));
+        let flagged = book
+            .items
+            .get(&key(&id))
+            .is_some_and(|it| !it.flags.is_empty());
+        let store =
+            swap::staged(&env.lib, &id).is_some_and(|s| matches!(s.origin, Origin::Store(_)));
         if flagged && store && !swap::cancel(&env.lib, &id, &env.ops) {
             swap::withhold(&env.lib, &id);
         }

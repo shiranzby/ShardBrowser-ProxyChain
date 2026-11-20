@@ -1,34 +1,38 @@
 // ShardBrowser Launcher — Tauri backend.
 
-mod profile_icon;
-mod profile_shortcut;
-mod profile_defaults;
-mod startup_page;
 mod api;
+mod cdp;
+mod db;
+mod ext_updates;
 mod fingerprints;
 mod gpu_caps;
 mod launch;
 mod mcp_setup;
 mod migrate;
+mod modguard;
+mod portable;
 mod process;
+mod profile_defaults;
+mod profile_icon;
+mod profile_shortcut;
 mod proxy_chain;
-mod psapi;
-mod runtime;
-mod settings;
-mod tnbproxy;
 mod proxy_providers;
+mod psapi;
+mod requests;
+mod reset;
+mod runner;
+mod runtime;
+mod safe_close;
+mod sequential;
+mod settings;
+mod snapshot;
+mod space;
+mod startup_page;
 mod store;
 mod sync_bus;
-mod cdp;
-mod requests;
-mod db;
-mod modguard;
-mod runner;
-mod wasm;
-mod reset;
 mod team;
-mod space;
-mod ext_updates;
+mod tnbproxy;
+mod wasm;
 // A live end-to-end check against a real team server and engine, run by hand (macOS, Linux).
 #[cfg(all(test, unix))]
 mod live_e2e;
@@ -105,7 +109,9 @@ async fn profile_list() -> Result<Vec<space::profile::ProfileMeta>, String> {
 #[tauri::command]
 async fn profile_get(id: String) -> Result<Value, String> {
     space::ready().await;
-    let mut stored = space::profile::fetch(&id).await.map_err(|e| e.to_string())?;
+    let mut stored = space::profile::fetch(&id)
+        .await
+        .map_err(|e| e.to_string())?;
     // Backfill gpu_preset_id for legacy profiles by matching webgl.renderer; a locked one has none to match.
     if stored.meta.gpu_preset_id.is_none() && stored.meta.lock.is_none() {
         if let Some(gid) = infer_gpu_preset_id(&stored.config) {
@@ -150,26 +156,20 @@ fn infer_gpu_preset_id(config: &serde_json::Map<String, Value>) -> Option<String
 
 // macOS Sonoma 14.x, Sequoia 15.x, Tahoe 26.x.
 const MACOS_PLATFORM_VERSIONS: &[&str] = &[
-    "14.6.1", "14.7", "14.7.1", "14.7.2",
-    "15.4", "15.4.1", "15.5", "15.6", "15.6.1", "15.7",
+    "14.6.1", "14.7", "14.7.1", "14.7.2", "15.4", "15.4.1", "15.5", "15.6", "15.6.1", "15.7",
     "26.0", "26.0.1", "26.1",
 ];
 
 // Win 10 21H1+ ("10.0.0"), Win 11 21H2..25H2 ("13"–"17"); weighted to 22H2/23H2/24H2.
 const WINDOWS_PLATFORM_VERSIONS: &[&str] = &[
-    "10.0.0",
-    "13.0.0",
-    "14.0.0", "14.0.0", "14.0.0",
-    "15.0.0", "15.0.0", "15.0.0", "15.0.0",
-    "16.0.0", "16.0.0", "16.0.0",
-    "17.0.0",
+    "10.0.0", "13.0.0", "14.0.0", "14.0.0", "14.0.0", "15.0.0", "15.0.0", "15.0.0", "15.0.0",
+    "16.0.0", "16.0.0", "16.0.0", "17.0.0",
 ];
 
 // LTS kernels + current mainline.
 const LINUX_PLATFORM_VERSIONS: &[&str] = &[
-    "5.15.0", "6.1.0", "6.5.0",
-    "6.6.0", "6.8.0", "6.10.0", "6.11.0", "6.12.0",
-    "6.14.0", "6.15.0", "6.16.0",
+    "5.15.0", "6.1.0", "6.5.0", "6.6.0", "6.8.0", "6.10.0", "6.11.0", "6.12.0", "6.14.0", "6.15.0",
+    "6.16.0",
 ];
 
 /// Write a random platform_version into navigator + client_hints; unknown platforms left alone.
@@ -180,10 +180,10 @@ pub(crate) fn randomize_platform_version(payload: &mut serde_json::Map<String, V
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let pool: &[&str] = match platform {
-        "macOS"   => MACOS_PLATFORM_VERSIONS,
+        "macOS" => MACOS_PLATFORM_VERSIONS,
         "Windows" => WINDOWS_PLATFORM_VERSIONS,
-        "Linux"   => LINUX_PLATFORM_VERSIONS,
-        _         => return,
+        "Linux" => LINUX_PLATFORM_VERSIONS,
+        _ => return,
     };
     let pick_idx = (uuid::Uuid::new_v4().as_bytes()[0] as usize) % pool.len();
     let version = pool[pick_idx].to_string();
@@ -191,7 +191,10 @@ pub(crate) fn randomize_platform_version(payload: &mut serde_json::Map<String, V
     if let Some(nav) = payload.get_mut("navigator").and_then(|v| v.as_object_mut()) {
         nav.insert("platform_version".into(), Value::String(version.clone()));
     }
-    if let Some(ch) = payload.get_mut("client_hints").and_then(|v| v.as_object_mut()) {
+    if let Some(ch) = payload
+        .get_mut("client_hints")
+        .and_then(|v| v.as_object_mut())
+    {
         ch.insert("platform_version".into(), Value::String(version));
     }
 }
@@ -205,14 +208,10 @@ fn mac_hw_configs(model: &str) -> Option<&'static [(u32, u32)]> {
         "mac-m2-air13" | "mac-m2-air15" | "mac-m2-mbp13" => &[(8, 8), (8, 16)],
         "mac-m2-pro-mbp14" | "mac-m2-pro-mbp16" => &[(10, 16), (12, 16), (12, 32)],
         "mac-m2-max-mbp14" | "mac-m2-max-mbp16" => &[(12, 32)],
-        "mac-m3-air13" | "mac-m3-air15" | "mac-m3-mbp14" | "mac-m3-imac24" => {
-            &[(8, 8), (8, 16)]
-        }
+        "mac-m3-air13" | "mac-m3-air15" | "mac-m3-mbp14" | "mac-m3-imac24" => &[(8, 8), (8, 16)],
         "mac-m3-pro-mbp14" | "mac-m3-pro-mbp16" => &[(11, 16), (12, 16), (12, 32)],
         "mac-m3-max-mbp14" | "mac-m3-max-mbp16" => &[(14, 32), (16, 32)],
-        "mac-m4-air13" | "mac-m4-air15" | "mac-m4-mbp14" | "mac-m4-imac24" => {
-            &[(10, 16), (10, 32)]
-        }
+        "mac-m4-air13" | "mac-m4-air15" | "mac-m4-mbp14" | "mac-m4-imac24" => &[(10, 16), (10, 32)],
         "mac-m4-pro-mbp14" | "mac-m4-pro-mbp16" => &[(12, 16), (14, 16), (14, 32)],
         "mac-m4-max-mbp14" | "mac-m4-max-mbp16" => &[(14, 32), (16, 32)],
         "mac-m5-mbp14" => &[(10, 16), (10, 32)],
@@ -261,7 +260,10 @@ fn host_ram_gb() -> Option<u32> {
             .output()
             .ok()?;
         let txt = String::from_utf8_lossy(&out.stdout);
-        let bytes: u64 = txt.lines().filter_map(|l| l.trim().parse::<u64>().ok()).next()?;
+        let bytes: u64 = txt
+            .lines()
+            .filter_map(|l| l.trim().parse::<u64>().ok())
+            .next()?;
         return Some((bytes / (1024 * 1024 * 1024)) as u32);
     }
     #[allow(unreachable_code)]
@@ -360,7 +362,12 @@ pub fn clamp_screen_to_real_display(
     let real_h = (phys.height as f64 / scale).round() as i64;
     eprintln!(
         "[launcher] display: name={:?} physical={}x{} scale={} -> logical={}x{}",
-        monitor.name(), phys.width, phys.height, scale, real_w, real_h
+        monitor.name(),
+        phys.width,
+        phys.height,
+        scale,
+        real_w,
+        real_h
     );
     if real_w <= 0 || real_h <= 0 {
         return;
@@ -394,8 +401,14 @@ pub fn clamp_screen_to_real_display(
     }
 
     // Preserve FP menubar/dock insets for avail_*.
-    let fp_avail_w = scr.get("avail_width").and_then(|v| v.as_i64()).unwrap_or(fp_w);
-    let fp_avail_h = scr.get("avail_height").and_then(|v| v.as_i64()).unwrap_or(fp_h);
+    let fp_avail_w = scr
+        .get("avail_width")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(fp_w);
+    let fp_avail_h = scr
+        .get("avail_height")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(fp_h);
     let chrome_w = (fp_w - fp_avail_w).max(0);
     let chrome_h = (fp_h - fp_avail_h).max(0);
     let avail_w = (real_w - chrome_w).max(1);
@@ -439,36 +452,55 @@ async fn profile_save(
     let t = ticket(epoch)?;
     let (stored, mut opts) = profile_payload(Some(&window), payload, true)?;
     opts.password = password;
-    space::profile::save(space::Door("profile_save"), &t, stored, opts).await.map_err(|e| e.to_string())
+    space::profile::save(space::Door("profile_save"), &t, stored, opts)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Lock a profile under its own password (#127).
 #[tauri::command]
-async fn profile_protect(id: String, password: String) -> Result<space::profile::ProfileMeta, String> {
-    let out = tauri::async_runtime::spawn_blocking(move || space::profile::protect(&id, &password)).await;
+async fn profile_protect(
+    id: String,
+    password: String,
+) -> Result<space::profile::ProfileMeta, String> {
+    let out =
+        tauri::async_runtime::spawn_blocking(move || space::profile::protect(&id, &password)).await;
     let row = out.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
     notify_store_changed("profiles");
     Ok(row)
 }
 
 #[tauri::command]
-async fn profile_unprotect(id: String, password: String) -> Result<space::profile::ProfileMeta, String> {
-    let out = tauri::async_runtime::spawn_blocking(move || space::profile::unprotect(&id, &password)).await;
+async fn profile_unprotect(
+    id: String,
+    password: String,
+) -> Result<space::profile::ProfileMeta, String> {
+    let out =
+        tauri::async_runtime::spawn_blocking(move || space::profile::unprotect(&id, &password))
+            .await;
     let row = out.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
     notify_store_changed("profiles");
     Ok(row)
 }
 
 #[tauri::command]
-async fn profile_change_password(id: String, old_password: String, new_password: String) -> Result<(), String> {
-    let out = tauri::async_runtime::spawn_blocking(move || space::profile::change_password(&id, &old_password, &new_password)).await;
+async fn profile_change_password(
+    id: String,
+    old_password: String,
+    new_password: String,
+) -> Result<(), String> {
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        space::profile::change_password(&id, &old_password, &new_password)
+    })
+    .await;
     out.map_err(|e| e.to_string())?.map_err(|e| e.to_string())
 }
 
 /// The whole of a protected profile, for its editor; nothing of it is written.
 #[tauri::command]
 async fn profile_unlock(id: String, password: String) -> Result<Value, String> {
-    let out = tauri::async_runtime::spawn_blocking(move || space::profile::unlock(&id, &password)).await;
+    let out =
+        tauri::async_runtime::spawn_blocking(move || space::profile::unlock(&id, &password)).await;
     let stored = out.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
     serde_json::to_value(stored).map_err(|e| e.to_string())
 }
@@ -493,11 +525,21 @@ fn profile_payload(
     enrich: bool,
 ) -> Result<(space::profile::StoredProfile, space::profile::SaveOpts), String> {
     let meta = payload.get("_meta");
-    let is_new = meta.and_then(|m| m.get("id")).and_then(|v| v.as_str()).map(|s| s.is_empty()).unwrap_or(true);
-    let sent_rev = meta.and_then(|m| m.get("rev")).and_then(|v| v.as_u64()).filter(|_| !is_new);
+    let is_new = meta
+        .and_then(|m| m.get("id"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.is_empty())
+        .unwrap_or(true);
+    let sent_rev = meta
+        .and_then(|m| m.get("rev"))
+        .and_then(|v| v.as_u64())
+        .filter(|_| !is_new);
     if is_new && enrich {
         if let Some(obj) = payload.as_object_mut() {
-            settings::load().map_err(|e| e.to_string())?.profile_defaults.apply_missing(obj);
+            settings::load()
+                .map_err(|e| e.to_string())?
+                .profile_defaults
+                .apply_missing(obj);
             enrich_new_config(window, obj);
         }
     }
@@ -505,7 +547,13 @@ fn profile_payload(
         profile_defaults::validate_config(obj).map_err(|e| e.to_string())?;
     }
     let stored = serde_json::from_value(payload).map_err(|e| e.to_string())?;
-    Ok((stored, space::profile::SaveOpts { sent_rev, ..Default::default() }))
+    Ok((
+        stored,
+        space::profile::SaveOpts {
+            sent_rev,
+            ..Default::default()
+        },
+    ))
 }
 
 /// Core of `profile_save` callable without Tauri context; `enrich=false` stores
@@ -535,7 +583,9 @@ pub fn save_profile_here(
 #[tauri::command]
 async fn profile_delete(id: String, epoch: Option<u64>) -> Result<(), String> {
     let t = ticket(epoch)?;
-    space::profile::remove(space::Door("profile_delete"), &t, &id).await.map_err(|e| e.to_string())
+    space::profile::remove(space::Door("profile_delete"), &t, &id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// The ticket for a write the interface asked under `epoch`.
@@ -559,40 +609,65 @@ async fn automation_list() -> Result<Vec<space::automation::Project>, String> {
 }
 
 #[tauri::command]
-async fn automation_create(name: String, epoch: Option<u64>) -> Result<space::automation::Project, String> {
+async fn automation_create(
+    name: String,
+    epoch: Option<u64>,
+) -> Result<space::automation::Project, String> {
     let t = ticket(epoch)?;
-    space::automation::create(space::Door("automation_create"), &t, &name).await.map_err(|e| e.to_string())
+    space::automation::create(space::Door("automation_create"), &t, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// In a team, a step's secret values stay on this machine and go up blank.
 #[tauri::command]
-async fn automation_save(project: space::automation::Project, epoch: Option<u64>) -> Result<space::automation::Project, String> {
+async fn automation_save(
+    project: space::automation::Project,
+    epoch: Option<u64>,
+) -> Result<space::automation::Project, String> {
     let t = ticket(epoch)?;
-    space::automation::save(space::Door("automation_save"), &t, project).await.map_err(|e| e.to_string())
+    space::automation::save(space::Door("automation_save"), &t, project)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn automation_delete(id: String, epoch: Option<u64>) -> Result<(), String> {
     let t = ticket(epoch)?;
-    space::automation::delete(space::Door("automation_delete"), &t, &id).await.map_err(|e| e.to_string())
+    space::automation::delete(space::Door("automation_delete"), &t, &id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn automation_duplicate(id: String, epoch: Option<u64>) -> Result<space::automation::Project, String> {
+async fn automation_duplicate(
+    id: String,
+    epoch: Option<u64>,
+) -> Result<space::automation::Project, String> {
     let t = ticket(epoch)?;
-    space::automation::duplicate(space::Door("automation_duplicate"), &t, &id).await.map_err(|e| e.to_string())
+    space::automation::duplicate(space::Door("automation_duplicate"), &t, &id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// The studio's start refusals; the UI reads them back (src/shared/api/automationRefusals.ts).
-pub const OPEN_WITHOUT_AUTOMATION: &str = "this profile is open without automation: it has to start again to be driven";
-pub const DID_NOT_CLOSE: &str = "the profile's browser did not close: close its window, then start it here again";
-pub const NO_DEBUG_PORT: &str = "the browser started, but it did not report its debugging port in time";
-pub const DRIVEN_BY_RUN: &str = "a project run is driving this profile: wait for it to finish, or stop it";
+pub const OPEN_WITHOUT_AUTOMATION: &str =
+    "this profile is open without automation: it has to start again to be driven";
+pub const DID_NOT_CLOSE: &str =
+    "the profile's browser did not close: close its window, then start it here again";
+pub const NO_DEBUG_PORT: &str =
+    "the browser started, but it did not report its debugging port in time";
+pub const DRIVEN_BY_RUN: &str =
+    "a project run is driving this profile: wait for it to finish, or stop it";
 
 /// Starts a profile WITH automation on, and attaches; one running with it already is attached to.
 /// `restart` closes one open without it first; without it, that one is refused.
 #[tauri::command]
-async fn automation_launch(app: tauri::AppHandle, profile_id: String, restart: Option<bool>) -> Result<u32, String> {
+async fn automation_launch(
+    app: tauri::AppHandle,
+    profile_id: String,
+    restart: Option<bool>,
+) -> Result<u32, String> {
     if space::profile::is_protected(&profile_id) {
         return Err(space::profile::NOT_FOR_PROTECTED.into());
     }
@@ -601,7 +676,10 @@ async fn automation_launch(app: tauri::AppHandle, profile_id: String, restart: O
         if migrate::in_progress() {
             return Err("profiles are being moved — try again when that finishes".into());
         }
-        let running = process::Tracker::shared().running().into_iter().find(|r| r.profile_id == profile_id);
+        let running = process::Tracker::shared()
+            .running()
+            .into_iter()
+            .find(|r| r.profile_id == profile_id);
         if let Some(r) = running.as_ref().filter(|r| r.cdp.is_some()) {
             // A run's session has no live view, and input from here would fight the run.
             if cdp::run_drives(&profile_id) {
@@ -639,8 +717,12 @@ async fn automation_launch(app: tauri::AppHandle, profile_id: String, restart: O
 #[cfg(feature = "automation")]
 async fn close_for_restart(profile_id: &str) -> Result<(), String> {
     match team::active_team() {
-        Some(team) => space::open::passes(&team, profile_id, true).await.map(|_| ()),
-        None => space::perm::start(profile_id).and_then(|_| space::perm::cookies(profile_id)).map(|_| ()),
+        Some(team) => space::open::passes(&team, profile_id, true)
+            .await
+            .map(|_| ()),
+        None => space::perm::start(profile_id)
+            .and_then(|_| space::perm::cookies(profile_id))
+            .map(|_| ()),
     }
     .map_err(|e| e.to_string())?;
     let tracker = process::Tracker::shared();
@@ -658,7 +740,12 @@ async fn close_for_restart(profile_id: &str) -> Result<(), String> {
 
 /// The start with CDP on; after a restart, a team or synced session still being saved is waited out.
 #[cfg(feature = "automation")]
-async fn start_with_cdp(profile_id: &str, restarted: bool, port: u16, token: &str) -> Result<launch::LaunchOutcome, String> {
+async fn start_with_cdp(
+    profile_id: &str,
+    restarted: bool,
+    port: u16,
+    token: &str,
+) -> Result<launch::LaunchOutcome, String> {
     let until = std::time::Instant::now() + std::time::Duration::from_secs(60);
     loop {
         // (enable_cdp, headless) — the studio needs a visible window with CDP on.
@@ -830,7 +917,11 @@ fn automation_tls_fingerprints() -> Vec<String> {
 fn automation_modules() -> Result<Vec<serde_json::Value>, String> {
     #[cfg(feature = "automation")]
     return wasm::list()
-        .map(|v| v.into_iter().filter_map(|m| serde_json::to_value(m).ok()).collect())
+        .map(|v| {
+            v.into_iter()
+                .filter_map(|m| serde_json::to_value(m).ok())
+                .collect()
+        })
         .map_err(|e| e.to_string());
     #[cfg(not(feature = "automation"))]
     Ok(Vec::new())
@@ -859,7 +950,6 @@ fn automation_module_remove(id: String) -> Result<(), String> {
         Ok(())
     }
 }
-
 
 /// What a module asks to be allowed to call, and what it was allowed.
 #[tauri::command]
@@ -914,11 +1004,16 @@ fn automation_export(project_id: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-async fn automation_import(bundle: serde_json::Value, epoch: Option<u64>) -> Result<space::automation::Project, String> {
+async fn automation_import(
+    bundle: serde_json::Value,
+    epoch: Option<u64>,
+) -> Result<space::automation::Project, String> {
     let t = ticket(epoch)?;
     let parsed: space::automation::Bundle =
         serde_json::from_value(bundle).map_err(|e| format!("that is not a project bundle: {e}"))?;
-    space::automation::import(space::Door("automation_import"), &t, parsed).await.map_err(|e| e.to_string())
+    space::automation::import(space::Door("automation_import"), &t, parsed)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Starts the project. Answers as soon as the run is under way; progress is
@@ -977,12 +1072,16 @@ async fn automation_fleet_window(app: tauri::AppHandle) {
         let _ = w.set_focus();
         return;
     }
-    let built = WebviewWindowBuilder::new(&app, "fleet", WebviewUrl::App("index.html#/?fleet=1".into()))
-        .title("ShardBrowser Fleet")
-        .inner_size(460.0, 420.0)
-        .min_inner_size(360.0, 240.0)
-        .always_on_top(true)
-        .build();
+    let built = WebviewWindowBuilder::new(
+        &app,
+        "fleet",
+        WebviewUrl::App("index.html#/?fleet=1".into()),
+    )
+    .title("ShyShard Fleet")
+    .inner_size(460.0, 420.0)
+    .min_inner_size(360.0, 240.0)
+    .always_on_top(true)
+    .build();
     if let Err(e) = built {
         eprintln!("[launcher] fleet window unavailable: {e}");
     }
@@ -991,11 +1090,7 @@ async fn automation_fleet_window(app: tauri::AppHandle) {
 /// Resolves the element under a viewport point, natively. A recorded step stores
 /// what this returns, so replay finds the element again at a different window size.
 #[tauri::command]
-async fn automation_pick(
-    profile_id: String,
-    x: f64,
-    y: f64,
-) -> Result<serde_json::Value, String> {
+async fn automation_pick(profile_id: String, x: f64, y: f64) -> Result<serde_json::Value, String> {
     #[cfg(feature = "automation")]
     {
         space::cdp_pass(&profile_id)?;
@@ -1096,17 +1191,28 @@ async fn extension_import(
 /// Import from a Web Store link, a bare extension id, or a direct .crx / .zip
 /// URL — the launcher fetches the file itself. `separate`: a copy beside one already there.
 #[tauri::command]
-async fn extension_import_url(url: String, epoch: Option<u64>, separate: Option<bool>) -> Result<space::extensions::ExtensionEntry, String> {
+async fn extension_import_url(
+    url: String,
+    epoch: Option<u64>,
+    separate: Option<bool>,
+) -> Result<space::extensions::ExtensionEntry, String> {
     let t = ticket(epoch)?;
-    space::extensions::import_url_as(space::Door("extension_import_url"), &t, &url, separate.unwrap_or(false))
-        .await
-        .map_err(|e| format!("{e:#}"))
+    space::extensions::import_url_as(
+        space::Door("extension_import_url"),
+        &t,
+        &url,
+        separate.unwrap_or(false),
+    )
+    .await
+    .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
 async fn extension_delete(id: String, epoch: Option<u64>) -> Result<(), String> {
     let t = ticket(epoch)?;
-    space::extensions::delete(space::Door("extension_delete"), &t, &id).await.map_err(|e| e.to_string())
+    space::extensions::delete(space::Door("extension_delete"), &t, &id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ---- Extension updates from the Web Store ----
@@ -1119,18 +1225,30 @@ async fn extension_updates() -> Result<Vec<space::extensions::ExtensionUpdate>, 
 
 /// Asks the Web Store now; a check under way is waited for, not repeated.
 #[tauri::command]
-async fn extension_updates_check(epoch: Option<u64>) -> Result<Vec<space::extensions::ExtensionUpdate>, String> {
+async fn extension_updates_check(
+    epoch: Option<u64>,
+) -> Result<Vec<space::extensions::ExtensionUpdate>, String> {
     let t = ticket(epoch)?;
     ext_updates::check_now(&t).await
 }
 
 /// `confirmed`: what the staged version asked the person about, let in.
 #[tauri::command]
-async fn extension_update(id: String, epoch: Option<u64>, confirmed: Option<bool>) -> Result<space::extensions::UpdateDone, String> {
+async fn extension_update(
+    id: String,
+    epoch: Option<u64>,
+    confirmed: Option<bool>,
+) -> Result<space::extensions::UpdateDone, String> {
     let t = ticket(epoch)?;
-    space::extensions::update(space::Door("extension_update"), &t, &id, confirmed.unwrap_or(false), ext_updates::engine())
-        .await
-        .map_err(|e| format!("{e:#}"))
+    space::extensions::update(
+        space::Door("extension_update"),
+        &t,
+        &id,
+        confirmed.unwrap_or(false),
+        ext_updates::engine(),
+    )
+    .await
+    .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
@@ -1141,9 +1259,16 @@ async fn extension_link_source(
     confirmed: Option<bool>,
 ) -> Result<space::extensions::LinkDone, String> {
     let t = ticket(epoch)?;
-    space::extensions::link_source(space::Door("extension_link_source"), &t, &id, &link, confirmed.unwrap_or(false), ext_updates::engine())
-        .await
-        .map_err(|e| format!("{e:#}"))
+    space::extensions::link_source(
+        space::Door("extension_link_source"),
+        &t,
+        &id,
+        &link,
+        confirmed.unwrap_or(false),
+        ext_updates::engine(),
+    )
+    .await
+    .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
@@ -1171,22 +1296,31 @@ async fn bookmark_list() -> Result<Vec<space::bookmarks::Bookmark>, String> {
 }
 
 #[tauri::command]
-async fn bookmark_save(entry: space::bookmarks::Bookmark, epoch: Option<u64>) -> Result<space::bookmarks::Bookmark, String> {
+async fn bookmark_save(
+    entry: space::bookmarks::Bookmark,
+    epoch: Option<u64>,
+) -> Result<space::bookmarks::Bookmark, String> {
     let t = ticket(epoch)?;
-    space::bookmarks::save(space::Door("bookmark_save"), &t, entry).await.map_err(|e| e.to_string())
+    space::bookmarks::save(space::Door("bookmark_save"), &t, entry)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn bookmark_delete(id: String, epoch: Option<u64>) -> Result<(), String> {
     let t = ticket(epoch)?;
-    space::bookmarks::delete(space::Door("bookmark_delete"), &t, &id).await.map_err(|e| e.to_string())
+    space::bookmarks::delete(space::Door("bookmark_delete"), &t, &id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// The page's selection in one call: a few hundred one-by-one calls rewrote the store each time.
 #[tauri::command]
 async fn bookmark_delete_many(ids: Vec<String>, epoch: Option<u64>) -> Result<(), String> {
     let t = ticket(epoch)?;
-    space::bookmarks::delete_many(space::Door("bookmark_delete_many"), &t, &ids).await.map_err(|e| e.to_string())
+    space::bookmarks::delete_many(space::Door("bookmark_delete_many"), &t, &ids)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ---- Tags ----
@@ -1198,21 +1332,34 @@ async fn tag_list() -> Result<space::tags::TagState, String> {
 }
 
 #[tauri::command]
-async fn tag_save(tag: space::tags::Tag, at: Option<usize>, epoch: Option<u64>) -> Result<space::tags::Tag, String> {
+async fn tag_save(
+    tag: space::tags::Tag,
+    at: Option<usize>,
+    epoch: Option<u64>,
+) -> Result<space::tags::Tag, String> {
     let t = ticket(epoch)?;
-    space::tags::save(space::Door("tag_save"), &t, tag, at).await.map_err(|e| e.to_string())
+    space::tags::save(space::Door("tag_save"), &t, tag, at)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn tag_delete(id: String, epoch: Option<u64>) -> Result<(), String> {
     let t = ticket(epoch)?;
-    space::tags::delete(space::Door("tag_delete"), &t, &id).await.map_err(|e| e.to_string())
+    space::tags::delete(space::Door("tag_delete"), &t, &id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn tag_assign(by_profile: std::collections::BTreeMap<String, Vec<String>>, epoch: Option<u64>) -> Result<(), String> {
+async fn tag_assign(
+    by_profile: std::collections::BTreeMap<String, Vec<String>>,
+    epoch: Option<u64>,
+) -> Result<(), String> {
     let t = ticket(epoch)?;
-    space::tags::assign(space::Door("tag_assign"), &t, by_profile).await.map_err(|e| e.to_string())
+    space::tags::assign(space::Door("tag_assign"), &t, by_profile)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// The tags the interface kept in its own storage, taken once.
@@ -1232,17 +1379,30 @@ async fn folder_list() -> Result<space::folders::FolderState, String> {
 #[tauri::command]
 async fn folder_add(name: String, epoch: Option<u64>) -> Result<(), String> {
     let t = ticket(epoch)?;
-    space::folders::add(space::Door("folder_add"), &t, &name).await.map_err(|e| e.to_string())
+    space::folders::add(space::Door("folder_add"), &t, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn folder_meta_set(name: String, meta: space::folders::FolderMeta, epoch: Option<u64>) -> Result<(), String> {
+async fn folder_meta_set(
+    name: String,
+    meta: space::folders::FolderMeta,
+    epoch: Option<u64>,
+) -> Result<(), String> {
     let t = ticket(epoch)?;
-    space::folders::set_meta(space::Door("folder_meta_set"), &t, &name, meta).await.map_err(|e| e.to_string())
+    space::folders::set_meta(space::Door("folder_meta_set"), &t, &name, meta)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn folder_set_parent(name: String, parent: String, meta: Option<space::folders::FolderMeta>, epoch: Option<u64>) -> Result<(), String> {
+fn folder_set_parent(
+    name: String,
+    parent: String,
+    meta: Option<space::folders::FolderMeta>,
+    epoch: Option<u64>,
+) -> Result<(), String> {
     let t = ticket(epoch)?;
     space::folders::set_parent(&t, &name, &parent, meta).map_err(|e| e.to_string())
 }
@@ -1261,22 +1421,28 @@ struct DataRootInfo {
     /// False while the data still lives in the config dir.
     custom: bool,
     migrating: bool,
+    portable: bool,
 }
 
 #[tauri::command]
 fn data_root_get() -> Result<DataRootInfo, String> {
     let s = settings::load().map_err(|e| e.to_string())?;
     let path = store::data_root().map_err(|e| e.to_string())?;
+    let portable = portable::root().map_err(|e| e.to_string())?.is_some();
     Ok(DataRootInfo {
         path: path.display().to_string(),
-        custom: s.data_root.is_some(),
+        custom: portable || s.data_root.is_some(),
         migrating: migrate::in_progress(),
+        portable,
     })
 }
 
 /// Progress goes out as `data-migration` events; nothing launches until done.
 #[tauri::command]
 async fn data_root_migrate(app: tauri::AppHandle, path: String) -> Result<u64, String> {
+    if portable::root().map_err(|e| e.to_string())?.is_some() {
+        return Err("Portable data stays in ShyShardData beside the launcher.".into());
+    }
     if !process::Tracker::shared().running().is_empty() {
         return Err("close every running profile first".into());
     }
@@ -1288,7 +1454,55 @@ async fn data_root_migrate(app: tauri::AppHandle, path: String) -> Result<u64, S
 }
 
 #[tauri::command]
-async fn profile_bind_proxy(profile_id: String, proxy_id: Option<String>, epoch: Option<u64>) -> Result<(), String> {
+async fn snapshot_preview() -> Result<snapshot::SnapshotManifest, String> {
+    tauri::async_runtime::spawn_blocking(snapshot::preview)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn snapshot_create(path: String) -> Result<snapshot::SnapshotResult, String> {
+    if !migrate::hold() {
+        return Err("a migration, reset, or safe close is already in progress".into());
+    }
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        if !process::Tracker::shared().running().is_empty() {
+            return Err(anyhow::anyhow!("close every running profile first"));
+        }
+        snapshot::create(std::path::Path::new(&path))
+    })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("{e:#}"));
+    migrate::release();
+    result
+}
+
+#[tauri::command]
+async fn snapshot_inspect(path: String) -> Result<snapshot::SnapshotInspection, String> {
+    tauri::async_runtime::spawn_blocking(move || snapshot::inspect(std::path::Path::new(&path)))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn snapshot_profile_payloads(path: String) -> Result<Vec<Value>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        snapshot::profile_payloads(std::path::Path::new(&path))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn profile_bind_proxy(
+    profile_id: String,
+    proxy_id: Option<String>,
+    epoch: Option<u64>,
+) -> Result<(), String> {
     let t = ticket(epoch)?;
     space::profile::bind_proxy(space::Door("profile_bind_proxy"), &t, &profile_id, proxy_id)
         .await
@@ -1296,14 +1510,22 @@ async fn profile_bind_proxy(profile_id: String, proxy_id: Option<String>, epoch:
 }
 
 #[tauri::command]
-async fn profile_clone(id: String, epoch: Option<u64>) -> Result<space::profile::ProfileMeta, String> {
+async fn profile_clone(
+    id: String,
+    epoch: Option<u64>,
+) -> Result<space::profile::ProfileMeta, String> {
     let t = ticket(epoch)?;
-    space::profile::clone_profile(space::Door("profile_clone"), &t, &id).await.map_err(|e| e.to_string())
+    space::profile::clone_profile(space::Door("profile_clone"), &t, &id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Import profiles verbatim under fresh ids; returns the count.
 #[tauri::command]
 async fn profile_import(payloads: Vec<Value>, epoch: Option<u64>) -> Result<usize, String> {
+    if migrate::in_progress() {
+        return Err("a migration, reset, or snapshot operation is already in progress".into());
+    }
     let t = ticket(epoch)?;
     let mut n = 0;
     for mut payload in payloads {
@@ -1373,7 +1595,11 @@ async fn folder_rename(old: String, new: String, epoch: Option<u64>) -> Result<u
 
 /// Delete folder; `delete_profiles` true → remove, false → unfile.
 #[tauri::command]
-async fn folder_delete(folder: String, delete_profiles: bool, epoch: Option<u64>) -> Result<usize, String> {
+async fn folder_delete(
+    folder: String,
+    delete_profiles: bool,
+    epoch: Option<u64>,
+) -> Result<usize, String> {
     let t = ticket(epoch)?;
     space::profile::delete_folder(space::Door("folder_delete"), &t, &folder, delete_profiles)
         .await
@@ -1426,7 +1652,9 @@ pub fn merge_library_fingerprint(
     );
     if let Some(o) = entry.payload.as_object() {
         for (k, v) in o {
-            if k == "_meta" { continue; }
+            if k == "_meta" {
+                continue;
+            }
             merged.insert(k.clone(), v.clone());
         }
     }
@@ -1448,7 +1676,10 @@ pub fn build_fingerprint_config(
     template_id: &str,
 ) -> Result<serde_json::Map<String, Value>, String> {
     // A run has no window of its own: the launcher's main one is asked.
-    let host = window.cloned().or_else(main_window).and_then(|w| host_screen_of(&w));
+    let host = window
+        .cloned()
+        .or_else(main_window)
+        .and_then(|w| host_screen_of(&w));
     fingerprint_config_on(window, template_id, host)
 }
 
@@ -1471,7 +1702,10 @@ pub fn library_profile(
     host: Option<launch::HostScreen>,
 ) -> Result<serde_json::Map<String, Value>, String> {
     let mut merged = merge_library_fingerprint(template_id)?;
-    settings::load().map_err(|e| e.to_string())?.profile_defaults.apply_to_template(&mut merged);
+    settings::load()
+        .map_err(|e| e.to_string())?
+        .profile_defaults
+        .apply_to_template(&mut merged);
     launch::claim_host_screen(&mut merged, host);
     Ok(merged)
 }
@@ -1554,8 +1788,10 @@ fn enrich_picks_for_preset(preset_id: String) -> Result<PresetEnrichPicks, Strin
 // ---- Fingerprint library ----
 
 #[tauri::command]
-fn fingerprint_list() -> Result<Vec<fingerprints::LibraryEntry>, String> {
-    fingerprints::list_all().map_err(|e| e.to_string())
+fn fingerprint_list() -> Result<Vec<fingerprints::LibraryView>, String> {
+    fingerprints::list_all()
+        .map(|entries| entries.into_iter().map(Into::into).collect())
+        .map_err(|e| e.to_string())
 }
 
 /// What this machine's GPU can actually do. Cached; `force` re-asks the engine.
@@ -1568,8 +1804,7 @@ async fn gpu_caps(force: bool) -> Result<gpu_caps::HostGlCaps, String> {
 /// Whether the machine can wear each library fingerprint, keyed by id. Kept out of
 /// fingerprint_list() so that stays fast; an empty map means "not known", not "all fine".
 #[tauri::command]
-async fn gpu_caps_compat(
-) -> Result<std::collections::HashMap<String, gpu_caps::Compat>, String> {
+async fn gpu_caps_compat() -> Result<std::collections::HashMap<String, gpu_caps::Compat>, String> {
     let caps = match gpu_caps::probe(false).await {
         Ok(c) => c,
         Err(_) => return Ok(Default::default()),
@@ -1582,18 +1817,43 @@ async fn gpu_caps_compat(
 }
 
 #[tauri::command]
-fn fingerprint_get(id: String) -> Result<Option<fingerprints::LibraryEntry>, String> {
-    fingerprints::get(&id).map_err(|e| e.to_string())
+fn fingerprint_get(id: String) -> Result<Option<fingerprints::LibraryView>, String> {
+    fingerprints::get(&id)
+        .map(|entry| entry.map(Into::into))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn fingerprint_import(json_text: String, id_hint: Option<String>) -> Result<fingerprints::LibraryEntry, String> {
-    fingerprints::import(&json_text, id_hint).map_err(|e| e.to_string())
+fn fingerprint_import(
+    json_text: String,
+    id_hint: Option<String>,
+) -> Result<fingerprints::LibraryView, String> {
+    fingerprints::import(&json_text, id_hint).map(Into::into).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn fingerprint_export(id: String) -> Result<String, String> {
+    fingerprints::export(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn fingerprint_update(id: String, json_text: String) -> Result<fingerprints::LibraryView, String> {
+    fingerprints::update(&id, &json_text).map(Into::into).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn fingerprint_rollback(id: String) -> Result<fingerprints::LibraryView, String> {
+    fingerprints::rollback(&id).map(Into::into).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn fingerprint_delete(id: String) -> Result<(), String> {
     fingerprints::delete(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn fingerprint_tags_save(id: String, tags: Vec<String>) -> Result<fingerprints::LibraryView, String> {
+    fingerprints::save_tags(&id, tags).map(Into::into).map_err(|e| e.to_string())
 }
 
 /// Path to fingerprint library dir (UI "Open library folder").
@@ -1626,11 +1886,44 @@ async fn process_kill(profile_id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn proxy_provider_defaults_get() -> Result<proxy_providers::ProviderView, String> { proxy_providers::get().map_err(|_| "provider_defaults_unavailable".into()) }
+fn proxy_provider_defaults_get(custom_provider_id: Option<uuid::Uuid>, create: Option<bool>, tnb: Option<bool>) -> Result<proxy_providers::ProviderView, String> {
+    proxy_providers::get_for(custom_provider_id, create.unwrap_or(false), tnb.unwrap_or(false)).map_err(|e| e.to_string())
+}
 #[tauri::command]
-fn proxy_provider_defaults_save(value: proxy_providers::ProviderUpdate) -> Result<proxy_providers::ProviderView, String> { proxy_providers::save(value).map_err(|e| e.to_string()) }
+fn proxy_provider_defaults_save(
+    value: proxy_providers::ProviderUpdate,
+    custom_provider_id: Option<uuid::Uuid>,
+    create: Option<bool>,
+    tnb: Option<bool>,
+) -> Result<proxy_providers::ProviderView, String> {
+    proxy_providers::save_for(custom_provider_id, create.unwrap_or(false), tnb.unwrap_or(false), value).map_err(|e| e.to_string())
+}
 #[tauri::command]
-fn proxy_provider_generate(request: proxy_providers::GenerateRequest) -> Result<space::proxy::ProxyEntry, String> { proxy_providers::generate(request).map_err(|e| e.to_string()) }
+fn proxy_provider_delete_custom(custom_provider_id: uuid::Uuid) -> Result<(), String> {
+    proxy_providers::delete_custom(custom_provider_id).map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn proxy_provider_generate(
+    request: proxy_providers::GenerateRequest,
+) -> Result<space::proxy::ProxyEntry, String> {
+    proxy_providers::generate(request).map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn proxy_provider_generate_many(
+    request: proxy_providers::GenerateRequest,
+) -> Result<Vec<space::proxy::ProxyEntry>, String> {
+    proxy_providers::generate_many(request).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn proxy_provider_extract_custom(
+    custom_provider_id: Option<uuid::Uuid>,
+    count: u16,
+) -> Result<Vec<space::proxy::ProxyEntry>, String> {
+    proxy_providers::extract_custom(custom_provider_id, count)
+        .await
+        .map_err(|error| error.to_string())
+}
 
 // ---- Proxies ----
 
@@ -1644,15 +1937,52 @@ async fn proxy_list() -> Result<Vec<space::proxy::ProxyEntry>, String> {
 }
 
 #[tauri::command]
-async fn proxy_save(entry: space::proxy::ProxyEntry, epoch: Option<u64>) -> Result<space::proxy::ProxyEntry, String> {
+async fn proxy_folder_list() -> Result<space::proxy_folders::ProxyFolderState, String> {
+    space::ready().await;
+    space::proxy_folders::list().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn proxy_folder_add(name: String, parent: String, epoch: Option<u64>) -> Result<space::proxy_folders::ProxyFolderState, String> {
     let t = ticket(epoch)?;
-    space::proxy::upsert(space::Door("proxy_save"), &t, entry).await.map_err(|e| e.to_string())
+    space::proxy_folders::add(&t, &name, &parent).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn proxy_folder_rename(old: String, new: String, epoch: Option<u64>) -> Result<space::proxy_folders::ProxyFolderState, String> {
+    let t = ticket(epoch)?;
+    space::proxy_folders::rename(&t, &old, &new).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn proxy_folder_delete(name: String, epoch: Option<u64>) -> Result<space::proxy_folders::ProxyFolderState, String> {
+    let t = ticket(epoch)?;
+    space::proxy_folders::delete(&t, &name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn proxy_folder_set_parent(name: String, parent: String, epoch: Option<u64>) -> Result<space::proxy_folders::ProxyFolderState, String> {
+    let t = ticket(epoch)?;
+    space::proxy_folders::set_parent(&t, &name, &parent).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn proxy_save(
+    entry: space::proxy::ProxyEntry,
+    epoch: Option<u64>,
+) -> Result<space::proxy::ProxyEntry, String> {
+    let t = ticket(epoch)?;
+    space::proxy::upsert(space::Door("proxy_save"), &t, entry)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn proxy_delete(id: String, epoch: Option<u64>) -> Result<(), String> {
     let t = ticket(epoch)?;
-    space::proxy::delete(space::Door("proxy_delete"), &t, &id).await.map_err(|e| e.to_string())
+    space::proxy::delete(space::Door("proxy_delete"), &t, &id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1662,17 +1992,28 @@ async fn proxy_check(entry: space::proxy::ProxyEntry) -> Result<u128, String> {
 
 #[tauri::command]
 async fn proxy_check_udp(entry: space::proxy::ProxyEntry) -> Result<u128, String> {
-    space::proxy::probe_udp(&entry).await.map_err(|e| e.to_string())
+    space::proxy::probe_udp(&entry)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn proxy_geo(entry: space::proxy::ProxyEntry, provider: Option<String>) -> Result<space::proxy::GeoInfo, String> {
-    space::proxy::geo_check(&entry, provider).await.map_err(|e| e.to_string())
+async fn proxy_geo(
+    entry: space::proxy::ProxyEntry,
+    provider: Option<String>,
+) -> Result<space::proxy::GeoInfo, String> {
+    space::proxy::geo_check(&entry, provider)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn proxy_full_test(entry: space::proxy::ProxyEntry) -> Result<space::proxy::TestSnapshot, String> {
-    space::proxy::full_test(&entry).await.map_err(|e| e.to_string())
+async fn proxy_full_test(
+    entry: space::proxy::ProxyEntry,
+) -> Result<space::proxy::TestSnapshot, String> {
+    space::proxy::full_test(&entry)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1686,7 +2027,11 @@ fn proxy_last_test(id: String) -> Option<space::proxy::TestSnapshot> {
 }
 
 #[tauri::command]
-async fn proxy_bulk_import(text: String, kind: String, epoch: Option<u64>) -> Result<usize, String> {
+async fn proxy_bulk_import(
+    text: String,
+    kind: String,
+    epoch: Option<u64>,
+) -> Result<usize, String> {
     let t = ticket(epoch)?;
     let default_kind = match kind.as_str() {
         "http" => space::proxy::ProxyKind::Http,
@@ -1694,7 +2039,9 @@ async fn proxy_bulk_import(text: String, kind: String, epoch: Option<u64>) -> Re
         _ => space::proxy::ProxyKind::Socks5,
     };
     let parsed = space::proxy::parse_bulk(&text, default_kind);
-    space::proxy::bulk_save(space::Door("proxy_bulk_import"), &t, parsed).await.map_err(|e| e.to_string())
+    space::proxy::bulk_save(space::Door("proxy_bulk_import"), &t, parsed)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Parse bulk-import text without saving (preview list with per-row test).
@@ -1710,21 +2057,30 @@ fn proxy_bulk_parse(text: String, kind: String) -> Vec<space::proxy::ProxyEntry>
 
 /// Extracts a preview only; the operator saves it through proxy_bulk_save.
 #[tauri::command]
-async fn tnbproxy_extract(request: tnbproxy::ExtractRequest) -> Result<tnbproxy::Extraction, String> {
+async fn tnbproxy_extract(
+    request: tnbproxy::ExtractRequest,
+) -> Result<tnbproxy::Extraction, String> {
     tnbproxy::extract(request).await.map_err(str::to_owned)
 }
 
 /// Public provider region metadata; no account credentials or extraction.
 #[tauri::command]
-async fn tnbproxy_locations(request: tnbproxy::LocationsRequest) -> Result<tnbproxy::Locations, String> {
+async fn tnbproxy_locations(
+    request: tnbproxy::LocationsRequest,
+) -> Result<tnbproxy::Locations, String> {
     tnbproxy::locations(request).await.map_err(str::to_owned)
 }
 
 /// Persist pre-tested proxies (bulk dialog).
 #[tauri::command]
-async fn proxy_bulk_save(entries: Vec<space::proxy::ProxyEntry>, epoch: Option<u64>) -> Result<usize, String> {
+async fn proxy_bulk_save(
+    entries: Vec<space::proxy::ProxyEntry>,
+    epoch: Option<u64>,
+) -> Result<usize, String> {
     let t = ticket(epoch)?;
-    space::proxy::bulk_save(space::Door("proxy_bulk_save"), &t, entries).await.map_err(|e| e.to_string())
+    space::proxy::bulk_save(space::Door("proxy_bulk_save"), &t, entries)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ---- Launcher ----
@@ -1744,10 +2100,17 @@ async fn launch(profile_id: String, password: Option<String>) -> Result<u32, Str
         return Err("profiles are being moved — try again when that finishes".into());
     }
     let b = bus().await?;
-    launch::launch_profile_unlocked(&profile_id, false, false, b.port, &b.token, password.as_deref())
-        .await
-        .map(|o| o.pid)
-        .map_err(|e| e.to_string())
+    launch::launch_profile_unlocked(
+        &profile_id,
+        false,
+        false,
+        b.port,
+        &b.token,
+        password.as_deref(),
+    )
+    .await
+    .map(|o| o.pid)
+    .map_err(|e| e.to_string())
 }
 
 // ---- Window synchronisation ----
@@ -1812,7 +2175,10 @@ async fn sync_launch(
     // does not, so refuse a mixed group before anything is launched.
     let mut mobile: Vec<String> = Vec::new();
     let mut desktop: Vec<String> = Vec::new();
-    if profile_ids.iter().any(|id| space::profile::is_protected(id)) {
+    if profile_ids
+        .iter()
+        .any(|id| space::profile::is_protected(id))
+    {
         return Err(space::profile::NOT_FOR_PROTECTED.into());
     }
     for id in &profile_ids {
@@ -1857,10 +2223,7 @@ async fn sync_launch(
         let distinct: std::collections::BTreeSet<&str> =
             sizes.iter().map(|(_, s)| s.as_str()).collect();
         if distinct.len() > 1 {
-            let listed: Vec<String> = sizes
-                .iter()
-                .map(|(n, s)| format!("{n} ({s})"))
-                .collect();
+            let listed: Vec<String> = sizes.iter().map(|(n, s)| format!("{n} ({s})")).collect();
             return Err(format!(
                 "a mobile sync group must be all one screen size — {}",
                 listed.join(", ")
@@ -1872,8 +2235,9 @@ async fn sync_launch(
 
     let mut failed: Vec<String> = Vec::new();
     for id in &profile_ids {
-        if let Err(e) = launch::launch_profile_synced(
-            id, false, false, Some(&group), b.port, &b.token).await {
+        if let Err(e) =
+            launch::launch_profile_synced(id, false, false, Some(&group), b.port, &b.token).await
+        {
             failed.push(format!("{id}: {e}"));
         }
     }
@@ -1882,8 +2246,11 @@ async fn sync_launch(
     }
     // A partial launch is still a usable group; just say what did not make it.
     if !failed.is_empty() {
-        eprintln!("[launcher] sync group '{group}': {} failed — {}",
-                  failed.len(), failed.join("; "));
+        eprintln!(
+            "[launcher] sync group '{group}': {} failed — {}",
+            failed.len(),
+            failed.join("; ")
+        );
     }
     open_sync_panel(&app, &group);
     Ok(group)
@@ -1934,11 +2301,7 @@ async fn sync_stop(group: String) -> Result<(), String> {
 
 /// Holds one profile out of the group — a captcha, a different password.
 #[tauri::command]
-async fn sync_set_excluded(
-    group: String,
-    profile: String,
-    excluded: bool,
-) -> Result<(), String> {
+async fn sync_set_excluded(group: String, profile: String, excluded: bool) -> Result<(), String> {
     bus().await?.set_excluded(&group, &profile, excluded);
     Ok(())
 }
@@ -2088,7 +2451,10 @@ fn cookies_export_to_file(profile_id: String, path: String) -> Result<usize, Str
 }
 
 #[tauri::command]
-fn cookies_import(profile_id: String, cookies: Vec<space::cookies::Cookie>) -> Result<usize, String> {
+fn cookies_import(
+    profile_id: String,
+    cookies: Vec<space::cookies::Cookie>,
+) -> Result<usize, String> {
     // Running browser would clobber the import on exit.
     if is_profile_running(&profile_id) {
         return Err("stop the profile before importing cookies".into());
@@ -2101,23 +2467,37 @@ fn cookies_import(profile_id: String, cookies: Vec<space::cookies::Cookie>) -> R
 
 #[tauri::command]
 fn settings_get() -> Result<settings::Settings, String> {
-    settings::load().map(|mut s| { s.proxy_chain = s.proxy_chain.public(); s }).map_err(|e| e.to_string())
+    settings::load()
+        .map(|mut s| {
+            s.proxy_chain = s.proxy_chain.public();
+            s
+        })
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn proxy_chain_detect(profile_id: Option<String>) -> Result<proxy_chain::detect_windows::Detection, String> {
+async fn proxy_chain_detect(
+    profile_id: Option<String>,
+) -> Result<proxy_chain::detect_windows::Detection, String> {
     let target = if let Some(id) = profile_id {
         let entry = launch::proxy_for_test(&id).map_err(|e| e.to_string())?;
         proxy_chain::connector::Target::new(&entry.host, entry.port)
     } else {
         proxy_chain::connector::Target::new("example.com", 443)
-    }.map_err(|e| e.to_string())?;
+    }
+    .map_err(|e| e.to_string())?;
     Ok(proxy_chain::detect_windows::detect_for(&target).await)
 }
 
 #[tauri::command]
-async fn proxy_chain_test(kind: String, config: proxy_chain::config::ProxyChainSettings, profile_id: Option<String>) -> Result<proxy_chain::TestResult, String> {
-    proxy_chain::test(kind, config, profile_id).await.map_err(|e| e.to_string())
+async fn proxy_chain_test(
+    kind: String,
+    config: proxy_chain::config::ProxyChainSettings,
+    profile_id: Option<String>,
+) -> Result<proxy_chain::TestResult, String> {
+    proxy_chain::test(kind, config, profile_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Test the form's current route without saving its profile or a pasted proxy.
@@ -2133,7 +2513,17 @@ async fn proxy_route_test(
 ) -> Result<proxy_chain::TestResult, String> {
     let t = space::window_ticket(epoch).map_err(|e| e.to_string())?;
     t.read_current().map_err(|e| e.to_string())?;
-    proxy_route_test_core(route, policy.unwrap_or_default(), proxy_id, new_proxy_line, profile_id, password, t).await.map_err(|e| e.to_string())
+    proxy_route_test_core(
+        route,
+        policy.unwrap_or_default(),
+        proxy_id,
+        new_proxy_line,
+        profile_id,
+        password,
+        t,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 async fn proxy_route_test_core(
@@ -2145,30 +2535,49 @@ async fn proxy_route_test_core(
     password: Option<String>,
     t: space::Ticket,
 ) -> anyhow::Result<proxy_chain::TestResult> {
-    if let Some(route) = &route { route.validate()?; }
+    if let Some(route) = &route {
+        route.validate()?;
+    }
     policy.validate()?;
     if let Some(id) = profile_id.as_deref().filter(|id| !id.is_empty()) {
         space::profile::check_edit(space::Door("profile_save"), &t, id, false)?;
         if space::profile::is_protected(id) {
-            let password = password.as_deref().ok_or_else(|| anyhow::anyhow!(space::profile::PASSWORD_REQUIRED))?;
+            let password = password
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!(space::profile::PASSWORD_REQUIRED))?;
             space::profile::unlock(id, password)?;
         } else {
             space::profile::fetch_for_edit(&t, id).await?;
         }
     }
     let needs_assigned = route.as_ref().is_none_or(|route| route.requires_assigned());
-    let assigned = if !needs_assigned { None }
-    else if let Some(line) = new_proxy_line.as_deref().filter(|line| !line.trim().is_empty()) {
-        Some(space::proxy::parse_single(line).ok_or_else(|| anyhow::anyhow!("The proxy line could not be parsed."))?)
+    let assigned = if !needs_assigned {
+        None
+    } else if let Some(line) = new_proxy_line
+        .as_deref()
+        .filter(|line| !line.trim().is_empty())
+    {
+        Some(
+            space::proxy::parse_single(line)
+                .ok_or_else(|| anyhow::anyhow!("The proxy line could not be parsed."))?,
+        )
     } else if let Some(id) = proxy_id.as_deref().filter(|id| !id.trim().is_empty()) {
         Some(space::proxy::for_route(t.team(), id).await?)
-    } else { None };
+    } else {
+        None
+    };
     let first = match route.as_ref().and_then(|route| route.first_proxy_id()) {
         Some(id) => Some(space::proxy::for_route(t.team(), id).await?),
         None => None,
     };
     t.read_current()?;
-    let result = proxy_chain::routing::test_resolved_route(route.as_ref(), policy, assigned.as_ref(), first.as_ref()).await?;
+    let result = proxy_chain::routing::test_resolved_route(
+        route.as_ref(),
+        policy,
+        assigned.as_ref(),
+        first.as_ref(),
+    )
+    .await?;
     t.read_current()?;
     Ok(result)
 }
@@ -2176,10 +2585,16 @@ async fn proxy_route_test_core(
 /// The toolbar changes only the saved switch; credentials and other settings
 /// are read here, never round-tripped through a stale page snapshot.
 #[tauri::command]
-fn proxy_chain_set_enabled(enabled: bool) -> Result<proxy_chain::config::ProxyChainSettings, String> {
+fn proxy_chain_set_enabled(
+    enabled: bool,
+) -> Result<proxy_chain::config::ProxyChainSettings, String> {
     let mut value = settings::load().map_err(|e| e.to_string())?;
-    if settings::load_error().is_some() { return Err("proxy_chain_settings_unreadable".into()); }
-    if enabled { value.proxy_chain.validate().map_err(|e| e.to_string())?; }
+    if settings::load_error().is_some() {
+        return Err("proxy_chain_settings_unreadable".into());
+    }
+    if enabled {
+        value.proxy_chain.validate().map_err(|e| e.to_string())?;
+    }
     value.proxy_chain.enabled = enabled;
     settings::save(&value).map_err(|e| e.to_string())?;
     Ok(value.proxy_chain.public())
@@ -2192,11 +2607,32 @@ mod proxy_chain_toolbar_tests {
         let _serial = crate::migrate::serial();
         let _root = crate::store::test_root("draft-route-no-writes").with_config();
         let route = Some(crate::proxy_chain::route::ProfileProxyRoute::Invalid);
-        assert!(super::proxy_route_test(route, None, None, Some("socks5://synthetic:secret@127.0.0.1:9".into()), None, None, None).await.is_err());
+        assert!(super::proxy_route_test(
+            route,
+            None,
+            None,
+            Some("socks5://synthetic:secret@127.0.0.1:9".into()),
+            None,
+            None,
+            None
+        )
+        .await
+        .is_err());
         assert!(crate::space::profile::list_all().unwrap().is_empty());
         assert!(crate::space::proxy::list().unwrap().is_empty());
         let route = Some(crate::proxy_chain::route::ProfileProxyRoute::Proxy);
-        let error = super::proxy_route_test(route, None, None, Some("unparseable synthetic proxy".into()), None, None, None).await.err().unwrap();
+        let error = super::proxy_route_test(
+            route,
+            None,
+            None,
+            Some("unparseable synthetic proxy".into()),
+            None,
+            None,
+            None,
+        )
+        .await
+        .err()
+        .unwrap();
         assert_eq!(error.to_string(), "The proxy line could not be parsed.");
         assert!(crate::space::profile::list_all().unwrap().is_empty());
         assert!(crate::space::proxy::list().unwrap().is_empty());
@@ -2206,13 +2642,27 @@ mod proxy_chain_toolbar_tests {
     async fn draft_route_test_requires_the_protected_profiles_password_before_network_use() {
         let _serial = crate::migrate::serial();
         let _root = crate::store::test_root("draft-route-protected").with_config();
-        let stored = serde_json::from_value(serde_json::json!({"name":"Synthetic protected route", "_meta":{"id":""}})).unwrap();
+        let stored = serde_json::from_value(
+            serde_json::json!({"name":"Synthetic protected route", "_meta":{"id":""}}),
+        )
+        .unwrap();
         let row = crate::space::profile::save_here(stored, Default::default()).unwrap();
         crate::space::profile::protect(&row.id, "synthetic password").unwrap();
-        let path = crate::store::profiles_dir().unwrap().join(format!("{}.json", row.id));
+        let path = crate::store::profiles_dir()
+            .unwrap()
+            .join(format!("{}.json", row.id));
         let before = std::fs::read(&path).unwrap();
         for password in [None, Some("wrong password".into())] {
-            let result = super::proxy_route_test(Some(crate::proxy_chain::route::ProfileProxyRoute::Direct), None, None, None, Some(row.id.clone()), password, None).await;
+            let result = super::proxy_route_test(
+                Some(crate::proxy_chain::route::ProfileProxyRoute::Direct),
+                None,
+                None,
+                None,
+                Some(row.id.clone()),
+                password,
+                None,
+            )
+            .await;
             assert!(result.is_err());
             assert_eq!(std::fs::read(&path).unwrap(), before);
         }
@@ -2234,10 +2684,16 @@ mod proxy_chain_toolbar_tests {
         assert!(public.enabled && public.password_saved);
         assert!(public.protected_password.is_none());
         saved.proxy_chain.enabled = true;
-        assert_eq!(serde_json::to_value(crate::settings::load().unwrap()).unwrap(), serde_json::to_value(&saved).unwrap());
+        assert_eq!(
+            serde_json::to_value(crate::settings::load().unwrap()).unwrap(),
+            serde_json::to_value(&saved).unwrap()
+        );
         super::proxy_chain_set_enabled(false).unwrap();
         saved.proxy_chain.enabled = false;
-        assert_eq!(serde_json::to_value(crate::settings::load().unwrap()).unwrap(), serde_json::to_value(saved).unwrap());
+        assert_eq!(
+            serde_json::to_value(crate::settings::load().unwrap()).unwrap(),
+            serde_json::to_value(saved).unwrap()
+        );
     }
 
     #[test]
@@ -2252,6 +2708,16 @@ mod proxy_chain_toolbar_tests {
         let before = std::fs::read(&path).unwrap();
         assert!(super::proxy_chain_set_enabled(true).is_err());
         assert_eq!(before, std::fs::read(path).unwrap());
+    }
+
+    #[tokio::test]
+    async fn profile_import_refuses_writes_while_snapshot_guard_is_held() {
+        let _serial = crate::migrate::serial();
+        assert!(crate::migrate::hold());
+        let result = super::profile_import(Vec::new(), None).await;
+        crate::migrate::release();
+        let error = result.expect_err("profile import must honor the snapshot guard");
+        assert!(error.contains("migration, reset, or snapshot"));
     }
 }
 
@@ -2336,7 +2802,10 @@ fn settings_save(mut value: settings::Settings) -> Result<(), String> {
     // Owned by the migration, not the form — which round-trips the whole struct
     // and would reset it while the data sits on another disk.
     if let Ok(cur) = settings::load() {
-        value.proxy_chain.apply_update(&cur.proxy_chain).map_err(|e| e.to_string())?;
+        value
+            .proxy_chain
+            .apply_update(&cur.proxy_chain)
+            .map_err(|e| e.to_string())?;
         value.data_root = cur.data_root;
         if value.api_secret.is_empty() {
             value.api_secret = cur.api_secret;
@@ -2403,7 +2872,11 @@ async fn ps_me() -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn ps_orders(status: String, offset: Option<i64>, limit: Option<i64>) -> Result<Value, String> {
+async fn ps_orders(
+    status: String,
+    offset: Option<i64>,
+    limit: Option<i64>,
+) -> Result<Value, String> {
     let mut q = vec![("status".to_string(), status)];
     if let Some(o) = offset {
         q.push(("offset".into(), o.to_string()));
@@ -2453,6 +2926,11 @@ fn space_state() -> Result<team::SpaceState, String> {
     team::state().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn team_recovery_copies() -> Result<Vec<space::open::RecoveryCopy>, String> {
+    space::open::recovery_copies().map_err(|e| e.to_string())
+}
+
 /// Switch the whole launcher to a space, refused while a profile starts or the
 /// data moves. A team's lists are read before the answer, for a while at most.
 #[tauri::command]
@@ -2465,9 +2943,15 @@ async fn space_set(app: tauri::AppHandle, space: team::Space) -> Result<team::Sp
 
 /// Join a team and move into it; its live channel opens at once.
 #[tauri::command]
-async fn team_join(app: tauri::AppHandle, server: String, token: String) -> Result<team::SpaceState, String> {
+async fn team_join(
+    app: tauri::AppHandle,
+    server: String,
+    token: String,
+) -> Result<team::SpaceState, String> {
     use tauri::Emitter;
-    let st = space::join(&server, &token).await.map_err(|e| e.to_string())?;
+    let st = space::join(&server, &token)
+        .await
+        .map_err(|e| e.to_string())?;
     let _ = app.emit("space-changed", &st.space);
     Ok(st)
 }
@@ -2480,6 +2964,7 @@ async fn team_leave(app: tauri::AppHandle, team_id: String) -> Result<team::Spac
     // Its profiles open here go back first: once it is left, nothing reaches it.
     space::open::close_team_and_wait(&team_id, space::open::QUIT_WAIT).await;
     team::leave(&team_id).map_err(|e| e.to_string())?;
+    space::open::discard_team_recovery(&team_id);
     space::perm::forget(&team_id);
     space::cache::forget(&team_id);
     space::secrets::forget(&team_id);
@@ -2507,13 +2992,17 @@ async fn sync_connect(
     token: Option<String>,
     team_id: Option<String>,
 ) -> Result<space::sync::SyncState, String> {
-    space::sync::connect(server, token, team_id).await.map_err(|e| e.to_string())
+    space::sync::connect(server, token, team_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Local copies always stay; with `remove_from_server`, the server's go first.
 #[tauri::command]
 async fn sync_disconnect(remove_from_server: bool) -> Result<space::sync::SyncState, String> {
-    space::sync::disconnect(remove_from_server).await.map_err(|e| e.to_string())
+    space::sync::disconnect(remove_from_server)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2534,7 +3023,9 @@ struct SyncInvite {
 
 #[tauri::command]
 async fn sync_invite() -> Result<SyncInvite, String> {
-    space::sync::invite().map(|invite| SyncInvite { invite }).map_err(|e| e.to_string())
+    space::sync::invite()
+        .map(|invite| SyncInvite { invite })
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2543,26 +3034,38 @@ async fn sync_set_device_name(name: String) -> Result<space::sync::SyncState, St
 }
 
 #[tauri::command]
-async fn profile_sync_set(ids: Vec<String>, on: bool) -> Result<Vec<space::profile::ProfileMeta>, String> {
+async fn profile_sync_set(
+    ids: Vec<String>,
+    on: bool,
+) -> Result<Vec<space::profile::ProfileMeta>, String> {
     space::sync::profile_set(&ids, on).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn profile_sync_take(id: String) -> Result<space::profile::ProfileMeta, String> {
-    space::sync::profile_take(&id).await.map_err(|e| e.to_string())
+    space::sync::profile_take(&id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ---- the Team page: the admin's commands go with the admin token ----
 
 #[tauri::command]
 async fn team_admin_overview(team_id: String) -> Result<space::admin::TeamOverview, String> {
-    space::admin::overview(&team_id).await.map_err(|e| e.to_string())
+    space::admin::overview(&team_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// The invite is shown once: the server's address, "#" and the new token.
 #[tauri::command]
-async fn team_admin_member_create(team_id: String, name: String) -> Result<space::admin::CreatedMember, String> {
-    space::admin::member_create(&team_id, &name).await.map_err(|e| e.to_string())
+async fn team_admin_member_create(
+    team_id: String,
+    name: String,
+) -> Result<space::admin::CreatedMember, String> {
+    space::admin::member_create(&team_id, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2571,23 +3074,37 @@ async fn team_admin_member_set_active(
     member_id: String,
     active: bool,
 ) -> Result<space::admin::TeamMember, String> {
-    space::admin::member_set_active(&team_id, &member_id, active).await.map_err(|e| e.to_string())
+    space::admin::member_set_active(&team_id, &member_id, active)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn team_admin_member_delete(team_id: String, member_id: String) -> Result<(), String> {
-    space::admin::member_delete(&team_id, &member_id).await.map_err(|e| e.to_string())
+    space::admin::member_delete(&team_id, &member_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// A new invite for the member; the old token stops working at once.
 #[tauri::command]
-async fn team_admin_member_reissue(team_id: String, member_id: String) -> Result<space::admin::CreatedMember, String> {
-    space::admin::member_reissue(&team_id, &member_id).await.map_err(|e| e.to_string())
+async fn team_admin_member_reissue(
+    team_id: String,
+    member_id: String,
+) -> Result<space::admin::CreatedMember, String> {
+    space::admin::member_reissue(&team_id, &member_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn team_admin_grants(team_id: String, member_id: String) -> Result<Vec<team_model::Grant>, String> {
-    space::admin::grants(&team_id, &member_id).await.map_err(|e| e.to_string())
+async fn team_admin_grants(
+    team_id: String,
+    member_id: String,
+) -> Result<Vec<team_model::Grant>, String> {
+    space::admin::grants(&team_id, &member_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2596,14 +3113,22 @@ async fn team_admin_set_grants(
     member_id: String,
     grants: Vec<team_model::Grant>,
 ) -> Result<Vec<team_model::Grant>, String> {
-    space::admin::set_grants(&team_id, &member_id, &grants).await.map_err(|e| e.to_string())
+    space::admin::set_grants(&team_id, &member_id, &grants)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// The space menu shows the team's name, so it is told too.
 #[tauri::command]
-async fn team_admin_rename(app: tauri::AppHandle, team_id: String, name: String) -> Result<space::admin::TeamInfo, String> {
+async fn team_admin_rename(
+    app: tauri::AppHandle,
+    team_id: String,
+    name: String,
+) -> Result<space::admin::TeamInfo, String> {
     use tauri::Emitter;
-    let (team, st) = space::admin::rename(&team_id, &name).await.map_err(|e| e.to_string())?;
+    let (team, st) = space::admin::rename(&team_id, &name)
+        .await
+        .map_err(|e| e.to_string())?;
     let _ = app.emit("space-changed", &st.space);
     Ok(team)
 }
@@ -2614,45 +3139,73 @@ async fn team_admin_folder_create(
     name: String,
     color: Option<String>,
 ) -> Result<space::admin::TeamFolder, String> {
-    space::admin::folder_create(&team_id, &name, color.as_deref()).await.map_err(|e| e.to_string())
+    space::admin::folder_create(&team_id, &name, color.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn team_admin_folder_rename(team_id: String, name: String, next: String) -> Result<space::admin::TeamFolder, String> {
-    space::admin::folder_rename(&team_id, &name, &next).await.map_err(|e| e.to_string())
+async fn team_admin_folder_rename(
+    team_id: String,
+    name: String,
+    next: String,
+) -> Result<space::admin::TeamFolder, String> {
+    space::admin::folder_rename(&team_id, &name, &next)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn team_admin_folder_color(team_id: String, name: String, color: String) -> Result<space::admin::TeamFolder, String> {
-    space::admin::folder_color(&team_id, &name, &color).await.map_err(|e| e.to_string())
+async fn team_admin_folder_color(
+    team_id: String,
+    name: String,
+    color: String,
+) -> Result<space::admin::TeamFolder, String> {
+    space::admin::folder_color(&team_id, &name, &color)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn team_admin_folder_delete(team_id: String, name: String) -> Result<(), String> {
-    space::admin::folder_delete(&team_id, &name).await.map_err(|e| e.to_string())
+    space::admin::folder_delete(&team_id, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// The team's trash on its server, 30 days: the server judges each row by this launcher's token.
 #[tauri::command]
 async fn team_trash_list(team_id: String) -> Result<Vec<space::admin::TeamTrashRow>, String> {
-    space::admin::trash_list(&team_id).await.map_err(|e| e.to_string())
+    space::admin::trash_list(&team_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// `kind` as the row says it; a profile comes back with its session.
 #[tauri::command]
-async fn team_trash_restore(team_id: String, id: String, kind: String) -> Result<space::admin::TeamRestored, String> {
-    space::admin::trash_restore(&team_id, &id, &kind).await.map_err(|e| e.to_string())
+async fn team_trash_restore(
+    team_id: String,
+    id: String,
+    kind: String,
+) -> Result<space::admin::TeamRestored, String> {
+    space::admin::trash_restore(&team_id, &id, &kind)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn team_trash_purge(team_id: String, id: String, kind: String) -> Result<(), String> {
-    space::admin::trash_purge(&team_id, &id, &kind).await.map_err(|e| e.to_string())
+    space::admin::trash_purge(&team_id, &id, &kind)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// A member's own rules, as the team signed them for this launcher.
 #[tauri::command]
 async fn team_my_access(team_id: String) -> Result<Vec<team_model::Grant>, String> {
-    space::admin::my_access(&team_id).await.map_err(|e| e.to_string())
+    space::admin::my_access(&team_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2735,7 +3288,11 @@ async fn ps_purchase(body: Value) -> Result<Value, String> {
 
 /// Buy extra GB of residential traffic for an order.
 #[tauri::command]
-async fn ps_add_bandwidth(id: i64, amount: i64, promo_code: Option<String>) -> Result<Value, String> {
+async fn ps_add_bandwidth(
+    id: i64,
+    amount: i64,
+    promo_code: Option<String>,
+) -> Result<Value, String> {
     let mut body = serde_json::json!({ "amount": amount });
     if let Some(p) = promo_code.filter(|s| !s.is_empty()) {
         body["promo_code"] = Value::String(p);
@@ -2805,7 +3362,11 @@ async fn ps_regions(proxy_type: String, country_code: String) -> Result<Value, S
 }
 
 #[tauri::command]
-async fn ps_cities(proxy_type: String, country_code: String, region_code: String) -> Result<Value, String> {
+async fn ps_cities(
+    proxy_type: String,
+    country_code: String,
+    region_code: String,
+) -> Result<Value, String> {
     psapi::call(
         "GET",
         "/user/api/proxies/cities",
@@ -2864,6 +3425,14 @@ pub fn reap_if_asked() -> Option<i32> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let mut context = tauri::generate_context!();
+    let portable_window = match portable::configure(&mut context) {
+        Ok(window) => window,
+        Err(error) => {
+            portable::report_start_error(&error);
+            std::process::exit(1);
+        }
+    };
     with_app_menu(tauri::Builder::default())
         // Must be the first plugin: a second launch focuses the running window.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -2941,6 +3510,9 @@ pub fn run() {
             automation_run,
             automation_run_stop,
             automation_run_status,
+            sequential::sequential_start,
+            sequential::sequential_status,
+            sequential::sequential_stop,
             automation_fleet,
             automation_fleet_window,
             automation_display,
@@ -2983,6 +3555,10 @@ pub fn run() {
             folder_import,
             data_root_get,
             data_root_migrate,
+            snapshot_preview,
+            snapshot_create,
+            snapshot_inspect,
+            snapshot_profile_payloads,
             profile_bind_proxy,
             profile_clone,
             profile_import,
@@ -3000,15 +3576,27 @@ pub fn run() {
             gpu_caps_compat,
             fingerprint_get,
             fingerprint_import,
+            fingerprint_export,
+            fingerprint_update,
+            fingerprint_rollback,
             fingerprint_delete,
+            fingerprint_tags_save,
             fingerprint_dir,
             read_text_file,
             process_list,
             process_kill,
             proxy_provider_defaults_get,
             proxy_provider_defaults_save,
+            proxy_provider_delete_custom,
             proxy_provider_generate,
+            proxy_provider_generate_many,
+            proxy_provider_extract_custom,
             proxy_list,
+            proxy_folder_list,
+            proxy_folder_add,
+            proxy_folder_rename,
+            proxy_folder_delete,
+            proxy_folder_set_parent,
             proxy_save,
             proxy_delete,
             proxy_check,
@@ -3044,6 +3632,7 @@ pub fn run() {
             ps_products,
             ps_trial_offer,
             space_state,
+            team_recovery_copies,
             space_set,
             team_join,
             team_leave,
@@ -3105,9 +3694,20 @@ pub fn run() {
             app_quit_asking,
             app_quit_confirmed,
             app_quit_cancelled,
+            app_safe_close_cancel,
             team_sessions,
         ])
-        .setup(|app| {
+        .setup(move |app| {
+            if let Some(config) = &portable_window {
+                let window = tauri::WebviewWindowBuilder::from_config(app.handle(), config)
+                    .and_then(|builder| builder.build());
+                if let Err(error) = window {
+                    let path = config.data_directory.as_deref().unwrap_or(std::path::Path::new("ShyShardData"));
+                    portable::report_start_error(&anyhow::Error::new(error)
+                        .context(format!("WebView2: {}", path.display())));
+                    std::process::exit(1);
+                }
+            }
             let _ = APP_HANDLE.set(app.handle().clone());
             profile_shortcut::receive(&std::env::args().collect::<Vec<_>>());
 
@@ -3231,7 +3831,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event { process::Tracker::shared().close_chains(); }
@@ -3240,7 +3840,7 @@ pub fn run() {
                 if reset::active() && code != Some(tauri::RESTART_EXIT_CODE) {
                     api.prevent_exit();
                     notify_warning(reset::WAIT);
-                } else if (space::open::any_open() || space::profile::any_unsealed()) && code != Some(tauri::RESTART_EXIT_CODE) {
+                } else if !safe_close::ready() && code != Some(tauri::RESTART_EXIT_CODE) {
                     api.prevent_exit();
                     exit_app(app, code.unwrap_or(0));
                 }
@@ -3248,26 +3848,27 @@ pub fn run() {
         });
 }
 
-/// Exit, once the team profiles open here are closed, sent back and wiped.
 fn exit_app(app: &tauri::AppHandle, code: i32) {
     use std::sync::atomic::Ordering::SeqCst;
-    static CLOSING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if !space::open::any_open() && !space::profile::any_unsealed() {
-        process::Tracker::shared().close_chains();
-        app.exit(code);
+    if !safe_close::begin() {
         return;
     }
-    if CLOSING.swap(true, SeqCst) {
-        return;
-    }
-    notify_warning("Saving the team, synced and protected profiles open here before quitting…");
+    QUIT_ROUND.fetch_add(1, SeqCst);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        space::open::close_all(space::open::QUIT_WAIT).await;
-        space::profile::close_unsealed(space::open::QUIT_WAIT).await;
-        CLOSING.store(false, SeqCst);
-        process::Tracker::shared().close_chains();
-        app.exit(code);
+        match safe_close::finish().await {
+            Ok(()) => app.exit(code),
+            Err(failure) => {
+                show_main_window(&app);
+                notify_event(
+                    "app://safe-close",
+                    serde_json::json!({ "failure": failure }),
+                );
+                if !matches!(failure, safe_close::Failure::Cancelled) {
+                    eprintln!("[launcher] {}", failure.message());
+                }
+            }
+        }
     });
 }
 
@@ -3286,6 +3887,9 @@ fn quit(app: &tauri::AppHandle) {
     use tauri::{Emitter, Manager};
     if reset::active() {
         notify_warning(reset::WAIT);
+        return;
+    }
+    if safe_close::active() {
         return;
     }
     let Some(main) = app.get_webview_window("main") else {
@@ -3344,6 +3948,11 @@ fn app_quit_cancelled() {
     QUIT_ROUND.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
+#[tauri::command]
+fn app_safe_close_cancel() {
+    safe_close::cancel();
+}
+
 /// macOS: the app menu's Quit (⌘Q) is the launcher's own, so it can refuse
 /// mid-reset (the stock item ends the process at once). Elsewhere the window
 /// keeps having no menu.
@@ -3363,7 +3972,13 @@ fn app_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wr
             first.remove(stock)?;
         }
         let label = format!("Quit {}", app.package_info().name);
-        first.append(&MenuItem::with_id(app, "app_quit", label, true, Some("CmdOrCtrl+Q"))?)?;
+        first.append(&MenuItem::with_id(
+            app,
+            "app_quit",
+            label,
+            true,
+            Some("CmdOrCtrl+Q"),
+        )?)?;
     }
     Ok(menu)
 }

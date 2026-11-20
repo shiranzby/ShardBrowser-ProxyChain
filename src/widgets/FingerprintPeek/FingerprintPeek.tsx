@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Button, usePresence, useLatched, type MenuItem } from "@proxyshard/shardx-ui-kit";
+import { Button, Input, Textarea, usePresence, useLatched, type MenuItem } from "@proxyshard/shardx-ui-kit";
 import { useGpuCompat, useGpuCompatReady, verdictsLoaded } from "../../shared/model/gpuCompat";
 import { useNav } from "../../shared/model/navigation";
 import { useT } from "../../shared/i18n";
@@ -10,6 +10,7 @@ import { PeekBody, PeekHeader, PeekPanel, PeekSection } from "../../shared/ui/pe
 import { fingerprintOs, useFingerprint, type FingerprintEntry } from "../../entities/fingerprint";
 import { IncompatibleExplainer, IncompatibleWarningModal } from "../../features/gpu-compat";
 import { openProfileForm } from "../../features/profile-form";
+import { toast } from "../../shared/model/toast";
 
 /// Puts the keyboard back on a fingerprint's card: its grid item, the element
 /// that takes focus (F27). A card a filter hid is not there to return to: the
@@ -36,6 +37,7 @@ export function FingerprintPeek() {
   const peekId = useFingerprint((s) => s.peekId);
   const closePeek = useFingerprint((s) => s.closePeek);
   const entry = useFingerprint((s) => (peekId ? s.items.find((e) => e.id === peekId) : undefined));
+  const [editing, setEditing] = useState(false);
 
   // The fingerprint left the library (removed): Peek goes with it.
   const shownId = useRef<string | null>(null);
@@ -43,6 +45,7 @@ export function FingerprintPeek() {
     if (entry) shownId.current = entry.id;
     else if (peekId && shownId.current === peekId) closePeek();
   }, [peekId, entry, closePeek]);
+  useEffect(() => setEditing(false), [peekId]);
 
   // Kept through the exit: the panel leaves showing what it showed (FEEL-02).
   const open = peekId && entry ? entry : null;
@@ -56,19 +59,94 @@ export function FingerprintPeek() {
       {/* Keyed: a wait or a warning for one fingerprint never carries to the next. */}
       <FingerprintPeekHeader key={shown.id} entry={shown} onClose={close} />
       <PeekBody>
-        <PeekSection id="details" title={t("fingerprintPeek.details")}><Details entry={shown} /></PeekSection>
+        <PeekSection id="details" title={t("fingerprintPeek.details")}>
+          {editing ? <PayloadEditor entry={shown} onDone={() => setEditing(false)} /> : <Details entry={shown} onEdit={() => setEditing(true)} />}
+        </PeekSection>
+        <PeekSection id="tags" title={t("fingerprintPeek.tags")}><Tags entry={shown} /></PeekSection>
+        <PeekSection id="field-checks" title={t("fingerprintPeek.fieldChecks")}><FieldChecks entry={shown} /></PeekSection>
         <PeekSection id="compat" title={t("fingerprintPeek.compat")}><Compat entry={shown} /></PeekSection>
       </PeekBody>
     </PeekPanel>
   );
 }
 
+function FieldChecks({ entry }: { entry: FingerprintEntry }) {
+  const t = useT();
+  const fields = [
+    ["webgl", t("fingerprintPeek.gpu")],
+    ["webrtc", "WebRTC"],
+    ["canvas", "Canvas"],
+    ["fonts", t("fingerprintPeek.fieldFonts")],
+    ["navigator", t("fingerprintPeek.fieldLanguage")],
+    ["timezone", t("fingerprintPeek.fieldTimezone")],
+    ["screen", t("fingerprintPeek.screen")],
+  ] as const;
+  const labels = {
+    missing: t("fingerprintPeek.fieldMissing"),
+    structure_valid: t("fingerprintPeek.fieldValid"),
+    invalid: t("fingerprintPeek.fieldInvalid"),
+  };
+  const sourceLabels = {
+    imported: t("fingerprintPeek.fieldImportedSource"),
+    unavailable: t("fingerprintPeek.fieldUnavailableSource"),
+  };
+  return (
+    <>
+      <p className="m-0 mb-2 text-secondary text-text-soft-400">{t("fingerprintPeek.fieldSource")}</p>
+      <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-secondary">
+        {fields.map(([field, label]) => {
+          const status = entry.field_checks?.[field];
+          const source = entry.field_sources?.[field] ?? "unavailable";
+          return (
+            <div key={field} className="contents">
+              <dt>{label}</dt>
+              <dd className="m-0">
+                {status ? labels[status] : t("fingerprintPeek.notChecked")}
+                <span className="ms-1 text-text-soft-400">({sourceLabels[source]})</span>
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </>
+  );
+}
+
+function Tags({ entry }: { entry: FingerprintEntry }) {
+  const t = useT();
+  const saveTags = useFingerprint((s) => s.saveTags);
+  const [value, setValue] = useState((entry.tags ?? []).join(", "));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setValue((entry.tags ?? []).join(", ")), [entry.id, entry.tags]);
+  const save = async () => {
+    const tags = value.split(",").map((tag) => tag.trim()).filter(Boolean);
+    setSaving(true);
+    try { await saveTags(entry.id, tags); } finally { setSaving(false); }
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      <Input
+        label={t("fingerprintPeek.tagsInput")}
+        value={value}
+        placeholder={t("fingerprintPeek.tagsPlaceholder")}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") void save(); }}
+      />
+      <Button variant="neutral" mode="stroke" size="xsmall" isLoading={saving} onClick={() => void save()}>
+        {t("fingerprintPeek.saveTags")}
+      </Button>
+    </div>
+  );
+}
+
 function FingerprintPeekHeader({ entry, onClose }: { entry: FingerprintEntry; onClose: () => void }) {
   const t = useT();
   const remove = useFingerprint((s) => s.remove);
+  const copyJson = useFingerprint((s) => s.copyJson);
   const { start, busy, warning } = useNewProfileFrom(entry);
   // The Fingerprint Peek's own menu (R9): a built-in one says why it can't go.
   const menuItems: MenuItem[] = [
+    { label: t("fingerprintLibrary.export"), onSelect: () => void copyJson(entry) },
     entry.builtin
       ? { label: t("fingerprintPeek.removeItem"), icon: rowActionIcons.trash({ className: "size-3.5" }), disabled: true, hint: t("fingerprintPeek.builtin"), onSelect: () => {} }
       : {
@@ -160,7 +238,7 @@ export function useNewProfileFrom(entry: FingerprintEntry) {
   return { start, busy, warning };
 }
 
-function Details({ entry }: { entry: FingerprintEntry }) {
+function Details({ entry, onEdit }: { entry: FingerprintEntry; onEdit: () => void }) {
   const t = useT();
   const nav = entry.payload?.navigator ?? {};
   const screen = entry.payload?.screen ?? {};
@@ -192,7 +270,69 @@ function Details({ entry }: { entry: FingerprintEntry }) {
           <p data-selectable className="m-0 [overflow-wrap:anywhere] rounded-control bg-bg-weak-50 p-2 text-mono leading-[18px] text-text-sub-600">{nav.user_agent}</p>
         </div>
       )}
+      <Button
+        variant="neutral"
+        mode="stroke"
+        size="xsmall"
+        disabled={entry.builtin}
+        title={entry.builtin ? t("fingerprintPeek.builtinEdit") : undefined}
+        onClick={onEdit}
+      >
+        {t("fingerprintPeek.editJson")}
+      </Button>
     </>
+  );
+}
+
+function PayloadEditor({ entry, onDone }: { entry: FingerprintEntry; onDone: () => void }) {
+  const t = useT();
+  const updatePayload = useFingerprint((s) => s.updatePayload);
+  const rollbackPayload = useFingerprint((s) => s.rollbackPayload);
+  const [value, setValue] = useState(() => JSON.stringify(entry.payload, null, 2));
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      JSON.parse(value);
+      await updatePayload(entry.id, value);
+      onDone();
+    } catch (error) {
+      // Parse errors and backend validation errors both stay in the editor so
+      // the user can correct the payload without losing their draft.
+      if (error instanceof SyntaxError) {
+        toast.fail({ title: t("fingerprintPeek.invalidJson") });
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+  const rollback = async () => {
+    setSaving(true);
+    try {
+      await rollbackPayload(entry.id);
+      onDone();
+    } catch {
+      // The store reports the backend error. Keep the editor open so the
+      // current payload is still available to the user.
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      <Textarea
+        label={t("fingerprintPeek.editJson")}
+        rows={14}
+        className="mono w-full"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+      />
+      <div className="flex gap-2">
+        <Button variant="primary" size="xsmall" isLoading={saving} onClick={() => void save()}>{t("fingerprintPeek.saveJson")}</Button>
+        <Button variant="neutral" mode="stroke" size="xsmall" disabled={saving} onClick={() => void rollback()}>{t("fingerprintPeek.rollbackJson")}</Button>
+        <Button variant="neutral" mode="stroke" size="xsmall" disabled={saving} onClick={onDone}>{t("fingerprintPeek.cancelEdit")}</Button>
+      </div>
+    </div>
   );
 }
 

@@ -147,7 +147,11 @@ const RULES: &[(&str, Need)] = &[
     ("profile_import", CREATE_F),
     (
         "profile_clone",
-        Rights(&[(Always, Create, Folder), (Always, See, Profile), (BindsProxy, See, Proxy)]),
+        Rights(&[
+            (Always, Create, Folder),
+            (Always, See, Profile),
+            (BindsProxy, See, Proxy),
+        ]),
     ),
     (
         "profile_bind_proxy",
@@ -172,7 +176,10 @@ const RULES: &[(&str, Need)] = &[
     ("profile_focus_window", Nothing),
     ("profile_shortcut::profile_create_desktop_shortcut", Machine),
     ("profile_shortcut::profile_shortcut_take_pending", Machine),
-    ("profile_shortcut::profile_shortcut_launch_is_silent", Machine),
+    (
+        "profile_shortcut::profile_shortcut_launch_is_silent",
+        Machine,
+    ),
     ("profile_shortcut::profile_shortcut_show_launcher", Machine),
     // Starting and running.
     ("launch", START),
@@ -216,6 +223,9 @@ const RULES: &[(&str, Need)] = &[
     ("automation_run", RUN),
     ("automation_run_stop", Nothing),
     ("automation_run_status", Nothing),
+    ("sequential::sequential_start", RUN),
+    ("sequential::sequential_status", SEE_T),
+    ("sequential::sequential_stop", Nothing),
     ("automation_fleet", Nothing),
     ("automation_fleet_window", Nothing),
     ("automation_display", Machine),
@@ -271,10 +281,20 @@ const RULES: &[(&str, Need)] = &[
     ("proxy_bulk_parse", Machine),
     ("tnbproxy_extract", Machine),
     ("tnbproxy_locations", Machine),
+    ("proxy_folder_list", Machine),
+    ("proxy_folder_add", Off),
+    ("proxy_folder_rename", Off),
+    ("proxy_folder_delete", Off),
+    ("proxy_folder_set_parent", Off),
     ("ps_import_order", CREATE_T),
     // Data folder and reset.
     ("data_root_get", Machine),
     ("data_root_migrate", NoTeamSessionOpen),
+    ("snapshot_preview", Machine),
+    ("snapshot_create", Machine),
+    ("snapshot_inspect", Machine),
+    ("snapshot_profile_payloads", Machine),
+    ("team_recovery_copies", Machine),
     ("reset::app_reset_plan", NoTeamSessionOpen),
     ("reset::app_reset", NoTeamSessionOpen),
     ("reset::app_reset_backup", Machine),
@@ -296,7 +316,11 @@ const RULES: &[(&str, Need)] = &[
     ("fingerprint_list", Machine),
     ("fingerprint_get", Machine),
     ("fingerprint_import", Machine),
+    ("fingerprint_export", Machine),
+    ("fingerprint_update", Machine),
+    ("fingerprint_rollback", Machine),
     ("fingerprint_delete", Machine),
+    ("fingerprint_tags_save", Machine),
     ("fingerprint_dir", Machine),
     ("gpu_caps", Machine),
     ("gpu_caps_compat", Machine),
@@ -368,13 +392,17 @@ const RULES: &[(&str, Need)] = &[
     ("proxy_chain_set_enabled", Machine),
     ("proxy_provider_defaults_get", Machine),
     ("proxy_provider_defaults_save", Machine),
+    ("proxy_provider_delete_custom", Machine),
     ("proxy_provider_generate", Machine),
+    ("proxy_provider_generate_many", Machine),
+    ("proxy_provider_extract_custom", Machine),
     ("runtime::runtime_status", Machine),
     ("runtime::runtime_install", Machine),
     ("runtime::launcher_update_check", Machine),
     ("app_quit_asking", Machine),
     ("app_quit_confirmed", Machine),
     ("app_quit_cancelled", Machine),
+    ("app_safe_close_cancel", Machine),
     // Local API.
     ("GET /health", Machine),
     ("GET /profiles", SEE_P),
@@ -543,13 +571,20 @@ fn on_name(on: On) -> &'static str {
 }
 
 fn proxy_target(id: &str) -> Target<'_> {
-    Target { profile_id: Some(id), folder: None }
+    Target {
+        profile_id: Some(id),
+        folder: None,
+    }
 }
 
 /// The door's rule, enforced on the team in use: every right whose condition
 /// the request meets. Something the member may not See is missing, not refused.
 pub fn clear(door: Door, team: &str, ask: &Ask<'_>) -> Result<(), CmdError> {
-    let broken = |why: &str| CmdError::Refused { status: 500, code: "internal".into(), message: format!("{}: {why}", door.0) };
+    let broken = |why: &str| CmdError::Refused {
+        status: 500,
+        code: "internal".into(),
+        message: format!("{}: {why}", door.0),
+    };
     // Only the doors listed as enforced write to a team at all.
     if !ENFORCED.contains(&door.0) {
         return Err(broken("not a door that writes to a team"));
@@ -557,7 +592,9 @@ pub fn clear(door: Door, team: &str, ask: &Ask<'_>) -> Result<(), CmdError> {
     let Some((_, need)) = RULES.iter().find(|(d, _)| *d == door.0) else {
         return Err(broken("no rule for this door"));
     };
-    let Rights(list) = need else { return Err(broken("enforced without a rule of rights")) };
+    let Rights(list) = need else {
+        return Err(broken("enforced without a rule of rights"));
+    };
     if !perm::usable(team) {
         return Err(perm::no_permission());
     }
@@ -579,25 +616,41 @@ pub fn clear(door: Door, team: &str, ask: &Ask<'_>) -> Result<(), CmdError> {
             None => return Err(broken("a condition not judged here")),
         }
         let allowed = match (action(right), on) {
-            (None, _) => crate::team::link(team).ok().flatten().is_some_and(|l| l.admin),
+            (None, _) => crate::team::link(team)
+                .ok()
+                .flatten()
+                .is_some_and(|l| l.admin),
             (Some(a), Profile) => {
-                let Some((id, folder)) = ask.profile.or(ask.made) else { return Err(broken("names no profile")) };
+                let Some((id, folder)) = ask.profile.or(ask.made) else {
+                    return Err(broken("names no profile"));
+                };
                 may(a, &Target::profile(id, folder))
             }
             (Some(a), Folder) => {
-                let Some(f) = ask.folder else { return Err(broken("names no folder")) };
+                let Some(f) = ask.folder else {
+                    return Err(broken("names no folder"));
+                };
                 may(a, &Target::folder(f))
             }
             (Some(a), Team) => may(a, &Target::team()),
             (Some(a), Proxy) => {
-                let id = if when == BindsProxy { ask.binds_proxy } else { ask.proxy };
-                let Some(id) = id else { return Err(broken("names no proxy")) };
+                let id = if when == BindsProxy {
+                    ask.binds_proxy
+                } else {
+                    ask.proxy
+                };
+                let Some(id) = id else {
+                    return Err(broken("names no proxy"));
+                };
                 may(a, &proxy_target(id))
             }
         };
         if !allowed {
             let right = action(right).map_or("admin", perm::action_name);
-            return Err(CmdError::Forbidden(Wanted { right, on: on_name(on) }));
+            return Err(CmdError::Forbidden(Wanted {
+                right,
+                on: on_name(on),
+            }));
         }
     }
     Ok(())
@@ -666,7 +719,9 @@ pub(crate) fn routes(api: &str) -> BTreeSet<String> {
 /// Whether a door is open to anyone in a team: machine level, or own sessions.
 #[cfg(test)]
 pub(crate) fn is_open(door: &str) -> bool {
-    RULES.iter().any(|(d, n)| *d == door && matches!(n, Machine | Nothing))
+    RULES
+        .iter()
+        .any(|(d, n)| *d == door && matches!(n, Machine | Nothing))
 }
 
 /// What is wrong with a rule, if anything.
@@ -718,7 +773,11 @@ fn every_door_is_classified() {
 #[test]
 fn every_enforced_door_is_ruled_and_reached() {
     let mut named = BTreeSet::new();
-    for src in [include_str!("../lib.rs"), include_str!("../api.rs"), include_str!("../psapi.rs")] {
+    for src in [
+        include_str!("../lib.rs"),
+        include_str!("../api.rs"),
+        include_str!("../psapi.rs"),
+    ] {
         let mut rest = src;
         while let Some(at) = rest.find("Door(\"") {
             let tail = &rest[at + 6..];
@@ -729,11 +788,23 @@ fn every_enforced_door_is_ruled_and_reached() {
     }
     for door in ENFORCED {
         let rule = RULES.iter().find(|(d, _)| d == door).map(|(_, n)| n);
-        assert!(matches!(rule, Some(Rights(_))), "{door}: enforced without a rule of rights");
-        assert!(named.contains(*door), "{door}: enforced, but no write goes through it");
+        assert!(
+            matches!(rule, Some(Rights(_))),
+            "{door}: enforced without a rule of rights"
+        );
+        assert!(
+            named.contains(*door),
+            "{door}: enforced, but no write goes through it"
+        );
     }
-    let stray: Vec<&String> = named.iter().filter(|d| !ENFORCED.contains(&d.as_str())).collect();
-    assert!(stray.is_empty(), "named as a door but not enforced: {stray:?}");
+    let stray: Vec<&String> = named
+        .iter()
+        .filter(|d| !ENFORCED.contains(&d.as_str()))
+        .collect();
+    assert!(
+        stray.is_empty(),
+        "named as a door but not enforced: {stray:?}"
+    );
 }
 
 /// Doors judged outside [`clear`], with the call each handler makes to judge them.
@@ -741,12 +812,24 @@ fn every_enforced_door_is_ruled_and_reached() {
 const GUARDED: &[(&str, &str, &str)] = &[
     ("process_list", "fn process_list(", "space::running()"),
     ("GET /running", "fn list_running(", "space::running()"),
-    ("automation_attach", "fn automation_attach(", "space::cdp_pass("),
-    ("automation_screencast", "fn automation_screencast(", "space::cdp_pass("),
+    (
+        "automation_attach",
+        "fn automation_attach(",
+        "space::cdp_pass(",
+    ),
+    (
+        "automation_screencast",
+        "fn automation_screencast(",
+        "space::cdp_pass(",
+    ),
     ("automation_call", "fn automation_call(", "space::cdp_pass("),
     ("automation_pick", "fn automation_pick(", "space::cdp_pass("),
     ("data_root_migrate", "fn run_with(", "refuse_while_busy()"),
-    ("reset::app_reset_plan", "fn app_reset_plan(", "refuse_while_open()"),
+    (
+        "reset::app_reset_plan",
+        "fn app_reset_plan(",
+        "refuse_while_open()",
+    ),
     ("reset::app_reset", "fn app_reset(", "refuse_while_open()"),
 ];
 
@@ -761,7 +844,10 @@ fn every_door_judged_elsewhere_calls_its_guard() {
         include_str!("../migrate.rs"),
     ];
     let body = |f: &str| -> &str {
-        let src = srcs.iter().find(|s| s.contains(f)).unwrap_or_else(|| panic!("no {f}"));
+        let src = srcs
+            .iter()
+            .find(|s| s.contains(f))
+            .unwrap_or_else(|| panic!("no {f}"));
         let at = src.find(f).unwrap();
         let end = src[at..].find("\n}\n").map_or(src.len(), |e| at + e);
         &src[at..end]
@@ -776,7 +862,10 @@ fn every_door_judged_elsewhere_calls_its_guard() {
         })
         .map(|(d, _)| *d)
         .collect();
-    assert_eq!(guarded, ruled, "a door judged outside clear() needs its guard listed");
+    assert_eq!(
+        guarded, ruled,
+        "a door judged outside clear() needs its guard listed"
+    );
     for (door, f, guard) in GUARDED {
         assert!(body(f).contains(guard), "{door}: {f} does not call {guard}");
     }
@@ -815,13 +904,27 @@ fn every_window_write_with_an_epoch_takes_the_windows_ticket() {
         if !sig.contains("epoch: Option<u64>") {
             continue;
         }
-        let name = sig.split("fn ").nth(1).and_then(|s| s.split('(').next()).unwrap_or("?").trim();
+        let name = sig
+            .split("fn ")
+            .nth(1)
+            .and_then(|s| s.split('(').next())
+            .unwrap_or("?")
+            .trim();
         let body = &body[..body.find("\n}\n").unwrap_or(body.len())];
-        assert!(body.contains("ticket(epoch)"), "{name}: takes epoch but no ticket from it");
-        assert!(!body.contains("space::ticket(epoch)"), "{name}: a team write without its epoch would pass");
+        assert!(
+            body.contains("ticket(epoch)"),
+            "{name}: takes epoch but no ticket from it"
+        );
+        assert!(
+            !body.contains("space::ticket(epoch)"),
+            "{name}: a team write without its epoch would pass"
+        );
         named.push(name.to_string());
     }
     for door in ["profile_save", "profile_delete", "tag_save", "proxy_save"] {
-        assert!(named.iter().any(|n| n == door), "{door} not found in {named:?}");
+        assert!(
+            named.iter().any(|n| n == door),
+            "{door} not found in {named:?}"
+        );
     }
 }

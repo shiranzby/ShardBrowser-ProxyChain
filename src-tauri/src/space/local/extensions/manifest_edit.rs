@@ -14,7 +14,9 @@ use std::path::{Path, PathBuf};
 /// manifest.json as Chrome reads it: a BOM and comments allowed.
 pub fn read_manifest(root: &Path) -> Result<Value> {
     let v = read_json(&root.join("manifest.json"))?;
-    v.is_object().then_some(v).context("manifest.json is not an object")
+    v.is_object()
+        .then_some(v)
+        .context("manifest.json is not an object")
 }
 
 /// A JSON file of an extension as Chrome reads it: a BOM and comments allowed.
@@ -42,13 +44,19 @@ fn strip_comments(text: &str) -> String {
         match (b[i], b.get(i + 1)) {
             (b'"', _) => in_str = true,
             (b'/', Some(b'/')) => {
-                let end = b[i..].iter().position(|&c| c == b'\n').map_or(b.len(), |n| i + n);
+                let end = b[i..]
+                    .iter()
+                    .position(|&c| c == b'\n')
+                    .map_or(b.len(), |n| i + n);
                 out[i..end].fill(b' ');
                 i = end;
                 continue;
             }
             (b'/', Some(b'*')) => {
-                let end = b[i + 2..].windows(2).position(|w| w == b"*/").map_or(b.len(), |n| i + 2 + n + 2);
+                let end = b[i + 2..]
+                    .windows(2)
+                    .position(|w| w == b"*/")
+                    .map_or(b.len(), |n| i + 2 + n + 2);
                 out[i..end].fill(b' ');
                 i = end;
                 continue;
@@ -73,7 +81,11 @@ pub enum IdBasis {
 pub fn id_basis(root: &Path) -> Result<IdBasis> {
     match read_manifest(root)?.get("key") {
         None => Ok(IdBasis::Path),
-        Some(k) => k.as_str().and_then(decode_key).map(IdBasis::Key).context("manifest.json has an unreadable key"),
+        Some(k) => k
+            .as_str()
+            .and_then(decode_key)
+            .map(IdBasis::Key)
+            .context("manifest.json has an unreadable key"),
     }
 }
 
@@ -93,7 +105,9 @@ pub fn fit_manifest(new_root: &Path, old: &IdBasis) -> Result<KeyAction> {
     match (old, id_basis(new_root)?) {
         (IdBasis::Path, IdBasis::Path) => Ok(KeyAction::None),
         (IdBasis::Key(k), IdBasis::Key(n)) if *k == n => Ok(KeyAction::Kept),
-        (IdBasis::Key(_), IdBasis::Key(_)) => bail!("the new version is signed with another key: a different extension"),
+        (IdBasis::Key(_), IdBasis::Key(_)) => {
+            bail!("the new version is signed with another key: a different extension")
+        }
         (IdBasis::Key(k), IdBasis::Path) => insert_key(new_root, k).map(|_| KeyAction::Inserted),
         (IdBasis::Path, IdBasis::Key(_)) => remove_key(new_root).map(|_| KeyAction::Removed),
     }
@@ -110,7 +124,10 @@ pub fn insert_key(root: &Path, der: &[u8]) -> Result<()> {
     }
     let b64 = base64::engine::general_purpose::STANDARD.encode(der);
     let at = open + 1;
-    fs::write(&path, format!("{}\n  \"key\": \"{b64}\",{}", &text[..at], &text[at..]))?;
+    fs::write(
+        &path,
+        format!("{}\n  \"key\": \"{b64}\",{}", &text[..at], &text[at..]),
+    )?;
     Ok(())
 }
 
@@ -131,11 +148,16 @@ pub fn set_key(root: &Path, der: &[u8]) -> Result<()> {
 pub fn remove_key(root: &Path) -> Result<()> {
     let path = root.join("manifest.json");
     let text = fs::read_to_string(&path)?;
-    let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(text.trim_start_matches('\u{feff}')) else {
+    let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(text.trim_start_matches('\u{feff}'))
+    else {
         bail!("manifest.json is not plain JSON, so its key cannot be removed safely");
     };
-    let kept: serde_json::Map<String, Value> = obj.into_iter().filter(|(k, _)| k != "key").collect();
-    fs::write(&path, serde_json::to_string_pretty(&Value::Object(kept))? + "\n")?;
+    let kept: serde_json::Map<String, Value> =
+        obj.into_iter().filter(|(k, _)| k != "key").collect();
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&Value::Object(kept))? + "\n",
+    )?;
     Ok(())
 }
 
@@ -185,29 +207,48 @@ pub struct Grant {
 pub fn perm_growth(old: &Value, new: &Value) -> Vec<Grant> {
     let (o, n) = (Access::of(old), Access::of(new));
     let mut out = BTreeSet::new();
-    let mut add = |kind: GrantKind, olds: &BTreeSet<String>, news: &BTreeSet<String>, sites: bool| {
-        for v in news.difference(olds) {
-            if !sites || !olds.iter().any(|old| covers(old, v)) {
-                out.insert(Grant { kind: kind.clone(), value: v.clone() });
+    let mut add =
+        |kind: GrantKind, olds: &BTreeSet<String>, news: &BTreeSet<String>, sites: bool| {
+            for v in news.difference(olds) {
+                if !sites || !olds.iter().any(|old| covers(old, v)) {
+                    out.insert(Grant {
+                        kind: kind.clone(),
+                        value: v.clone(),
+                    });
+                }
             }
-        }
-    };
+        };
     add(GrantKind::Permission, &o.apis, &n.apis, false);
     add(GrantKind::Host, &o.hosts, &n.hosts, true);
     add(GrantKind::ScriptHost, &o.scripts, &n.scripts, true);
     add(GrantKind::MainWorld, &o.main_world, &n.main_world, true);
     add(GrantKind::Connectable, &o.connectable, &n.connectable, true);
     add(GrantKind::WebResource, &o.resources, &n.resources, true);
-    let mv = |m: &Value| m.get("manifest_version").map(|v| v.to_string()).unwrap_or_default();
+    let mv = |m: &Value| {
+        m.get("manifest_version")
+            .map(|v| v.to_string())
+            .unwrap_or_default()
+    };
     if mv(old) != mv(new) {
-        out.insert(Grant { kind: GrantKind::ManifestVersion, value: mv(new) });
+        out.insert(Grant {
+            kind: GrantKind::ManifestVersion,
+            value: mv(new),
+        });
     }
     for key in OVERRIDES {
-        let at = |m: &Value| key.split('.').try_fold(m, |v, k| v.get(k)).filter(|v| !v.is_null()).cloned();
+        let at = |m: &Value| {
+            key.split('.')
+                .try_fold(m, |v, k| v.get(k))
+                .filter(|v| !v.is_null())
+                .cloned()
+        };
         let (was, now) = (at(old), at(new));
         let settings = key.starts_with("chrome_settings_overrides.");
         if now.is_some() && (was.is_none() || (settings && was != now)) {
-            out.insert(Grant { kind: GrantKind::Override, value: key.to_string() });
+            out.insert(Grant {
+                kind: GrantKind::Override,
+                value: key.to_string(),
+            });
         }
     }
     out.into_iter().collect()
@@ -227,7 +268,11 @@ impl Access {
     fn of(m: &Value) -> Access {
         let strings = |v: Option<&Value>| -> Vec<String> {
             v.and_then(Value::as_array)
-                .map(|a| a.iter().map(|x| x.as_str().map_or_else(|| x.to_string(), str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .map(|x| x.as_str().map_or_else(|| x.to_string(), str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default()
         };
         let mut a = Access::default();
@@ -240,7 +285,12 @@ impl Access {
             }
         }
         a.hosts.extend(strings(m.get("host_permissions")));
-        for cs in m.get("content_scripts").and_then(Value::as_array).into_iter().flatten() {
+        for cs in m
+            .get("content_scripts")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             let matches = strings(cs.get("matches"));
             if cs.get("world").and_then(Value::as_str) == Some("MAIN") {
                 a.main_world.extend(matches.iter().cloned());
@@ -248,10 +298,20 @@ impl Access {
             a.scripts.extend(matches);
         }
         let ec = m.get("externally_connectable");
-        a.connectable.extend(strings(ec.and_then(|e| e.get("matches"))));
+        a.connectable
+            .extend(strings(ec.and_then(|e| e.get("matches"))));
         // Other extensions that may message it, "*" for any.
-        a.connectable.extend(strings(ec.and_then(|e| e.get("ids"))).into_iter().map(|i| format!("extension:{i}")));
-        for war in m.get("web_accessible_resources").and_then(Value::as_array).into_iter().flatten() {
+        a.connectable.extend(
+            strings(ec.and_then(|e| e.get("ids")))
+                .into_iter()
+                .map(|i| format!("extension:{i}")),
+        );
+        for war in m
+            .get("web_accessible_resources")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             match war {
                 // MV2: a listed file is open to every site.
                 Value::String(_) => {
@@ -272,7 +332,9 @@ fn is_site(p: &str) -> bool {
 fn covers(old: &str, new: &str) -> bool {
     match old {
         "<all_urls>" => !new.starts_with("extension:"),
-        "*://*/*" => ["http://", "https://", "*://"].iter().any(|s| new.starts_with(s)),
+        "*://*/*" => ["http://", "https://", "*://"]
+            .iter()
+            .any(|s| new.starts_with(s)),
         "https://*/*" => new.starts_with("https://"),
         "http://*/*" => new.starts_with("http://"),
         "extension:*" => new.starts_with("extension:"),
@@ -286,7 +348,11 @@ pub fn overlap(old_root: &Path, new_root: &Path) -> Result<f64> {
     let mut files = Vec::new();
     walk(old_root, PathBuf::new(), &mut files)?;
     files.retain(|rel| {
-        let top = rel.components().next().map(|c| c.as_os_str().to_string_lossy().to_string()).unwrap_or_default();
+        let top = rel
+            .components()
+            .next()
+            .map(|c| c.as_os_str().to_string_lossy().to_string())
+            .unwrap_or_default();
         !(rel.as_os_str() == "manifest.json" || rel.as_os_str() == ".added" || top == "_metadata")
     });
     if files.is_empty() {
@@ -304,7 +370,9 @@ pub fn overlap(old_root: &Path, new_root: &Path) -> Result<f64> {
 }
 
 fn walk(root: &Path, rel: PathBuf, out: &mut Vec<PathBuf>) -> Result<()> {
-    for e in fs::read_dir(root.join(&rel)).with_context(|| format!("read {}", root.join(&rel).display()))? {
+    for e in fs::read_dir(root.join(&rel))
+        .with_context(|| format!("read {}", root.join(&rel).display()))?
+    {
         let e = e?;
         if crate::store::is_os_litter(&e.file_name()) {
             continue;
@@ -324,12 +392,18 @@ fn walk(root: &Path, rel: PathBuf, out: &mut Vec<PathBuf>) -> Result<()> {
 pub fn display_name(root: &Path) -> Option<String> {
     let m = read_manifest(root).ok()?;
     let raw = m.get("name")?.as_str()?;
-    let name = match raw.strip_prefix("__MSG_").and_then(|r| r.strip_suffix("__")) {
+    let name = match raw
+        .strip_prefix("__MSG_")
+        .and_then(|r| r.strip_suffix("__"))
+    {
         None => raw.to_string(),
         // Chrome looks message names up ignoring case.
         Some(key) => {
             let msgs = super::locale_messages(root, &m);
-            let found = msgs.as_object()?.iter().find(|(k, _)| k.eq_ignore_ascii_case(key))?;
+            let found = msgs
+                .as_object()?
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(key))?;
             found.1.get("message")?.as_str()?.to_string()
         }
     };

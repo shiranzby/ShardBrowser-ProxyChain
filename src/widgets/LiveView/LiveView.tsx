@@ -13,7 +13,7 @@ import {
   type Frame,
   type Picked,
 } from "../../entities/automation";
-import { confirmDirect, lockedRefusal, processKill, profileList, profileRefusal, proxyMissing, startRefusal, useProfile, useProfileUi, type ProfileMeta } from "../../entities/profile";
+import { confirmDirect, lockedRefusal, processKill, processList, profileList, profileRefusal, proxyMissing, startRefusal, useProfile, useProfileUi } from "../../entities/profile";
 import { proxyList } from "../../entities/proxy";
 import { describeTarget, liveActions, type MenuAction } from "./liveActions";
 import { useT } from "../../shared/i18n";
@@ -50,10 +50,16 @@ const NAMED = new Set([
  *  profile runs. */
 export function useLiveBrowser(profileId: string | null) {
   const t = useT();
-  const [live, setLive] = useState(false);
+  const [mirroredId, setMirroredId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Another profile chosen: it was not started here.
-  useEffect(() => { setLive(false); }, [profileId]);
+  const running = useProfile((state) => mirroredId ? state.running[mirroredId] : undefined);
+  const seenRunning = useRef<string | null>(null);
+  const live = profileId !== null && profileId === mirroredId;
+  useEffect(() => {
+    if (mirroredId === null) seenRunning.current = null;
+    else if (running !== undefined) seenRunning.current = mirroredId;
+    else if (seenRunning.current === mirroredId) setMirroredId(null);
+  }, [mirroredId, running]);
 
   const start = useCallback(async () => {
     if (!profileId) return;
@@ -61,50 +67,39 @@ export function useLiveBrowser(profileId: string | null) {
     // its own that the profile's proxy still exists (IFACE-01, backend B1): a
     // deleted one would start it on this computer's own IP. The profile and
     // proxies are read fresh, and nothing starts when they can't be read.
-    let fresh: ProfileMeta[];
-    let proxies: { id: string }[];
-    try {
-      [fresh, proxies] = await Promise.all([profileList(), proxyList()]);
-    } catch (e) {
-      toast.fail({ title: t("liveView.openFailed"), detail: e });
-      return;
-    }
-    const p = fresh.find((x) => x.id === profileId);
-    if (!p) return;
-    // A team's: driving it needs Start and Cookies, and no other device holding it.
-    // A protected one is never driven (automation_launch refuses it).
-    const refused = startRefusal(p) ?? profileRefusal(p, "cookies") ?? lockedRefusal(p);
-    if (refused) { toast.fail({ title: t("liveView.openFailed"), detail: refused }); return; }
-    if (proxyMissing(p, proxies)) {
-      toast.err(t("useProfile.proxyMissingStart", { name: p.name }), {
-        action: { label: t("useProfile.assignProxy"), run: () => useProfileUi.getState().openAssign([p.id]) },
-      });
-      return;
-    }
-    // Task 11 fix round 2: this Start path skipped O9a's question too — the
-    // same shared confirm every other start path uses, not a third copy.
-    const choice = await confirmDirect(useProfile.getState, [p]);
-    if (choice === "assign") { useProfileUi.getState().openAssign([p.id]); return; }
-    if (choice !== "start") return;
-    const open = async (restart: boolean) => {
-      await automationLaunch(profileId, restart);
-      await automationScreencast(profileId, true, MAX_W, MAX_H);
-      setLive(true);
-    };
     setBusy(true);
     try {
+      const [fresh, proxies] = await Promise.all([profileList(), proxyList()]);
+      const p = fresh.find((x) => x.id === profileId);
+      if (!p) return;
+      // A team's: driving it needs Start and Cookies, and no other device holding it.
+      // A protected one is never driven (automation_launch refuses it).
+      const refused = startRefusal(p) ?? profileRefusal(p, "cookies") ?? lockedRefusal(p);
+      if (refused) { toast.fail({ title: t("liveView.openFailed"), detail: refused }); return; }
+      if (proxyMissing(p, proxies)) {
+        toast.err(t("useProfile.proxyMissingStart", { name: p.name }), {
+          action: { label: t("useProfile.assignProxy"), run: () => useProfileUi.getState().openAssign([p.id]) },
+        });
+        return;
+      }
+      const choice = await confirmDirect(useProfile.getState, [p]);
+      if (choice === "assign") { useProfileUi.getState().openAssign([p.id]); return; }
+      if (choice !== "start") return;
+      const open = async (restart: boolean) => {
+        await automationLaunch(profileId, restart);
+        await automationScreencast(profileId, true, MAX_W, MAX_H);
+        setMirroredId(profileId);
+      };
       try { await open(false); }
       catch (e) {
         // Already open without automation: that window can't get it, so it restarts only if asked.
         if (!isOpenWithoutAutomation(e)) throw e;
-        setBusy(false);
         const yes = await confirmModal({
           title: t("liveView.withoutAutomationTitle", { name: p.name }),
           message: t("liveView.withoutAutomationMessage"),
           confirmLabel: t("liveView.restart"),
         });
         if (yes !== true) return;
-        setBusy(true);
         await open(true);
       }
     } catch (e) { toast.fail({ title: t("liveView.openFailed"), detail: e }); }
@@ -113,13 +108,25 @@ export function useLiveBrowser(profileId: string | null) {
 
   const stop = useCallback(async () => {
     if (!profileId) return;
-    try { await automationScreencast(profileId, false, MAX_W, MAX_H); } catch { /* already gone */ }
-    automationDetach(profileId);
-    // Actually close the browser — Stop used to only end the screencast and
-    // detach CDP, leaving the window open.
-    try { await processKill(profileId); } catch { /* already closed */ }
-    setLive(false);
-  }, [profileId]);
+    setBusy(true);
+    try {
+      if (!(await processKill(profileId))) {
+        toast.fail({ title: t("liveView.stopFailed") });
+        return;
+      }
+      try { await automationScreencast(profileId, false, MAX_W, MAX_H); } catch { /* already closed */ }
+      await automationDetach(profileId).catch(() => {});
+      // A close request can arrive before the shared poll has seen this session.
+      if (seenRunning.current !== profileId &&
+          !(await processList()).some((session) => session.profile_id === profileId)) {
+        setMirroredId((id) => id === profileId ? null : id);
+      }
+    } catch (e) {
+      toast.fail({ title: t("liveView.stopFailed"), detail: e });
+    } finally {
+      setBusy(false);
+    }
+  }, [profileId, t]);
 
   return { live, busy, start, stop };
 }

@@ -7,6 +7,14 @@ export type FingerprintEntry = {
   gpu: string;
   tag_color: string;
   builtin: boolean;
+  /** Stable payload identity used to explain duplicate imports. */
+  payload_sha256?: string;
+  /** User-managed library metadata, excluded from exported payload JSON. */
+  tags?: string[];
+  /** Launcher schema checks, separate from the supplied payload and host probe. */
+  field_checks?: Record<string, "missing" | "structure_valid" | "invalid">;
+  /** Imported JSON is not runtime hardware evidence. */
+  field_sources?: Record<string, "imported" | "unavailable">;
   payload: any;
 };
 

@@ -4,6 +4,9 @@
 use crate::{settings, store};
 use anyhow::{Context, Result};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
+use std::fs::File;
+use std::io::{Read, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Emitter;
@@ -17,7 +20,13 @@ static RESET_PENDING: AtomicBool = AtomicBool::new(false);
 /// not finish waits to be undone or finished: nothing starts, runs, writes
 /// through the local API, or moves meanwhile.
 pub fn in_progress() -> bool {
-    MIGRATING.load(Ordering::SeqCst) || RESET_PENDING.load(Ordering::SeqCst)
+    moving() || RESET_PENDING.load(Ordering::SeqCst)
+}
+
+/// A move or reset that currently holds the disk lock. A recovery journal on
+/// disk blocks data writes, but the launcher can be closed and reopened.
+pub(crate) fn moving() -> bool {
+    MIGRATING.load(Ordering::SeqCst)
 }
 
 pub fn set_reset_pending(on: bool) {
@@ -32,7 +41,14 @@ pub fn reset_pending() -> bool {
 /// or moves while it moves the data aside. False when a move (or a reset)
 /// holds it.
 pub fn hold() -> bool {
-    !MIGRATING.swap(true, Ordering::SeqCst)
+    if MIGRATING.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    if crate::safe_close::active() {
+        release();
+        return false;
+    }
+    true
 }
 
 pub fn release() {
@@ -62,7 +78,15 @@ pub struct Progress {
 /// Directories that move; everything else in the config dir stays where the
 /// launcher can always find it. A team copy kept for a new invite moves too,
 /// or no sweep would find it again.
-const MOVED: &[&str] = &["profiles", "user-data", "extensions", "trash", "team-open", "protected"];
+const MOVED: &[&str] = &[
+    "profiles",
+    "user-data",
+    "extensions",
+    "trash",
+    "team-open",
+    "team-recovery",
+    "protected",
+];
 
 fn emit(app: &tauri::AppHandle, p: Progress) {
     let _ = app.emit("data-migration", p);
@@ -78,14 +102,20 @@ pub(crate) fn run_with(dst: &Path, emit: &dyn Fn(Progress)) -> Result<u64> {
     if reset_pending() {
         anyhow::bail!("a reset didn’t finish: restart ShardBrowser to undo or finish it first");
     }
-    if MIGRATING.swap(true, Ordering::SeqCst) {
-        anyhow::bail!("a migration is already running");
+    if !hold() {
+        anyhow::bail!("a migration is already running or ShyShard is closing");
     }
     // Looked at under the lock: a launch counts itself before it looks at the lock.
     let out = refuse_while_busy().and_then(|()| do_run(dst, emit));
     MIGRATING.store(false, Ordering::SeqCst);
     if out.is_err() {
-        emit(Progress { phase: "done", done: 0, total: 0, percent: 100, current: String::new() });
+        emit(Progress {
+            phase: "done",
+            done: 0,
+            total: 0,
+            percent: 100,
+            current: String::new(),
+        });
     }
     out
 }
@@ -114,7 +144,13 @@ fn do_run(dst: &Path, emit: &dyn Fn(Progress)) -> Result<u64> {
     std::fs::create_dir_all(&dst).with_context(|| format!("create {}", dst.display()))?;
     writable(&dst)?;
 
-    emit(Progress { phase: "scan", done: 0, total: 0, percent: 0, current: String::new() });
+    emit(Progress {
+        phase: "scan",
+        done: 0,
+        total: 0,
+        percent: 0,
+        current: String::new(),
+    });
     let mut files: Vec<(PathBuf, PathBuf)> = Vec::new();
     for name in MOVED {
         let from = src.join(name);
@@ -125,7 +161,13 @@ fn do_run(dst: &Path, emit: &dyn Fn(Progress)) -> Result<u64> {
     let total = files.len() as u64;
     if total == 0 {
         finish(&dst)?;
-        emit(Progress { phase: "done", done: 0, total: 0, percent: 100, current: String::new() });
+        emit(Progress {
+            phase: "done",
+            done: 0,
+            total: 0,
+            percent: 100,
+            current: String::new(),
+        });
         return Ok(0);
     }
 
@@ -154,17 +196,32 @@ fn do_run(dst: &Path, emit: &dyn Fn(Progress)) -> Result<u64> {
         }
     }
 
-    emit(Progress { phase: "verify", done, total, percent: 100, current: String::new() });
+    emit(Progress {
+        phase: "verify",
+        done,
+        total,
+        percent: 100,
+        current: String::new(),
+    });
     for (from, to) in &files {
-        let a = std::fs::metadata(from).map(|m| m.len()).unwrap_or(0);
-        let b = std::fs::metadata(to).map(|m| m.len()).unwrap_or(u64::MAX);
-        if a != b {
-            anyhow::bail!("{} did not copy cleanly — nothing was deleted", from.display());
+        if !files_match(from, to)
+            .with_context(|| format!("verify {} against {}", from.display(), to.display()))?
+        {
+            anyhow::bail!(
+                "{} did not copy cleanly — nothing was deleted",
+                from.display()
+            );
         }
     }
 
     // Only now is the old copy expendable.
-    emit(Progress { phase: "cleanup", done, total, percent: 100, current: String::new() });
+    emit(Progress {
+        phase: "cleanup",
+        done,
+        total,
+        percent: 100,
+        current: String::new(),
+    });
     finish(&dst)?;
     for name in MOVED {
         let old = src.join(name);
@@ -173,8 +230,35 @@ fn do_run(dst: &Path, emit: &dyn Fn(Progress)) -> Result<u64> {
         }
     }
 
-    emit(Progress { phase: "done", done, total, percent: 100, current: String::new() });
+    emit(Progress {
+        phase: "done",
+        done,
+        total,
+        percent: 100,
+        current: String::new(),
+    });
     Ok(done)
+}
+
+fn file_sha256(path: &Path) -> Result<(u64, [u8; 32])> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut bytes = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        bytes += read as u64;
+        hasher.update(&buffer[..read]);
+    }
+    Ok((bytes, hasher.finalize().into()))
+}
+
+fn files_match(source: &Path, copied: &Path) -> Result<bool> {
+    Ok(file_sha256(source)? == file_sha256(copied)?)
 }
 
 /// Persist the new root and point the process at it.
@@ -190,8 +274,7 @@ fn finish(dst: &Path) -> Result<()> {
 /// read-only looks like an ordinary directory until something is written.
 fn writable(dir: &Path) -> Result<()> {
     let probe = dir.join(".shardx-write-test");
-    std::fs::write(&probe, b"ok")
-        .with_context(|| format!("{} is not writable", dir.display()))?;
+    std::fs::write(&probe, b"ok").with_context(|| format!("{} is not writable", dir.display()))?;
     let _ = std::fs::remove_file(&probe);
     Ok(())
 }
@@ -217,14 +300,56 @@ fn collect(src: &Path, dst: &Path, out: &mut Vec<(PathBuf, PathBuf)>) -> Result<
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use super::file_sha256;
+
     /// I-4: an unfinished reset closes every door the lock closes.
     #[test]
     fn an_unfinished_reset_counts_as_the_lock() {
         let _serial = super::serial();
         super::set_reset_pending(true);
         let locked = super::in_progress();
+        let moving = super::moving();
         super::set_reset_pending(false);
         assert!(locked);
+        assert!(!moving);
         assert!(!super::in_progress());
+    }
+
+    #[test]
+    fn migration_lock_is_exclusive_and_releases_after_snapshot_guard() {
+        let _serial = super::serial();
+        super::release();
+        assert!(super::hold());
+        assert!(super::in_progress());
+        assert!(!super::hold());
+        super::release();
+        assert!(!super::in_progress());
+        assert!(super::hold());
+        super::release();
+    }
+
+    #[test]
+    fn migration_hash_distinguishes_same_size_files() {
+        let _serial = super::serial();
+        let root = std::env::temp_dir().join(format!(
+            "shyshard-migrate-hash-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let first = root.join("first");
+        let second = root.join("second");
+        fs::write(&first, b"AAAA").unwrap();
+        fs::write(&second, b"BBBB").unwrap();
+
+        let first_hash = file_sha256(&first).unwrap();
+        let second_hash = file_sha256(&second).unwrap();
+        let matches = super::files_match(&first, &second).unwrap();
+
+        let _ = fs::remove_dir_all(&root);
+        assert_eq!(first_hash.0, second_hash.0);
+        assert_ne!(first_hash.1, second_hash.1);
+        assert!(!matches);
     }
 }

@@ -52,15 +52,24 @@ pub struct Layout {
 impl Layout {
     pub fn host(base: PathBuf, key: &str) -> Layout {
         #[cfg(target_os = "macos")]
-        let (root, binary, marker) =
-            ("ShardX-Mac-arm64", "ShardX.app/Contents/MacOS/ShardX", Marker::MacFramework);
+        let (root, binary, marker) = (
+            "ShardX-Mac-arm64",
+            "ShardX.app/Contents/MacOS/ShardX",
+            Marker::MacFramework,
+        );
         #[cfg(target_os = "windows")]
         let (root, binary, marker) = ("ShardX-Windows", "chrome.exe", Marker::WinManifest);
         #[cfg(target_os = "linux")]
         let (root, binary, marker) = ("ShardX-Linux", "chrome", Marker::None);
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         let (root, binary, marker) = ("ShardX-Engine", "shardx", Marker::None);
-        Layout { base, root: root.into(), key: key.into(), binary: binary.into(), marker }
+        Layout {
+            base,
+            root: root.into(),
+            key: key.into(),
+            binary: binary.into(),
+            marker,
+        }
     }
 
     pub fn live(&self) -> PathBuf {
@@ -169,7 +178,8 @@ pub fn finished(layout: &Layout) -> Option<Record> {
         return None;
     }
     let moved = || {
-        !layout.staged_tree().exists() && staged_note(layout).is_some_and(|n| n.etag == j.record.etag)
+        !layout.staged_tree().exists()
+            && staged_note(layout).is_some_and(|n| n.etag == j.record.etag)
     };
     (j.done || moved()).then_some(j.record)
 }
@@ -209,7 +219,12 @@ pub struct Failure {
 
 impl Failure {
     pub fn new(stage: Stage, message: impl Into<String>) -> Failure {
-        Failure { stage, message: message.into(), browsers: 0, starting: 0 }
+        Failure {
+            stage,
+            message: message.into(),
+            browsers: 0,
+            starting: 0,
+        }
     }
 }
 
@@ -312,7 +327,8 @@ impl Ops {
 fn transient(e: &io::Error) -> bool {
     e.kind() == io::ErrorKind::ResourceBusy
         || (cfg!(windows)
-            && (e.kind() == io::ErrorKind::PermissionDenied || matches!(e.raw_os_error(), Some(5 | 32))))
+            && (e.kind() == io::ErrorKind::PermissionDenied
+                || matches!(e.raw_os_error(), Some(5 | 32))))
 }
 
 /// Whether `free` bytes fit `need`; the message names both.
@@ -339,11 +355,12 @@ fn mb(n: u64) -> String {
 pub fn version_in(tree: &Path, marker: Marker) -> Option<String> {
     match marker {
         Marker::MacFramework => {
-            let versions = tree
-                .join("ShardX.app/Contents/Frameworks/ShardX Framework.framework/Versions");
+            let versions =
+                tree.join("ShardX.app/Contents/Frameworks/ShardX Framework.framework/Versions");
             fs::read_dir(versions).ok()?.flatten().find_map(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
-                (name != "Current" && name.starts_with(|c: char| c.is_ascii_digit())).then_some(name)
+                (name != "Current" && name.starts_with(|c: char| c.is_ascii_digit()))
+                    .then_some(name)
             })
         }
         // The stem has to read as a dotted version, so a stray file cannot pass.
@@ -352,7 +369,9 @@ pub fn version_in(tree: &Path, marker: Marker) -> Option<String> {
             (p.extension().and_then(|s| s.to_str()) == Some("manifest"))
                 .then(|| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
                 .flatten()
-                .filter(|s| s.split('.').count() >= 2 && s.starts_with(|c: char| c.is_ascii_digit()))
+                .filter(|s| {
+                    s.split('.').count() >= 2 && s.starts_with(|c: char| c.is_ascii_digit())
+                })
         }),
         Marker::None => None,
     }
@@ -363,7 +382,12 @@ pub fn verify(layout: &Layout, tree: &Path) -> Result<Option<String>, String> {
     let bin = tree.join(&layout.binary);
     match fs::metadata(&bin) {
         Ok(m) if m.is_file() && m.len() > 0 => {}
-        _ => return Err(format!("the engine has no {}", Path::new(&layout.root).join(&layout.binary).display())),
+        _ => {
+            return Err(format!(
+                "the engine has no {}",
+                Path::new(&layout.root).join(&layout.binary).display()
+            ))
+        }
     }
     let version = version_in(tree, layout.marker);
     if layout.marker != Marker::None && version.is_none() {
@@ -374,7 +398,9 @@ pub fn verify(layout: &Layout, tree: &Path) -> Result<Option<String>, String> {
 
 /// Files and links under `dir`, links not followed.
 pub fn count_files(dir: &Path) -> u64 {
-    let Ok(entries) = fs::read_dir(dir) else { return 0 };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return 0;
+    };
     entries
         .flatten()
         .map(|e| match e.file_type() {
@@ -411,7 +437,8 @@ fn index(archive: &Path, layout: &Layout) -> Result<Index> {
 
 /// A complete download kept from an earlier try.
 pub fn downloaded(layout: &Layout) -> Option<Downloaded> {
-    let note: Downloaded = serde_json::from_str(&fs::read_to_string(layout.archive_note()).ok()?).ok()?;
+    let note: Downloaded =
+        serde_json::from_str(&fs::read_to_string(layout.archive_note()).ok()?).ok()?;
     let len = fs::metadata(layout.archive()).ok()?.len();
     (len == note.size && len > 0).then_some(note)
 }
@@ -420,8 +447,14 @@ pub fn downloaded(layout: &Layout) -> Option<Downloaded> {
 pub fn keep_download(layout: &Layout, etag: &str) -> io::Result<Downloaded> {
     let _ = fs::remove_file(layout.archive_note());
     fs::rename(layout.part(), layout.archive())?;
-    let note = Downloaded { etag: etag.to_string(), size: fs::metadata(layout.archive())?.len() };
-    fs::write(layout.archive_note(), serde_json::to_string(&note).unwrap_or_default())?;
+    let note = Downloaded {
+        etag: etag.to_string(),
+        size: fs::metadata(layout.archive())?.len(),
+    };
+    fs::write(
+        layout.archive_note(),
+        serde_json::to_string(&note).unwrap_or_default(),
+    )?;
     Ok(note)
 }
 
@@ -473,7 +506,11 @@ pub fn stage(layout: &Layout, dl: &Downloaded, ops: &Ops) -> Result<Staged, Fail
             ));
         }
     };
-    let entry = format!("{}/{}", layout.root, layout.binary.to_string_lossy().replace('\\', "/"));
+    let entry = format!(
+        "{}/{}",
+        layout.root,
+        layout.binary.to_string_lossy().replace('\\', "/")
+    );
     if !index.files.contains(&entry) {
         drop_download(layout);
         return Err(Failure::new(
@@ -483,7 +520,11 @@ pub fn stage(layout: &Layout, dl: &Downloaded, ops: &Ops) -> Result<Staged, Fail
     }
     // An earlier try's folder goes first: its room counts.
     drop_staging(layout, ops)?;
-    room(ops, &layout.base, index.unpacked.saturating_add(SPACE_MARGIN))?;
+    room(
+        ops,
+        &layout.base,
+        index.unpacked.saturating_add(SPACE_MARGIN),
+    )?;
 
     let failed = |stage: Stage, message: String| {
         ops.clear(layout, &staging);
@@ -492,18 +533,27 @@ pub fn stage(layout: &Layout, dl: &Downloaded, ops: &Ops) -> Result<Staged, Fail
     };
     let unpack = layout.unpack();
     if let Err(e) = fs::create_dir_all(&unpack) {
-        return failed(Stage::Extract, format!("Could not create {}: {e}", unpack.display()));
+        return failed(
+            Stage::Extract,
+            format!("Could not create {}: {e}", unpack.display()),
+        );
     }
     if let Err(e) = (ops.extract)(&archive, &unpack) {
         return failed(
             Stage::Extract,
-            format!("Unpacking the engine update failed ({e:#}). The engine you have was not touched."),
+            format!(
+                "Unpacking the engine update failed ({e:#}). The engine you have was not touched."
+            ),
         );
     }
     let unpacked = unpack.join(&layout.root);
     #[cfg(unix)]
     super::fix_unix_exec_bits(&unpacked);
-    if let Some(gone) = index.files.iter().find(|f| fs::symlink_metadata(unpack.join(f)).is_err()) {
+    if let Some(gone) = index
+        .files
+        .iter()
+        .find(|f| fs::symlink_metadata(unpack.join(f)).is_err())
+    {
         return failed(
             Stage::Verify,
             format!("The unpacked engine update is missing {gone}; an antivirus may have removed it. Allow the engine folder and try again. The engine you have was not touched."),
@@ -511,7 +561,14 @@ pub fn stage(layout: &Layout, dl: &Downloaded, ops: &Ops) -> Result<Staged, Fail
     }
     let version = match verify(layout, &unpacked) {
         Ok(v) => v,
-        Err(why) => return failed(Stage::Verify, format!("The engine update is incomplete: {why}. The engine you have was not touched.")),
+        Err(why) => {
+            return failed(
+                Stage::Verify,
+                format!(
+                    "The engine update is incomplete: {why}. The engine you have was not touched."
+                ),
+            )
+        }
     };
     // Moved once before anything live is: a file an antivirus still holds
     // refuses this rename rather than the swap's. The download stays for that.
@@ -522,9 +579,19 @@ pub fn stage(layout: &Layout, dl: &Downloaded, ops: &Ops) -> Result<Staged, Fail
             format!("The unpacked engine update is still held by another program ({e}); an antivirus may be checking it. Try again in a minute. The engine you have was not touched."),
         ));
     }
-    let staged = Staged { etag: dl.etag.clone(), files: count_files(&tree), version };
-    if let Err(e) = fs::write(layout.staged_note(), serde_json::to_string(&staged).unwrap_or_default()) {
-        return failed(Stage::Extract, format!("Could not finish unpacking the engine update: {e}"));
+    let staged = Staged {
+        etag: dl.etag.clone(),
+        files: count_files(&tree),
+        version,
+    };
+    if let Err(e) = fs::write(
+        layout.staged_note(),
+        serde_json::to_string(&staged).unwrap_or_default(),
+    ) {
+        return failed(
+            Stage::Extract,
+            format!("Could not finish unpacking the engine update: {e}"),
+        );
     }
     drop_download(layout);
     Ok(staged)
@@ -550,7 +617,12 @@ fn busy(h: Holders, starting: usize) -> Failure {
     if starting == 0 && n > 0 && h.untracked > 0 {
         message.push_str(" If ShardBrowser shows none running, one is left from an earlier session: end it in Task Manager (Activity Monitor on a Mac) or restart the computer.");
     }
-    Failure { stage: Stage::Busy, message, browsers: n as u32, starting: starting as u32 }
+    Failure {
+        stage: Stage::Busy,
+        message,
+        browsers: n as u32,
+        starting: starting as u32,
+    }
 }
 
 /// Live → `.old`, staged → live; the first put back if the second fails.
@@ -583,12 +655,20 @@ pub fn swap(layout: &Layout, ops: &Ops, record: &Record) -> Result<(), Failure> 
         }
     }
     let starting = (ops.starting)();
-    let holders = if live.exists() { (ops.holders)(&live) } else { Holders::default() };
+    let holders = if live.exists() {
+        (ops.holders)(&live)
+    } else {
+        Holders::default()
+    };
     if starting > 0 || holders.any() {
         return Err(busy(holders, starting));
     }
     let had_live = live.exists();
-    let mut journal = Journal { old_files: 0, record: record.clone(), done: false };
+    let mut journal = Journal {
+        old_files: 0,
+        record: record.clone(),
+        done: false,
+    };
     if had_live {
         journal.old_files = count_files(&live);
         if let Err(e) = write_journal(layout, &journal) {
@@ -640,7 +720,9 @@ pub fn restore(layout: &Layout, ops: &Ops) -> bool {
     if !returnable(layout) {
         return false;
     }
-    let back = ops.retry(|| (ops.rename)(&layout.old(), &layout.live())).is_ok();
+    let back = ops
+        .retry(|| (ops.rename)(&layout.old(), &layout.live()))
+        .is_ok();
     if back {
         settle(layout);
     }

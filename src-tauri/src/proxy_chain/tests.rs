@@ -42,8 +42,12 @@ async fn windows_tcp_listener_accepted_and_outbound_sockets_are_not_inheritable(
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let (accepted, outbound) = within(async {
-        tokio::join!(listener.accept(), TcpStream::connect(listener.local_addr().unwrap()))
-    }).await;
+        tokio::join!(
+            listener.accept(),
+            TcpStream::connect(listener.local_addr().unwrap())
+        )
+    })
+    .await;
     let (accepted, _) = accepted.unwrap();
     let outbound = outbound.unwrap();
     for (kind, socket) in [
@@ -52,10 +56,17 @@ async fn windows_tcp_listener_accepted_and_outbound_sockets_are_not_inheritable(
         ("outbound", outbound.as_raw_socket()),
     ] {
         let mut flags = 0;
-        assert_ne!(unsafe { GetHandleInformation(socket as _, &mut flags) }, 0,
-            "read {kind} socket handle flags: {}", std::io::Error::last_os_error());
-        assert_eq!(flags & HANDLE_FLAG_INHERIT, 0,
-            "the Engine must not inherit the {kind} socket; keep Mio's Windows socket fix");
+        assert_ne!(
+            unsafe { GetHandleInformation(socket as _, &mut flags) },
+            0,
+            "read {kind} socket handle flags: {}",
+            std::io::Error::last_os_error()
+        );
+        assert_eq!(
+            flags & HANDLE_FLAG_INHERIT,
+            0,
+            "the Engine must not inherit the {kind} socket; keep Mio's Windows socket fix"
+        );
     }
 }
 
@@ -65,8 +76,14 @@ async fn windows_tcp_listener_accepted_and_outbound_sockets_are_not_inheritable(
 fn windows_listener_owned(addr: SocketAddr, pid: u32) -> bool {
     #[link(name = "iphlpapi")]
     extern "system" {
-        fn GetExtendedTcpTable(table: *mut std::ffi::c_void, size: *mut u32,
-            order: i32, family: u32, class: i32, reserved: u32) -> u32;
+        fn GetExtendedTcpTable(
+            table: *mut std::ffi::c_void,
+            size: *mut u32,
+            order: i32,
+            family: u32,
+            class: i32,
+            reserved: u32,
+        ) -> u32;
     }
     let mut size = 0;
     let mut table = Vec::<u32>::new();
@@ -74,8 +91,18 @@ fn windows_listener_owned(addr: SocketAddr, pid: u32) -> bool {
     // table between size/read; retry only this bounded local table read.
     for _ in 0..3 {
         let result = unsafe {
-            GetExtendedTcpTable(if table.is_empty() { std::ptr::null_mut() } else { table.as_mut_ptr().cast() },
-                &mut size, 0, 2, 3, 0)
+            GetExtendedTcpTable(
+                if table.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    table.as_mut_ptr().cast()
+                },
+                &mut size,
+                0,
+                2,
+                3,
+                0,
+            )
         };
         if result == 122 {
             table.resize((size as usize + 3) / 4, 0);
@@ -83,10 +110,16 @@ fn windows_listener_owned(addr: SocketAddr, pid: u32) -> bool {
         }
         assert_eq!(result, 0, "read the Windows listener table");
         assert!(!table.is_empty() && table[0] as usize <= (table.len() - 1) / 6);
-        return table[1..].chunks_exact(6).take(table[0] as usize).any(|row| {
-            row[0] == 2 && std::net::IpAddr::V4(std::net::Ipv4Addr::from(row[1].to_ne_bytes())) == addr.ip()
-                && u16::from_be(row[2] as u16) == addr.port() && row[5] == pid
-        });
+        return table[1..]
+            .chunks_exact(6)
+            .take(table[0] as usize)
+            .any(|row| {
+                row[0] == 2
+                    && std::net::IpAddr::V4(std::net::Ipv4Addr::from(row[1].to_ne_bytes()))
+                        == addr.ip()
+                    && u16::from_be(row[2] as u16) == addr.port()
+                    && row[5] == pid
+            });
     }
     panic!("Windows listener table kept changing during the bounded read");
 }
@@ -98,7 +131,9 @@ async fn windows_tunnel_closes_its_os_listener_while_a_spawned_child_stays_alive
 
     let second = echo().await;
     let first = http_forward(second.addr).await;
-    let tunnel = Tunnel::bind(hop(first.addr, ProxyKind::Http), target()).await.unwrap();
+    let tunnel = Tunnel::bind(hop(first.addr, ProxyKind::Http), target())
+        .await
+        .unwrap();
     let addr = tunnel.addr();
     let completed = tunnel.closed_signal();
     let mut browser = TcpStream::connect(addr).await.unwrap();
@@ -107,16 +142,32 @@ async fn windows_tunnel_closes_its_os_listener_while_a_spawned_child_stays_alive
 
     let control_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
-    command.args(["--exact", "proxy_chain::integration_tests::tracker_child_waits_for_its_control_connection",
-        "--nocapture", "--test-threads=1"])
-        .env("SHARD_CHAIN_SYNTHETIC_CHILD_CONTROL", control_listener.local_addr().unwrap().to_string())
-        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
-        .creation_flags(0x08000000).kill_on_drop(true);
+    command
+        .args([
+            "--exact",
+            "proxy_chain::integration_tests::tracker_child_waits_for_its_control_connection",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(
+            "SHARD_CHAIN_SYNTHETIC_CHILD_CONTROL",
+            control_listener.local_addr().unwrap().to_string(),
+        )
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(0x08000000)
+        .kill_on_drop(true);
     let mut child = command.spawn().unwrap();
     let (mut control, _) = tokio::time::timeout(Duration::from_secs(15), control_listener.accept())
-        .await.unwrap().unwrap();
+        .await
+        .unwrap()
+        .unwrap();
     drop(control_listener);
-    assert!(child.try_wait().unwrap().is_none(), "the controlled child must be alive before closure");
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "the controlled child must be alive before closure"
+    );
 
     let closed_result = tunnel.close_and_wait().await;
     let worker_finished = *completed.borrow();
@@ -137,14 +188,33 @@ async fn windows_tunnel_closes_its_os_listener_while_a_spawned_child_stays_alive
     control.write_all(&[1]).await.unwrap();
     let child_exited = match tokio::time::timeout(Duration::from_secs(15), child.wait()).await {
         Ok(result) => result.unwrap().success(),
-        Err(_) => { let _ = child.kill().await; let _ = child.wait().await; false }
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            false
+        }
     };
     tunnel.shutdown().await;
-    assert!(child_exited && child_still_alive, "the child must survive tunnel closure and then exit under control");
-    assert!(closed_result.is_ok() && worker_finished && active == 0, "tunnel task/flow cleanup must complete");
-    assert!(!still_listening, "a child inherited the original OS listener after the worker finished");
-    assert!(!new_handshake, "a closed tunnel must not accept a new TCP connection while the child is alive");
-    assert!(old_closed, "the original flow must close while the child is alive");
+    assert!(
+        child_exited && child_still_alive,
+        "the child must survive tunnel closure and then exit under control"
+    );
+    assert!(
+        closed_result.is_ok() && worker_finished && active == 0,
+        "tunnel task/flow cleanup must complete"
+    );
+    assert!(
+        !still_listening,
+        "a child inherited the original OS listener after the worker finished"
+    );
+    assert!(
+        !new_handshake,
+        "a closed tunnel must not accept a new TCP connection while the child is alive"
+    );
+    assert!(
+        old_closed,
+        "the original flow must close while the child is alive"
+    );
 }
 
 #[tokio::test]
@@ -155,10 +225,15 @@ async fn tcp_dial_retries_a_failed_connection_once_before_protocol_bytes() {
         attempts += 1;
         let attempt = attempts;
         async move {
-            if attempt == 1 { Err(std::io::ErrorKind::ConnectionRefused.into()) }
-            else { Ok(42) }
+            if attempt == 1 {
+                Err(std::io::ErrorKind::ConnectionRefused.into())
+            } else {
+                Ok(42)
+            }
         }
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     assert_eq!(connected, 42);
     assert_eq!(attempts, 2);
     assert!(start.elapsed() < Duration::from_millis(500));
@@ -172,10 +247,14 @@ async fn tcp_dial_retries_a_dropped_syn_and_preserves_the_original_total_budget(
         attempts += 1;
         let attempt = attempts;
         async move {
-            if attempt == 1 { std::future::pending::<()>().await; }
+            if attempt == 1 {
+                std::future::pending::<()>().await;
+            }
             Ok::<_, std::io::Error>(42)
         }
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     assert_eq!(connected, 42);
     assert_eq!(attempts, 2);
     assert!(start.elapsed() >= Duration::from_millis(100));
@@ -186,17 +265,24 @@ async fn tcp_dial_retries_a_dropped_syn_and_preserves_the_original_total_budget(
     let error = connector::retry_tcp_dial(Duration::from_millis(200), || {
         attempts += 1;
         std::future::pending::<std::io::Result<()>>()
-    }).await.unwrap_err();
+    })
+    .await
+    .unwrap_err();
     assert_eq!(error, connector::TcpDialError::Timeout);
     assert_eq!(attempts, 2);
     assert!(start.elapsed() >= Duration::from_millis(200));
-    assert!(start.elapsed() < Duration::from_millis(500), "two attempts must share one 200ms budget");
+    assert!(
+        start.elapsed() < Duration::from_millis(500),
+        "two attempts must share one 200ms budget"
+    );
 
     let mut attempts = 0;
     let error = connector::retry_tcp_dial(Duration::ZERO, || {
         attempts += 1;
         async { Ok::<_, std::io::Error>(()) }
-    }).await.unwrap_err();
+    })
+    .await
+    .unwrap_err();
     assert_eq!(error, connector::TcpDialError::Timeout);
     assert_eq!(attempts, 0);
 }
@@ -213,11 +299,14 @@ async fn tcp_second_dial_is_reached_before_the_shortest_preflight_deadline() {
             attempts += 1;
             let attempt = attempts;
             async move {
-                if attempt == 1 { std::future::pending::<()>().await; }
+                if attempt == 1 {
+                    std::future::pending::<()>().await;
+                }
                 Ok::<_, std::io::Error>(42)
             }
         }),
-    ).await;
+    )
+    .await;
     assert!(matches!(connected, Ok(Ok(42))),
         "a second TCP dial must be usable before the 3s preflight deadline; attempts={attempts}, result={connected:?}");
     assert_eq!(attempts, 2, "only TCP dialing may be retried once");
@@ -230,13 +319,17 @@ async fn tcp_second_dial_keeps_the_remaining_original_budget() {
         attempts += 1;
         let attempt = attempts;
         async move {
-            if attempt == 1 { std::future::pending::<()>().await; }
+            if attempt == 1 {
+                std::future::pending::<()>().await;
+            }
             // Only the first dial has the 2s cap. A valid second dial may
             // take longer while remaining within the original 12s budget.
             tokio::time::sleep(Duration::from_millis(2200)).await;
             Ok::<_, std::io::Error>(42)
         }
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     assert_eq!(connected, 42);
     assert_eq!(attempts, 2);
 }
@@ -259,84 +352,213 @@ async fn tcp_retry_does_not_replay_proxy_authentication_connect_or_protocol_fail
             } else {
                 let _ = http_head(&mut socket).await;
                 if let Some(status) = response {
-                    socket.write_all(format!("HTTP/1.1 {status} Synthetic refusal\r\nContent-Length: 0\r\n\r\n").as_bytes()).await.unwrap();
+                    socket
+                        .write_all(
+                            format!(
+                                "HTTP/1.1 {status} Synthetic refusal\r\nContent-Length: 0\r\n\r\n"
+                            )
+                            .as_bytes(),
+                        )
+                        .await
+                        .unwrap();
                 }
             }
             drop(socket);
-            tokio::time::timeout(Duration::from_millis(150), listener.accept()).await.is_ok()
+            tokio::time::timeout(Duration::from_millis(150), listener.accept())
+                .await
+                .is_ok()
         });
-        assert_eq!(within(connector::connect(&first, &target())).await.err().unwrap().code, expected);
-        assert!(!server.await.unwrap(), "a failure after TCP connected must never create a second connection");
+        assert_eq!(
+            within(connector::connect(&first, &target()))
+                .await
+                .err()
+                .unwrap()
+                .code,
+            expected
+        );
+        assert!(
+            !server.await.unwrap(),
+            "a failure after TCP connected must never create a second connection"
+        );
     }
 }
 
 #[tokio::test]
 async fn explicit_system_listener_resolves_each_actual_connect_and_refuses_udp_and_direct_pac() {
-    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let first_addr=listener.local_addr().unwrap();
-    let requests=Arc::new(std::sync::Mutex::new(Vec::new()));
-    let received=requests.clone();
-    let worker=tokio::spawn(async move {
-        let mut clients=JoinSet::new();
-        loop {tokio::select! {
-            _=clients.join_next(),if !clients.is_empty()=>{},
-            accepted=listener.accept()=>{let (mut socket,_)=accepted.unwrap();let received=received.clone();clients.spawn(async move{
-                let head=http_head(&mut socket).await;received.lock().unwrap().push(String::from_utf8(head).unwrap());
-                socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
-                let mut byte=[0];if socket.read_exact(&mut byte).await.is_ok(){socket.write_all(&byte).await.unwrap();}
-            });}
-        }}
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let first_addr = listener.local_addr().unwrap();
+    let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let received = requests.clone();
+    let worker = tokio::spawn(async move {
+        let mut clients = JoinSet::new();
+        loop {
+            tokio::select! {
+                _=clients.join_next(),if !clients.is_empty()=>{},
+                accepted=listener.accept()=>{let (mut socket,_)=accepted.unwrap();let received=received.clone();clients.spawn(async move{
+                    let head=http_head(&mut socket).await;received.lock().unwrap().push(String::from_utf8(head).unwrap());
+                    socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
+                    let mut byte=[0];if socket.read_exact(&mut byte).await.is_ok(){socket.write_all(&byte).await.unwrap();}
+                });}
+            }
+        }
     });
-    let resolved=Arc::new(std::sync::Mutex::new(Vec::new()));let seen=resolved.clone();
-    let resolver:super::tunnel::SystemResolver=Arc::new(move |target|{
+    let resolved = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = resolved.clone();
+    let resolver: super::tunnel::SystemResolver = Arc::new(move |target| {
         seen.lock().unwrap().push(target);
-        Box::pin(async move {Ok(super::detect_windows::ResolvedProxy::manual(hop(first_addr,ProxyKind::Http)))})
+        Box::pin(async move {
+            Ok(super::detect_windows::ResolvedProxy::manual(hop(
+                first_addr,
+                ProxyKind::Http,
+            )))
+        })
     });
-    let tunnel=Tunnel::bind_system_with_resolver(resolver).await.unwrap();
-    let proxy=hop(tunnel.addr(),ProxyKind::Socks5);
-    for name in ["first-destination.invalid","other-destination.invalid"] {
-        let target=Target::new(name,443).unwrap();
-        let mut stream=within(connector::connect(&proxy,&target)).await.unwrap();
-        stream.write_all(b"x").await.unwrap();let mut echo=[0];stream.read_exact(&mut echo).await.unwrap();assert_eq!(&echo,b"x");
+    let tunnel = Tunnel::bind_system_with_resolver(resolver).await.unwrap();
+    let proxy = hop(tunnel.addr(), ProxyKind::Socks5);
+    for name in ["first-destination.invalid", "other-destination.invalid"] {
+        let target = Target::new(name, 443).unwrap();
+        let mut stream = within(connector::connect(&proxy, &target)).await.unwrap();
+        stream.write_all(b"x").await.unwrap();
+        let mut echo = [0];
+        stream.read_exact(&mut echo).await.unwrap();
+        assert_eq!(&echo, b"x");
     }
-    assert_eq!(resolved.lock().unwrap().iter().map(|t|t.host.clone()).collect::<Vec<_>>(),["first-destination.invalid","other-destination.invalid"]);
+    assert_eq!(
+        resolved
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|t| t.host.clone())
+            .collect::<Vec<_>>(),
+        ["first-destination.invalid", "other-destination.invalid"]
+    );
     assert!(requests.lock().unwrap()[1].starts_with("CONNECT other-destination.invalid:443 "));
-    let mut udp=TcpStream::connect(tunnel.addr()).await.unwrap();udp.write_all(&[5,1,0]).await.unwrap();let mut accepted=[0;2];udp.read_exact(&mut accepted).await.unwrap();
-    udp.write_all(&[5,3,0,1,127,0,0,1,0,1]).await.unwrap();let mut refused=[0;10];udp.read_exact(&mut refused).await.unwrap();assert_eq!(refused[1],7);
-    assert_eq!(resolved.lock().unwrap().len(),2,"UDP cannot trigger a system route");
-    tunnel.shutdown().await;worker.abort();let _=worker.await;
-    let destination=TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let resolver:super::tunnel::SystemResolver=Arc::new(|_|Box::pin(async {Err(super::error::ChainError::new("proxy_chain_auto_direct_refused","system_proxy","PAC returned DIRECT; explicit system routing requires a proxy."))}));
-    let tunnel=Tunnel::bind_system_with_resolver(resolver).await.unwrap();
-    assert!(within(connector::connect(&hop(tunnel.addr(),ProxyKind::Socks5),&Target::new("127.0.0.1",destination.local_addr().unwrap().port()).unwrap())).await.is_err());
-    assert!(tokio::time::timeout(Duration::from_millis(100),destination.accept()).await.is_err(),"system refusal never dials the website directly");
+    let mut udp = TcpStream::connect(tunnel.addr()).await.unwrap();
+    udp.write_all(&[5, 1, 0]).await.unwrap();
+    let mut accepted = [0; 2];
+    udp.read_exact(&mut accepted).await.unwrap();
+    udp.write_all(&[5, 3, 0, 1, 127, 0, 0, 1, 0, 1])
+        .await
+        .unwrap();
+    let mut refused = [0; 10];
+    udp.read_exact(&mut refused).await.unwrap();
+    assert_eq!(refused[1], 7);
+    assert_eq!(
+        resolved.lock().unwrap().len(),
+        2,
+        "UDP cannot trigger a system route"
+    );
+    tunnel.shutdown().await;
+    worker.abort();
+    let _ = worker.await;
+    let destination = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let resolver: super::tunnel::SystemResolver = Arc::new(|_| {
+        Box::pin(async {
+            Err(super::error::ChainError::new(
+                "proxy_chain_auto_direct_refused",
+                "system_proxy",
+                "PAC returned DIRECT; explicit system routing requires a proxy.",
+            ))
+        })
+    });
+    let tunnel = Tunnel::bind_system_with_resolver(resolver).await.unwrap();
+    assert!(within(connector::connect(
+        &hop(tunnel.addr(), ProxyKind::Socks5),
+        &Target::new("127.0.0.1", destination.local_addr().unwrap().port()).unwrap()
+    ))
+    .await
+    .is_err());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), destination.accept())
+            .await
+            .is_err(),
+        "system refusal never dials the website directly"
+    );
     tunnel.shutdown().await;
 }
 
 #[tokio::test]
 async fn explicit_https_first_hop_verifies_certificate_and_original_host() {
     use rustls::pki_types::PrivatePkcs8KeyDer;
-    let certified=rcgen::generate_simple_self_signed(vec!["127.0.0.1".into()]).unwrap();
-    let cert=certified.cert.der().clone();let provider=Arc::new(rustls::crypto::ring::default_provider());
-    let server=rustls::ServerConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().unwrap().with_no_client_auth()
-        .with_single_cert(vec![cert.clone()],PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der()).into()).unwrap();
-    let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();let addr=listener.local_addr().unwrap();
-    let calls=Arc::new(AtomicUsize::new(0));let received=calls.clone();
-    let task=tokio::spawn(async move {let acceptor=tokio_rustls::TlsAcceptor::from(Arc::new(server));let mut clients=JoinSet::new();loop {tokio::select!{
-        _=clients.join_next(),if !clients.is_empty()=>{},
-        accepted=listener.accept()=>{let (raw,_)=accepted.unwrap();let acceptor=acceptor.clone();let received=received.clone();clients.spawn(async move{
-            let Ok(mut stream)=acceptor.accept(raw).await else{return;};let mut head=Vec::new();while !head.ends_with(b"\r\n\r\n"){let Ok(b)=stream.read_u8().await else{return;};head.push(b);}
-            assert!(head.starts_with(b"CONNECT remote-proxy.invalid:1080 HTTP/1.1"));received.fetch_add(1,Ordering::SeqCst);stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
-        });}
-    }}});
-    let first=hop(addr,ProxyKind::Https);
-    assert_eq!(within(connector::connect(&first,&target())).await.err().unwrap().code,"system_proxy_tls_failed");
-    let mut roots=rustls::RootCertStore::empty();roots.add(cert).unwrap();
-    let client=Arc::new(rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth());
-    let mut wrong=first.clone();wrong.host="localhost".into();
-    assert_eq!(within(connector::connect_with_tls_config(&wrong,&target(),SHORT,Some(client.clone()))).await.err().unwrap().code,"system_proxy_tls_failed");
-    drop(within(connector::connect_with_tls_config(&first,&target(),SHORT,Some(client))).await.unwrap());
-    assert_eq!(calls.load(Ordering::SeqCst),1,"only trusted matching TLS sends CONNECT");task.abort();let _=task.await;
+    let certified = rcgen::generate_simple_self_signed(vec!["127.0.0.1".into()]).unwrap();
+    let cert = certified.cert.der().clone();
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let server = rustls::ServerConfig::builder_with_provider(provider.clone())
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![cert.clone()],
+            PrivatePkcs8KeyDer::from(certified.key_pair.serialize_der()).into(),
+        )
+        .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let received = calls.clone();
+    let task = tokio::spawn(async move {
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server));
+        let mut clients = JoinSet::new();
+        loop {
+            tokio::select! {
+                _=clients.join_next(),if !clients.is_empty()=>{},
+                accepted=listener.accept()=>{let (raw,_)=accepted.unwrap();let acceptor=acceptor.clone();let received=received.clone();clients.spawn(async move{
+                    let Ok(mut stream)=acceptor.accept(raw).await else{return;};let mut head=Vec::new();while !head.ends_with(b"\r\n\r\n"){let Ok(b)=stream.read_u8().await else{return;};head.push(b);}
+                    assert!(head.starts_with(b"CONNECT remote-proxy.invalid:1080 HTTP/1.1"));received.fetch_add(1,Ordering::SeqCst);stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
+                });}
+            }
+        }
+    });
+    let first = hop(addr, ProxyKind::Https);
+    assert_eq!(
+        within(connector::connect(&first, &target()))
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "system_proxy_tls_failed"
+    );
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(cert).unwrap();
+    let client = Arc::new(
+        rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    );
+    let mut wrong = first.clone();
+    wrong.host = "localhost".into();
+    assert_eq!(
+        within(connector::connect_with_tls_config(
+            &wrong,
+            &target(),
+            SHORT,
+            Some(client.clone())
+        ))
+        .await
+        .err()
+        .unwrap()
+        .code,
+        "system_proxy_tls_failed"
+    );
+    drop(
+        within(connector::connect_with_tls_config(
+            &first,
+            &target(),
+            SHORT,
+            Some(client),
+        ))
+        .await
+        .unwrap(),
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "only trusted matching TLS sends CONNECT"
+    );
+    task.abort();
+    let _ = task.await;
 }
 
 async fn http_head(stream: &mut TcpStream) -> Vec<u8> {
@@ -929,30 +1151,51 @@ async fn a_refused_first_hop_publishes_its_typed_error_before_loopback_eof() {
         for _ in 0..ROUNDS {
             let (mut socket, _) = first.accept().await.unwrap();
             http_head(&mut socket).await;
-            socket.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await.unwrap();
+            socket
+                .write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
+                .await
+                .unwrap();
         }
     });
     for round in 0..ROUNDS {
-        let tunnel = Tunnel::bind(hop(addr, ProxyKind::Http), target()).await.unwrap();
+        let tunnel = Tunnel::bind(hop(addr, ProxyKind::Http), target())
+            .await
+            .unwrap();
         let mut local = TcpStream::connect(tunnel.addr()).await.unwrap();
         // Ordering is the contract here, not a three-second scheduler budget.
         // Allow the product's twelve-second connect deadline to finish too;
         // a timeout would still fail the required HTTP-refusal code below.
-        let closed=tokio::time::timeout(Duration::from_secs(15),local.read(&mut [0;1])).await
-            .unwrap_or_else(|_|panic!("first-hop refusal round {round}: local stream did not close"));
-        assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
+        let closed = tokio::time::timeout(Duration::from_secs(15), local.read(&mut [0; 1]))
+            .await
+            .unwrap_or_else(|_| {
+                panic!("first-hop refusal round {round}: local stream did not close")
+            });
+        assert!(
+            matches!(closed, Ok(0))
+                || closed
+                    .as_ref()
+                    .is_err_and(|error| error.kind() == std::io::ErrorKind::ConnectionReset)
+        );
         // A retry/eventually here would hide the race this test guards.
-        assert_eq!(tunnel.last_error().map(|error| error.code), Some("system_proxy_connect_refused"), "round {round}");
+        assert_eq!(
+            tunnel.last_error().map(|error| error.code),
+            Some("system_proxy_connect_refused"),
+            "round {round}"
+        );
         tunnel.shutdown().await;
     }
-    tokio::time::timeout(Duration::from_secs(15),refusing).await
-        .expect("first-hop refusal fixture did not complete all rounds").unwrap();
+    tokio::time::timeout(Duration::from_secs(15), refusing)
+        .await
+        .expect("first-hop refusal fixture did not complete all rounds")
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_system_handshake_timeout_publishes_its_typed_error_before_loopback_eof() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let mut client = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap())
+        .await
+        .unwrap();
     let (local, _) = listener.accept().await.unwrap();
     let error = Arc::new(std::sync::Mutex::new(None));
     let published = error.clone();
@@ -960,7 +1203,10 @@ async fn a_system_handshake_timeout_publishes_its_typed_error_before_loopback_eo
     let worker = tokio::spawn(async move {
         // Leave the local greeting unreadable and expire the total handshake
         // budget immediately. No timer may race against fixture negotiation.
-        super::tunnel::system_connect(local, Duration::ZERO, resolver, published).await.err().unwrap()
+        super::tunnel::system_connect(local, Duration::ZERO, resolver, published)
+            .await
+            .err()
+            .unwrap()
     });
     // Keep the multithreaded EOF/publication race, but distinguish a stalled
     // reader from a stalled worker under a busy full-suite runtime. This is a
@@ -968,9 +1214,18 @@ async fn a_system_handshake_timeout_publishes_its_typed_error_before_loopback_eo
     let closed=tokio::time::timeout(Duration::from_secs(15),client.read(&mut [0;1])).await
         .unwrap_or_else(|_|panic!("system timeout publication: local stream did not close; worker_finished={}, published={:?}",
             worker.is_finished(),error.try_lock().ok().and_then(|error|error.as_ref().map(|error|error.code))));
-    assert!(matches!(closed,Ok(0)) || closed.as_ref().is_err_and(|error|error.kind()==std::io::ErrorKind::ConnectionReset));
-    assert_eq!(error.lock().unwrap().as_ref().map(|error| error.code), Some("system_proxy_timeout"));
-    let completed=tokio::time::timeout(Duration::from_secs(15),worker).await
+    assert!(
+        matches!(closed, Ok(0))
+            || closed
+                .as_ref()
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::ConnectionReset)
+    );
+    assert_eq!(
+        error.lock().unwrap().as_ref().map(|error| error.code),
+        Some("system_proxy_timeout")
+    );
+    let completed = tokio::time::timeout(Duration::from_secs(15), worker)
+        .await
         .expect("system timeout publication: worker did not finish")
         .expect("system timeout publication: worker panicked");
     assert_eq!(completed.code, "system_proxy_timeout");
@@ -1109,23 +1364,36 @@ async fn shutdown_cancels_a_pending_first_hop_handshake() {
 #[tokio::test]
 async fn finishing_probe_flows_cancels_a_pending_handshake_and_keeps_the_listener() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let tunnel = Tunnel::bind(hop(listener.local_addr().unwrap(), ProxyKind::Http), target()).await.unwrap();
+    let tunnel = Tunnel::bind(
+        hop(listener.local_addr().unwrap(), ProxyKind::Http),
+        target(),
+    )
+    .await
+    .unwrap();
     let addr = tunnel.addr();
     let mut probe = TcpStream::connect(addr).await.unwrap();
     let (mut pending, _) = within(listener.accept()).await.unwrap();
-    assert!(within(http_head(&mut pending)).await.starts_with(b"CONNECT "));
+    assert!(within(http_head(&mut pending))
+        .await
+        .starts_with(b"CONNECT "));
     assert_eq!(tunnel.active_connections(), 1);
 
     within(tunnel.finish_probe_flows()).await.unwrap();
     assert_eq!(tunnel.active_connections(), 0);
-    assert!(!*tunnel.closed_signal().borrow(), "probe cleanup must keep the listener alive");
+    assert!(
+        !*tunnel.closed_signal().borrow(),
+        "probe cleanup must keep the listener alive"
+    );
     closed(&mut probe).await;
     closed(&mut pending).await;
 
     let mut browser = TcpStream::connect(addr).await.unwrap();
     let (mut first, _) = within(listener.accept()).await.unwrap();
     within(http_head(&mut first)).await;
-    first.write_all(b"HTTP/1.1 200 Connected\r\n\r\n").await.unwrap();
+    first
+        .write_all(b"HTTP/1.1 200 Connected\r\n\r\n")
+        .await
+        .unwrap();
     browser.write_all(b"after-probe").await.unwrap();
     let mut payload = [0; 11];
     within(first.read_exact(&mut payload)).await.unwrap();
@@ -1162,9 +1430,17 @@ async fn a_shared_tunnel_is_fully_closed_before_close_and_wait_returns() {
 #[tokio::test]
 async fn a_greeting_timeout_keeps_its_type_under_the_probe_context() {
     let first = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let tunnel = Tunnel::bind(hop(first.local_addr().unwrap(), ProxyKind::Http), target()).await.unwrap();
-    let elapsed=tokio::time::timeout(Duration::from_millis(1),std::future::pending::<()>()).await.unwrap_err();
-    let cause=anyhow::Error::new(elapsed).context("the proxy accepted the connection but never greeted us");
-    assert_eq!(super::profile_failure(&tunnel,&cause).code,"proxy_chain_profile_timeout");
+    let tunnel = Tunnel::bind(hop(first.local_addr().unwrap(), ProxyKind::Http), target())
+        .await
+        .unwrap();
+    let elapsed = tokio::time::timeout(Duration::from_millis(1), std::future::pending::<()>())
+        .await
+        .unwrap_err();
+    let cause = anyhow::Error::new(elapsed)
+        .context("the proxy accepted the connection but never greeted us");
+    assert_eq!(
+        super::profile_failure(&tunnel, &cause).code,
+        "proxy_chain_profile_timeout"
+    );
     tunnel.shutdown().await;
 }

@@ -112,7 +112,13 @@ fn one() -> u32 {
 
 impl Default for RunSettings {
     fn default() -> Self {
-        Self { threads: 1, loops: 1, hours: 0.0, profiles: Vec::new(), start: String::new() }
+        Self {
+            threads: 1,
+            loops: 1,
+            hours: 0.0,
+            profiles: Vec::new(),
+            start: String::new(),
+        }
     }
 }
 
@@ -183,7 +189,10 @@ fn read_db() -> Result<Db> {
 }
 
 fn write_db(db: &Db) -> Result<()> {
-    write_atomic(&store::automation_path()?, serde_json::to_vec_pretty(db)?.as_slice())
+    write_atomic(
+        &store::automation_path()?,
+        serde_json::to_vec_pretty(db)?.as_slice(),
+    )
 }
 
 pub(in crate::space) fn list() -> Result<Vec<Project>> {
@@ -204,7 +213,11 @@ pub(in crate::space) fn new_project(name: &str) -> Project {
     let t = now();
     Project {
         id: uuid::Uuid::new_v4().to_string(),
-        name: if name.trim().is_empty() { "Untitled".into() } else { name.trim().into() },
+        name: if name.trim().is_empty() {
+            "Untitled".into()
+        } else {
+            name.trim().into()
+        },
         notes: String::new(),
         blocks: Vec::new(),
         run: RunSettings::default(),
@@ -361,7 +374,11 @@ pub(in crate::space) fn bundle(mut project: Project) -> Bundle {
         if !cleared.is_empty() {
             needs.push(NeedsSecret {
                 block_id: block.id.clone(),
-                label: if block.label.is_empty() { block.kind.clone() } else { block.label.clone() },
+                label: if block.label.is_empty() {
+                    block.kind.clone()
+                } else {
+                    block.label.clone()
+                },
                 params: cleared,
             });
         }
@@ -430,11 +447,17 @@ fn restore_modules(files: &[BundledModule]) {
     };
     for m in files {
         if dir.join(format!("{}.wasm", m.id)).exists() {
-            eprintln!("[launcher] import: module {} is already installed — kept", m.id);
+            eprintln!(
+                "[launcher] import: module {} is already installed — kept",
+                m.id
+            );
             continue;
         }
         let Ok(gz) = base64::engine::general_purpose::STANDARD.decode(&m.wasm) else {
-            eprintln!("[launcher] import: module {} is not readable — skipped", m.id);
+            eprintln!(
+                "[launcher] import: module {} is not readable — skipped",
+                m.id
+            );
             continue;
         };
         let mut wasm = Vec::new();
@@ -442,7 +465,10 @@ fn restore_modules(files: &[BundledModule]) {
             .read_to_end(&mut wasm)
             .is_err()
         {
-            eprintln!("[launcher] import: module {} did not unpack — skipped", m.id);
+            eprintln!(
+                "[launcher] import: module {} did not unpack — skipped",
+                m.id
+            );
             continue;
         }
         // Through install(), so an imported module passes the same name and

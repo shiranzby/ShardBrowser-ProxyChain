@@ -49,6 +49,7 @@ async function proxyEdit(page: Page, name: string) {
   await page.locator("aside[data-peek='proxy'] [data-peek-header]").getByRole("button", { name: "Edit", exact: true }).click();
   const form = page.getByRole("dialog", { name: `Edit ${name}`, exact: true });
   await expect(form).toBeVisible();
+  await expect(form.getByRole("combobox", { name: "Folder", exact: true })).toBeVisible();
   return form;
 }
 

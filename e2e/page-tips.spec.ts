@@ -292,7 +292,7 @@ test("no tip while a dialog is open", async ({ page }) => {
 test("the welcome comes first; the tip follows once it is answered", async ({ page }) => {
   await openApp(page, { onboarding: "fresh", section: "proxies" });
   await recordStarts(page);
-  const welcome = page.getByRole("dialog", { name: "Welcome to ShardBrowser" });
+  const welcome = page.getByRole("dialog", { name: "Welcome to ShyShard" });
   await expect(welcome).toBeVisible();
   await quiet(page);
   expect(await starts(page)).toEqual([]);

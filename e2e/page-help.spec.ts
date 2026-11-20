@@ -17,7 +17,7 @@ const HELP: Record<(typeof SECTIONS)[number], { title: string; body: RegExp }> =
   extensions: { title: "About extensions", body: /turn it on for each profile in its details panel/ },
   bookmarks: { title: "About bookmarks", body: /shows up in every profile in that folder/ },
   trash: { title: "About Trash", body: /stay here for 7 days/ },
-  settings: { title: "About Settings", body: /how ShardBrowser looks and behaves/ },
+  settings: { title: "About Settings", body: /how ShyShard looks and behaves/ },
 };
 
 test("clicking (i) opens the page help on every page", async ({ page }) => {

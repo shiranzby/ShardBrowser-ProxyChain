@@ -17,6 +17,7 @@ import { ModulesDialog, useModulesAwaiting } from "../../features/automation-mod
 import { useT } from "../../shared/i18n";
 import { ReviewDialog, markReviewed, markUnreviewed, reviewLines, type ReviewLine } from "../../features/automation-review";
 import { showMeAround } from "../../features/tour";
+import { SequentialCard } from "./SequentialCard";
 
 const BUNDLE_MAX_BYTES = 20 * MB;
 
@@ -175,6 +176,7 @@ export function AutomationPage() {
         actions={actions}
       />
       <PageBody scroll={false} className="relative">
+        <SequentialCard />
         <ProjectsList
           projects={projects}
           loading={loading}

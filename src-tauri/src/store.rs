@@ -14,7 +14,12 @@ pub fn config_root() -> Result<PathBuf> {
     #[cfg(test)]
     let root = test_config_or_panic("config root");
     #[cfg(not(test))]
-    let root = dirs::config_dir().context("OS config dir unavailable")?.join("shardx-launcher");
+    let root = match crate::portable::root()? {
+        Some(dir) => dir.join("shardx-launcher"),
+        None => dirs::config_dir()
+            .context("OS config dir unavailable")?
+            .join("shardx-launcher"),
+    };
     std::fs::create_dir_all(&root)?;
     Ok(root)
 }
@@ -25,7 +30,12 @@ pub fn local_root() -> Result<PathBuf> {
     #[cfg(test)]
     let root = test_config_or_panic("local root").join("local");
     #[cfg(not(test))]
-    let root = dirs::data_local_dir().context("OS local data dir unavailable")?.join("shardx-launcher");
+    let root = match crate::portable::root()? {
+        Some(dir) => dir.join("local").join("shardx-launcher"),
+        None => dirs::data_local_dir()
+            .context("OS local data dir unavailable")?
+            .join("shardx-launcher"),
+    };
     std::fs::create_dir_all(&root)?;
     Ok(root)
 }
@@ -62,6 +72,9 @@ pub fn set_data_root(root: Option<PathBuf>) {
 
 /// Where profiles, user-data, extensions and the trash live.
 pub fn data_root() -> Result<PathBuf> {
+    if crate::portable::root()?.is_some() {
+        return config_root();
+    }
     let over = data_root_cell().read().ok().and_then(|g| g.clone());
     match over {
         Some(p) => {
@@ -107,11 +120,18 @@ pub fn remove_browser_cache(udd: &Path) {
 /// Caches of profiles deleted before their cache went with them (#125). Returns how many.
 pub fn sweep_orphan_caches() -> usize {
     let Ok(root) = user_data_root() else { return 0 };
-    let Some(twin) = browser_cache_twin(&root) else { return 0 };
-    let Ok(entries) = std::fs::read_dir(&twin) else { return 0 };
+    let Some(twin) = browser_cache_twin(&root) else {
+        return 0;
+    };
+    let Ok(entries) = std::fs::read_dir(&twin) else {
+        return 0;
+    };
     let mut n = 0;
     for e in entries.flatten() {
-        if e.path().is_dir() && !root.join(e.file_name()).exists() && std::fs::remove_dir_all(e.path()).is_ok() {
+        if e.path().is_dir()
+            && !root.join(e.file_name()).exists()
+            && std::fs::remove_dir_all(e.path()).is_ok()
+        {
             n += 1;
         }
     }
@@ -150,6 +170,12 @@ pub fn proxies_path() -> Result<PathBuf> {
     Ok(config_root()?.join("proxies.json"))
 }
 
+/// Folders kept for the proxy library. This is intentionally separate from
+/// profile folders because proxy assignments do not move browser profiles.
+pub fn proxy_folders_path() -> Result<PathBuf> {
+    Ok(config_root()?.join("proxy-folders.json"))
+}
+
 pub fn settings_path() -> Result<PathBuf> {
     Ok(config_root()?.join("settings.json"))
 }
@@ -184,7 +210,13 @@ pub fn is_os_litter(name: &std::ffi::OsStr) -> bool {
     n.starts_with("._")
         || matches!(
             n.as_ref(),
-            ".DS_Store" | ".Spotlight-V100" | ".Trashes" | ".fseventsd" | ".TemporaryItems" | "Thumbs.db" | "desktop.ini"
+            ".DS_Store"
+                | ".Spotlight-V100"
+                | ".Trashes"
+                | ".fseventsd"
+                | ".TemporaryItems"
+                | "Thumbs.db"
+                | "desktop.ini"
         )
 }
 
@@ -273,12 +305,24 @@ mod cache_twin_tests {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn a_profile_in_the_config_folder_has_its_cache_in_the_cache_folder() {
-        let udd = dirs::config_dir().unwrap().join("shardx-launcher/user-data/abc");
-        assert_eq!(browser_cache_twin(&udd), Some(dirs::cache_dir().unwrap().join("shardx-launcher/user-data/abc")));
+        let udd = dirs::config_dir()
+            .unwrap()
+            .join("shardx-launcher/user-data/abc");
+        assert_eq!(
+            browser_cache_twin(&udd),
+            Some(
+                dirs::cache_dir()
+                    .unwrap()
+                    .join("shardx-launcher/user-data/abc")
+            )
+        );
     }
 
     #[test]
     fn a_profile_elsewhere_keeps_its_cache_inside() {
-        assert_eq!(browser_cache_twin(std::path::Path::new("/Volumes/Data/shardx/user-data/abc")), None);
+        assert_eq!(
+            browser_cache_twin(std::path::Path::new("/Volumes/Data/shardx/user-data/abc")),
+            None
+        );
     }
 }

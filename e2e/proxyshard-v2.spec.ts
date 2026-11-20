@@ -5,9 +5,16 @@ import { openApp } from "./support/app";
 type Mock = { __shardxMock: { state: { psKey: string }; save: () => void } };
 const fail = (page: Page, cmds: Record<string, number>) => page.addInitScript((c) => Object.assign(window, { __shardxMockFail: c }), cmds);
 
+function enableLegacyProxyShard(page: Page) {
+  return page.addInitScript(() => {
+    localStorage.setItem("shyshard.hideProxyShard", "false");
+  });
+}
+
 // The provider management page keeps the legacy ProxyShard account tools
 // collapsed. These tests cover those tools, so open the explicit section first.
 async function openLegacyProxyShard(page: Page) {
+  await enableLegacyProxyShard(page);
   await openApp(page, { section: "proxyshard" });
   await expandLegacyTools(page);
 }
@@ -214,6 +221,7 @@ test("the Add to proxies dialog names each row checkbox by its address", async (
 
 test("proxies added from an order are in Proxies at once, no restart needed (owner, 2026-11-06)", async ({ page }) => {
   // Proxies read first, so a list that stays as it was would show here.
+  await enableLegacyProxyShard(page);
   await openApp(page, { section: "proxies" });
   const rows = page.locator("[role='row'][data-proxy-id]");
   await expect(rows.first()).toBeVisible();
@@ -239,6 +247,7 @@ test("proxies added from an order are in Proxies at once, no restart needed (own
 });
 
 test("generated proxies are in Proxies at once, no restart needed (owner, 2026-11-06)", async ({ page }) => {
+  await enableLegacyProxyShard(page);
   await openApp(page, { section: "proxies" });
   await expect(page.locator("[role='row'][data-proxy-id]").first()).toBeVisible();
   await page.locator("aside [data-nav='proxyshard']").click();

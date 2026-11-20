@@ -65,6 +65,7 @@ export function FingerprintLibrary({ loading }: { loading: boolean }) {
   const peekId = useFingerprint((s) => s.peekId);
   const openPeek = useFingerprint((s) => s.openPeek);
   const remove = useFingerprint((s) => s.remove);
+  const copyJson = useFingerprint((s) => s.copyJson);
   const groups = useVisibleFingerprintGroups();
   // The groups' order, flattened: the grid draws them group by group.
   const shown = useMemo(() => groups.flatMap(([, list]) => list), [groups]);
@@ -135,6 +136,7 @@ export function FingerprintLibrary({ loading }: { loading: boolean }) {
         menuItems={(e) => [
           ...reorder.menu(e.id),
           { label: t("fingerprintPeek.newProfile"), icon: <AddIcon className="size-3.5" />, onSelect: () => setNewFrom((p) => ({ entry: e, n: (p?.n ?? 0) + 1 })) },
+          { label: t("fingerprintLibrary.export"), onSelect: () => void copyJson(e) },
           { type: "separator" },
           // A built-in one says why it can't go (as Peek's menu does).
           e.builtin

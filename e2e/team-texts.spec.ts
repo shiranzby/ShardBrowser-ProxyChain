@@ -31,7 +31,7 @@ const WARNINGS: [string, string, string][] = [
   [TEAM_WARNINGS.itemSetDifferently("bookmark"), "A bookmark was set differently on another computer", "That computer’s version is kept."],
   [TEAM_WARNINGS.itemChanged("Docs"), "“Docs” was changed on another computer too", "That computer’s version is kept."],
   [TEAM_WARNINGS.resending("FB Ads 01", "the team server did not answer: timed out"), "“FB Ads 01” isn’t saved to the team yet", "sent again until the server takes it"],
-  [TEAM_WARNINGS.unsent("FB Ads 01", "the team server did not take it in time"), "“FB Ads 01” is saved on this computer", "It goes to the team when ShardBrowser starts next."],
+  [TEAM_WARNINGS.unsent("FB Ads 01", "the team server did not take it in time"), "“FB Ads 01” is saved on this computer", "It goes to the team when ShyShard starts next."],
   [TEAM_WARNINGS.clockAhead(7, "FB Ads 01"), "This computer’s clock is 7 min ahead", "Set the clock right, or “FB Ads 01” may close"],
   [TEAM_WARNINGS.extensionsMissing("FB Ads 01", 2), "“FB Ads 01” started without 2 of its extensions", "The team server didn’t send them to this computer."],
 ];

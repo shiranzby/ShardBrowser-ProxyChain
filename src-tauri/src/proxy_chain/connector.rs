@@ -24,7 +24,9 @@ pub trait ProxyStream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> ProxyStream for T {}
 pub type Stream = Box<dyn ProxyStream>;
 impl fmt::Debug for dyn ProxyStream {
-    fn fmt(&self, f:&mut fmt::Formatter<'_>)->fmt::Result {f.write_str("ProxyStream [redacted]")}
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ProxyStream [redacted]")
+    }
 }
 
 #[derive(Clone)]
@@ -162,7 +164,10 @@ pub async fn connect(hop: &ProxyHop, target: &Target) -> Result<Stream, ChainErr
 
 /// A protected route may explicitly skip the first hop, but it still dials
 /// only the original assigned proxy. Never pass a browser destination here.
-pub(crate) async fn connect_assigned(target: &Target, deadline: Duration) -> Result<TcpStream, ChainError> {
+pub(crate) async fn connect_assigned(
+    target: &Target,
+    deadline: Duration,
+) -> Result<TcpStream, ChainError> {
     tokio::time::timeout(deadline, connect_tcp(&target.host, target.port, deadline))
         .await.unwrap_or(Err(TcpDialError::Timeout)).map_err(|error| match error {
             TcpDialError::Timeout => ChainError::new("proxy_chain_assigned_proxy_timeout", "profile", "Connecting to the assigned proxy without the first hop timed out. No website direct connection was attempted."),
@@ -175,24 +180,49 @@ pub(crate) async fn connect_with_timeout(
     target: &Target,
     budget: Duration,
 ) -> Result<Stream, ChainError> {
-    connect_with_tls_config(hop,target,budget,None).await
+    connect_with_tls_config(hop, target, budget, None).await
 }
 
-pub(super) async fn connect_with_tls_config(hop:&ProxyHop,target:&Target,budget:Duration,tls:Option<std::sync::Arc<rustls::ClientConfig>>) -> Result<Stream,ChainError> {
+pub(super) async fn connect_with_tls_config(
+    hop: &ProxyHop,
+    target: &Target,
+    budget: Duration,
+    tls: Option<std::sync::Arc<rustls::ClientConfig>>,
+) -> Result<Stream, ChainError> {
     validate(hop, target)?;
     let host = normal_host(&hop.host)?;
     let target = Target::new(target.host.clone(), target.port)?;
     tokio::time::timeout(budget, async {
         let stream = connect_tcp(&host, hop.port, budget)
-            .await.map_err(|error| match error {
-                TcpDialError::Timeout => ChainError::new("system_proxy_timeout", "system_proxy", "The system proxy did not finish connecting in time."),
-                TcpDialError::Failed => ChainError::new("system_proxy_connect_failed", "system_proxy", "Could not connect to the system proxy."),
+            .await
+            .map_err(|error| match error {
+                TcpDialError::Timeout => ChainError::new(
+                    "system_proxy_timeout",
+                    "system_proxy",
+                    "The system proxy did not finish connecting in time.",
+                ),
+                TcpDialError::Failed => ChainError::new(
+                    "system_proxy_connect_failed",
+                    "system_proxy",
+                    "Could not connect to the system proxy.",
+                ),
             })?;
         let _ = stream.set_nodelay(true);
         let mut stream: Stream = if hop.kind == ProxyKind::Https {
-            let name = rustls::pki_types::ServerName::try_from(host.clone()).map_err(|_| first_tls_error())?;
-            Box::new(tokio_rustls::TlsConnector::from(match tls {Some(tls)=>tls,None=>super::tls::client()?}).connect(name, stream).await.map_err(|_| first_tls_error())?)
-        } else { Box::new(stream) };
+            let name = rustls::pki_types::ServerName::try_from(host.clone())
+                .map_err(|_| first_tls_error())?;
+            Box::new(
+                tokio_rustls::TlsConnector::from(match tls {
+                    Some(tls) => tls,
+                    None => super::tls::client()?,
+                })
+                .connect(name, stream)
+                .await
+                .map_err(|_| first_tls_error())?,
+            )
+        } else {
+            Box::new(stream)
+        };
         match hop.kind {
             ProxyKind::Http | ProxyKind::Https => http_connect(&mut stream, hop, &target).await?,
             ProxyKind::Socks5 => socks_connect(&mut stream, hop, &target).await?,
@@ -210,29 +240,45 @@ pub(super) async fn connect_with_tls_config(hop:&ProxyHop,target:&Target,budget:
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum TcpDialError { Failed, Timeout }
+pub(super) enum TcpDialError {
+    Failed,
+    Timeout,
+}
 
 async fn connect_tcp(host: &str, port: u16, budget: Duration) -> Result<TcpStream, TcpDialError> {
     let deadline = tokio::time::Instant::now() + budget;
     // Resolve once under the caller's original deadline. Restarting the same
     // multi-address dial can otherwise spend both half-budgets on an unusable
     // IPv6 address and never reach a healthy IPv4 address (including localhost).
-    let addresses: Vec<_> = tokio::net::lookup_host((host, port)).await
-        .map_err(|_| TcpDialError::Failed)?.collect();
-    if addresses.is_empty() { return Err(TcpDialError::Failed); }
+    let addresses: Vec<_> = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|_| TcpDialError::Failed)?
+        .collect();
+    if addresses.is_empty() {
+        return Err(TcpDialError::Failed);
+    }
     let mut reverse = false;
-    retry_tcp_dial(deadline.saturating_duration_since(tokio::time::Instant::now()), || {
-        let mut addresses = addresses.clone();
-        if reverse { addresses.reverse(); }
-        reverse = true;
-        async move { TcpStream::connect(addresses.as_slice()).await }
-    }).await
+    retry_tcp_dial(
+        deadline.saturating_duration_since(tokio::time::Instant::now()),
+        || {
+            let mut addresses = addresses.clone();
+            if reverse {
+                addresses.reverse();
+            }
+            reverse = true;
+            async move { TcpStream::connect(addresses.as_slice()).await }
+        },
+    )
+    .await
 }
 
 /// Retry only a TCP dial, before sending any protocol bytes. Both attempts
 /// share the original budget; authentication, TLS and CONNECT are never
 /// replayed. All routes (including browser flows after preparation) use this.
-pub(super) async fn retry_tcp_dial<T, F, Fut>(budget: Duration, mut dial: F) -> Result<T, TcpDialError>
+pub(super) async fn retry_tcp_dial<T, F, Fut>(
+    budget: Duration,
+    mut dial: F,
+) -> Result<T, TcpDialError>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = std::io::Result<T>>,
@@ -241,14 +287,26 @@ where
     let mut last = TcpDialError::Timeout;
     for attempt in 0..2 {
         let now = tokio::time::Instant::now();
-        if now >= deadline { break; }
+        if now >= deadline {
+            break;
+        }
         // Preparation clients can have a 3s deadline. Leave time for the
         // second TCP dial before they abandon the relay, even when its total
         // connection budget is 12s. Protocol handshakes are still never retried.
-        let until = if attempt == 0 { now + ((deadline - now) / 2).min(INITIAL_TCP_DIAL_BUDGET) } else { deadline };
+        let until = if attempt == 0 {
+            now + ((deadline - now) / 2).min(INITIAL_TCP_DIAL_BUDGET)
+        } else {
+            deadline
+        };
         match tokio::time::timeout_at(until, dial()).await {
             Ok(Ok(stream)) => return Ok(stream),
-            Ok(Err(error)) => last = if error.kind() == std::io::ErrorKind::TimedOut { TcpDialError::Timeout } else { TcpDialError::Failed },
+            Ok(Err(error)) => {
+                last = if error.kind() == std::io::ErrorKind::TimedOut {
+                    TcpDialError::Timeout
+                } else {
+                    TcpDialError::Failed
+                }
+            }
             Err(_) => last = TcpDialError::Timeout,
         }
         if attempt == 0 {
@@ -312,7 +370,8 @@ async fn http_connect(
             "system_proxy_auth_failed",
             "system_proxy",
             "The system proxy rejected or requires authentication.",
-        ).with_proxy_response("http","authentication",407,None)),
+        )
+        .with_proxy_response("http", "authentication", 407, None)),
         Some(status) => Err(ChainError::new(
             "system_proxy_connect_refused",
             "system_proxy",
@@ -367,7 +426,13 @@ async fn socks_connect(
                     "system_proxy_auth_failed",
                     "system_proxy",
                     "The system proxy rejected the username or password.",
-                ).with_proxy_response("socks5","authentication",answer[1].into(),None));
+                )
+                .with_proxy_response(
+                    "socks5",
+                    "authentication",
+                    answer[1].into(),
+                    None,
+                ));
             }
         }
         2 | 255 => {
@@ -375,7 +440,13 @@ async fn socks_connect(
                 "system_proxy_auth_failed",
                 "system_proxy",
                 "The system proxy requires valid SOCKS5 credentials.",
-            ).with_proxy_response("socks5","authentication_method",answer[1].into(),None))
+            )
+            .with_proxy_response(
+                "socks5",
+                "authentication_method",
+                answer[1].into(),
+                None,
+            ))
         }
         _ => {
             return Err(protocol_error(

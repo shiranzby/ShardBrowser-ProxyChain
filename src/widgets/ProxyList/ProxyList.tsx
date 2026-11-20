@@ -18,6 +18,7 @@ import { useListEndRoom } from "../../shared/ui/ListColumn";
 import { LIST_HEADER_HEIGHT, LIST_ROW_HEIGHT } from "../../shared/ui/listMetrics";
 import { useSelectionMode } from "../../shared/lib/selectionMode";
 import { useListReorder } from "../../shared/hooks/useListReorder";
+import { useProxyShardVisibility } from "../../shared/model/proxyShardVisibility";
 
 const NO_ROWS: never[] = [];
 const ROW_HEIGHT = LIST_ROW_HEIGHT;
@@ -34,6 +35,7 @@ const HEADER_HEIGHT = LIST_HEADER_HEIGHT;
 /// 2026-10-01). `loading` is the page's held first load (`useHeldLoading`),
 /// which the header's count waits for too.
 export function ProxyList({ loading }: { loading: boolean }) {
+  const hideProxyShard = useProxyShardVisibility((s) => s.hidden);
   const t = useT();
   useRightsChange();
   const addWhy = teamRefusal("create");
@@ -239,8 +241,11 @@ export function ProxyList({ loading }: { loading: boolean }) {
                 title={t("proxyTable.emptyTitle")}
                 hint={(
                   <>
-                    {t("proxyTable.emptyHint")}{" "}
-                    <Button variant="neutral" mode="link" size="xsmall" onClick={buyProxies}>{t("proxyTable.emptyBuy")}</Button>
+                    {t("proxyTable.emptyHint")}
+                    {!hideProxyShard && <>
+                      {" "}
+                      <Button variant="neutral" mode="link" size="xsmall" onClick={buyProxies}>{t("proxyTable.emptyBuy")}</Button>
+                    </>}
                   </>
                 )}
                 // A team's new proxies need Create on it: the button says why, as the header's does.

@@ -108,7 +108,10 @@ fn refusal(c: &CmdError) -> ApiError {
         CmdError::Leased(device) => body["device_name"] = json!(device),
         _ => {}
     }
-    ApiError(StatusCode::from_u16(c.status()).unwrap_or(StatusCode::BAD_GATEWAY), body)
+    ApiError(
+        StatusCode::from_u16(c.status()).unwrap_or(StatusCode::BAD_GATEWAY),
+        body,
+    )
 }
 
 /// The refusal inside an error, or `fallback` with its words.
@@ -146,7 +149,9 @@ async fn in_space(mut req: Request, next: Next) -> Response {
         None => None,
         Some(v) => match v.to_str().ok().and_then(|s| s.trim().parse::<u64>().ok()) {
             Some(n) => Some(n),
-            None => return err(StatusCode::BAD_REQUEST, "X-Space-Epoch is a number").into_response(),
+            None => {
+                return err(StatusCode::BAD_REQUEST, "X-Space-Epoch is a number").into_response()
+            }
         },
     };
     let t = match space::ticket(asked) {
@@ -156,7 +161,8 @@ async fn in_space(mut req: Request, next: Next) -> Response {
     let epoch = t.epoch();
     req.extensions_mut().insert(t);
     let mut res = next.run(req).await;
-    res.headers_mut().insert(EPOCH_HEADER, HeaderValue::from(epoch));
+    res.headers_mut()
+        .insert(EPOCH_HEADER, HeaderValue::from(epoch));
     res
 }
 
@@ -195,10 +201,13 @@ async fn health() -> Json<Value> {
 
 async fn list_profiles() -> ApiResult {
     crate::space::ready().await;
-    let metas = crate::space::profile::list_all().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let metas =
+        crate::space::profile::list_all().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     let running = crate::process::Tracker::shared().running();
-    let by_id: std::collections::HashMap<String, crate::process::RunningProfile> =
-        running.into_iter().map(|r| (r.profile_id.clone(), r)).collect();
+    let by_id: std::collections::HashMap<String, crate::process::RunningProfile> = running
+        .into_iter()
+        .map(|r| (r.profile_id.clone(), r))
+        .collect();
     let out: Vec<Value> = metas
         .into_iter()
         .map(|m| {
@@ -228,13 +237,17 @@ async fn list_profiles() -> ApiResult {
 
 async fn get_profile(Path(id): Path<String>) -> ApiResult {
     crate::space::ready().await;
-    let stored = crate::space::profile::fetch(&id).await.map_err(fail(StatusCode::NOT_FOUND))?;
-    let mut val = serde_json::to_value(stored)
-        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let stored = crate::space::profile::fetch(&id)
+        .await
+        .map_err(fail(StatusCode::NOT_FOUND))?;
+    let mut val = serde_json::to_value(stored).map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     if let Some(cdp) = crate::process::Tracker::shared().cdp(&id) {
         if let Some(obj) = val.as_object_mut() {
             obj.insert("running".into(), json!(true));
-            obj.insert("cdp".into(), serde_json::to_value(cdp).unwrap_or(Value::Null));
+            obj.insert(
+                "cdp".into(),
+                serde_json::to_value(cdp).unwrap_or(Value::Null),
+            );
         }
     }
     Ok(Json(val))
@@ -281,13 +294,31 @@ struct CreateReq {
 }
 
 /// Persist verbatim (enrich=false); proxy_id binds, proxy string upserts+tests.
-async fn persist_created(door: Door, t: &Ticket, folder_override: Option<String>, body: CreateReq) -> ApiResult {
+async fn persist_created(
+    door: Door,
+    t: &Ticket,
+    folder_override: Option<String>,
+    body: CreateReq,
+) -> ApiResult {
     if let Some(route) = &body.proxy_route {
         route.validate().map_err(fail(StatusCode::BAD_REQUEST))?;
-        if route.requires_assigned() && body.proxy_id.as_deref().is_none_or(|id| id.trim().is_empty()) && body.proxy.is_none() {
-            return Err(err(StatusCode::BAD_REQUEST, "Select a proxy for this profile route."));
+        if route.requires_assigned()
+            && body
+                .proxy_id
+                .as_deref()
+                .is_none_or(|id| id.trim().is_empty())
+            && body.proxy.is_none()
+        {
+            return Err(err(
+                StatusCode::BAD_REQUEST,
+                "Select a proxy for this profile route.",
+            ));
         }
-        if let Some(id) = route.first_proxy_id() { space::proxy::for_route(t.team(), id).await.map_err(fail(StatusCode::BAD_REQUEST))?; }
+        if let Some(id) = route.first_proxy_id() {
+            space::proxy::for_route(t.team(), id)
+                .await
+                .map_err(fail(StatusCode::BAD_REQUEST))?;
+        }
     }
     let mut cfg = body
         .fingerprint
@@ -301,7 +332,10 @@ async fn persist_created(door: Door, t: &Ticket, folder_override: Option<String>
     if let Some(n) = body.notes.as_ref() {
         cfg.insert("notes".into(), json!(n));
     }
-    crate::settings::load().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?.profile_defaults.apply_missing(&mut cfg);
+    crate::settings::load()
+        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?
+        .profile_defaults
+        .apply_missing(&mut cfg);
     crate::profile_defaults::validate_config(&cfg).map_err(fail(StatusCode::BAD_REQUEST))?;
 
     let folder = folder_override.or(body.folder).unwrap_or_default();
@@ -320,14 +354,23 @@ async fn persist_created(door: Door, t: &Ticket, folder_override: Option<String>
         validate_extension_ids(ids)?;
         meta["extensions"] = json!(ids);
     }
-    if let Some(choice) = body.proxy_chain_policy { choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?; meta["proxy_chain_policy"] = json!(choice); }
-    if let Some(route) = body.proxy_route { meta["proxy_route"] = json!(route); }
+    if let Some(choice) = body.proxy_chain_policy {
+        choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?;
+        meta["proxy_chain_policy"] = json!(choice);
+    }
+    if let Some(route) = body.proxy_route {
+        meta["proxy_route"] = json!(route);
+    }
     let mut inline_proxy = false;
     if let Some(pid) = body.proxy_id.as_ref() {
         meta["proxy_id"] = json!(pid);
     } else if let Some(pstr) = body.proxy.as_ref() {
-        let entry = crate::space::proxy::parse_single(pstr)
-            .ok_or_else(|| err(StatusCode::BAD_REQUEST, format!("unparseable proxy: {pstr}")))?;
+        let entry = crate::space::proxy::parse_single(pstr).ok_or_else(|| {
+            err(
+                StatusCode::BAD_REQUEST,
+                format!("unparseable proxy: {pstr}"),
+            )
+        })?;
         let stored = crate::space::proxy::upsert_dedup(Door("proxy_save"), t, entry)
             .await
             .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
@@ -345,8 +388,13 @@ async fn persist_created(door: Door, t: &Ticket, folder_override: Option<String>
 
     let stored: space::profile::StoredProfile =
         serde_json::from_value(Value::Object(cfg)).map_err(fail(StatusCode::BAD_REQUEST))?;
-    let opts = space::profile::SaveOpts { inline_proxy, ..Default::default() };
-    let pm = space::profile::save(door, t, stored, opts).await.map_err(fail(StatusCode::BAD_REQUEST))?;
+    let opts = space::profile::SaveOpts {
+        inline_proxy,
+        ..Default::default()
+    };
+    let pm = space::profile::save(door, t, stored, opts)
+        .await
+        .map_err(fail(StatusCode::BAD_REQUEST))?;
     crate::notify_store_changed("profiles");
     Ok(Json(serde_json::to_value(pm).unwrap_or(Value::Null)))
 }
@@ -360,7 +408,13 @@ async fn create_profile_in_folder(
     Path(folder): Path<String>,
     Json(body): Json<CreateReq>,
 ) -> ApiResult {
-    persist_created(Door("POST /folders/:folder/profiles"), &t, Some(folder), body).await
+    persist_created(
+        Door("POST /folders/:folder/profiles"),
+        &t,
+        Some(folder),
+        body,
+    )
+    .await
 }
 
 // ---- temporary profiles ----
@@ -397,16 +451,20 @@ async fn create_temporary(Extension(t): Extension<Ticket>, Json(body): Json<Temp
     }
     crate::ensure_default_noise(&mut cfg);
     if let Some(n) = body.noise.as_ref() {
-        apply_noise_overrides(&mut cfg, n)
-            .map_err(|e| err(StatusCode::BAD_REQUEST, e))?;
+        apply_noise_overrides(&mut cfg, n).map_err(|e| err(StatusCode::BAD_REQUEST, e))?;
     }
     if let Some(hz) = body.refresh_rate {
         apply_refresh_rate(&mut cfg, hz).map_err(|e| err(StatusCode::BAD_REQUEST, e))?;
     }
-    let mut meta = json!({ "id": "", "folder": body.folder.unwrap_or_default(), "temporary": true });
+    let mut meta =
+        json!({ "id": "", "folder": body.folder.unwrap_or_default(), "temporary": true });
     if let Some(pstr) = body.proxy.as_ref() {
-        let entry = crate::space::proxy::parse_single(pstr)
-            .ok_or_else(|| err(StatusCode::BAD_REQUEST, format!("unparseable proxy: {pstr}")))?;
+        let entry = crate::space::proxy::parse_single(pstr).ok_or_else(|| {
+            err(
+                StatusCode::BAD_REQUEST,
+                format!("unparseable proxy: {pstr}"),
+            )
+        })?;
         meta["inline_proxy"] = serde_json::to_value(entry).unwrap_or(Value::Null);
     }
     cfg.insert("_meta".into(), meta);
@@ -448,7 +506,14 @@ fn apply_noise_overrides(
     cfg: &mut serde_json::Map<String, Value>,
     req: &Value,
 ) -> Result<(), String> {
-    const VECTORS: &[&str] = &["canvas", "webgl", "audio", "client_rects", "sensors", "fonts"];
+    const VECTORS: &[&str] = &[
+        "canvas",
+        "webgl",
+        "audio",
+        "client_rects",
+        "sensors",
+        "fonts",
+    ];
     let req = req.as_object().ok_or("`noise` must be an object")?;
     let noise = cfg
         .get_mut("noise")
@@ -463,16 +528,24 @@ fn apply_noise_overrides(
         let slot = noise
             .entry(key.to_string())
             .or_insert_with(|| json!({ "enabled": false, "seed": 0 }));
-        let Some(slot) = slot.as_object_mut() else { continue };
+        let Some(slot) = slot.as_object_mut() else {
+            continue;
+        };
         match val {
             Value::Bool(on) => {
                 slot.insert("enabled".into(), json!(on));
                 // The defaults the UI writes for the two vectors that carry a
                 // strength; turning one on with a zero strength is a no-op.
-                if *on && key == "webgl" && slot.get("intensity").and_then(|v| v.as_f64()) == Some(0.0) {
+                if *on
+                    && key == "webgl"
+                    && slot.get("intensity").and_then(|v| v.as_f64()) == Some(0.0)
+                {
                     slot.insert("intensity".into(), json!(0.0005));
                 }
-                if *on && key == "client_rects" && slot.get("max_offset").and_then(|v| v.as_f64()) == Some(0.0) {
+                if *on
+                    && key == "client_rects"
+                    && slot.get("max_offset").and_then(|v| v.as_f64()) == Some(0.0)
+                {
                     slot.insert("max_offset".into(), json!(1));
                 }
             }
@@ -526,7 +599,9 @@ struct EditReq {
     rev: Option<u64>,
 }
 
-fn deserialize_route_patch<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Option<Option<crate::proxy_chain::route::ProfileProxyRoute>>, D::Error> {
+fn deserialize_route_patch<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Option<Option<crate::proxy_chain::route::ProfileProxyRoute>>, D::Error> {
     Option::<crate::proxy_chain::route::ProfileProxyRoute>::deserialize(d).map(Some)
 }
 
@@ -553,24 +628,39 @@ fn validate_extension_ids(ids: &[String]) -> Result<(), ApiError> {
 }
 
 /// Edit profile; only provided fields change. Returns the updated profile.
-async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, Json(body): Json<EditReq>) -> ApiResult {
+async fn edit_profile(
+    Extension(t): Extension<Ticket>,
+    Path(id): Path<String>,
+    Json(body): Json<EditReq>,
+) -> ApiResult {
     let door = Door("PATCH /profiles/:id");
-    if (body.proxy_chain_policy.is_some() || body.proxy_route.is_some()) && body.password.is_none() && space::profile::is_protected(&id) {
-        return Err(err(StatusCode::UNAUTHORIZED, space::profile::PASSWORD_REQUIRED));
+    if (body.proxy_chain_policy.is_some() || body.proxy_route.is_some())
+        && body.password.is_none()
+        && space::profile::is_protected(&id)
+    {
+        return Err(err(
+            StatusCode::UNAUTHORIZED,
+            space::profile::PASSWORD_REQUIRED,
+        ));
     }
     let mut stored = match body.password.as_deref() {
         // Edited whole and sealed again: the file's readable part has nothing to edit.
-        Some(pw) if space::profile::is_protected(&id) => {
-            space::profile::unlock(&id, pw).map_err(fail_locked(StatusCode::INTERNAL_SERVER_ERROR))?
-        }
-        _ => space::profile::fetch_for_edit(&t, &id).await.map_err(fail(StatusCode::NOT_FOUND))?,
+        Some(pw) if space::profile::is_protected(&id) => space::profile::unlock(&id, pw)
+            .map_err(fail_locked(StatusCode::INTERNAL_SERVER_ERROR))?,
+        _ => space::profile::fetch_for_edit(&t, &id)
+            .await
+            .map_err(fail(StatusCode::NOT_FOUND))?,
     };
     let mut inline_proxy = false;
 
     if let Some(route) = &body.proxy_route {
         if let Some(route) = route {
             route.validate().map_err(fail(StatusCode::BAD_REQUEST))?;
-            if let Some(first) = route.first_proxy_id() { space::proxy::for_route(t.team(), first).await.map_err(fail(StatusCode::BAD_REQUEST))?; }
+            if let Some(first) = route.first_proxy_id() {
+                space::proxy::for_route(t.team(), first)
+                    .await
+                    .map_err(fail(StatusCode::BAD_REQUEST))?;
+            }
         }
         stored.meta.proxy_route = route.clone();
     }
@@ -590,21 +680,37 @@ async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, J
     if let Some(n) = body.notes.as_ref() {
         stored.config.insert("notes".into(), json!(n));
     }
-    if let Some(choice) = body.proxy_chain_policy { choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?; stored.meta.proxy_chain_policy = choice; }
+    if let Some(choice) = body.proxy_chain_policy {
+        choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?;
+        stored.meta.proxy_chain_policy = choice;
+    }
     if let Some(pid) = body.proxy_id.as_ref() {
-        stored.meta.proxy_id = if pid.is_empty() { None } else { Some(pid.clone()) };
+        stored.meta.proxy_id = if pid.is_empty() {
+            None
+        } else {
+            Some(pid.clone())
+        };
         stored.meta.inline_proxy = None;
     } else if let Some(pstr) = body.proxy.as_ref() {
-        let entry = crate::space::proxy::parse_single(pstr)
-            .ok_or_else(|| err(StatusCode::BAD_REQUEST, format!("unparseable proxy: {pstr}")))?;
+        let entry = crate::space::proxy::parse_single(pstr).ok_or_else(|| {
+            err(
+                StatusCode::BAD_REQUEST,
+                format!("unparseable proxy: {pstr}"),
+            )
+        })?;
         // The profile's own door first: a refused edit stores no proxy either.
         space::profile::check_edit(door, &t, &id, true).map_err(fail(StatusCode::FORBIDDEN))?;
         // The profile's current proxy is passed in, so a line that differs
         // from it only by its password updates that entry rather than
         // leaving a dead one behind on every session change.
-        let s = crate::space::proxy::upsert_for_binding(Door("proxy_save"), &t, entry, stored.meta.proxy_id.as_deref())
-            .await
-            .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+        let s = crate::space::proxy::upsert_for_binding(
+            Door("proxy_save"),
+            &t,
+            entry,
+            stored.meta.proxy_id.as_deref(),
+        )
+        .await
+        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
         let _ = crate::space::proxy::full_test(&s).await;
         stored.meta.proxy_id = Some(s.id);
         stored.meta.inline_proxy = None;
@@ -620,8 +726,7 @@ async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, J
         stored.meta.extensions = ids.clone();
     }
     if let Some(hz) = body.refresh_rate {
-        apply_refresh_rate(&mut stored.config, hz)
-            .map_err(|e| err(StatusCode::BAD_REQUEST, e))?;
+        apply_refresh_rate(&mut stored.config, hz).map_err(|e| err(StatusCode::BAD_REQUEST, e))?;
     }
 
     // Without a rev, the one just read: a change made in between is not undone.
@@ -631,7 +736,9 @@ async fn edit_profile(Extension(t): Extension<Ticket>, Path(id): Path<String>, J
         inline_proxy,
         password: body.password.clone(),
     };
-    space::profile::save(door, &t, stored, opts).await.map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    space::profile::save(door, &t, stored, opts)
+        .await
+        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
 
     let updated = space::profile::load_raw(&id).map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     crate::notify_store_changed("profiles");
@@ -667,9 +774,14 @@ async fn delete_folder_ep(
     Path(folder): Path<String>,
     Query(q): Query<DeleteFolderQuery>,
 ) -> ApiResult {
-    let n = space::profile::delete_folder(Door("DELETE /folders/:folder"), &t, &folder, q.delete_profiles)
-        .await
-        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let n = space::profile::delete_folder(
+        Door("DELETE /folders/:folder"),
+        &t,
+        &folder,
+        q.delete_profiles,
+    )
+    .await
+    .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     crate::notify_store_changed("profiles");
     Ok(Json(json!({
         "deleted_folder": folder,
@@ -701,9 +813,16 @@ struct StartReq {
 /// Launch with CDP; body `{ "headless": true, "password": "…" }`, both optional.
 async fn start_profile(Path(id): Path<String>, body: Option<Json<StartReq>>) -> ApiResult {
     let Json(body) = body.unwrap_or_default();
-    let outcome = crate::launch::launch_profile_unlocked(&id, true, body.headless, 0, "", body.password.as_deref())
-        .await
-        .map_err(fail_locked(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let outcome = crate::launch::launch_profile_unlocked(
+        &id,
+        true,
+        body.headless,
+        0,
+        "",
+        body.password.as_deref(),
+    )
+    .await
+    .map_err(fail_locked(StatusCode::INTERNAL_SERVER_ERROR))?;
     let headless = body.headless;
     Ok(Json(json!({
         "profile_id": id,
@@ -728,8 +847,8 @@ async fn stop_profile(Path(id): Path<String>) -> ApiResult {
 
 async fn export_cookies(Path(id): Path<String>) -> ApiResult {
     let pass = crate::space::perm::cookies(&id).map_err(fail(StatusCode::FORBIDDEN))?;
-    let cookies = crate::space::cookies::export(&pass)
-        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let cookies =
+        crate::space::cookies::export(&pass).map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     Ok(Json(json!({ "cookies": cookies })))
 }
 
@@ -758,8 +877,7 @@ async fn list_running() -> Json<Value> {
 }
 
 async fn list_fingerprints() -> ApiResult {
-    let all = crate::fingerprints::list_all()
-        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let all = crate::fingerprints::list_all().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     let out: Vec<Value> = all
         .into_iter()
         .map(|e| {
@@ -798,10 +916,12 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
         crate::space::proxy::parse_single(s)
             .ok_or_else(|| err(StatusCode::BAD_REQUEST, format!("unparseable proxy: {s}")))?
     } else {
-        let host = body
-            .host
-            .clone()
-            .ok_or_else(|| err(StatusCode::BAD_REQUEST, "`proxy` string or host+port required"))?;
+        let host = body.host.clone().ok_or_else(|| {
+            err(
+                StatusCode::BAD_REQUEST,
+                "`proxy` string or host+port required",
+            )
+        })?;
         let port = body
             .port
             .ok_or_else(|| err(StatusCode::BAD_REQUEST, "`port` required"))?;
@@ -812,7 +932,10 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
         };
         crate::space::proxy::ProxyEntry {
             proxy_chain_policy: Default::default(),
-        provider_id: String::new(), credential_ref: String::new(), provider_options: Default::default(), capabilities: Default::default(),
+            provider_id: String::new(),
+            credential_ref: String::new(),
+            provider_options: Default::default(),
+            capabilities: Default::default(),
             id: String::new(),
             name: String::new(),
             kind,
@@ -821,11 +944,15 @@ async fn add_proxy(Extension(t): Extension<Ticket>, Json(body): Json<AddProxyReq
             username: body.username.clone().unwrap_or_default(),
             password: body.password.clone().unwrap_or_default(),
             country: String::new(),
+            folder: String::new(),
             notes: String::new(),
         }
     };
     // metadata overrides (applied to parsed entries too).
-    if let Some(choice) = body.proxy_chain_policy { choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?; entry.proxy_chain_policy = choice; }
+    if let Some(choice) = body.proxy_chain_policy {
+        choice.validate().map_err(fail(StatusCode::BAD_REQUEST))?;
+        entry.proxy_chain_policy = choice;
+    }
     if let Some(n) = body.name.filter(|s| !s.is_empty()) {
         entry.name = n;
     }
@@ -897,8 +1024,7 @@ fn extension_json(e: &crate::space::extensions::ExtensionEntry, with_icon: bool)
 
 async fn list_extensions() -> ApiResult {
     crate::space::ready().await;
-    let list = crate::space::extensions::list()
-        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let list = crate::space::extensions::list().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     let out: Vec<Value> = list.iter().map(|e| extension_json(e, false)).collect();
     Ok(Json(json!(out)))
 }
@@ -913,14 +1039,21 @@ struct AddExtensionReq {
 
 /// Add to the library. The response carries the icon, since the caller has
 /// just asked for exactly this one.
-async fn add_extension(Extension(t): Extension<Ticket>, Json(body): Json<AddExtensionReq>) -> ApiResult {
+async fn add_extension(
+    Extension(t): Extension<Ticket>,
+    Json(body): Json<AddExtensionReq>,
+) -> ApiResult {
     let entry = match (body.url.as_deref(), body.path.as_deref()) {
-        (Some(u), _) if !u.is_empty() => crate::space::extensions::import_url(Door("POST /extensions"), &t, u)
-            .await
-            .map_err(fail_all(StatusCode::BAD_REQUEST))?,
-        (_, Some(p)) if !p.is_empty() => crate::space::extensions::import(Door("POST /extensions"), &t, std::path::Path::new(p))
-            .await
-            .map_err(fail_all(StatusCode::BAD_REQUEST))?,
+        (Some(u), _) if !u.is_empty() => {
+            crate::space::extensions::import_url(Door("POST /extensions"), &t, u)
+                .await
+                .map_err(fail_all(StatusCode::BAD_REQUEST))?
+        }
+        (_, Some(p)) if !p.is_empty() => {
+            crate::space::extensions::import(Door("POST /extensions"), &t, std::path::Path::new(p))
+                .await
+                .map_err(fail_all(StatusCode::BAD_REQUEST))?
+        }
         _ => return Err(err(StatusCode::BAD_REQUEST, "`url` or `path` required")),
     };
     crate::notify_store_changed("extensions");
@@ -939,8 +1072,7 @@ async fn delete_extension(Extension(t): Extension<Ticket>, Path(id): Path<String
 
 async fn list_bookmarks() -> ApiResult {
     crate::space::ready().await;
-    let list = crate::space::bookmarks::list()
-        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let list = crate::space::bookmarks::list().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     Ok(Json(serde_json::to_value(list).unwrap_or(Value::Null)))
 }
 
@@ -961,19 +1093,30 @@ struct BookmarkReq {
 
 /// Upsert. Profiles pick the change up on their next launch, not immediately —
 /// the bookmarks file is written just before the browser reads it.
-async fn save_bookmark(Extension(t): Extension<Ticket>, Json(body): Json<BookmarkReq>) -> ApiResult {
+async fn save_bookmark(
+    Extension(t): Extension<Ticket>,
+    Json(body): Json<BookmarkReq>,
+) -> ApiResult {
     let id = body.id.unwrap_or_default();
     let was = if id.is_empty() || (body.root.is_some() && body.path.is_some()) {
         None
     } else {
-        crate::space::bookmarks::list().ok().and_then(|l| l.into_iter().find(|b| b.id == id))
+        crate::space::bookmarks::list()
+            .ok()
+            .and_then(|l| l.into_iter().find(|b| b.id == id))
     };
     let mark = crate::space::bookmarks::Bookmark {
         title: body.title.unwrap_or_default(),
         url: body.url,
         folder: body.folder.unwrap_or_default(),
-        root: body.root.or_else(|| was.as_ref().map(|b| b.root.clone())).unwrap_or_default(),
-        path: body.path.or_else(|| was.map(|b| b.path)).unwrap_or_default(),
+        root: body
+            .root
+            .or_else(|| was.as_ref().map(|b| b.root.clone()))
+            .unwrap_or_default(),
+        path: body
+            .path
+            .or_else(|| was.map(|b| b.path))
+            .unwrap_or_default(),
         id,
     };
     let saved = crate::space::bookmarks::save(Door("POST /bookmarks"), &t, mark)
@@ -994,31 +1137,29 @@ async fn delete_bookmark(Extension(t): Extension<Ticket>, Path(id): Path<String>
 // ---- trash ----
 
 async fn list_trash() -> ApiResult {
-    let list = crate::space::trash::list()
-        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let list = crate::space::trash::list().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     Ok(Json(serde_json::to_value(list).unwrap_or(Value::Null)))
 }
 
 /// Puts the profile back under its own id, so anything that referenced it
 /// still points at it.
 async fn restore_trash(Extension(t): Extension<Ticket>, Path(id): Path<String>) -> ApiResult {
-    let meta = crate::space::trash::restore(&t, &id)
-        .map_err(fail(StatusCode::NOT_FOUND))?;
+    let meta = crate::space::trash::restore(&t, &id).map_err(fail(StatusCode::NOT_FOUND))?;
     crate::notify_store_changed("profiles");
     Ok(Json(serde_json::to_value(meta).unwrap_or(Value::Null)))
 }
 
 /// Deletes the archive for good. There is nothing after this.
 async fn purge_trash(Extension(t): Extension<Ticket>, Path(id): Path<String>) -> ApiResult {
-    crate::space::trash::purge(&t, &id)
-        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    crate::space::trash::purge(&t, &id).map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     crate::notify_store_changed("trash");
     Ok(Json(json!({ "purged": true, "id": id })))
 }
 
 async fn list_folders() -> ApiResult {
     crate::space::ready().await;
-    let metas = crate::space::profile::list_all().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let metas =
+        crate::space::profile::list_all().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     let mut set = std::collections::BTreeSet::new();
     for m in metas {
         if !m.folder.is_empty() {
@@ -1043,8 +1184,7 @@ fn random_fingerprint_for(platform: Option<&str>) -> Result<String, ApiError> {
     let want = platform
         .map(normalize_platform)
         .unwrap_or_else(crate::host_platform);
-    let all = crate::fingerprints::list_all()
-        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let all = crate::fingerprints::list_all().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     if all.is_empty() {
         return Err(err(StatusCode::NOT_FOUND, "fingerprint library is empty"));
     }
@@ -1065,8 +1205,7 @@ fn random_fingerprint_for(platform: Option<&str>) -> Result<String, ApiError> {
 
 async fn list_projects() -> ApiResult {
     crate::space::ready().await;
-    let list = crate::space::automation::list()
-        .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+    let list = crate::space::automation::list().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
     Ok(Json(serde_json::to_value(list).unwrap_or(Value::Null)))
 }
 
@@ -1076,7 +1215,10 @@ struct CreateProjectReq {
     name: String,
 }
 
-async fn create_project(Extension(t): Extension<Ticket>, body: Option<Json<CreateProjectReq>>) -> ApiResult {
+async fn create_project(
+    Extension(t): Extension<Ticket>,
+    body: Option<Json<CreateProjectReq>>,
+) -> ApiResult {
     let name = body.map(|Json(b)| b.name).unwrap_or_default();
     let project = crate::space::automation::create(Door("POST /automation/projects"), &t, &name)
         .await
@@ -1095,18 +1237,28 @@ fn find_project(id: &str) -> Result<crate::space::automation::Project, ApiError>
 
 async fn get_project(Path(id): Path<String>) -> ApiResult {
     crate::space::ready().await;
-    Ok(Json(serde_json::to_value(find_project(&id)?).unwrap_or(Value::Null)))
+    Ok(Json(
+        serde_json::to_value(find_project(&id)?).unwrap_or(Value::Null),
+    ))
 }
 
 /// Whole-project replace. The id in the path wins over the body's, and an
 /// unknown id is a 404 rather than a silent create.
-async fn save_project(Extension(t): Extension<Ticket>, Path(id): Path<String>, Json(mut body): Json<Value>) -> ApiResult {
+async fn save_project(
+    Extension(t): Extension<Ticket>,
+    Path(id): Path<String>,
+    Json(mut body): Json<Value>,
+) -> ApiResult {
     find_project(&id)?;
     if let Some(obj) = body.as_object_mut() {
         obj.insert("id".into(), Value::String(id.clone()));
     }
-    let project: crate::space::automation::Project = serde_json::from_value(body)
-        .map_err(|e| err(StatusCode::BAD_REQUEST, format!("that is not a project: {e}")))?;
+    let project: crate::space::automation::Project = serde_json::from_value(body).map_err(|e| {
+        err(
+            StatusCode::BAD_REQUEST,
+            format!("that is not a project: {e}"),
+        )
+    })?;
     let saved = crate::space::automation::save(Door("PUT /automation/projects/:id"), &t, project)
         .await
         .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
@@ -1125,23 +1277,30 @@ async fn delete_project(Extension(t): Extension<Ticket>, Path(id): Path<String>)
 
 async fn duplicate_project(Extension(t): Extension<Ticket>, Path(id): Path<String>) -> ApiResult {
     find_project(&id)?;
-    let copy = crate::space::automation::duplicate(Door("POST /automation/projects/:id/duplicate"), &t, &id)
-        .await
-        .map_err(fail(StatusCode::NOT_FOUND))?;
+    let copy = crate::space::automation::duplicate(
+        Door("POST /automation/projects/:id/duplicate"),
+        &t,
+        &id,
+    )
+    .await
+    .map_err(fail(StatusCode::NOT_FOUND))?;
     crate::notify_store_changed("automation");
     Ok(Json(serde_json::to_value(copy).unwrap_or(Value::Null)))
 }
 
 /// Export strips every parameter marked secret, so a bundle carries no passwords.
 async fn export_project(Path(id): Path<String>) -> ApiResult {
-    let bundle = crate::space::automation::export(&id)
-        .map_err(fail(StatusCode::NOT_FOUND))?;
+    let bundle = crate::space::automation::export(&id).map_err(fail(StatusCode::NOT_FOUND))?;
     Ok(Json(serde_json::to_value(bundle).unwrap_or(Value::Null)))
 }
 
 async fn import_project(Extension(t): Extension<Ticket>, Json(body): Json<Value>) -> ApiResult {
-    let bundle: crate::space::automation::Bundle = serde_json::from_value(body)
-        .map_err(|e| err(StatusCode::BAD_REQUEST, format!("that is not a project bundle: {e}")))?;
+    let bundle: crate::space::automation::Bundle = serde_json::from_value(body).map_err(|e| {
+        err(
+            StatusCode::BAD_REQUEST,
+            format!("that is not a project bundle: {e}"),
+        )
+    })?;
     let project = crate::space::automation::import(Door("POST /automation/import"), &t, bundle)
         .await
         .map_err(fail(StatusCode::BAD_REQUEST))?;
@@ -1162,7 +1321,10 @@ async fn run_project(Path(id): Path<String>) -> ApiResult {
     #[cfg(not(feature = "automation"))]
     {
         let _ = id;
-        Err(err(StatusCode::NOT_IMPLEMENTED, "automation is not compiled into this build"))
+        Err(err(
+            StatusCode::NOT_IMPLEMENTED,
+            "automation is not compiled into this build",
+        ))
     }
 }
 
@@ -1177,7 +1339,10 @@ async fn stop_project(Path(id): Path<String>) -> ApiResult {
     #[cfg(not(feature = "automation"))]
     {
         let _ = id;
-        Err(err(StatusCode::NOT_IMPLEMENTED, "automation is not compiled into this build"))
+        Err(err(
+            StatusCode::NOT_IMPLEMENTED,
+            "automation is not compiled into this build",
+        ))
     }
 }
 
@@ -1193,7 +1358,10 @@ async fn project_status(Path(id): Path<String>) -> ApiResult {
     #[cfg(not(feature = "automation"))]
     {
         let _ = id;
-        Err(err(StatusCode::NOT_IMPLEMENTED, "automation is not compiled into this build"))
+        Err(err(
+            StatusCode::NOT_IMPLEMENTED,
+            "automation is not compiled into this build",
+        ))
     }
 }
 
@@ -1201,21 +1369,28 @@ async fn project_status(Path(id): Path<String>) -> ApiResult {
 async fn list_runs() -> ApiResult {
     #[cfg(feature = "automation")]
     {
-        return Ok(Json(serde_json::to_value(crate::runner::all()).unwrap_or(Value::Null)));
+        return Ok(Json(
+            serde_json::to_value(crate::runner::all()).unwrap_or(Value::Null),
+        ));
     }
     #[cfg(not(feature = "automation"))]
-    Err(err(StatusCode::NOT_IMPLEMENTED, "automation is not compiled into this build"))
+    Err(err(
+        StatusCode::NOT_IMPLEMENTED,
+        "automation is not compiled into this build",
+    ))
 }
 
 async fn list_modules() -> ApiResult {
     #[cfg(feature = "automation")]
     {
-        let list = crate::wasm::list()
-            .map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
+        let list = crate::wasm::list().map_err(fail(StatusCode::INTERNAL_SERVER_ERROR))?;
         return Ok(Json(serde_json::to_value(list).unwrap_or(Value::Null)));
     }
     #[cfg(not(feature = "automation"))]
-    Err(err(StatusCode::NOT_IMPLEMENTED, "automation is not compiled into this build"))
+    Err(err(
+        StatusCode::NOT_IMPLEMENTED,
+        "automation is not compiled into this build",
+    ))
 }
 
 #[derive(Deserialize)]
@@ -1238,21 +1413,26 @@ async fn install_module(Json(body): Json<InstallModuleReq>) -> ApiResult {
     #[cfg(not(feature = "automation"))]
     {
         let _ = body.path;
-        Err(err(StatusCode::NOT_IMPLEMENTED, "automation is not compiled into this build"))
+        Err(err(
+            StatusCode::NOT_IMPLEMENTED,
+            "automation is not compiled into this build",
+        ))
     }
 }
 
 async fn remove_module(Path(id): Path<String>) -> ApiResult {
     #[cfg(feature = "automation")]
     {
-        crate::wasm::remove(&id)
-            .map_err(fail(StatusCode::NOT_FOUND))?;
+        crate::wasm::remove(&id).map_err(fail(StatusCode::NOT_FOUND))?;
         return Ok(Json(json!({ "deleted": true, "id": id })));
     }
     #[cfg(not(feature = "automation"))]
     {
         let _ = id;
-        Err(err(StatusCode::NOT_IMPLEMENTED, "automation is not compiled into this build"))
+        Err(err(
+            StatusCode::NOT_IMPLEMENTED,
+            "automation is not compiled into this build",
+        ))
     }
 }
 
@@ -1280,12 +1460,21 @@ fn router() -> Router {
     let protected = Router::new()
         .route("/profiles", get(list_profiles).post(create_profile))
         .route("/profiles/temporary", post(create_temporary))
-        .route("/profiles/:id", get(get_profile).patch(edit_profile).delete(delete_profile))
+        .route(
+            "/profiles/:id",
+            get(get_profile).patch(edit_profile).delete(delete_profile),
+        )
         .route("/profiles/:id/start", post(start_profile))
         .route("/profiles/:id/stop", post(stop_profile))
-        .route("/profiles/:id/cookies", get(export_cookies).post(import_cookies))
+        .route(
+            "/profiles/:id/cookies",
+            get(export_cookies).post(import_cookies),
+        )
         .route("/folders", get(list_folders))
-        .route("/folders/:folder", patch(rename_folder_ep).delete(delete_folder_ep))
+        .route(
+            "/folders/:folder",
+            patch(rename_folder_ep).delete(delete_folder_ep),
+        )
         .route("/folders/:folder/profiles", post(create_profile_in_folder))
         .route("/fingerprint/new", get(new_fingerprint))
         .route("/fingerprint/new/:platform", get(new_fingerprint_for))
@@ -1300,19 +1489,28 @@ fn router() -> Router {
         .route("/trash", get(list_trash))
         .route("/trash/:id", delete(purge_trash))
         .route("/trash/:id/restore", post(restore_trash))
-        .route("/automation/projects", get(list_projects).post(create_project))
+        .route(
+            "/automation/projects",
+            get(list_projects).post(create_project),
+        )
         .route(
             "/automation/projects/:id",
             get(get_project).put(save_project).delete(delete_project),
         )
-        .route("/automation/projects/:id/duplicate", post(duplicate_project))
+        .route(
+            "/automation/projects/:id/duplicate",
+            post(duplicate_project),
+        )
         .route("/automation/projects/:id/export", get(export_project))
         .route("/automation/projects/:id/run", post(run_project))
         .route("/automation/projects/:id/stop", post(stop_project))
         .route("/automation/projects/:id/status", get(project_status))
         .route("/automation/import", post(import_project))
         .route("/automation/runs", get(list_runs))
-        .route("/automation/modules", get(list_modules).post(install_module))
+        .route(
+            "/automation/modules",
+            get(list_modules).post(install_module),
+        )
         .route("/automation/modules/:id", delete(remove_module))
         .route_layer(middleware::from_fn(in_space))
         .route_layer(middleware::from_fn(auth));
@@ -1374,7 +1572,10 @@ mod tests {
     #[tokio::test]
     async fn health_stays_open() {
         let _serial = crate::migrate::serial();
-        let req = Request::builder().uri("/health").body(Body::empty()).unwrap();
+        let req = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
         let res = router().oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);
     }
@@ -1385,36 +1586,73 @@ mod tests {
         let _serial = crate::migrate::serial();
         assert!(crate::migrate::hold());
         let mut answers = Vec::new();
-        for (method, path) in [("GET", "/health"), ("GET", "/profiles"), ("POST", "/profiles/x/start")] {
-            let req = Request::builder().method(method).uri(path).body(Body::empty()).unwrap();
+        for (method, path) in [
+            ("GET", "/health"),
+            ("GET", "/profiles"),
+            ("POST", "/profiles/x/start"),
+        ] {
+            let req = Request::builder()
+                .method(method)
+                .uri(path)
+                .body(Body::empty())
+                .unwrap();
             answers.push(router().oneshot(req).await.unwrap().status());
         }
         crate::migrate::release();
-        assert!(answers.iter().all(|s| *s == StatusCode::SERVICE_UNAVAILABLE), "{answers:?}");
+        assert!(
+            answers
+                .iter()
+                .all(|s| *s == StatusCode::SERVICE_UNAVAILABLE),
+            "{answers:?}"
+        );
     }
 
     /// One request with the API's token; the answer and the edition it is about.
-    async fn authed(method: &str, path: &str, body: Option<Value>) -> (StatusCode, Option<String>, Value) {
+    async fn authed(
+        method: &str,
+        path: &str,
+        body: Option<Value>,
+    ) -> (StatusCode, Option<String>, Value) {
         set_secret("api-personal-test");
         let token = mint("api-personal-test", 600).unwrap();
-        let req = Request::builder().method(method).uri(path).header(AUTHORIZATION, format!("Bearer {token}"));
+        let req = Request::builder()
+            .method(method)
+            .uri(path)
+            .header(AUTHORIZATION, format!("Bearer {token}"));
         let req = match body {
-            Some(b) => req.header("content-type", "application/json").body(Body::from(b.to_string())),
+            Some(b) => req
+                .header("content-type", "application/json")
+                .body(Body::from(b.to_string())),
             None => req.body(Body::empty()),
         }
         .unwrap();
         let res = router().oneshot(req).await.unwrap();
         let status = res.status();
-        let epoch = res.headers().get(EPOCH_HEADER).and_then(|v| v.to_str().ok()).map(str::to_owned);
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        (status, epoch, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+        let epoch = res
+            .headers()
+            .get(EPOCH_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (
+            status,
+            epoch,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
     }
 
     #[tokio::test]
     async fn the_personal_space_writes_as_before_and_says_its_edition() {
         let _serial = crate::migrate::serial();
         let _root = crate::store::test_root("api-personal").with_config();
-        let (status, epoch, made) = authed("POST", "/profiles", Some(json!({ "name": "A", "fingerprint": {} }))).await;
+        let (status, epoch, made) = authed(
+            "POST",
+            "/profiles",
+            Some(json!({ "name": "A", "fingerprint": {} })),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{made}");
         assert_eq!(epoch, Some(crate::team::space_epoch().to_string()));
         let id = made["id"].as_str().unwrap().to_string();
@@ -1422,33 +1660,73 @@ mod tests {
         let (_, _, got) = authed("GET", &path, None).await;
         let rev = got["_meta"]["rev"].as_u64().unwrap();
 
-        let (status, _, got) = authed("PATCH", &path, Some(json!({ "name": "B", "rev": rev, "folder": "F" }))).await;
-        assert_eq!((status, got["name"].as_str(), got["_meta"]["folder"].as_str()), (StatusCode::OK, Some("B"), Some("F")));
-        let (status, _, got) = authed("PATCH", &path, Some(json!({ "name": "C", "rev": rev }))).await;
-        assert_eq!((status, got["code"].as_str()), (StatusCode::CONFLICT, Some("stale")), "{got}");
+        let (status, _, got) = authed(
+            "PATCH",
+            &path,
+            Some(json!({ "name": "B", "rev": rev, "folder": "F" })),
+        )
+        .await;
+        assert_eq!(
+            (
+                status,
+                got["name"].as_str(),
+                got["_meta"]["folder"].as_str()
+            ),
+            (StatusCode::OK, Some("B"), Some("F"))
+        );
+        let (status, _, got) =
+            authed("PATCH", &path, Some(json!({ "name": "C", "rev": rev }))).await;
+        assert_eq!(
+            (status, got["code"].as_str()),
+            (StatusCode::CONFLICT, Some("stale")),
+            "{got}"
+        );
 
-        let (status, _, got) = authed("POST", "/proxies", Some(json!({ "proxy": "203.0.113.8:1080" }))).await;
+        let (status, _, got) = authed(
+            "POST",
+            "/proxies",
+            Some(json!({ "proxy": "203.0.113.8:1080" })),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{got}");
         let proxy = format!("/proxies/{}", got["id"].as_str().unwrap());
         assert_eq!(authed("DELETE", &proxy, None).await.0, StatusCode::OK);
-        assert_eq!(authed("DELETE", &proxy, None).await.0, StatusCode::NOT_FOUND);
+        assert_eq!(
+            authed("DELETE", &proxy, None).await.0,
+            StatusCode::NOT_FOUND
+        );
 
         let (status, _, got) = authed("DELETE", &path, None).await;
-        assert_eq!((status, got["trashed"].as_bool()), (StatusCode::OK, Some(true)), "{got}");
+        assert_eq!(
+            (status, got["trashed"].as_bool()),
+            (StatusCode::OK, Some(true)),
+            "{got}"
+        );
         let (status, _, got) = authed("GET", &path, None).await;
-        assert_eq!((status, got["code"].as_str()), (StatusCode::NOT_FOUND, Some("not_found")));
+        assert_eq!(
+            (status, got["code"].as_str()),
+            (StatusCode::NOT_FOUND, Some("not_found"))
+        );
         let (_, _, trash) = authed("GET", "/trash", None).await;
         assert_eq!(trash.as_array().map(Vec::len), Some(1), "{trash}");
         // A write sent under another edition is refused before it reads anything.
         let req = Request::builder()
             .method("POST")
             .uri("/profiles")
-            .header(AUTHORIZATION, format!("Bearer {}", mint("api-personal-test", 600).unwrap()))
+            .header(
+                AUTHORIZATION,
+                format!("Bearer {}", mint("api-personal-test", 600).unwrap()),
+            )
             .header(EPOCH_HEADER, (crate::team::space_epoch() + 1).to_string())
             .header("content-type", "application/json")
-            .body(Body::from(json!({ "name": "D", "fingerprint": {} }).to_string()))
+            .body(Body::from(
+                json!({ "name": "D", "fingerprint": {} }).to_string(),
+            ))
             .unwrap();
-        assert_eq!(router().oneshot(req).await.unwrap().status(), StatusCode::CONFLICT);
+        assert_eq!(
+            router().oneshot(req).await.unwrap().status(),
+            StatusCode::CONFLICT
+        );
         let (_, _, all) = authed("GET", "/profiles", None).await;
         assert_eq!(all, json!([]));
     }
@@ -1462,16 +1740,48 @@ mod tests {
         settings.profile_defaults.noise_fonts = "auto".into();
         crate::settings::save(&settings).unwrap();
         for explicit in [false, true] {
-            let fingerprint = if explicit { json!({"startup_url":"", "navigator":{"language":"auto"}, "ui_language":"system", "noise":{"fonts":{"enabled":false,"seed":77}}}) } else { json!({}) };
-            let (status, _, made) = authed("POST", "/profiles", Some(json!({"name":"Defaults", "fingerprint":fingerprint}))).await;
+            let fingerprint = if explicit {
+                json!({"startup_url":"", "navigator":{"language":"auto"}, "ui_language":"system", "noise":{"fonts":{"enabled":false,"seed":77}}})
+            } else {
+                json!({})
+            };
+            let (status, _, made) = authed(
+                "POST",
+                "/profiles",
+                Some(json!({"name":"Defaults", "fingerprint":fingerprint})),
+            )
+            .await;
             assert_eq!(status, StatusCode::OK, "{made}");
-            let (_, _, got) = authed("GET", &format!("/profiles/{}", made["id"].as_str().unwrap()), None).await;
-            assert_eq!(got["startup_url"], if explicit { "" } else { "https://example.com/start" });
-            assert_eq!(got["navigator"]["language"], if explicit { "auto" } else { "zh-CN" });
-            assert_eq!(got["ui_language"], if explicit { "system" } else { "profile" });
+            let (_, _, got) = authed(
+                "GET",
+                &format!("/profiles/{}", made["id"].as_str().unwrap()),
+                None,
+            )
+            .await;
+            assert_eq!(
+                got["startup_url"],
+                if explicit {
+                    ""
+                } else {
+                    "https://example.com/start"
+                }
+            );
+            assert_eq!(
+                got["navigator"]["language"],
+                if explicit { "auto" } else { "zh-CN" }
+            );
+            assert_eq!(
+                got["ui_language"],
+                if explicit { "system" } else { "profile" }
+            );
             assert_eq!(got["noise"]["fonts"]["enabled"], !explicit);
         }
-        let (status, _, _) = authed("POST", "/profiles", Some(json!({"name":"Invalid", "fingerprint":{"startup_url":"--no-sandbox"}}))).await;
+        let (status, _, _) = authed(
+            "POST",
+            "/profiles",
+            Some(json!({"name":"Invalid", "fingerprint":{"startup_url":"--no-sandbox"}})),
+        )
+        .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(crate::space::profile::list_all().unwrap().len(), 2);
     }
@@ -1480,16 +1790,31 @@ mod tests {
     async fn api_proxy_chain_choice_roundtrips_and_rejects_unknown_without_writes() {
         let _serial = crate::migrate::serial();
         let _root = crate::store::test_root("api-chain-policy").with_config();
-        let (status, _, made) = authed("POST", "/profiles", Some(json!({"name":"Policy", "fingerprint":{}, "proxy_chain_policy":"disabled"}))).await;
+        let (status, _, made) = authed(
+            "POST",
+            "/profiles",
+            Some(json!({"name":"Policy", "fingerprint":{}, "proxy_chain_policy":"disabled"})),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{made}");
         let path = format!("/profiles/{}", made["id"].as_str().unwrap());
         let (_, _, loaded) = authed("GET", &path, None).await;
         assert_eq!(loaded["_meta"]["proxy_chain_policy"], "disabled");
-        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"enabled"}))).await;
+        let (status, _, _) = authed(
+            "PATCH",
+            &path,
+            Some(json!({"proxy_chain_policy":"enabled"})),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         let (_, _, before) = authed("GET", &path, None).await;
         assert_eq!(before["_meta"]["proxy_chain_policy"], "enabled");
-        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"future", "name":"Must not write"}))).await;
+        let (status, _, _) = authed(
+            "PATCH",
+            &path,
+            Some(json!({"proxy_chain_policy":"future", "name":"Must not write"})),
+        )
+        .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         let (_, _, after) = authed("GET", &path, None).await;
         assert_eq!(after, before);
@@ -1499,76 +1824,160 @@ mod tests {
     async fn api_explicit_route_roundtrips_and_invalid_edits_preserve_the_profile() {
         let _serial = crate::migrate::serial();
         let _root = crate::store::test_root("api-explicit-route").with_config();
-        let (status, _, made) = authed("POST", "/profiles", Some(json!({"name":"Route", "fingerprint":{}, "proxy_route":{"mode":"direct"}}))).await;
+        let (status, _, made) = authed(
+            "POST",
+            "/profiles",
+            Some(json!({"name":"Route", "fingerprint":{}, "proxy_route":{"mode":"direct"}})),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{made}");
         let path = format!("/profiles/{}", made["id"].as_str().unwrap());
         let (_, _, loaded) = authed("GET", &path, None).await;
         assert_eq!(loaded["_meta"]["proxy_route"], json!({"mode":"direct"}));
         let rev = loaded["_meta"]["rev"].as_u64().unwrap();
-        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_route":{"mode":"system"}}))).await;
+        let (status, _, _) = authed(
+            "PATCH",
+            &path,
+            Some(json!({"proxy_route":{"mode":"system"}})),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         let (_, _, before) = authed("GET", &path, None).await;
         assert_eq!(before["_meta"]["proxy_route"], json!({"mode":"system"}));
         assert_eq!(before["_meta"]["rev"].as_u64().unwrap(), rev + 1);
-        for route in [json!({"mode":"future"}), json!({"mode":"chain", "first":{"mode":"proxy","proxy_id":"missing"},"second":{"mode":"direct"}})] {
-            let (status, _, _) = authed("PATCH", &path, Some(json!({"name":"Must not write", "proxy_route":route}))).await;
+        for route in [
+            json!({"mode":"future"}),
+            json!({"mode":"chain", "first":{"mode":"proxy","proxy_id":"missing"},"second":{"mode":"direct"}}),
+        ] {
+            let (status, _, _) = authed(
+                "PATCH",
+                &path,
+                Some(json!({"name":"Must not write", "proxy_route":route})),
+            )
+            .await;
             assert_eq!(status, StatusCode::BAD_REQUEST);
             assert_eq!(authed("GET", &path, None).await.2, before);
         }
-        let (status, _, _) = authed("POST", "/profiles", Some(json!({"name":"Missing", "fingerprint":{}, "proxy_route":{"mode":"proxy"}}))).await;
+        let (status, _, _) = authed(
+            "POST",
+            "/profiles",
+            Some(json!({"name":"Missing", "fingerprint":{}, "proxy_route":{"mode":"proxy"}})),
+        )
+        .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         let id = made["id"].as_str().unwrap();
         crate::space::profile::protect(id, "synthetic password").unwrap();
-        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_route":{"mode":"direct"}}))).await;
+        let (status, _, _) = authed(
+            "PATCH",
+            &path,
+            Some(json!({"proxy_route":{"mode":"direct"}})),
+        )
+        .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
-        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_route":{"mode":"direct"},"password":"wrong password"}))).await;
+        let (status, _, _) = authed(
+            "PATCH",
+            &path,
+            Some(json!({"proxy_route":{"mode":"direct"},"password":"wrong password"})),
+        )
+        .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert_eq!(crate::space::profile::unlock(id, "synthetic password").unwrap().meta.proxy_route, Some(crate::proxy_chain::route::ProfileProxyRoute::System));
+        assert_eq!(
+            crate::space::profile::unlock(id, "synthetic password")
+                .unwrap()
+                .meta
+                .proxy_route,
+            Some(crate::proxy_chain::route::ProfileProxyRoute::System)
+        );
     }
 
     #[tokio::test]
-    async fn api_explicit_route_null_restores_legacy_but_omission_and_refused_edits_keep_the_route() {
+    async fn api_explicit_route_null_restores_legacy_but_omission_and_refused_edits_keep_the_route()
+    {
         use crate::proxy_chain::route::ProfileProxyRoute;
-        let _serial=crate::migrate::serial();
-        let _root=crate::store::test_root("api-explicit-route-null").with_config();
+        let _serial = crate::migrate::serial();
+        let _root = crate::store::test_root("api-explicit-route-null").with_config();
         let (status,_,made)=authed("POST","/profiles",Some(json!({"name":"Route null", "fingerprint":{}, "proxy_route":{"mode":"system"},"proxy_chain_policy":"disabled"}))).await;
-        assert_eq!(status,StatusCode::OK,"{made}");
-        let id=made["id"].as_str().unwrap();
-        let path=format!("/profiles/{id}");
-        let file=crate::store::profiles_dir().unwrap().join(format!("{id}.json"));
-        let (status,_,_)=authed("PATCH",&path,Some(json!({"name":"Route renamed"}))).await;
-        assert_eq!(status,StatusCode::OK);
-        assert_eq!(crate::space::profile::load_raw(id).unwrap().meta.proxy_route,Some(ProfileProxyRoute::System));
-        let before=std::fs::read(&file).unwrap();
-        for route in [json!(false),json!({"mode":"future"}),json!({"mode":"direct","unexpected":"must refuse"})] {
-            let (status,_,_)=authed("PATCH",&path,Some(json!({"name":"Must not write","proxy_route":route}))).await;
-            assert_eq!(status,StatusCode::BAD_REQUEST);
-            assert_eq!(std::fs::read(&file).unwrap(),before);
+        assert_eq!(status, StatusCode::OK, "{made}");
+        let id = made["id"].as_str().unwrap();
+        let path = format!("/profiles/{id}");
+        let file = crate::store::profiles_dir()
+            .unwrap()
+            .join(format!("{id}.json"));
+        let (status, _, _) = authed("PATCH", &path, Some(json!({"name":"Route renamed"}))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            crate::space::profile::load_raw(id)
+                .unwrap()
+                .meta
+                .proxy_route,
+            Some(ProfileProxyRoute::System)
+        );
+        let before = std::fs::read(&file).unwrap();
+        for route in [
+            json!(false),
+            json!({"mode":"future"}),
+            json!({"mode":"direct","unexpected":"must refuse"}),
+        ] {
+            let (status, _, _) = authed(
+                "PATCH",
+                &path,
+                Some(json!({"name":"Must not write","proxy_route":route})),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(std::fs::read(&file).unwrap(), before);
         }
-        let prior_rev=crate::space::profile::load_raw(id).unwrap().meta.rev;
-        let (status,_,_)=authed("PATCH",&path,Some(json!({"proxy_route":null}))).await;
-        assert_eq!(status,StatusCode::OK);
-        let cleared=crate::space::profile::load_raw(id).unwrap();
-        assert!(cleared.meta.proxy_route.is_none(),"explicit null must restore legacy inheritance");
-        assert_eq!(cleared.meta.rev,prior_rev+1);
-        assert_eq!(cleared.meta.proxy_chain_policy,crate::proxy_chain::policy::ChainPolicy::Disabled);
-        let (status,_,_)=authed("PATCH",&path,Some(json!({"proxy_route":{"mode":"system"}}))).await;
-        assert_eq!(status,StatusCode::OK);
-        crate::space::profile::protect(id,"synthetic password").unwrap();
-        let sealed=std::fs::read(&file).unwrap();
-        for password in [None,Some("wrong password")] {
-            let mut body=json!({"proxy_route":null});
-            if let Some(password)=password {body["password"]=json!(password);}
-            let (status,_,_)=authed("PATCH",&path,Some(body)).await;
-            assert_eq!(status,StatusCode::UNAUTHORIZED);
-            assert_eq!(std::fs::read(&file).unwrap(),sealed);
+        let prior_rev = crate::space::profile::load_raw(id).unwrap().meta.rev;
+        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_route":null}))).await;
+        assert_eq!(status, StatusCode::OK);
+        let cleared = crate::space::profile::load_raw(id).unwrap();
+        assert!(
+            cleared.meta.proxy_route.is_none(),
+            "explicit null must restore legacy inheritance"
+        );
+        assert_eq!(cleared.meta.rev, prior_rev + 1);
+        assert_eq!(
+            cleared.meta.proxy_chain_policy,
+            crate::proxy_chain::policy::ChainPolicy::Disabled
+        );
+        let (status, _, _) = authed(
+            "PATCH",
+            &path,
+            Some(json!({"proxy_route":{"mode":"system"}})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        crate::space::profile::protect(id, "synthetic password").unwrap();
+        let sealed = std::fs::read(&file).unwrap();
+        for password in [None, Some("wrong password")] {
+            let mut body = json!({"proxy_route":null});
+            if let Some(password) = password {
+                body["password"] = json!(password);
+            }
+            let (status, _, _) = authed("PATCH", &path, Some(body)).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+            assert_eq!(std::fs::read(&file).unwrap(), sealed);
         }
-        assert_eq!(crate::space::profile::unlock(id,"synthetic password").unwrap().meta.proxy_route,Some(ProfileProxyRoute::System));
-        let (status,_,_)=authed("PATCH",&path,Some(json!({"proxy_route":null,"password":"synthetic password"}))).await;
-        assert_eq!(status,StatusCode::OK);
-        let full=crate::space::profile::unlock(id,"synthetic password").unwrap();
+        assert_eq!(
+            crate::space::profile::unlock(id, "synthetic password")
+                .unwrap()
+                .meta
+                .proxy_route,
+            Some(ProfileProxyRoute::System)
+        );
+        let (status, _, _) = authed(
+            "PATCH",
+            &path,
+            Some(json!({"proxy_route":null,"password":"synthetic password"})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let full = crate::space::profile::unlock(id, "synthetic password").unwrap();
         assert!(full.meta.proxy_route.is_none());
-        assert!(full.meta.lock.is_some(),"clearing the route must preserve password protection");
+        assert!(
+            full.meta.lock.is_some(),
+            "clearing the route must preserve password protection"
+        );
     }
 
     #[tokio::test]
@@ -1577,7 +1986,9 @@ mod tests {
         let _root = crate::store::test_root("api-proxy-chain-defaults").with_config();
         for policy in ["inherit", "enabled", "prefer_first_hop", "disabled"] {
             let mut body = json!({ "proxy": "203.0.113.8:1080:synthetic-user:synthetic-password" });
-            if policy != "inherit" { body["proxy_chain_policy"] = json!(policy); }
+            if policy != "inherit" {
+                body["proxy_chain_policy"] = json!(policy);
+            }
             let (status, _, made) = authed("POST", "/proxies", Some(body)).await;
             assert_eq!(status, StatusCode::OK, "{made}");
             assert_eq!(made["proxy_chain_policy"], policy);
@@ -1586,12 +1997,24 @@ mod tests {
         let (status, _, listed) = authed("GET", "/proxies", None).await;
         assert_eq!(status, StatusCode::OK, "{listed}");
         let rows = listed.as_array().unwrap();
-        assert_eq!(rows.len(), 4, "different route choices must not be deduplicated");
+        assert_eq!(
+            rows.len(),
+            4,
+            "different route choices must not be deduplicated"
+        );
         for policy in ["inherit", "enabled", "prefer_first_hop", "disabled"] {
             assert!(rows.iter().any(|p| p["proxy_chain_policy"] == policy));
         }
-        assert!(!listed.to_string().contains("synthetic-"), "proxy responses must not expose credentials");
-        let (status, _, _) = authed("POST", "/proxies", Some(json!({ "proxy": "203.0.113.9:1080", "proxy_chain_policy": "future" }))).await;
+        assert!(
+            !listed.to_string().contains("synthetic-"),
+            "proxy responses must not expose credentials"
+        );
+        let (status, _, _) = authed(
+            "POST",
+            "/proxies",
+            Some(json!({ "proxy": "203.0.113.9:1080", "proxy_chain_policy": "future" })),
+        )
+        .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(authed("GET", "/proxies", None).await.2, listed);
     }
@@ -1601,27 +2024,83 @@ mod tests {
         use crate::proxy_chain::policy::ChainPolicy;
         let _serial = crate::migrate::serial();
         let _root = crate::store::test_root("api-protected-chain-choice").with_config();
-        let (status, _, made) = authed("POST", "/profiles", Some(json!({"name":"Protected route", "fingerprint":{}, "proxy_chain_policy":"enabled"}))).await;
+        let (status, _, made) = authed(
+            "POST",
+            "/profiles",
+            Some(
+                json!({"name":"Protected route", "fingerprint":{}, "proxy_chain_policy":"enabled"}),
+            ),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         let id = made["id"].as_str().unwrap();
         crate::space::profile::protect(id, "synthetic password").unwrap();
         let path = format!("/profiles/{id}");
         for choice in ["inherit", "disabled", "enabled", "prefer_first_hop"] {
-            let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":choice}))).await;
+            let (status, _, _) =
+                authed("PATCH", &path, Some(json!({"proxy_chain_policy":choice}))).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED);
         }
-        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"disabled", "password":"wrong password"}))).await;
+        let (status, _, _) = authed(
+            "PATCH",
+            &path,
+            Some(json!({"proxy_chain_policy":"disabled", "password":"wrong password"})),
+        )
+        .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert_eq!(crate::space::profile::unlock(id,"synthetic password").unwrap().meta.proxy_chain_policy, ChainPolicy::Enabled);
-        assert_eq!(crate::launch::proxy_for_test(id).unwrap_err().to_string(), crate::space::profile::PASSWORD_REQUIRED);
-        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"disabled", "password":"synthetic password"}))).await;
+        assert_eq!(
+            crate::space::profile::unlock(id, "synthetic password")
+                .unwrap()
+                .meta
+                .proxy_chain_policy,
+            ChainPolicy::Enabled
+        );
+        assert_eq!(
+            crate::launch::proxy_for_test(id).unwrap_err().to_string(),
+            crate::space::profile::PASSWORD_REQUIRED
+        );
+        let (status, _, _) = authed(
+            "PATCH",
+            &path,
+            Some(json!({"proxy_chain_policy":"disabled", "password":"synthetic password"})),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(crate::space::profile::unlock(id,"synthetic password").unwrap().meta.proxy_chain_policy, ChainPolicy::Disabled);
-        assert_eq!(crate::space::profile::load_raw(id).unwrap().meta.proxy_chain_policy, ChainPolicy::Inherit);
-        let (status, _, _) = authed("PATCH", &path, Some(json!({"proxy_chain_policy":"prefer_first_hop", "password":"synthetic password"}))).await;
+        assert_eq!(
+            crate::space::profile::unlock(id, "synthetic password")
+                .unwrap()
+                .meta
+                .proxy_chain_policy,
+            ChainPolicy::Disabled
+        );
+        assert_eq!(
+            crate::space::profile::load_raw(id)
+                .unwrap()
+                .meta
+                .proxy_chain_policy,
+            ChainPolicy::Inherit
+        );
+        let (status, _, _) = authed(
+            "PATCH",
+            &path,
+            Some(json!({"proxy_chain_policy":"prefer_first_hop", "password":"synthetic password"})),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(crate::space::profile::unlock(id,"synthetic password").unwrap().meta.proxy_chain_policy, ChainPolicy::PreferFirstHop);
-        assert_eq!(crate::space::profile::load_raw(id).unwrap().meta.proxy_chain_policy, ChainPolicy::Inherit);
+        assert_eq!(
+            crate::space::profile::unlock(id, "synthetic password")
+                .unwrap()
+                .meta
+                .proxy_chain_policy,
+            ChainPolicy::PreferFirstHop
+        );
+        assert_eq!(
+            crate::space::profile::load_raw(id)
+                .unwrap()
+                .meta
+                .proxy_chain_policy,
+            ChainPolicy::Inherit
+        );
     }
 
     /// The local API in a team's space, against a real team server in-process.
@@ -1634,7 +2113,11 @@ mod tests {
         use shardbrowser_team_server::{Action, Grant, Scope, TestServer};
 
         fn allow(scope: Scope, action: Action) -> Grant {
-            Grant { scope, action, allow: true }
+            Grant {
+                scope,
+                action,
+                allow: true,
+            }
         }
 
         fn folder(name: &str) -> Scope {
@@ -1685,9 +2168,16 @@ mod tests {
                 set_secret("api-team-test");
                 let token = mint("api-team-test", 600).unwrap();
                 let admin = srv.admin_token.clone();
-                Team { team_id: srv.server.team_id().to_string(), member_id: String::new(), token, srv, _root: root, _serial: serial }
-                    .joined(&admin)
-                    .await
+                Team {
+                    team_id: srv.server.team_id().to_string(),
+                    member_id: String::new(),
+                    token,
+                    srv,
+                    _root: root,
+                    _serial: serial,
+                }
+                .joined(&admin)
+                .await
             }
 
             async fn joined(self, member_token: &str) -> Team {
@@ -1698,7 +2188,11 @@ mod tests {
             /// Into the team, its lists read afresh.
             async fn enter(&self) {
                 crate::space::cache::keep_only(None);
-                crate::space::switch(Space::Team { team_id: self.team_id.clone() }).await.unwrap();
+                crate::space::switch(Space::Team {
+                    team_id: self.team_id.clone(),
+                })
+                .await
+                .unwrap();
             }
 
             fn admin(&self) -> TeamClient {
@@ -1706,12 +2200,21 @@ mod tests {
             }
 
             async fn admin_call(&self, method: Method, path: &str, body: Option<Value>) -> Value {
-                let (_, bytes) = self.admin().call(method, path, body.as_ref()).await.unwrap();
+                let (_, bytes) = self
+                    .admin()
+                    .call(method, path, body.as_ref())
+                    .await
+                    .unwrap();
                 serde_json::from_slice(&bytes).unwrap_or(Value::Null)
             }
 
             async fn folder(&self, name: &str) {
-                self.admin_call(Method::POST, "/admin/folders", Some(json!({ "name": name }))).await;
+                self.admin_call(
+                    Method::POST,
+                    "/admin/folders",
+                    Some(json!({ "name": name })),
+                )
+                .await;
             }
 
             async fn profile(&self, id: &str, folder: &str, name: &str, settings: Value) {
@@ -1719,19 +2222,26 @@ mod tests {
                     "name": name, "folder": folder, "data": b64(settings),
                     "card": { "notes": "notes-secret-9", "tags": ["tag-secret-2"] },
                 });
-                self.admin_call(Method::PUT, &format!("/profiles/{id}"), Some(body)).await;
+                self.admin_call(Method::PUT, &format!("/profiles/{id}"), Some(body))
+                    .await;
             }
 
             /// The profile as the admin reads it.
             async fn on_server(&self, id: &str) -> Value {
-                self.admin_call(Method::GET, &format!("/profiles/{id}"), None).await
+                self.admin_call(Method::GET, &format!("/profiles/{id}"), None)
+                    .await
             }
 
             async fn set_grants(&self, grants: &[Grant]) {
                 let path = format!("/admin/members/{}/grants", self.member_id);
-                self.admin_call(Method::PUT, &path, Some(json!({ "grants": grants }))).await;
+                self.admin_call(Method::PUT, &path, Some(json!({ "grants": grants })))
+                    .await;
                 // As the live channel would: the new permission, taken now.
-                let issued = TeamClient::for_team(&self.team_id).unwrap().permission().await.unwrap();
+                let issued = TeamClient::for_team(&self.team_id)
+                    .unwrap()
+                    .permission()
+                    .await
+                    .unwrap();
                 crate::space::perm::accept(&self.team_id, &issued.permission).unwrap();
             }
 
@@ -1744,12 +2254,19 @@ mod tests {
                     "trash": self.admin_call(Method::GET, "/trash", None).await,
                 });
                 for kind in ["bookmark", "extension", "automation", "tag"] {
-                    all[kind] = self.admin_call(Method::GET, &format!("/items/{kind}"), None).await;
+                    all[kind] = self
+                        .admin_call(Method::GET, &format!("/items/{kind}"), None)
+                        .await;
                 }
                 all
             }
 
-            async fn call(&self, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
+            async fn call(
+                &self,
+                method: &str,
+                path: &str,
+                body: Option<Value>,
+            ) -> (StatusCode, Value) {
                 let (status, _, body) = self.call_with(method, path, body, None).await;
                 (status, body)
             }
@@ -1770,23 +2287,38 @@ mod tests {
                     req = req.header(EPOCH_HEADER, e.to_string());
                 }
                 let req = match body {
-                    Some(b) => req.header("content-type", "application/json").body(Body::from(b.to_string())),
+                    Some(b) => req
+                        .header("content-type", "application/json")
+                        .body(Body::from(b.to_string())),
                     None => req.body(Body::empty()),
                 }
                 .unwrap();
                 let res = router().oneshot(req).await.unwrap();
                 let status = res.status();
-                let epoch = res.headers().get(EPOCH_HEADER).and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
-                let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
-                let body = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!(String::from_utf8_lossy(&bytes)));
+                let epoch = res
+                    .headers()
+                    .get(EPOCH_HEADER)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse().ok());
+                let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                let body = serde_json::from_slice(&bytes)
+                    .unwrap_or_else(|_| json!(String::from_utf8_lossy(&bytes)));
                 (status, epoch, body)
             }
         }
 
         /// A profile of this machine's own, from the personal space.
         fn mine(id: &str) -> std::path::PathBuf {
-            let path = crate::store::profiles_dir().unwrap().join(format!("{id}.json"));
-            std::fs::write(&path, json!({ "_meta": { "id": id }, "name": "Mine" }).to_string()).unwrap();
+            let path = crate::store::profiles_dir()
+                .unwrap()
+                .join(format!("{id}.json"));
+            std::fs::write(
+                &path,
+                json!({ "_meta": { "id": id }, "name": "Mine" }).to_string(),
+            )
+            .unwrap();
             path
         }
 
@@ -1806,17 +2338,26 @@ mod tests {
             } else {
                 "team-p-1"
             };
-            let uri = path.replace(":id", id).replace(":folder", "Folder-secret-31").replace(":platform", "windows");
+            let uri = path
+                .replace(":id", id)
+                .replace(":folder", "Folder-secret-31")
+                .replace(":platform", "windows");
             let body = match door {
-                "POST /profiles" | "POST /folders/:folder/profiles" => Some(json!({ "name": "x", "fingerprint": {} })),
-                "POST /profiles/temporary" | "POST /profiles/:id/start" | "POST /automation/import" => Some(json!({})),
+                "POST /profiles" | "POST /folders/:folder/profiles" => {
+                    Some(json!({ "name": "x", "fingerprint": {} }))
+                }
+                "POST /profiles/temporary"
+                | "POST /profiles/:id/start"
+                | "POST /automation/import" => Some(json!({})),
                 "PATCH /profiles/:id" => Some(json!({ "name": "y" })),
                 "POST /profiles/:id/cookies" => Some(json!({ "cookies": [] })),
                 "PATCH /folders/:folder" => Some(json!({ "name": "Renamed" })),
                 "POST /proxies" => Some(json!({ "proxy": "203.0.113.9:1080" })),
                 "POST /extensions" => Some(json!({ "path": "/nonexistent/ext.zip" })),
                 "POST /bookmarks" => Some(json!({ "url": "https://x.example" })),
-                "POST /automation/projects" | "PUT /automation/projects/:id" => Some(json!({ "name": "p" })),
+                "POST /automation/projects" | "PUT /automation/projects/:id" => {
+                    Some(json!({ "name": "p" }))
+                }
                 "POST /automation/modules" => Some(json!({ "path": "/nonexistent/m.wasm" })),
                 _ => None,
             };
@@ -1828,25 +2369,52 @@ mod tests {
             let t = Team::new(&[]).await;
             t.folder("Folder-secret-31").await;
             let settings = json!({ "navigator": { "user_agent": "UA-secret-55" } });
-            t.profile("team-p-1", "Folder-secret-31", "name-secret-7", settings).await;
+            t.profile("team-p-1", "Folder-secret-31", "name-secret-7", settings)
+                .await;
             let proxy = json!({ "name": "proxy-secret-4", "kind": "socks5", "data": b64(json!({ "host": "203.0.113.77", "port": 1080 })) });
-            t.admin_call(Method::PUT, "/proxies/team-x-1", Some(proxy)).await;
+            t.admin_call(Method::PUT, "/proxies/team-x-1", Some(proxy))
+                .await;
             for (kind, id, name, data) in [
-                ("bookmark", "team-b-1", "mark", json!({ "url": "https://mark-secret-6.example" })),
-                ("extension", "team-e-1", "ext-secret-8", json!({ "version": "1" })),
+                (
+                    "bookmark",
+                    "team-b-1",
+                    "mark",
+                    json!({ "url": "https://mark-secret-6.example" }),
+                ),
+                (
+                    "extension",
+                    "team-e-1",
+                    "ext-secret-8",
+                    json!({ "version": "1" }),
+                ),
                 ("automation", "team-a-1", "project-secret-3", json!({})),
-                ("tag", "team-t-1", "tag-name-secret-1", json!({ "color": "red" })),
+                (
+                    "tag",
+                    "team-t-1",
+                    "tag-name-secret-1",
+                    json!({ "color": "red" }),
+                ),
             ] {
                 let body = json!({ "name": name, "data": b64(data) });
-                t.admin_call(Method::PUT, &format!("/items/{kind}/{id}"), Some(body)).await;
+                t.admin_call(Method::PUT, &format!("/items/{kind}/{id}"), Some(body))
+                    .await;
             }
             let own = mine("mine-1");
             t.enter().await;
             let before = t.everything().await;
             let secrets = [
-                "Folder-secret-31", "name-secret-7", "UA-secret-55", "notes-secret-9", "tag-secret-2",
-                "proxy-secret-4", "203.0.113.77", "mark-secret-6", "ext-secret-8", "project-secret-3",
-                "tag-name-secret-1", "Mine",
+                "Folder-secret-31",
+                "name-secret-7",
+                "UA-secret-55",
+                "notes-secret-9",
+                "tag-secret-2",
+                "proxy-secret-4",
+                "203.0.113.77",
+                "mark-secret-6",
+                "ext-secret-8",
+                "project-secret-3",
+                "tag-name-secret-1",
+                "Mine",
             ];
 
             let doors = crate::space::doors::routes(include_str!("api.rs"));
@@ -1864,22 +2432,62 @@ mod tests {
                     continue;
                 }
                 let empty = got == json!([]) || got.is_null();
-                assert!(!status.is_success() || empty, "{door} answered {status}: {text}");
-                assert!(!status.is_server_error() || status == StatusCode::NOT_IMPLEMENTED, "{door}: {status} {text}");
+                assert!(
+                    !status.is_success() || empty,
+                    "{door} answered {status}: {text}"
+                );
+                assert!(
+                    !status.is_server_error() || status == StatusCode::NOT_IMPLEMENTED,
+                    "{door}: {status} {text}"
+                );
             }
 
             // What is there is invisible; what would be made is refused, with what it needs.
             let (status, got) = t.call("GET", "/profiles/team-p-1", None).await;
-            assert_eq!((status, got["code"].as_str()), (StatusCode::NOT_FOUND, Some("not_found")));
+            assert_eq!(
+                (status, got["code"].as_str()),
+                (StatusCode::NOT_FOUND, Some("not_found"))
+            );
             let (status, got) = t.call("DELETE", "/proxies/team-x-1", None).await;
             assert_eq!(status, StatusCode::NOT_FOUND, "{got}");
-            let (status, got) = t.call("POST", "/profiles", Some(json!({ "name": "x", "fingerprint": {} }))).await;
+            let (status, got) = t
+                .call(
+                    "POST",
+                    "/profiles",
+                    Some(json!({ "name": "x", "fingerprint": {} })),
+                )
+                .await;
             assert_eq!(status, StatusCode::FORBIDDEN);
-            assert_eq!((got["code"].as_str(), got["need"].as_str(), got["on"].as_str()), (Some("forbidden"), Some("create"), Some("folder")));
-            let (status, got) = t.call("POST", "/proxies", Some(json!({ "proxy": "203.0.113.9:1080" }))).await;
-            assert_eq!((status, got["need"].as_str(), got["on"].as_str()), (StatusCode::FORBIDDEN, Some("create"), Some("team")));
-            let (status, got) = t.call("PATCH", "/folders/Folder-secret-31", Some(json!({ "name": "R" }))).await;
-            assert_eq!((status, got["need"].as_str()), (StatusCode::FORBIDDEN, Some("admin")));
+            assert_eq!(
+                (
+                    got["code"].as_str(),
+                    got["need"].as_str(),
+                    got["on"].as_str()
+                ),
+                (Some("forbidden"), Some("create"), Some("folder"))
+            );
+            let (status, got) = t
+                .call(
+                    "POST",
+                    "/proxies",
+                    Some(json!({ "proxy": "203.0.113.9:1080" })),
+                )
+                .await;
+            assert_eq!(
+                (status, got["need"].as_str(), got["on"].as_str()),
+                (StatusCode::FORBIDDEN, Some("create"), Some("team"))
+            );
+            let (status, got) = t
+                .call(
+                    "PATCH",
+                    "/folders/Folder-secret-31",
+                    Some(json!({ "name": "R" })),
+                )
+                .await;
+            assert_eq!(
+                (status, got["need"].as_str()),
+                (StatusCode::FORBIDDEN, Some("admin"))
+            );
             // The personal space's own profile is another space's: not there either.
             let (status, _) = t.call("GET", "/profiles/mine-1", None).await;
             assert_eq!(status, StatusCode::NOT_FOUND);
@@ -1887,23 +2495,49 @@ mod tests {
             assert_eq!(status, StatusCode::NOT_FOUND);
             assert!(own.is_file());
 
-            assert_eq!(t.everything().await, before, "a refused write reached the team");
+            assert_eq!(
+                t.everything().await,
+                before,
+                "a refused write reached the team"
+            );
             drop(t.srv);
         }
 
         #[tokio::test]
         async fn a_write_from_an_old_revision_is_stale_and_one_under_a_lease_is_leased() {
-            let t = Team::new(&[allow(folder("Ads"), Action::See), allow(folder("Ads"), Action::Edit)]).await;
+            let t = Team::new(&[
+                allow(folder("Ads"), Action::See),
+                allow(folder("Ads"), Action::Edit),
+            ])
+            .await;
             t.folder("Ads").await;
-            t.profile("p-1", "Ads", "First", json!({ "navigator": { "user_agent": "UA" } })).await;
+            t.profile(
+                "p-1",
+                "Ads",
+                "First",
+                json!({ "navigator": { "user_agent": "UA" } }),
+            )
+            .await;
             t.enter().await;
             let (status, got) = t.call("GET", "/profiles/p-1", None).await;
             assert_eq!(status, StatusCode::OK, "{got}");
             let read_at = got["_meta"]["rev"].as_u64().unwrap();
 
             // Saved by someone else meanwhile.
-            t.profile("p-1", "Ads", "Theirs", json!({ "navigator": { "user_agent": "UA" } })).await;
-            let (status, got) = t.call("PATCH", "/profiles/p-1", Some(json!({ "name": "Mine", "rev": read_at }))).await;
+            t.profile(
+                "p-1",
+                "Ads",
+                "Theirs",
+                json!({ "navigator": { "user_agent": "UA" } }),
+            )
+            .await;
+            let (status, got) = t
+                .call(
+                    "PATCH",
+                    "/profiles/p-1",
+                    Some(json!({ "name": "Mine", "rev": read_at })),
+                )
+                .await;
             assert_eq!(status, StatusCode::CONFLICT, "{got}");
             assert_eq!(got["code"], "stale");
             assert_eq!(got["current_revision"].as_u64(), Some(read_at + 1));
@@ -1911,60 +2545,122 @@ mod tests {
 
             // The editor's save reads as its conflict.
             let tk = Ticket::now();
-            let mut old = crate::space::profile::fetch_for_edit(&tk, "p-1").await.unwrap();
+            let mut old = crate::space::profile::fetch_for_edit(&tk, "p-1")
+                .await
+                .unwrap();
             old.config.insert("name".into(), json!("From the editor"));
-            let opts = crate::space::profile::SaveOpts { sent_rev: Some(read_at), ..Default::default() };
-            let e = crate::space::profile::save(Door("profile_save"), &tk, old, opts).await.unwrap_err();
+            let opts = crate::space::profile::SaveOpts {
+                sent_rev: Some(read_at),
+                ..Default::default()
+            };
+            let e = crate::space::profile::save(Door("profile_save"), &tk, old, opts)
+                .await
+                .unwrap_err();
             assert!(e.to_string().contains("changed after you opened it"), "{e}");
 
             // From what is there now, it goes through.
-            let (status, got) = t.call("PATCH", "/profiles/p-1", Some(json!({ "name": "Mine" }))).await;
+            let (status, got) = t
+                .call("PATCH", "/profiles/p-1", Some(json!({ "name": "Mine" })))
+                .await;
             assert_eq!(status, StatusCode::OK, "{got}");
             assert_eq!(t.on_server("p-1").await["name"], "Mine");
             let listed = crate::space::profile::list_all().unwrap();
             assert_eq!(listed[0].name, "Mine", "held here at once");
 
             // Open on another device: refused, with where.
-            t.admin().call(Method::POST, "/profiles/p-1/lease", None).await.unwrap();
-            let (status, got) = t.call("PATCH", "/profiles/p-1", Some(json!({ "name": "Again" }))).await;
-            assert_eq!((status, got["code"].as_str()), (StatusCode::CONFLICT, Some("leased")), "{got}");
-            assert_eq!(got["device_name"].as_str(), Some(team::device_name().as_str()));
+            t.admin()
+                .call(Method::POST, "/profiles/p-1/lease", None)
+                .await
+                .unwrap();
+            let (status, got) = t
+                .call("PATCH", "/profiles/p-1", Some(json!({ "name": "Again" })))
+                .await;
+            assert_eq!(
+                (status, got["code"].as_str()),
+                (StatusCode::CONFLICT, Some("leased")),
+                "{got}"
+            );
+            assert_eq!(
+                got["device_name"].as_str(),
+                Some(team::device_name().as_str())
+            );
             assert_eq!(t.on_server("p-1").await["name"], "Mine");
             drop(t.srv);
         }
 
         #[tokio::test]
         async fn moving_a_profile_needs_create_where_it_lands() {
-            let ads = [allow(folder("Ads"), Action::See), allow(folder("Ads"), Action::Edit)];
-            let t = Team::new(&[ads[0].clone(), ads[1].clone(), allow(folder("Shops"), Action::See)]).await;
+            let ads = [
+                allow(folder("Ads"), Action::See),
+                allow(folder("Ads"), Action::Edit),
+            ];
+            let t = Team::new(&[
+                ads[0].clone(),
+                ads[1].clone(),
+                allow(folder("Shops"), Action::See),
+            ])
+            .await;
             for f in ["Ads", "Shops"] {
                 t.folder(f).await;
             }
             t.profile("p-1", "Ads", "First", json!({})).await;
             t.enter().await;
 
-            let (status, got) = t.call("PATCH", "/profiles/p-1", Some(json!({ "folder": "Shops" }))).await;
+            let (status, got) = t
+                .call("PATCH", "/profiles/p-1", Some(json!({ "folder": "Shops" })))
+                .await;
             assert_eq!(status, StatusCode::FORBIDDEN, "{got}");
-            assert_eq!((got["code"].as_str(), got["need"].as_str(), got["on"].as_str()), (Some("forbidden"), Some("create"), Some("folder")));
-            let moved = crate::space::profile::set_folder(Door("profile_set_folder"), &Ticket::now(), "p-1", "Shops").await;
+            assert_eq!(
+                (
+                    got["code"].as_str(),
+                    got["need"].as_str(),
+                    got["on"].as_str()
+                ),
+                (Some("forbidden"), Some("create"), Some("folder"))
+            );
+            let moved = crate::space::profile::set_folder(
+                Door("profile_set_folder"),
+                &Ticket::now(),
+                "p-1",
+                "Shops",
+            )
+            .await;
             let refused = crate::space::error::find(moved.as_ref().unwrap_err()).cloned();
-            assert!(matches!(refused, Some(CmdError::Forbidden(n)) if n.right == "create"), "{moved:?}");
+            assert!(
+                matches!(refused, Some(CmdError::Forbidden(n)) if n.right == "create"),
+                "{moved:?}"
+            );
             let there = t.on_server("p-1").await;
-            assert_eq!((there["folder"].as_str(), there["revision"].as_u64()), (Some("Ads"), Some(1)));
+            assert_eq!(
+                (there["folder"].as_str(), there["revision"].as_u64()),
+                (Some("Ads"), Some(1))
+            );
 
             // Create there, but more rights than here: the server refuses the move.
             let mut wider = ads.to_vec();
-            wider.extend([Action::See, Action::Create, Action::Delete].map(|a| allow(folder("Shops"), a)));
+            wider.extend(
+                [Action::See, Action::Create, Action::Delete].map(|a| allow(folder("Shops"), a)),
+            );
             t.set_grants(&wider).await;
-            let (status, got) = t.call("PATCH", "/profiles/p-1", Some(json!({ "folder": "Shops" }))).await;
-            assert_eq!((status, got["code"].as_str()), (StatusCode::FORBIDDEN, Some("forbidden")), "{got}");
+            let (status, got) = t
+                .call("PATCH", "/profiles/p-1", Some(json!({ "folder": "Shops" })))
+                .await;
+            assert_eq!(
+                (status, got["code"].as_str()),
+                (StatusCode::FORBIDDEN, Some("forbidden")),
+                "{got}"
+            );
             assert_eq!(t.on_server("p-1").await["folder"], "Ads");
 
             // Create there and the same rights: it moves.
             let mut same = ads.to_vec();
-            same.extend([Action::See, Action::Edit, Action::Create].map(|a| allow(folder("Shops"), a)));
+            same.extend(
+                [Action::See, Action::Edit, Action::Create].map(|a| allow(folder("Shops"), a)),
+            );
             t.set_grants(&same).await;
-            let (status, got) = t.call("PATCH", "/profiles/p-1", Some(json!({ "folder": "Shops" }))).await;
+            let (status, got) = t
+                .call("PATCH", "/profiles/p-1", Some(json!({ "folder": "Shops" })))
+                .await;
             assert_eq!(status, StatusCode::OK, "{got}");
             assert_eq!(t.on_server("p-1").await["folder"], "Shops");
             drop(t.srv);
@@ -1976,40 +2672,94 @@ mod tests {
             let t = Team::as_admin().await;
             t.enter().await;
             let tk = Ticket::now();
-            let mut entry = crate::space::proxy::parse_single("203.0.113.5:1080:synthetic-user:synthetic-old").unwrap();
+            let mut entry =
+                crate::space::proxy::parse_single("203.0.113.5:1080:synthetic-user:synthetic-old")
+                    .unwrap();
             entry.proxy_chain_policy = ChainPolicy::Enabled;
-            let original = crate::space::proxy::upsert(Door("proxy_save"), &tk, entry.clone()).await.unwrap();
+            let original = crate::space::proxy::upsert(Door("proxy_save"), &tk, entry.clone())
+                .await
+                .unwrap();
 
             entry.proxy_chain_policy = ChainPolicy::Disabled;
             entry.password = "synthetic-new".into();
-            let separate = crate::space::proxy::upsert_for_binding(Door("proxy_save"), &tk, entry.clone(), Some(&original.id)).await.unwrap();
-            assert_ne!(separate.id, original.id, "a changed route choice must not mutate the bound proxy");
+            let separate = crate::space::proxy::upsert_for_binding(
+                Door("proxy_save"),
+                &tk,
+                entry.clone(),
+                Some(&original.id),
+            )
+            .await
+            .unwrap();
+            assert_ne!(
+                separate.id, original.id,
+                "a changed route choice must not mutate the bound proxy"
+            );
             assert_eq!(separate.proxy_chain_policy, ChainPolicy::Disabled);
-            assert_eq!(serde_json::to_value(crate::space::proxy::get(&original.id).unwrap().unwrap()).unwrap(), serde_json::to_value(&original).unwrap());
+            assert_eq!(
+                serde_json::to_value(crate::space::proxy::get(&original.id).unwrap().unwrap())
+                    .unwrap(),
+                serde_json::to_value(&original).unwrap()
+            );
 
             entry.password = "synthetic-rotated".into();
-            let rotated = crate::space::proxy::upsert_for_binding(Door("proxy_save"), &tk, entry, Some(&separate.id)).await.unwrap();
-            assert_eq!(rotated.id, separate.id, "the same route still supports a password-only update");
+            let rotated = crate::space::proxy::upsert_for_binding(
+                Door("proxy_save"),
+                &tk,
+                entry,
+                Some(&separate.id),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                rotated.id, separate.id,
+                "the same route still supports a password-only update"
+            );
             assert_eq!(rotated.proxy_chain_policy, ChainPolicy::Disabled);
             assert_eq!(rotated.password, "synthetic-rotated");
             let (status, listed) = t.call("GET", "/proxies", None).await;
             assert_eq!(status, StatusCode::OK, "{listed}");
             let rows = listed.as_array().unwrap();
             assert_eq!(rows.len(), 2);
-            assert_eq!(rows.iter().find(|p| p["id"] == original.id).unwrap()["proxy_chain_policy"], "enabled");
-            assert_eq!(rows.iter().find(|p| p["id"] == rotated.id).unwrap()["proxy_chain_policy"], "disabled");
+            assert_eq!(
+                rows.iter().find(|p| p["id"] == original.id).unwrap()["proxy_chain_policy"],
+                "enabled"
+            );
+            assert_eq!(
+                rows.iter().find(|p| p["id"] == rotated.id).unwrap()["proxy_chain_policy"],
+                "disabled"
+            );
             assert!(!listed.to_string().contains("synthetic-"));
-            let mut adaptive = original.clone(); adaptive.proxy_chain_policy = ChainPolicy::PreferFirstHop;
-            let adaptive = crate::space::proxy::upsert_for_binding(Door("proxy_save"), &tk, adaptive, Some(&original.id)).await.unwrap();
+            let mut adaptive = original.clone();
+            adaptive.proxy_chain_policy = ChainPolicy::PreferFirstHop;
+            let adaptive = crate::space::proxy::upsert_for_binding(
+                Door("proxy_save"),
+                &tk,
+                adaptive,
+                Some(&original.id),
+            )
+            .await
+            .unwrap();
             assert_ne!(adaptive.id, original.id);
             assert_eq!(adaptive.proxy_chain_policy, ChainPolicy::PreferFirstHop);
-            assert_eq!(crate::space::proxy::get(&original.id).unwrap().unwrap().proxy_chain_policy, ChainPolicy::Enabled);
+            assert_eq!(
+                crate::space::proxy::get(&original.id)
+                    .unwrap()
+                    .unwrap()
+                    .proxy_chain_policy,
+                ChainPolicy::Enabled
+            );
             drop(t.srv);
         }
 
         #[tokio::test]
         async fn a_member_with_the_rights_writes_each_kind_of_change_to_the_team() {
-            let all = [Action::See, Action::Start, Action::Edit, Action::Create, Action::Delete];
+            let all = [
+                Action::See,
+                Action::Start,
+                Action::Edit,
+                Action::Create,
+                Action::Delete,
+            ];
             let t = Team::new(&all.map(|a| allow(Scope::Team, a))).await;
             t.folder("Ads").await;
             t.enter().await;
@@ -2017,49 +2767,91 @@ mod tests {
 
             // A proxy, then a profile bound to it.
             let entry = crate::space::proxy::parse_single("203.0.113.5:1080:user:pass").unwrap();
-            let x = crate::space::proxy::upsert(Door("proxy_save"), &tk, entry).await.unwrap();
-            let theirs = t.admin_call(Method::GET, &format!("/proxies/{}", x.id), None).await;
+            let x = crate::space::proxy::upsert(Door("proxy_save"), &tk, entry)
+                .await
+                .unwrap();
+            let theirs = t
+                .admin_call(Method::GET, &format!("/proxies/{}", x.id), None)
+                .await;
             assert_eq!(theirs["name"], "203.0.113.5:1080");
-            assert_eq!(crate::space::proxy::get(&x.id).unwrap().unwrap().password, "pass");
+            assert_eq!(
+                crate::space::proxy::get(&x.id).unwrap().unwrap().password,
+                "pass"
+            );
             let body = json!({ "name": "Shop", "folder": "Ads", "proxy_id": x.id, "notes": "n1", "fingerprint": { "noise": { "canvas": { "seed": 0 } } } });
             let (status, made) = t.call("POST", "/profiles", Some(body)).await;
             assert_eq!(status, StatusCode::OK, "{made}");
             let id = made["id"].as_str().unwrap().to_string();
             let there = t.on_server(&id).await;
-            assert_eq!((there["folder"].as_str(), there["card"]["proxy_id"].as_str()), (Some("Ads"), Some(x.id.as_str())));
+            assert_eq!(
+                (there["folder"].as_str(), there["card"]["proxy_id"].as_str()),
+                (Some("Ads"), Some(x.id.as_str()))
+            );
             assert_eq!(there["card"]["notes"], "n1");
             let settings: Value = serde_json::from_slice(
-                &base64::engine::general_purpose::STANDARD.decode(there["data"].as_str().unwrap()).unwrap(),
+                &base64::engine::general_purpose::STANDARD
+                    .decode(there["data"].as_str().unwrap())
+                    .unwrap(),
             )
             .unwrap();
             assert_ne!(settings["noise"]["canvas"]["seed"], 0, "seeded by its id");
             assert!(settings["_meta"].get("pinned").is_none_or(|p| p == false));
 
             // Unbound, tagged, moved out of its folder: each from the revision there.
-            crate::space::profile::bind_proxy(Door("profile_bind_proxy"), &tk, &id, None).await.unwrap();
-            let tags = [(id.clone(), vec!["vip".to_string()])].into_iter().collect();
-            crate::space::tags::assign(Door("tag_assign"), &tk, tags).await.unwrap();
-            crate::space::profile::set_folder(Door("profile_set_folder"), &tk, &id, "").await.unwrap();
+            crate::space::profile::bind_proxy(Door("profile_bind_proxy"), &tk, &id, None)
+                .await
+                .unwrap();
+            let tags = [(id.clone(), vec!["vip".to_string()])]
+                .into_iter()
+                .collect();
+            crate::space::tags::assign(Door("tag_assign"), &tk, tags)
+                .await
+                .unwrap();
+            crate::space::profile::set_folder(Door("profile_set_folder"), &tk, &id, "")
+                .await
+                .unwrap();
             let there = t.on_server(&id).await;
             assert_eq!(there["card"]["proxy_id"], Value::Null);
             assert_eq!(there["card"]["tags"], json!(["vip"]));
-            assert_eq!((there["folder"].as_str(), there["revision"].as_u64()), (Some(""), Some(4)));
+            assert_eq!(
+                (there["folder"].as_str(), there["revision"].as_u64()),
+                (Some(""), Some(4))
+            );
 
             // A copy beside it, then the original to the team's trash.
-            let copy = crate::space::profile::clone_profile(Door("profile_clone"), &tk, &id).await.unwrap();
+            let copy = crate::space::profile::clone_profile(Door("profile_clone"), &tk, &id)
+                .await
+                .unwrap();
             assert_eq!(t.on_server(&copy.id).await["name"], "Shop (copy)");
             let (status, got) = t.call("DELETE", &format!("/profiles/{id}"), None).await;
             assert_eq!(status, StatusCode::OK, "{got}");
-            crate::space::proxy::delete(Door("proxy_delete"), &tk, &x.id).await.unwrap();
+            crate::space::proxy::delete(Door("proxy_delete"), &tk, &x.id)
+                .await
+                .unwrap();
             let trash = t.admin_call(Method::GET, "/trash", None).await;
-            let trashed: Vec<&str> = trash.as_array().unwrap().iter().filter_map(|r| r["id"].as_str()).collect();
-            assert!(trashed.contains(&id.as_str()) && trashed.contains(&x.id.as_str()), "{trash}");
-            let listed: Vec<String> = crate::space::profile::list_all().unwrap().into_iter().map(|m| m.id).collect();
+            let trashed: Vec<&str> = trash
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|r| r["id"].as_str())
+                .collect();
+            assert!(
+                trashed.contains(&id.as_str()) && trashed.contains(&x.id.as_str()),
+                "{trash}"
+            );
+            let listed: Vec<String> = crate::space::profile::list_all()
+                .unwrap()
+                .into_iter()
+                .map(|m| m.id)
+                .collect();
             assert_eq!(listed, std::slice::from_ref(&copy.id));
 
             // Not an admin: the folders are not this member's to change.
-            let renamed = crate::space::profile::rename_folder(Door("folder_rename"), &tk, "Ads", "Shops").await;
-            assert!(crate::space::error::find(&renamed.unwrap_err()).is_some_and(|c| c.code() == "forbidden"));
+            let renamed =
+                crate::space::profile::rename_folder(Door("folder_rename"), &tk, "Ads", "Shops")
+                    .await;
+            assert!(crate::space::error::find(&renamed.unwrap_err())
+                .is_some_and(|c| c.code() == "forbidden"));
             drop(t.srv);
         }
 
@@ -2071,60 +2863,116 @@ mod tests {
                 t.profile(id, "Ads", id, json!({})).await;
             }
             t.enter().await;
-            let (status, got) = t.call("PATCH", "/folders/Ads", Some(json!({ "name": "Shops" }))).await;
-            assert_eq!((status, got["profiles"].as_u64()), (StatusCode::OK, Some(2)), "{got}");
+            let (status, got) = t
+                .call("PATCH", "/folders/Ads", Some(json!({ "name": "Shops" })))
+                .await;
+            assert_eq!(
+                (status, got["profiles"].as_u64()),
+                (StatusCode::OK, Some(2)),
+                "{got}"
+            );
             assert_eq!(t.on_server("p-1").await["folder"], "Shops");
 
-            let (status, got) = t.call("DELETE", "/folders/Shops?delete_profiles=true", None).await;
-            assert_eq!((status, got["profiles"].as_u64()), (StatusCode::OK, Some(2)), "{got}");
+            let (status, got) = t
+                .call("DELETE", "/folders/Shops?delete_profiles=true", None)
+                .await;
+            assert_eq!(
+                (status, got["profiles"].as_u64()),
+                (StatusCode::OK, Some(2)),
+                "{got}"
+            );
             let trash = t.admin_call(Method::GET, "/trash", None).await;
             assert_eq!(trash.as_array().unwrap().len(), 2, "{trash}");
             assert!(crate::space::profile::list_all().unwrap().is_empty());
 
             // An empty folder goes at once; the admin keeps and colours one.
             let tk = Ticket::now();
-            crate::space::folders::add(Door("folder_add"), &tk, "Empty").await.unwrap();
-            let look = crate::space::folders::FolderMeta { color: Some("red".into()), icon: "cart".into() };
-            crate::space::folders::set_meta(Door("folder_meta_set"), &tk, "Empty", look).await.unwrap();
+            crate::space::folders::add(Door("folder_add"), &tk, "Empty")
+                .await
+                .unwrap();
+            let look = crate::space::folders::FolderMeta {
+                color: Some("red".into()),
+                icon: "cart".into(),
+            };
+            crate::space::folders::set_meta(Door("folder_meta_set"), &tk, "Empty", look)
+                .await
+                .unwrap();
             let folders = t.admin_call(Method::GET, "/folders", None).await;
-            assert!(folders.as_array().unwrap().iter().any(|f| f["name"] == "Empty" && f["color"] == "red"), "{folders}");
+            assert!(
+                folders
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|f| f["name"] == "Empty" && f["color"] == "red"),
+                "{folders}"
+            );
             let (status, got) = t.call("DELETE", "/folders/Empty", None).await;
             assert_eq!(status, StatusCode::OK, "{got}");
             let folders = t.admin_call(Method::GET, "/folders", None).await;
-            assert!(!folders.as_array().unwrap().iter().any(|f| f["name"] == "Empty"), "{folders}");
+            assert!(
+                !folders
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|f| f["name"] == "Empty"),
+                "{folders}"
+            );
             drop(t.srv);
         }
 
         #[tokio::test]
         async fn a_save_racing_a_space_switch_is_refused_as_space_changed() {
-            let t = Team::new(&[allow(folder("Ads"), Action::See), allow(folder("Ads"), Action::Edit)]).await;
+            let t = Team::new(&[
+                allow(folder("Ads"), Action::See),
+                allow(folder("Ads"), Action::Edit),
+            ])
+            .await;
             t.folder("Ads").await;
             t.profile("p-1", "Ads", "First", json!({})).await;
             t.enter().await;
 
             // The save reaches its last look; the launcher moves to the personal space then.
             let tk = Ticket::now();
-            let mut stored = crate::space::profile::fetch_for_edit(&tk, "p-1").await.unwrap();
+            let mut stored = crate::space::profile::fetch_for_edit(&tk, "p-1")
+                .await
+                .unwrap();
             stored.config.insert("name".into(), json!("Late"));
             crate::space::hold::arm();
             let save = tokio::spawn(async move {
-                crate::space::profile::save(Door("profile_save"), &tk, stored, Default::default()).await
+                crate::space::profile::save(Door("profile_save"), &tk, stored, Default::default())
+                    .await
             });
             crate::space::hold::wait_reached().await;
             crate::space::switch(Space::Personal).await.unwrap();
             crate::space::hold::release();
             let e = save.await.unwrap().unwrap_err();
-            assert_eq!(crate::space::error::find(&e), Some(&CmdError::SpaceChanged), "{e}");
+            assert_eq!(
+                crate::space::error::find(&e),
+                Some(&CmdError::SpaceChanged),
+                "{e}"
+            );
             assert_eq!(t.on_server("p-1").await["revision"], 1);
-            assert!(crate::space::profile::list_all().unwrap().is_empty(), "nothing landed here either");
-            assert!(crate::space::window_ticket(None).is_ok(), "personal takes the window's writes as they come");
+            assert!(
+                crate::space::profile::list_all().unwrap().is_empty(),
+                "nothing landed here either"
+            );
+            assert!(
+                crate::space::window_ticket(None).is_ok(),
+                "personal takes the window's writes as they come"
+            );
 
             // A write the interface asked before a switch is refused at its door.
             let asked_at = crate::team::space_epoch();
             t.enter().await;
-            assert_eq!(crate::space::ticket(Some(asked_at)), Err(CmdError::SpaceChanged));
+            assert_eq!(
+                crate::space::ticket(Some(asked_at)),
+                Err(CmdError::SpaceChanged)
+            );
             // In a team the window has to name its edition, or nothing is written.
-            assert_eq!(crate::space::window_ticket(None).unwrap_err().code(), "space_unknown");
+            assert_eq!(
+                crate::space::window_ticket(None).unwrap_err().code(),
+                "space_unknown"
+            );
             assert!(crate::space::window_ticket(Some(crate::team::space_epoch())).is_ok());
 
             // The API: a write sent with the edition it read under.
@@ -2133,8 +2981,14 @@ mod tests {
             crate::space::switch(Space::Personal).await.unwrap();
             t.enter().await;
             let late = Some(json!({ "name": "Late" }));
-            let (status, _, got) = t.call_with("PATCH", "/profiles/p-1", late.clone(), read_at).await;
-            assert_eq!((status, got["code"].as_str()), (StatusCode::CONFLICT, Some("space_changed")), "{got}");
+            let (status, _, got) = t
+                .call_with("PATCH", "/profiles/p-1", late.clone(), read_at)
+                .await;
+            assert_eq!(
+                (status, got["code"].as_str()),
+                (StatusCode::CONFLICT, Some("space_changed")),
+                "{got}"
+            );
             assert_eq!(t.on_server("p-1").await["revision"], 1);
             let now = Some(crate::team::space_epoch());
             let (status, _, got) = t.call_with("PATCH", "/profiles/p-1", late, now).await;
@@ -2146,19 +3000,31 @@ mod tests {
         /// The window's profile delete names its space like every other write.
         #[tokio::test]
         async fn a_profile_delete_from_the_window_without_its_epoch_writes_nothing() {
-            let t = Team::new(&[allow(folder("Ads"), Action::See), allow(folder("Ads"), Action::Delete)]).await;
+            let t = Team::new(&[
+                allow(folder("Ads"), Action::See),
+                allow(folder("Ads"), Action::Delete),
+            ])
+            .await;
             t.folder("Ads").await;
             t.profile("p-1", "Ads", "First", json!({})).await;
             t.enter().await;
             let listed = |all: Value| all.as_array().unwrap().iter().any(|p| p["id"] == "p-1");
 
-            assert_eq!(crate::profile_delete("p-1".into(), None).await, Err(crate::space::NO_EPOCH.to_string()));
+            assert_eq!(
+                crate::profile_delete("p-1".into(), None).await,
+                Err(crate::space::NO_EPOCH.to_string())
+            );
             let stale = Some(crate::team::space_epoch() - 1);
             let refused = crate::profile_delete("p-1".into(), stale).await;
             assert_eq!(refused, Err(crate::space::error::SPACE_CHANGED.to_string()));
-            assert!(listed(t.admin_call(Method::GET, "/profiles", None).await), "nothing was deleted");
+            assert!(
+                listed(t.admin_call(Method::GET, "/profiles", None).await),
+                "nothing was deleted"
+            );
 
-            crate::profile_delete("p-1".into(), Some(crate::team::space_epoch())).await.unwrap();
+            crate::profile_delete("p-1".into(), Some(crate::team::space_epoch()))
+                .await
+                .unwrap();
             assert!(!listed(t.admin_call(Method::GET, "/profiles", None).await));
             drop(t.srv);
         }
