@@ -121,7 +121,7 @@ pub(crate) fn run_with(dst: &Path, emit: &dyn Fn(Progress)) -> Result<u64> {
 }
 
 /// A profile starting, or a team profile open here (its copy is under the data folder).
-fn refuse_while_busy() -> Result<()> {
+pub(crate) fn refuse_while_busy() -> Result<()> {
     if crate::launch::in_flight() > 0 {
         anyhow::bail!("a profile is starting: try again once it has started");
     }

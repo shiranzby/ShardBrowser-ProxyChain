@@ -25,6 +25,7 @@ export function SequentialCard() {
   }, []);
 
   const running = !!state?.running;
+  const active = running || state?.current_id != null;
   const update = <K extends keyof SequentialConfig>(key: K, value: SequentialConfig[K]) =>
     setConfig((current) => ({ ...current, [key]: value }));
 
@@ -53,17 +54,17 @@ export function SequentialCard() {
           <h2 className="m-0 text-heading-3">{t("sequential.title")}</h2>
           <p className="m-0 mt-1 text-secondary text-text-soft-400">{t("sequential.help")}</p>
         </div>
-        {running ? (
+        {active ? (
           <Button variant="neutral" mode="stroke" size="xsmall" onClick={() => void stop()}>{t("sequential.stop")}</Button>
         ) : (
           <Button variant="primary" mode="filled" size="xsmall" onClick={() => void start()}>{t("sequential.start")}</Button>
         )}
       </div>
       <div className="mt-3 grid grid-cols-4 gap-2">
-        <Input inputSize="xsmall" type="number" min={1} label={t("sequential.startProfile")} value={String(config.start)} disabled={running} onChange={(e) => update("start", Number(e.target.value) || 1)} />
-        <Input inputSize="xsmall" type="number" min={1} label={t("sequential.endProfile")} value={String(config.end)} disabled={running} onChange={(e) => update("end", Number(e.target.value) || 1)} />
-        <Input inputSize="xsmall" type="number" min={1} max={86400} label={t("sequential.wait")} value={String(config.wait_seconds)} disabled={running} onChange={(e) => update("wait_seconds", Number(e.target.value) || 1)} />
-        <Input inputSize="xsmall" label={t("sequential.url")} value={config.url} disabled={running} onChange={(e) => update("url", e.target.value)} />
+        <Input inputSize="xsmall" type="number" min={1} label={t("sequential.startProfile")} value={String(config.start)} disabled={active} onChange={(e) => update("start", Number(e.target.value) || 1)} />
+        <Input inputSize="xsmall" type="number" min={1} label={t("sequential.endProfile")} value={String(config.end)} disabled={active} onChange={(e) => update("end", Number(e.target.value) || 1)} />
+        <Input inputSize="xsmall" type="number" min={1} max={86400} label={t("sequential.wait")} value={String(config.wait_seconds)} disabled={active} onChange={(e) => update("wait_seconds", Number(e.target.value) || 1)} />
+        <Input inputSize="xsmall" label={t("sequential.url")} value={config.url} disabled={active} onChange={(e) => update("url", e.target.value)} />
       </div>
       {state && (
         <p className="m-0 mt-2 text-secondary text-text-soft-400" aria-live="polite">

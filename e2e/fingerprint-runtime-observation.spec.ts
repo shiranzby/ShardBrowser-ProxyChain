@@ -9,10 +9,35 @@ const invoke = (page: Page, command: string, args: Record<string, unknown> = {})
   [command, args] as const);
 
 async function openPeek(page: Page) {
-  const card = page.locator("[data-fingerprint-id]", { hasText: "macOS 14, Apple M1" }).first();
+  await page.evaluate(() => {
+    const mock = (window as unknown as {
+      __shardxMock: {
+        state: { fingerprints: Array<Record<string, unknown>> };
+        save: () => void;
+      };
+    }).__shardxMock;
+    if (mock.state.fingerprints.some((entry) => entry.id === "runtime-observation-imported")) return;
+    const source = mock.state.fingerprints.find((entry) => entry.label === "macOS 14, Apple M1");
+    if (!source) throw new Error("runtime observation fixture fingerprint is missing");
+    mock.state.fingerprints.push({
+      ...source,
+      id: "runtime-observation-imported",
+      label: "Imported runtime observation",
+      builtin: false,
+    });
+    mock.save();
+  });
+  await page.reload();
+  const card = page.locator("[data-fingerprint-id]", { hasText: "Imported runtime observation" }).first();
   await card.click();
   await expect(page.locator("aside[data-peek='fingerprint']")).toBeVisible();
   return card.getAttribute("data-fingerprint-id");
+}
+
+async function openBuiltinPeek(page: Page) {
+  const card = page.locator("[data-fingerprint-id]", { hasText: "macOS 14, Apple M1" }).first();
+  await card.click();
+  await expect(page.locator("aside[data-peek='fingerprint']")).toBeVisible();
 }
 
 test("runtime observation keeps the dialog usable when no automation session is running", async ({ page }) => {
@@ -24,6 +49,15 @@ test("runtime observation keeps the dialog usable when no automation session is 
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("Choose a running profile attached through automation.", { exact: false })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Observe current runtime", exact: true })).toBeDisabled();
+});
+
+test("built-in fingerprints explain why runtime observation is unavailable", async ({ page }) => {
+  await openApp(page, { section: "fingerprints" });
+  await openBuiltinPeek(page);
+
+  const fieldChecks = page.locator("[data-peek-section='field-checks']");
+  await expect(fieldChecks.getByRole("button", { name: "Observe current runtime", exact: true })).toHaveCount(0);
+  await expect(fieldChecks).toContainText("Built-in fingerprints cannot store runtime observations.");
 });
 
 test("runtime observation records source metadata after an automation session succeeds", async ({ page }) => {

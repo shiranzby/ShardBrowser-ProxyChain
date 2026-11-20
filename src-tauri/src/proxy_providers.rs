@@ -104,6 +104,19 @@ pub struct CustomProviderSummary {
 fn default_session_type() -> String { "sticky".into() }
 fn default_session_minutes() -> u32 { 180 }
 fn default_generation_count() -> u32 { 1 }
+fn custom_provider_name(value: &Stored) -> &str {
+    let name = value.name.trim();
+    if name.is_empty() {
+        value.custom_name.trim()
+    } else {
+        name
+    }
+}
+fn normalize_custom_provider(value: &mut Stored) {
+    let name = custom_provider_name(value).to_owned();
+    value.name = name.clone();
+    value.custom_name = name;
+}
 impl Default for Stored {
     fn default() -> Self {
         Self {
@@ -229,7 +242,12 @@ fn load_file() -> Result<ProviderFile> {
     if !path.exists() {
         return Ok(ProviderFile::default());
     }
-    serde_json::from_slice(&fs::read(path)?).map_err(|_| anyhow!("provider_defaults_unreadable"))
+    let mut file: ProviderFile =
+        serde_json::from_slice(&fs::read(path)?).map_err(|_| anyhow!("provider_defaults_unreadable"))?;
+    for provider in file.custom_providers.values_mut() {
+        normalize_custom_provider(provider);
+    }
+    Ok(file)
 }
 fn load() -> Result<Stored> {
     Ok(load_file()?.defaults)
@@ -239,7 +257,7 @@ impl ProviderFile {
     fn summaries(&self) -> Vec<CustomProviderSummary> {
         self.custom_providers.iter().map(|(&id, provider)| CustomProviderSummary {
             id,
-            name: provider.custom_name.clone(),
+            name: custom_provider_name(provider).to_owned(),
         }).collect()
     }
 }
@@ -305,6 +323,12 @@ pub fn get_for(id: Option<uuid::Uuid>, create: bool, tnb: bool) -> Result<Provid
         Some(id) => file.custom_providers.remove(&id).ok_or_else(|| anyhow!("provider_not_found"))?,
         None => file.defaults,
     };
+    if id.is_some() {
+        if create {
+            value.name = value.custom_name.clone();
+        }
+        normalize_custom_provider(&mut value);
+    }
     if tnb && id.is_none() {
         if let Some(defaults) = file.tnb_generation {
             defaults.apply(&mut value);
@@ -455,13 +479,22 @@ pub fn save_for(id: Option<uuid::Uuid>, create: bool, tnb: bool, v: ProviderUpda
     if !extract_url.is_empty() {
         custom_extract_url(extract_url)?;
     }
+    let mut v = v;
+    let custom_provider_name = if id.is_some() {
+        if v.name.trim().is_empty() {
+            v.custom_name.trim().to_owned()
+        } else {
+            v.name.trim().to_owned()
+        }
+    } else {
+        String::new()
+    };
     if id.is_some()
-        && (v.custom_name.trim().is_empty()
+        && (custom_provider_name.is_empty()
             || (v.custom_server.trim().is_empty() && extract_url.is_empty()))
     {
         return Err(anyhow!("provider_defaults_invalid"));
     }
-    let mut v = v;
     if !tnb && id.is_none() {
         v.session_minutes = v.session_minutes.clamp(1, 120);
     }
@@ -478,8 +511,10 @@ pub fn save_for(id: Option<uuid::Uuid>, create: bool, tnb: bool, v: ProviderUpda
         None => &file.defaults,
     };
     let mut saved = Stored {
-        name: if v.name.trim().is_empty() {
-            if id.is_some() { v.custom_name.trim().into() } else { old.name.clone() }
+        name: if id.is_some() {
+            custom_provider_name.clone()
+        } else if v.name.trim().is_empty() {
+            old.name.clone()
         } else {
             v.name.trim().into()
         },
@@ -506,7 +541,11 @@ pub fn save_for(id: Option<uuid::Uuid>, create: bool, tnb: bool, v: ProviderUpda
             v.tnb_proxy_password,
             old.tnb_proxy.as_deref(),
         )?,
-        custom_name: v.custom_name.trim().into(),
+        custom_name: if id.is_some() {
+            custom_provider_name
+        } else {
+            v.custom_name.trim().into()
+        },
         custom_server: v.custom_server.trim().into(),
         custom_extract_url: v.custom_extract_url.trim().into(),
         custom_plan: v.custom_plan.trim().into(),

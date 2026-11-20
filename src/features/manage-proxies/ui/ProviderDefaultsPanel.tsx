@@ -119,7 +119,10 @@ function ProviderFields({ provider: active, customProviderId, create = false, on
     {has && <Button variant="neutral" mode="ghost" size="3xsmall" onClick={() => { setSecrets((v) => ({ ...v, [key]: "" })); edited(); }}>{secrets[key] === "" ? t("provider.willClear") : t("provider.clearPassword")}</Button>}
   </div>;
   const custom = active === "custom";
-  const displayName = custom ? value?.custom_name || t("provider.custom") : t(tnb ? "tnb.provider" : "provider.name1024");
+  const customRecord = custom && Boolean(customProviderId);
+  const displayName = custom
+    ? (customRecord ? value?.name || value?.custom_name : value?.custom_name) || t("provider.custom")
+    : t(tnb ? "tnb.provider" : "provider.name1024");
   const websiteUrl = custom ? value?.custom_website : tnb ? "https://dash.tnbproxy.com" : "https://1024proxy.io";
   const gatewayKey = custom ? "custom_server" : tnb ? "tnb_server" : "relay";
   const usernameKey = custom ? "custom_proxy_username" : tnb ? "tnb_proxy_username" : "username";
@@ -135,11 +138,20 @@ function ProviderFields({ provider: active, customProviderId, create = false, on
         <div key={active} className="flex max-w-3xl flex-col gap-3" role="tabpanel" data-provider-panel={active}>
           <h3 className="m-0 text-section-label text-text-strong-950">{websiteUrl ? website(websiteUrl, displayName) : displayName}</h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Input inputSize="xsmall" label={t("provider.name")} value={value.name} placeholder={t("provider.namePlaceholder")} onChange={(e) => patch({ name: e.target.value })} />
-            <ProxyFolderSelect value={value.folder} onChange={(folder) => patch({ folder })} disabled={busy} allowCreate={false} />
-            <Input inputSize="xsmall" label={t("provider.country")} value={value.country} placeholder={t("provider.countryPlaceholder")} onChange={(e) => patch({ country: e.target.value.toUpperCase() })} />
-            <Input inputSize="xsmall" label={t("provider.state")} value={value.state} onChange={(e) => patch({ state: e.target.value })} />
-            <Input inputSize="xsmall" label={t("provider.city")} value={value.city} onChange={(e) => patch({ city: e.target.value })} />
+            <Input
+              inputSize="xsmall"
+              label={custom ? t("provider.customName") : t("provider.name")}
+              value={value.name}
+              placeholder={t("provider.namePlaceholder")}
+              onChange={(e) => patch(custom ? { name: e.target.value, custom_name: e.target.value } : { name: e.target.value })}
+            />
+            <ProxyFolderSelect value={value.folder} onChange={(folder) => patch({ folder })} disabled={busy} allowCreate />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Input inputSize="xsmall" label={(custom ? t("provider.customServer") : tnb ? t("tnb.server") : t("provider.relay"))} value={value[gatewayKey]} onChange={(e) => patch({ [gatewayKey]: e.target.value })} />
+            {custom ? <SelectField label={t("provider.customProtocol")} value={value.custom_kind} onChange={(custom_kind) => patch({ custom_kind })} options={[{ value: "http" as const, label: "HTTP" }, { value: "https" as const, label: "HTTPS" }, { value: "socks5" as const, label: "SOCKS5" }]} />
+              : tnb ? <SelectField label={t("tnb.protocol")} value={value.tnb_kind} onChange={(tnb_kind) => patch({ tnb_kind })} options={[{ value: "http" as const, label: "HTTP" }, { value: "socks5" as const, label: "SOCKS5" }]} />
+                : <Input inputSize="xsmall" label={t("tnb.protocol")} value="SOCKS5" readOnly />}
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <SelectField label={t("provider.sessionType")} value={value.session_type} onChange={(session_type) => patch({ session_type })} options={[
@@ -150,14 +162,10 @@ function ProviderFields({ provider: active, customProviderId, create = false, on
             <Input inputSize="xsmall" type="number" label={t("provider.sessionMinutes")} value={String(value.session_minutes)} onChange={(e) => patch({ session_minutes: Math.max(1, Number(e.target.value) || 1) })} />
             <Input inputSize="xsmall" type="number" label={t("provider.generationCount")} value={String(value.generation_count)} onChange={(e) => patch({ generation_count: Math.max(1, Number(e.target.value) || 1) })} />
           </div>
-          {custom && <Input inputSize="xsmall" label={t("provider.customName")} value={value.custom_name} onChange={(e) => patch({ custom_name: e.target.value })} />}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Input inputSize="xsmall" label={(custom ? t("provider.customServer") : tnb ? t("tnb.server") : t("provider.relay"))} value={value[gatewayKey]} onChange={(e) => patch({ [gatewayKey]: e.target.value })} />
-            {custom ? <SelectField label={t("provider.customProtocol")} value={value.custom_kind} onChange={(custom_kind) => patch({ custom_kind })} options={[{ value: "http" as const, label: "HTTP" }, { value: "https" as const, label: "HTTPS" }, { value: "socks5" as const, label: "SOCKS5" }]} />
-              : tnb ? <SelectField label={t("tnb.protocol")} value={value.tnb_kind} onChange={(tnb_kind) => patch({ tnb_kind })} options={[{ value: "http" as const, label: "HTTP" }, { value: "socks5" as const, label: "SOCKS5" }]} />
-                : <Input inputSize="xsmall" label={t("tnb.protocol")} value="SOCKS5" readOnly />}
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Input inputSize="xsmall" label={t("provider.country")} value={value.country} placeholder={t("provider.countryPlaceholder")} onChange={(e) => patch({ country: e.target.value.toUpperCase() })} />
+            <Input inputSize="xsmall" label={t("provider.state")} value={value.state} onChange={(e) => patch({ state: e.target.value })} />
+            <Input inputSize="xsmall" label={t("provider.city")} value={value.city} onChange={(e) => patch({ city: e.target.value })} />
             <Input inputSize="xsmall" label={(tnb || custom ? t("provider.proxyUsername") : t("provider.account"))} value={value[usernameKey]} onChange={(e) => patch({ [usernameKey]: e.target.value })} />
             {password(passwordKey, value[passwordSavedKey], (tnb || custom ? t("provider.proxyPassword") : t("proxyEditor.passwordLabel")))}
           </div>

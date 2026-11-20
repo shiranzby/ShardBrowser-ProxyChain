@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { automationFleet, type RunState, type WorkerState } from "../../entities/automation";
+import { automationFleet, lastRunOf, type RunState, type WorkerState } from "../../entities/automation";
 import { useT } from "../../shared/i18n";
 
 const TONE: Record<WorkerState["status"], string> = {
@@ -55,6 +55,7 @@ export function FleetMonitor() {
     starting: t("status.starting"),
     running: t("status.running"),
     done: t("fleetMonitor.finished"),
+    finished: t("fleetMonitor.finished"),
     failed: t("fleetMonitor.failed"),
     stopped: t("fleetMonitor.stopped"),
   };
@@ -84,7 +85,7 @@ export function FleetMonitor() {
               <div className="flex items-center justify-between px-2.5 py-1.5">
                 <span className="truncate text-secondary font-medium text-text-strong-950">{r.project_name}</span>
                 <span className="text-secondary text-text-soft-400">
-                  {r.running ? status.running : status.done}
+                  {r.running ? status.running : status[lastRunOf(r).outcome]}
                 </span>
               </div>
               {/* Workers are the run's thread slots, in order; profile_id is empty until a slot takes one. */}

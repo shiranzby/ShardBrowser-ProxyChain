@@ -95,7 +95,13 @@ function FieldChecks({ entry }: { entry: FingerprintEntry }) {
   return (
     <>
       <p className="m-0 mb-2 text-secondary text-text-soft-400">{t("fingerprintPeek.fieldSource")}</p>
-      <RuntimeObservation entry={entry} />
+      {entry.builtin ? (
+        <p className="m-0 mb-2 text-secondary text-text-soft-400">
+          {t("fingerprintPeek.builtinRuntimeObservation")}
+        </p>
+      ) : (
+        <RuntimeObservation entry={entry} />
+      )}
       <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-secondary">
         {fields.map(([field, label]) => {
           const status = entry.field_checks?.[field];

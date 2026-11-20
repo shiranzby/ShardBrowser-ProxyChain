@@ -746,6 +746,7 @@
   "fingerprintPeek.runtimeObservationTitle": "Observe fingerprint runtime",
   "fingerprintPeek.runtimeObservationChoose": "Choose a running profile attached through automation. The observation is saved as library metadata and does not change the original fingerprint JSON.",
   "fingerprintPeek.runtimeObservationProfile": "Running profile",
+  "fingerprintPeek.builtinRuntimeObservation": "Built-in fingerprints cannot store runtime observations.",
   "fingerprintPeek.gpu": "GPU",
   "fingerprintPeek.label": "Peek: {name}",
   "fingerprintPeek.memory": "Memory",

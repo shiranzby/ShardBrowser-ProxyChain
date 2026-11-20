@@ -746,6 +746,7 @@
   "fingerprintPeek.runtimeObservationTitle": "观察指纹运行时",
   "fingerprintPeek.runtimeObservationChoose": "选择一个已通过自动化连接的运行中配置。观察会写入指纹库元数据，不会修改原始指纹 JSON。",
   "fingerprintPeek.runtimeObservationProfile": "运行中的配置",
+  "fingerprintPeek.builtinRuntimeObservation": "内置指纹不能保存运行时观测结果。",
   "fingerprintPeek.gpu": "GPU",
   "fingerprintPeek.label": "预览：{name}",
   "fingerprintPeek.memory": "内存",

@@ -746,6 +746,7 @@
   "fingerprintPeek.runtimeObservationTitle": "Наблюдение среды отпечатка",
   "fingerprintPeek.runtimeObservationChoose": "Выберите запущенный профиль, подключённый через автоматизацию. Наблюдение сохраняется в метаданных библиотеки и не меняет исходный JSON отпечатка.",
   "fingerprintPeek.runtimeObservationProfile": "Запущенный профиль",
+  "fingerprintPeek.builtinRuntimeObservation": "Встроенные отпечатки не могут сохранять наблюдения среды выполнения.",
   "fingerprintPeek.gpu": "GPU",
   "fingerprintPeek.label": "Быстрый просмотр: {name}",
   "fingerprintPeek.memory": "Память",

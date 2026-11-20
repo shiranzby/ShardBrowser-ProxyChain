@@ -1467,16 +1467,17 @@ async fn snapshot_create(path: String) -> Result<snapshot::SnapshotResult, Strin
         return Err("a migration, reset, or safe close is already in progress".into());
     }
     let result = tauri::async_runtime::spawn_blocking(move || {
+        migrate::refuse_while_busy()?;
         if !process::Tracker::shared().running().is_empty() {
             return Err(anyhow::anyhow!("close every running profile first"));
         }
         snapshot::create(std::path::Path::new(&path))
     })
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| format!("{e:#}"));
+    .await;
     migrate::release();
     result
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
@@ -1523,28 +1524,36 @@ async fn profile_clone(
 /// Import profiles verbatim under fresh ids; returns the count.
 #[tauri::command]
 async fn profile_import(payloads: Vec<Value>, epoch: Option<u64>) -> Result<usize, String> {
-    if migrate::in_progress() {
-        return Err("a migration, reset, or snapshot operation is already in progress".into());
+    if !migrate::hold() {
+        return Err(
+            "a migration, reset, snapshot, or safe close operation is already in progress".into(),
+        );
     }
-    let t = ticket(epoch)?;
-    let mut n = 0;
-    for mut payload in payloads {
-        if let Some(obj) = payload.as_object_mut() {
-            match obj.get_mut("_meta").and_then(|m| m.as_object_mut()) {
-                Some(meta) => {
-                    meta.insert("id".into(), Value::String(String::new()));
-                }
-                None => {
-                    obj.insert("_meta".into(), serde_json::json!({ "id": "" }));
+    let result = async {
+        migrate::refuse_while_busy().map_err(|e| format!("{e:#}"))?;
+        let t = ticket(epoch)?;
+        let mut n = 0;
+        for mut payload in payloads {
+            if let Some(obj) = payload.as_object_mut() {
+                match obj.get_mut("_meta").and_then(|m| m.as_object_mut()) {
+                    Some(meta) => {
+                        meta.insert("id".into(), Value::String(String::new()));
+                    }
+                    None => {
+                        obj.insert("_meta".into(), serde_json::json!({ "id": "" }));
+                    }
                 }
             }
+            save_profile_core(None, payload, false, space::Door("profile_import"), &t)
+                .await
+                .map_err(|e| e.to_string())?;
+            n += 1;
         }
-        save_profile_core(None, payload, false, space::Door("profile_import"), &t)
-            .await
-            .map_err(|e| e.to_string())?;
-        n += 1;
+        Ok(n)
     }
-    Ok(n)
+    .await;
+    migrate::release();
+    result
 }
 
 // ---- Clipboard (via tauri-plugin-clipboard-manager; webview navigator.clipboard throws) ----
@@ -1913,8 +1922,9 @@ async fn fingerprint_observe_runtime(
     canvasGroup = { supported: true, hash: hash(canvas.toDataURL()) };
   }
   const canvasGroupValue = canvasGroup;
+  const webglCanvas = document.createElement("canvas");
   let webglGroup = { supported: false };
-  const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+  const gl = webglCanvas.getContext("webgl") || webglCanvas.getContext("experimental-webgl");
   if (gl) {
     const debug = gl.getExtension("WEBGL_debug_renderer_info");
     webglGroup = {
@@ -2833,6 +2843,39 @@ mod proxy_chain_toolbar_tests {
         crate::migrate::release();
         let error = result.expect_err("profile import must honor the snapshot guard");
         assert!(error.contains("migration, reset, or snapshot"));
+    }
+
+    #[tokio::test]
+    async fn profile_import_releases_guard_after_ticket_error() {
+        let _serial = crate::migrate::serial();
+        crate::migrate::release();
+        crate::migrate::set_reset_pending(false);
+        let epoch = crate::team::space_epoch().wrapping_add(1);
+        let result = super::profile_import(Vec::new(), Some(epoch)).await;
+        assert!(result.is_err());
+        assert!(!crate::migrate::in_progress());
+    }
+
+    #[tokio::test]
+    async fn profile_import_releases_guard_after_launch_started() {
+        let _serial = crate::migrate::serial();
+        crate::migrate::release();
+        crate::migrate::set_reset_pending(false);
+        let _launching = crate::launch::Launching::start();
+        let result = super::profile_import(Vec::new(), Some(crate::team::space_epoch())).await;
+        let error = result.expect_err("profile import must reject an in-flight launch");
+        assert!(error.contains("profile is starting"));
+        assert!(!crate::migrate::in_progress());
+    }
+
+    #[tokio::test]
+    async fn profile_import_releases_guard_after_success() {
+        let _serial = crate::migrate::serial();
+        crate::migrate::release();
+        crate::migrate::set_reset_pending(false);
+        let result = super::profile_import(Vec::new(), Some(crate::team::space_epoch())).await;
+        assert_eq!(result.unwrap(), 0);
+        assert!(!crate::migrate::in_progress());
     }
 }
 

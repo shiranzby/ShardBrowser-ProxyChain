@@ -38,6 +38,11 @@ function providerGeneration(value?: NonNullable<MockState["providerDefaults"]>):
   return { name, folder, country, state, city, session_type, session_minutes, generation_count };
 }
 
+function customProviderName(value: Partial<NonNullable<MockState["providerDefaults"]>>): string {
+  const name = String(value.name ?? "").trim();
+  return name || String(value.custom_name ?? "").trim();
+}
+
 /** Launcher-side timestamps: "@<unix seconds>", the format profile.rs writes. */
 const nowStamp = () => `@${Math.floor(Date.now() / 1000)}`;
 
@@ -1115,9 +1120,12 @@ export const handlers: Record<string, Handler> = {
   proxy_provider_defaults_get: ({ customProviderId, create, tnb }, { state }) => {
     const saved = customProviderId ? state.customProviders?.[customProviderId] : state.providerDefaults;
     if (customProviderId && !create && !saved) throw "provider_not_found";
-    const d: NonNullable<Ctx["state"]["providerDefaults"]> = (customProviderId && create ? undefined : saved) ?? { custom_providers: [], name: "1024Proxy", folder: "", country: "", state: "", city: "", session_type: "sticky", session_minutes: 180, generation_count: 1, relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://usdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false, custom_name: "Custom provider", custom_server: "", custom_extract_url: "", custom_plan: "", custom_kind: "http", custom_website: "", custom_whitelist: "", custom_api_username: "", custom_api_password_saved: false, custom_proxy_username: "", custom_proxy_password_saved: false };
+    const base: NonNullable<Ctx["state"]["providerDefaults"]> = (customProviderId && create ? undefined : saved) ?? { custom_providers: [], name: "1024Proxy", folder: "", country: "", state: "", city: "", session_type: "sticky", session_minutes: 180, generation_count: 1, relay: "us.1024proxy.io:3000", username: "", username_template: "{username}{location}", password_saved: false, tnb_server: "http://usdata.adv.tnbproxy.com:9090", tnb_plan: "advanced_traffic", tnb_kind: "http", tnb_api_username: "", tnb_api_password_saved: false, tnb_proxy_username: "", tnb_proxy_password_saved: false, custom_name: "Custom provider", custom_server: "", custom_extract_url: "", custom_plan: "", custom_kind: "http", custom_website: "", custom_whitelist: "", custom_api_username: "", custom_api_password_saved: false, custom_proxy_username: "", custom_proxy_password_saved: false };
+    const d = customProviderId
+      ? { ...base, name: create ? base.custom_name : customProviderName(base), custom_name: create ? base.custom_name : customProviderName(base) }
+      : base;
     const { password: _password, tnb_api_password: _api, tnb_proxy_password: _proxy, custom_api_password: _customApi, custom_proxy_password: _customProxy, ...view } = d;
-    return { ...view, custom_extract_url: d.custom_extract_url ?? "", ...(tnb && !customProviderId ? state.tnbGeneration : {}), custom_providers: Object.entries(state.customProviders ?? {}).map(([id, provider]) => ({ id, name: provider.custom_name })) };
+    return { ...view, custom_extract_url: d.custom_extract_url ?? "", ...(tnb && !customProviderId ? state.tnbGeneration : {}), custom_providers: Object.entries(state.customProviders ?? {}).map(([id, provider]) => ({ id, name: customProviderName(provider) })) };
   },
   proxy_provider_defaults_save: ({ value, customProviderId, create, tnb }, ctx) => {
     const { state, save } = ctx;
@@ -1136,9 +1144,11 @@ export const handlers: Record<string, Handler> = {
     }
     const old = customProviderId ? state.customProviders?.[customProviderId] : state.providerDefaults;
     if (customProviderId && !create && !old) throw "provider_not_found";
-    if (customProviderId && ((create && old) || !value.custom_name.trim() || (!value.custom_server.trim() && !extractUrl))) throw "provider_defaults_invalid";
+    const canonicalName = customProviderId ? customProviderName(value) : "";
+    if (customProviderId && ((create && old) || !canonicalName || (!value.custom_server.trim() && !extractUrl))) throw "provider_defaults_invalid";
     const d = {
       ...value,
+      ...(customProviderId ? { name: canonicalName, custom_name: canonicalName } : {}),
       custom_extract_url: extractUrl,
       password: value.password ?? old?.password ?? "",
       tnb_api_password: value.tnb_api_password ?? old?.tnb_api_password ?? "",
@@ -1173,17 +1183,31 @@ export const handlers: Record<string, Handler> = {
       const gateway = new URL(d.custom_server);
       const port = Number(gateway.port || (gateway.protocol === "https:" ? "443" : gateway.protocol === "http:" ? "80" : "0"));
       if (gateway.protocol !== `${d.custom_kind}:` || !["", "/"].includes(gateway.pathname) || !port) throw "provider_invalid_relay";
-      return { id: newId(), name: d.custom_name || `${gateway.hostname}:${port}`, kind: d.custom_kind, host: gateway.hostname, port, username: d.custom_proxy_username, password: d.custom_proxy_password ?? "", country: request.country.toUpperCase(), notes: "", provider_id: "custom", provider_options: id ? { custom_provider_id: id } : undefined };
+      const country = String(d.country ?? "").trim().toUpperCase();
+      const folder = String(d.folder ?? "");
+      const providerOptions: Record<string, string> = {
+        folder,
+        country,
+        state: String(d.state ?? ""),
+        city: String(d.city ?? ""),
+        session_type: String(d.session_type ?? "sticky"),
+        session_minutes: String(d.session_minutes ?? 180),
+      };
+      if (id) providerOptions.custom_provider_id = id;
+      const providerName = id ? customProviderName(d) : String(d.custom_name ?? "").trim();
+      return { id: newId(), name: providerName || `${gateway.hostname}:${port}`, kind: d.custom_kind, host: gateway.hostname, port, username: d.custom_proxy_username, password: d.custom_proxy_password ?? "", country, folder, notes: "", provider_id: "custom", provider_options: providerOptions };
     }
     if (!d?.username || !d.password) throw "provider_credentials_required";
     const city = request.city ?? "";
-    const location = request.country ? `-region-${request.country.toUpperCase()}${request.state ? `-st-${request.state}` : ""}${city ? `-city-${city}` : ""}` : "";
+    const country = String(request.country ?? "").trim().toUpperCase();
+    const location = country ? `-region-${country}${request.state ? `-st-${request.state}` : ""}${city ? `-city-${city}` : ""}` : "";
     const minutes = request.session_minutes ?? (d.session_type === "sticky" ? Math.min(120, Math.max(1, d.session_minutes)) : 0);
     if (!Number.isInteger(minutes) || minutes < 0 || minutes > 120) throw "provider_defaults_invalid";
     const sessionType = request.session_minutes === undefined ? d.session_type : minutes ? "sticky" : "per_request";
     const session = minutes ? `-sid-${crypto.randomUUID().slice(0, 8)}-t-${minutes}` : "";
-    const username = d.username_template.split("{username}").join(d.username).split("{country}").join(request.country.toLowerCase()).split("{state}").join(request.state).split("{city}").join(city).split("{location}").join(location) + session;
-    return { id: `provider-${newId()}`, name: `1024Proxy ${request.country || "Global"}`, kind: "socks5", host: d.relay.split(":")[0], port: Number(d.relay.split(":")[1]), username, password: d.password, country: request.country, notes: "", provider_id: "1024proxy", provider_options: { country: request.country, state: request.state, session_type: sessionType, session_minutes: String(minutes) } };
+    const username = d.username_template.split("{username}").join(d.username).split("{country}").join(country.toLowerCase()).split("{state}").join(request.state).split("{city}").join(city).split("{location}").join(location) + session;
+    const folder = String(d.folder ?? "");
+    return { id: `provider-${newId()}`, name: `${String(d.name ?? "").trim() || "1024Proxy"} ${country || "Global"}`, kind: "socks5", host: d.relay.split(":")[0], port: Number(d.relay.split(":")[1]), username, password: d.password, country, folder, notes: "", provider_id: "1024proxy", provider_options: { country, state: request.state, city, folder, session_type: sessionType, session_minutes: String(minutes) } };
   },
   proxy_provider_generate_many: ({ request }, ctx) => {
     const rawCount = Number(request?.count);
@@ -1206,10 +1230,22 @@ export const handlers: Record<string, Handler> = {
     if (Boolean(provider.custom_api_username) !== Boolean(provider.custom_api_password)) throw "tnb_api_credentials_required";
     return Array.from({ length: Math.min(count, 2) }, (_, index) => {
       const host = `proxy${index + 1}.example.test`;
+      const country = String(provider.country ?? "").trim().toUpperCase();
+      const folder = String(provider.folder ?? "");
+      const providerName = customProviderId ? customProviderName(provider) : String(provider.custom_name ?? "").trim();
+      const providerOptions: Record<string, string> = {
+        folder,
+        country,
+        state: String(provider.state ?? ""),
+        city: String(provider.city ?? ""),
+        session_type: String(provider.session_type ?? "sticky"),
+        session_minutes: String(provider.session_minutes ?? 180),
+      };
+      if (customProviderId) providerOptions.custom_provider_id = customProviderId;
       return {
-        id: newId(), name: `${host}:8080`, kind: provider.custom_kind, host, port: 8080,
+        id: newId(), name: providerName ? `${providerName} · ${host}:8080` : `${host}:8080`, kind: provider.custom_kind, host, port: 8080,
         username: provider.custom_proxy_username, password: provider.custom_proxy_password ?? "",
-        country: provider.country, folder: provider.folder, notes: "", provider_id: "custom",
+        country, folder, notes: "", provider_id: "custom", provider_options: providerOptions,
       };
     });
   },
